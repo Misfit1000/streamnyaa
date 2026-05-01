@@ -1,0 +1,6 @@
+{
+  "name": "StreamNyaa",
+  "description": "Anime streaming website using Nyaa.si and Webtor for free anime streaming, with search, dark mode, personalized recommendations, and seasonal anime routine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
