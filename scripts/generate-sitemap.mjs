@@ -1,4 +1,4 @@
-const SITE_URL = (process.env.VITE_SITE_URL || process.env.SITE_URL || 'https://streamnyaa.xyz').replace(/\/$/, '');
+const SITE_URL = (process.env.VITE_SITE_URL || process.env.SITE_URL || 'https://www.streamnyaa.xyz').replace(/\/$/, '');
 const ANILIST_URL = 'https://graphql.anilist.co';
 const TODAY = new Date().toISOString().slice(0, 10);
 

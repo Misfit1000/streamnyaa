@@ -6,7 +6,7 @@ interface SeoProps {
   canonicalPath?: string;
 }
 
-const SITE_URL = 'https://streamnyaa.xyz';
+const SITE_URL = 'https://www.streamnyaa.xyz';
 
 function setMeta(name: string, content: string, attribute: 'name' | 'property' = 'name') {
   let tag = document.head.querySelector<HTMLMetaElement>(`meta[${attribute}="${name}"]`);
