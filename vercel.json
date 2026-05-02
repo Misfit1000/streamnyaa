@@ -1,5 +1,7 @@
 {
-  "regions": ["sin1"],
+  "regions": [
+    "sin1"
+  ],
   "headers": [
     {
       "source": "/sitemap.xml",
@@ -71,10 +73,6 @@
     },
     {
       "source": "/about",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/contact",
       "destination": "/index.html"
     },
     {
