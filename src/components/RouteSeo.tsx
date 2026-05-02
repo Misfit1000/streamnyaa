@@ -3,8 +3,8 @@ import Seo from './Seo';
 
 const routeMeta: Record<string, { title: string; description: string }> = {
   '/': {
-    title: 'StreamNyaa - Anime Discovery, Schedules and Torrent Search',
-    description: 'Discover anime, follow airing schedules, browse popular titles, and search indexed anime torrent metadata from one clean interface.',
+    title: 'StreamNyaa - Anime Discovery, Release Schedules and Episode Updates',
+    description: 'Discover anime, track release schedules, browse seasonal shows, follow episode updates, and search anime metadata with StreamNyaa.',
   },
   '/search': {
     title: 'Browse Anime by Title, Genre and Status | StreamNyaa',

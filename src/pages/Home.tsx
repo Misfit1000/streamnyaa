@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { useMemo, useState } from 'react';
 import { animePath } from '../lib/slug';
+import Seo from '../components/Seo';
 
 export default function Home() {
   const { myList } = useStore();
@@ -48,6 +49,25 @@ export default function Home() {
     queryFn: () => fetchSchedule(1, todayStartSeconds, todayEndSeconds),
   });
 
+
+  const homeJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'StreamNyaa',
+    url: 'https://www.streamnyaa.xyz/',
+    description: 'Anime discovery, release schedules, episode updates, seasonal anime browsing, and anime metadata search.',
+    potentialAction: {
+      '@type': 'SearchAction',
+      target: 'https://www.streamnyaa.xyz/search?q={search_term_string}',
+      'query-input': 'required name=search_term_string',
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: 'StreamNyaa',
+      url: 'https://www.streamnyaa.xyz/',
+    },
+  };
+
   if (seasonalLoading || popularLoading || recentLoading || upcomingLoading || scheduleLoading) {
     return <div className="min-h-screen flex items-center justify-center">
       <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
@@ -56,6 +76,12 @@ export default function Home() {
 
   return (
     <div className="pb-20">
+      <Seo
+        title="StreamNyaa - Anime Discovery, Release Schedules and Episode Updates"
+        description="Discover anime, track release schedules, browse seasonal shows, follow episode updates, and search anime metadata with StreamNyaa."
+        canonicalPath="/"
+        jsonLd={homeJsonLd}
+      />
       <Spotlight animeList={seasonalData?.data || []} />
       
       <main className="container mx-auto px-4 md:px-10 mt-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
@@ -203,6 +229,35 @@ export default function Home() {
 
         </div>
       </main>
+      <section className="container mx-auto px-4 md:px-10 mt-12" aria-labelledby="anime-discovery-heading">
+        <div className="max-w-5xl border-t border-border pt-8">
+          <div className="grid gap-6 md:grid-cols-[1.1fr_0.9fr] text-sm md:text-base text-muted-foreground leading-relaxed">
+            <div>
+              <h2 id="anime-discovery-heading" className="text-2xl md:text-3xl font-black text-foreground mb-4">Anime Discovery, Release Schedules, and Episode Updates</h2>
+              <p>
+                StreamNyaa helps anime fans discover trending anime, seasonal releases, upcoming episodes, and detailed anime metadata in one fast browsing experience. Use the homepage to follow recently updated anime, check today's anime release schedule, browse popular titles, and jump into dedicated anime detail pages with genres, synopsis, recommendations, episode lists, and related media.
+              </p>
+              <p className="mt-4">
+                Each anime page is organized around title-specific information so search engines and visitors can understand the series, episode availability, schedule context, and discovery options. StreamNyaa focuses on searchable anime information, public metadata, and clean navigation across anime details, manga details, watch pages, and torrent metadata search.
+              </p>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <h3 className="font-black text-foreground mb-2">Browse Seasonal Anime</h3>
+                <p>Find currently airing anime, upcoming series, popular shows, and recent episode updates with poster cards and quick links to anime pages.</p>
+              </div>
+              <div>
+                <h3 className="font-black text-foreground mb-2">Track Anime Schedules</h3>
+                <p>Use the anime schedule view to see release timing, episode numbers, and local-time updates for new anime episodes.</p>
+              </div>
+              <div>
+                <h3 className="font-black text-foreground mb-2">Search Anime Metadata</h3>
+                <p>Search by title, genre, status, format, popularity, rating, and release timing to find anime and manga pages with structured details.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

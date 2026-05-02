@@ -4,6 +4,7 @@ interface SeoProps {
   title: string;
   description: string;
   canonicalPath?: string;
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 }
 
 const SITE_URL = 'https://www.streamnyaa.xyz';
@@ -28,7 +29,26 @@ function setCanonical(href: string) {
   link.href = href;
 }
 
-export default function Seo({ title, description, canonicalPath = '/' }: SeoProps) {
+function setJsonLd(jsonLd?: SeoProps['jsonLd']) {
+  const id = 'streamnyaa-jsonld';
+  let script = document.getElementById(id) as HTMLScriptElement | null;
+
+  if (!jsonLd) {
+    script?.remove();
+    return;
+  }
+
+  if (!script) {
+    script = document.createElement('script');
+    script.id = id;
+    script.type = 'application/ld+json';
+    document.head.appendChild(script);
+  }
+
+  script.text = JSON.stringify(jsonLd);
+}
+
+export default function Seo({ title, description, canonicalPath = '/', jsonLd }: SeoProps) {
   useEffect(() => {
     const canonicalUrl = new URL(canonicalPath, SITE_URL).toString();
 
@@ -43,7 +63,8 @@ export default function Seo({ title, description, canonicalPath = '/' }: SeoProp
     setMeta('twitter:title', title);
     setMeta('twitter:description', description);
     setCanonical(canonicalUrl);
-  }, [title, description, canonicalPath]);
+    setJsonLd(jsonLd);
+  }, [title, description, canonicalPath, jsonLd]);
 
   return null;
 }
