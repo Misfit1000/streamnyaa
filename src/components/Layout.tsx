@@ -38,7 +38,6 @@ export default function Layout() {
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-semibold">
             <Link to="/about" className="hover:text-primary transition-colors">About</Link>
-            <Link to="/contact" className="hover:text-primary transition-colors">Contact</Link>
             <Link to="/privacy-policy" className="hover:text-primary transition-colors">Privacy Policy</Link>
             <Link to="/terms" className="hover:text-primary transition-colors">Terms</Link>
             <Link to="/disclaimer" className="hover:text-primary transition-colors">Disclaimer</Link>

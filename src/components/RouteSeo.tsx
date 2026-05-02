@@ -30,10 +30,6 @@ const routeMeta: Record<string, { title: string; description: string }> = {
     title: 'About StreamNyaa',
     description: 'Learn what StreamNyaa is, how it works, and how it uses public anime metadata and third-party services.',
   },
-  '/contact': {
-    title: 'Contact StreamNyaa',
-    description: 'Contact StreamNyaa for site feedback, copyright concerns, policy questions, and general support.',
-  },
   '/privacy-policy': {
     title: 'Privacy Policy | StreamNyaa',
     description: 'Read how StreamNyaa handles local storage, analytics, advertising partners, third-party embeds, and external services.',

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import Seo from '../components/Seo';
-import { Mail, ShieldCheck, Info, Scale, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Info, Scale, AlertTriangle } from 'lucide-react';
 
 const UPDATED = 'May 1, 2026';
 
@@ -78,42 +78,6 @@ export function About() {
           <p>
             StreamNyaa is designed as a discovery and indexing tool. The site includes a privacy policy, terms of use, contact page, and disclaimer so visitors, search engines, and advertising reviewers can understand how the site operates.
           </p>
-          <p>
-            Copyright owners and rights holders can contact the site owner through the <Link to="/contact" className="text-primary hover:underline">contact page</Link> for questions or removal requests.
-          </p>
-        </InfoBlock>
-      </PageShell>
-    </>
-  );
-}
-
-export function Contact() {
-  return (
-    <>
-      <Seo
-        title="Contact StreamNyaa"
-        description="Contact StreamNyaa for site feedback, copyright concerns, policy questions, and general support."
-        canonicalPath="/contact"
-      />
-      <PageShell
-        title="Contact"
-        eyebrow="Support"
-        icon={<Mail className="w-5 h-5" />}
-        description="Use this page for feedback, technical issues, copyright questions, advertising questions, and general site support."
-      >
-        <InfoBlock title="General Contact">
-          <p>
-            Email: <a href="mailto:support@streamnyaa.xyz" className="text-primary hover:underline">support@streamnyaa.xyz</a>
-          </p>
-          <p>
-            Please include the page URL, a clear description of the issue, and any relevant screenshots or links when reporting a problem.
-          </p>
-        </InfoBlock>
-
-        <InfoBlock title="Copyright and Removal Requests">
-          <p>
-            StreamNyaa does not host media files. If you believe a search result, metadata entry, or external reference creates a rights concern, send a detailed request with the affected URL and proof that you are authorized to act on behalf of the rights holder.
-          </p>
         </InfoBlock>
       </PageShell>
     </>
@@ -157,12 +121,6 @@ export function PrivacyPolicy() {
         <InfoBlock title="Advertising and Cookies">
           <p>
             If advertising is enabled in the future, advertising partners such as Google may use cookies or similar technologies to show, measure, and personalize ads. Visitors may be able to control ad personalization through their Google account or browser settings.
-          </p>
-        </InfoBlock>
-
-        <InfoBlock title="Contact">
-          <p>
-            For privacy questions, contact <a href="mailto:support@streamnyaa.xyz" className="text-primary hover:underline">support@streamnyaa.xyz</a>.
           </p>
         </InfoBlock>
       </PageShell>
