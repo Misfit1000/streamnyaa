@@ -1,8 +1,9 @@
-import { Outlet } from 'react-router-dom';
+import { Link, Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
 import { useStore } from '../store/useStore';
 import { useEffect } from 'react';
 import { Cat } from 'lucide-react';
+import RouteSeo from './RouteSeo';
 
 export default function Layout() {
   const theme = useStore((state) => state.theme);
@@ -18,6 +19,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-red-600/30">
       <Navbar />
+      <RouteSeo />
       <main>
         <Outlet />
       </main>
@@ -31,10 +33,17 @@ export default function Layout() {
             <span className="font-bold text-lg text-foreground tracking-tight">StreamNyaa</span>
           </div>
           <p className="text-sm max-w-2xl mx-auto leading-relaxed">
-            StreamNyaa acts as a frontend interface that links to metadata and media provided by 3rd party services like AniList and Nyaa.si. 
-            We do not host or store any video files or torrents on our servers. All torrent files and magnet links are retrieved from Nyaa.si.
+            StreamNyaa is an anime discovery interface that connects users with public metadata, release schedules, and third-party search results.
+            We do not host or store anime video files, torrent files, or copyrighted media on our servers.
           </p>
-          <p className="text-xs mt-4 opacity-60">© {new Date().getFullYear()} StreamNyaa. Not affiliated with Nyaa.si.</p>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-semibold">
+            <Link to="/about" className="hover:text-primary transition-colors">About</Link>
+            <Link to="/contact" className="hover:text-primary transition-colors">Contact</Link>
+            <Link to="/privacy-policy" className="hover:text-primary transition-colors">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-primary transition-colors">Terms</Link>
+            <Link to="/disclaimer" className="hover:text-primary transition-colors">Disclaimer</Link>
+          </div>
+          <p className="text-xs mt-4 opacity-60">Copyright {new Date().getFullYear()} StreamNyaa. Not affiliated with Nyaa.si.</p>
         </div>
       </footer>
     </div>

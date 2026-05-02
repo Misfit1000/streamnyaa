@@ -5,11 +5,14 @@ import AnimeCard from '../components/AnimeCard';
 import { ChevronRight, PlayCircle, TrendingUp, Calendar, Zap, Star, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../store/useStore';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 export default function Home() {
   const { myList } = useStore();
   const [routineExpanded, setRoutineExpanded] = useState(false);
+  const localTimezone = useMemo(() => {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time';
+  }, []);
 
   // Spotlight could still use seasonal/trending releasing
   const { data: seasonalData, isLoading: seasonalLoading } = useQuery({
@@ -36,10 +39,12 @@ export default function Home() {
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date();
   todayEnd.setHours(23, 59, 59, 999);
+  const todayStartSeconds = Math.floor(todayStart.getTime() / 1000);
+  const todayEndSeconds = Math.floor(todayEnd.getTime() / 1000);
   
   const { data: scheduleData, isLoading: scheduleLoading } = useQuery({
-    queryKey: ['todaySchedule'],
-    queryFn: () => fetchSchedule(1, Math.floor(todayStart.getTime() / 1000), Math.floor(todayEnd.getTime() / 1000)),
+    queryKey: ['todaySchedule', todayStartSeconds, todayEndSeconds],
+    queryFn: () => fetchSchedule(1, todayStartSeconds, todayEndSeconds),
   });
 
   if (seasonalLoading || popularLoading || recentLoading || upcomingLoading || scheduleLoading) {
@@ -120,7 +125,10 @@ export default function Home() {
             >
               <div className="flex items-center gap-2">
                 <Clock className="w-5 h-5 text-primary" />
-                <h2 className="text-[16px] font-bold group-hover:text-primary transition-colors leading-none">Today's Schedule</h2>
+                <div>
+                  <h2 className="text-[16px] font-bold group-hover:text-primary transition-colors leading-none">Today's Schedule</h2>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Local time: {localTimezone}</p>
+                </div>
               </div>
               <button className="text-muted-foreground group-hover:text-primary transition-colors p-1">
                 {routineExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
@@ -132,7 +140,7 @@ export default function Home() {
                 <div className="text-sm text-center text-muted-foreground py-4">No episodes scheduled for today.</div>
               ) : (
                 scheduleData?.data?.slice(0, routineExpanded ? scheduleData.data.length : 4).map((anime: any) => {
-                  const airingTime = new Date(anime.airingAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  const airingTime = new Date(anime.airingAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
                   return (
                     <Link to={`/anime/${anime.mal_id}`} key={`sched-${anime.mal_id}`} className="flex gap-4 group p-2 rounded-xl hover:bg-secondary border border-transparent hover:border-border transition-all">
                       <div className="flex-shrink-0 w-12 h-16 rounded-md overflow-hidden relative">

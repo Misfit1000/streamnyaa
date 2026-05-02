@@ -2,7 +2,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails } from '../api/jikan';
 import { searchNyaa } from '../api/nyaa';
-import { Download, Tv, HardDrive, ArrowLeft, Loader2 } from 'lucide-react';
+import { Download, Tv, HardDrive, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 
 export default function AnimeDownloads() {
@@ -151,6 +151,18 @@ export default function AnimeDownloads() {
         </div>
       </div>
 
+      <div className="mb-6 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-muted-foreground">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
+          <div>
+            <p className="font-semibold text-yellow-500">Mobile torrent warning</p>
+            <p className="mt-1">
+              Mobile browsers may not stream or download torrents directly. Use Open Magnet with a torrent app, or copy the magnet into a cloud player.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {torrentsLoading ? (
         <div className="py-20 flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
@@ -191,10 +203,10 @@ export default function AnimeDownloads() {
                   <a
                     href={torrent.magnet}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm"
-                    title="Download via Magnet"
+                    title="Open magnet in torrent app"
                   >
                     <Download className="w-4 h-4" />
-                    Magnet
+                    Open Magnet
                   </a>
                   <Link
                     to={`/torrent?magnet=${encodeURIComponent(torrent.magnet)}`}

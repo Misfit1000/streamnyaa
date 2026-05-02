@@ -6,6 +6,9 @@ import { Loader2, Calendar } from 'lucide-react';
 
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0); // 0 = today, 1 = tomorrow, etc.
+  const localTimezone = useMemo(() => {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time';
+  }, []);
   
   const days = useMemo(() => {
     const d = [];
@@ -38,7 +41,10 @@ export default function Schedule() {
     <div className="container mx-auto px-4 md:px-10 py-10">
       <div className="flex items-center gap-3 mb-8">
         <Calendar className="w-8 h-8 text-primary" />
-        <h1 className="text-3xl font-black text-foreground">Airing Schedule</h1>
+        <div>
+          <h1 className="text-3xl font-black text-foreground">Airing Schedule</h1>
+          <p className="text-sm text-muted-foreground mt-1">Times shown in your local timezone: {localTimezone}</p>
+        </div>
       </div>
 
       <div className="flex overflow-x-auto pb-4 mb-8 gap-2 scrollbar-hide">
@@ -70,13 +76,13 @@ export default function Schedule() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
           {data?.data.map((schedule: any) => {
             const date = new Date(schedule.airingAt * 1000);
-            const timeString = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+            const timeString = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
             
             return (
               <div key={schedule.scheduleId} className="relative flex flex-col group">
                 <AnimeCard anime={schedule} />
                 <div className="absolute top-2 left-2 z-10 bg-black/80 backdrop-blur-md text-white text-xs font-bold px-2 py-1 rounded-md border border-white/10 shadow-lg group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                  {timeString} • Ep {schedule.airingEpisode}
+                  {timeString} - Ep {schedule.airingEpisode}
                 </div>
               </div>
             );

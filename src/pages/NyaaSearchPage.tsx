@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { searchNyaa } from '../api/nyaa';
-import { Search, Loader2, Download, Tv, HardDrive } from 'lucide-react';
+import { Search, Loader2, Download, Tv, HardDrive, AlertTriangle } from 'lucide-react';
 
 export default function NyaaSearchPage() {
   const navigate = useNavigate();
@@ -30,7 +30,7 @@ export default function NyaaSearchPage() {
             Anime Torrents Search
         </h1>
         <p className="text-muted-foreground mb-8 text-center max-w-xl">
-          Search, download, and stream anime directly from Nyaa's massive index using WebTorrent magic.
+          Search public anime torrent metadata, open magnet links in your preferred client, or try browser-compatible streaming providers.
         </p>
 
         <form onSubmit={handleSearch} className="w-full max-w-3xl flex flex-col md:flex-row gap-4 mb-6">
@@ -86,6 +86,18 @@ export default function NyaaSearchPage() {
         </div>
       </div>
 
+      <div className="mx-auto mb-6 max-w-5xl rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-muted-foreground">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
+          <div>
+            <p className="font-semibold text-yellow-500">Mobile torrent warning</p>
+            <p className="mt-1">
+              Mobile browsers may not stream or download torrents directly. Use Open Magnet with a torrent app, or copy the magnet into a cloud player.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="w-10 h-10 text-primary animate-spin" />
@@ -121,10 +133,10 @@ export default function NyaaSearchPage() {
                   <a
                     href={torrent.magnet}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm"
-                    title="Download Magnet to Client"
+                    title="Open magnet in torrent app"
                   >
                     <Download className="w-4 h-4" />
-                    Magnet
+                    Open Magnet
                   </a>
                   <button
                     onClick={() => navigate(`/torrent?magnet=${encodeURIComponent(torrent.magnet)}`)}

@@ -407,6 +407,18 @@ export default function Watch() {
               </div>
             </div>
             
+            <div className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-muted-foreground">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
+                <div>
+                  <p className="font-semibold text-yellow-500">Mobile torrent warning</p>
+                  <p className="mt-1">
+                    Mobile browsers may not open torrent streams directly. Use Copy Magnet, Open in App, or a cloud player if playback does not start.
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {torrentsLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -450,7 +462,7 @@ export default function Watch() {
                           title="Copy Magnet Link"
                         >
                           <LinkIcon className="w-4 h-4" />
-                          <span className="hidden sm:inline">Copy URI</span>
+                          <span className="hidden sm:inline">Copy Magnet</span>
                         </button>
                         <a 
                           href={torrent.magnet}
@@ -458,7 +470,7 @@ export default function Watch() {
                           title="Open Torrent directly or use Magnet Client to Download"
                         >
                           <Download className="w-4 h-4" />
-                          <span className="hidden sm:inline">Local P2P</span>
+                          <span className="hidden sm:inline">Open in App</span>
                         </a>
                         <button 
                           onClick={() => handlePlayTorrent(torrent.magnet)}
