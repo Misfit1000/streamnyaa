@@ -6,6 +6,7 @@ import { ChevronRight, PlayCircle, TrendingUp, Calendar, Zap, Star, ChevronDown,
 import { Link } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { useMemo, useState } from 'react';
+import { animePath } from '../lib/slug';
 
 export default function Home() {
   const { myList } = useStore();
@@ -142,7 +143,7 @@ export default function Home() {
                 scheduleData?.data?.slice(0, routineExpanded ? scheduleData.data.length : 4).map((anime: any) => {
                   const airingTime = new Date(anime.airingAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
                   return (
-                    <Link to={`/anime/${anime.mal_id}`} key={`sched-${anime.mal_id}`} className="flex gap-4 group p-2 rounded-xl hover:bg-secondary border border-transparent hover:border-border transition-all">
+                    <Link to={animePath(anime)} key={`sched-${anime.mal_id}`} className="flex gap-4 group p-2 rounded-xl hover:bg-secondary border border-transparent hover:border-border transition-all">
                       <div className="flex-shrink-0 w-12 h-16 rounded-md overflow-hidden relative">
                         <img 
                           src={anime.images.webp?.large_image_url || anime.images.jpg.large_image_url || anime.images.jpg.image_url} 
@@ -185,7 +186,7 @@ export default function Home() {
               
               <div className="flex flex-wrap gap-2.5">
                 {myList.slice(0, 7).map((anime) => (
-                  <Link to={`/anime/${anime.mal_id}`} key={`mylist-${anime.mal_id}`} title={anime.title}>
+                  <Link to={animePath(anime)} key={`mylist-${anime.mal_id}`} title={anime.title}>
                     <img src={anime.images?.jpg?.image_url} className="w-9 h-9 rounded-full object-cover border-2 border-transparent hover:border-primary transition-colors bg-secondary" alt={anime.title} />
                   </Link>
                 ))}

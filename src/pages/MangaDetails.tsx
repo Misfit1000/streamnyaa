@@ -5,6 +5,8 @@ import { fetchMangaDetails } from '../api/jikan';
 import { Heart, Star, Calendar, BookOpen, ChevronLeft, ChevronRight, Hash } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { motion } from 'motion/react';
+import { animePath, mangaPath } from '../lib/slug';
+import Seo from '../components/Seo';
 
 export default function MangaDetails() {
   const { id } = useParams<{ id: string }>();
@@ -63,6 +65,11 @@ export default function MangaDetails() {
 
   return (
     <div className="relative min-h-screen pb-20">
+      <Seo
+        title={`${manga.title} Manga Details | StreamNyaa`}
+        description={`Read ${manga.title} manga details, chapters, genres, related media, and discovery information on StreamNyaa.`}
+        canonicalPath={mangaPath(manga)}
+      />
       <div className="absolute top-0 left-0 w-full h-[500px] z-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/80 to-background z-10" />
         <img 
@@ -185,7 +192,7 @@ export default function MangaDetails() {
                       r.entry.map((entry: any) => (
                         <Link 
                           key={`${r.relation}-${entry.mal_id}`} 
-                          to={`/${entry.type === 'MANGA' ? 'manga' : 'anime'}/${entry.mal_id}`}
+                          to={entry.type === 'MANGA' ? mangaPath(entry) : animePath(entry)}
                           className="flex-none w-[140px] sm:w-[160px] md:w-[180px] group snap-start"
                         >
                           <div className="aspect-[2/3] rounded-xl overflow-hidden mb-3 relative bg-secondary border border-[var(--glass-border)]">

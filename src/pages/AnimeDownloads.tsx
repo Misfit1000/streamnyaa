@@ -4,6 +4,8 @@ import { fetchAnimeDetails } from '../api/jikan';
 import { searchNyaa } from '../api/nyaa';
 import { Download, Tv, HardDrive, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
+import { animePath } from '../lib/slug';
+import Seo from '../components/Seo';
 
 export default function AnimeDownloads() {
   const { id } = useParams<{ id: string }>();
@@ -104,7 +106,12 @@ export default function AnimeDownloads() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
-      <Link to={`/anime/${id}`} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6 w-fit">
+      <Seo
+        title={`${anime.title} Episode Downloads and Torrent Search | StreamNyaa`}
+        description={`Find ${anime.title} episode search results, torrent metadata, file sizes, seeders, and download options on StreamNyaa.`}
+        canonicalPath={animePath(anime, '/downloads')}
+      />
+      <Link to={data?.data ? animePath(data.data) : `/anime/${id}`} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6 w-fit">
         <ArrowLeft className="w-5 h-5" />
         Back to Anime Details
       </Link>

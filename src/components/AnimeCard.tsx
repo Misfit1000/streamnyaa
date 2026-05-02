@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Play, Plus, Check, Heart } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { animePath } from '../lib/slug';
 
 interface AnimeCardProps {
   anime: any;
@@ -28,7 +29,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   };
 
   return (
-    <Link to={`/anime/${anime.mal_id}`} className="group relative block w-full">
+    <Link to={animePath(anime)} className="group relative block w-full">
       <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-secondary border border-[var(--glass-border)]">
         <img
           src={anime.images.jpg.large_image_url || anime.images.jpg.image_url}

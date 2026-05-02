@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { Download, Plus, Check, Heart, Star, Calendar, Clock, Tv, Play, Monitor, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { animePath, mangaPath, watchPath } from '../lib/slug';
+import Seo from '../components/Seo';
 
 export default function AnimeDetails() {
   const { id } = useParams<{ id: string }>();
@@ -64,6 +66,11 @@ export default function AnimeDetails() {
 
   return (
     <div className="pb-20">
+      <Seo
+        title={`${anime.title} Anime Details, Episodes and Streaming Info | StreamNyaa`}
+        description={`View ${anime.title} anime details, episode list, schedule, streaming information, and download options on StreamNyaa.`}
+        canonicalPath={animePath(anime)}
+      />
       {/* Hero Section */}
       <div className="relative h-[50vh] md:h-[60vh] w-full overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-transparent z-10" />
@@ -118,14 +125,14 @@ export default function AnimeDetails() {
 
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 mb-8">
             <Link
-              to={`/watch/${anime.mal_id}`}
+              to={watchPath(anime)}
               className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
             >
               <Play className="w-5 h-5 fill-current" />
               Watch
             </Link>
             <Link
-              to={`/anime/${anime.mal_id}/downloads`}
+              to={animePath(anime, '/downloads')}
               className="flex items-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
             >
               <Download className="w-5 h-5" />
@@ -187,7 +194,7 @@ export default function AnimeDetails() {
                       r.entry.map((entry: any) => (
                         <Link 
                           key={`${r.relation}-${entry.mal_id}`} 
-                          to={`/${entry.type === 'MANGA' ? 'manga' : 'anime'}/${entry.mal_id}`}
+                          to={entry.type === 'MANGA' ? mangaPath(entry) : animePath(entry)}
                           className="flex-none w-[140px] sm:w-[160px] md:w-[180px] group snap-start"
                         >
                           <div className="aspect-[2/3] rounded-xl overflow-hidden mb-3 relative bg-secondary border border-[var(--glass-border)]">
@@ -229,7 +236,7 @@ export default function AnimeDetails() {
                     {anime.recommendations.map((entry: any) => (
                       <Link 
                         key={`rec-${entry.mal_id}`} 
-                        to={`/${entry.type === 'MANGA' ? 'manga' : 'anime'}/${entry.mal_id}`}
+                        to={entry.type === 'MANGA' ? mangaPath(entry) : animePath(entry)}
                         className="flex-none w-[140px] sm:w-[160px] md:w-[180px] group snap-start"
                       >
                         <div className="aspect-[2/3] rounded-xl overflow-hidden mb-3 relative bg-secondary border border-[var(--glass-border)]">
@@ -334,28 +341,28 @@ export default function AnimeDetails() {
                           
                           <div className="flex flex-wrap items-center gap-2 shrink-0">
                             <Link 
-                              to={`/watch/${anime.mal_id}?ep=${epNum}&type=sub`}
+                              to={`${watchPath(anime)}?ep=${epNum}&type=sub`}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-sm font-semibold transition-colors shrink-0"
                             >
                               <Play className="w-3.5 h-3.5 fill-current" />
                               Watch Sub
                             </Link>
                             <Link 
-                              to={`/watch/${anime.mal_id}?ep=${epNum}&type=dub`}
+                              to={`${watchPath(anime)}?ep=${epNum}&type=dub`}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground rounded-lg text-sm font-semibold transition-colors shrink-0"
                             >
                               <Monitor className="w-3.5 h-3.5" />
                               Watch Dub
                             </Link>
                             <Link 
-                              to={`/anime/${anime.mal_id}/downloads?ep=${epNum}&type=sub`}
+                              to={`${animePath(anime, '/downloads')}?ep=${epNum}&type=sub`}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground rounded-lg text-sm font-semibold transition-colors shrink-0"
                             >
                               <Download className="w-3.5 h-3.5" />
                               DL Sub
                             </Link>
                             <Link 
-                              to={`/anime/${anime.mal_id}/downloads?ep=${epNum}&type=dub`}
+                              to={`${animePath(anime, '/downloads')}?ep=${epNum}&type=dub`}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground rounded-lg text-sm font-semibold transition-colors shrink-0"
                             >
                               <Download className="w-3.5 h-3.5" />

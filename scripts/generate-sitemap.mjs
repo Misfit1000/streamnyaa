@@ -32,7 +32,7 @@ const mangaCollections = [
 const mediaQuery = 'query SitemapMedia($page: Int!, $type: MediaType!, $sort: [MediaSort]!) {' +
   ' Page(page: $page, perPage: 50) {' +
   ' media(type: $type, sort: $sort, isAdult: false) {' +
-  ' id idMal updatedAt' +
+  ' id idMal updatedAt title { romaji english native }' +
   ' }' +
   ' }' +
   '}';
@@ -77,7 +77,7 @@ async function fetchAniListMedia(type, collections) {
         for (const media of json.data?.Page?.media || []) {
           const id = media.idMal || media.id;
           if (!id || items.has(id)) continue;
-          items.set(id, { id, lastmod: normalizeDate(media.updatedAt) });
+          items.set(id, { id, title: media.title?.english || media.title?.romaji || media.title?.native || String(id), lastmod: normalizeDate(media.updatedAt) });
         }
       } catch (error) {
         console.warn('Sitemap warning: failed to fetch ' + type + ' ' + collection.sort + ' page ' + page + ': ' + error.message);
@@ -86,6 +86,21 @@ async function fetchAniListMedia(type, collections) {
   }
 
   return [...items.values()];
+}
+
+function slugifyTitle(title) {
+  return String(title || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'anime';
+}
+
+function mediaSlug(item) {
+  return item.id + '-' + slugifyTitle(item.title);
 }
 
 function addUrl(urls, path, changefreq, priority, lastmod = TODAY) {
@@ -104,13 +119,13 @@ export async function buildSitemap() {
   ]);
 
   for (const item of anime) {
-    addUrl(urls, '/anime/' + item.id, 'weekly', '0.8', item.lastmod);
-    addUrl(urls, '/anime/' + item.id + '/downloads', 'weekly', '0.6', item.lastmod);
-    addUrl(urls, '/watch/' + item.id, 'weekly', '0.6', item.lastmod);
+    addUrl(urls, '/anime/' + mediaSlug(item), 'weekly', '0.8', item.lastmod);
+    addUrl(urls, '/anime/' + mediaSlug(item) + '/downloads', 'weekly', '0.6', item.lastmod);
+    addUrl(urls, '/watch/' + mediaSlug(item), 'weekly', '0.6', item.lastmod);
   }
 
   for (const item of manga) {
-    addUrl(urls, '/manga/' + item.id, 'weekly', '0.7', item.lastmod);
+    addUrl(urls, '/manga/' + mediaSlug(item), 'weekly', '0.7', item.lastmod);
   }
 
   const seen = new Set();

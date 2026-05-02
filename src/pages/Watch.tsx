@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { searchNyaa, NyaaItem } from '../api/nyaa';
 import { Play, Settings, Maximize, Download, MessageSquare, List, HardDrive, Users, CloudRain, ShieldAlert, Loader2, Link as LinkIcon, RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react';
+import { animePath, watchPath } from '../lib/slug';
+import Seo from '../components/Seo';
 
 declare global {
   interface Window {
@@ -262,6 +264,11 @@ export default function Watch() {
 
   return (
     <div className="container mx-auto px-4 py-6">
+      <Seo
+        title={`Watch ${anime.title} Episode ${currentEp} | StreamNyaa`}
+        description={`Watch ${anime.title} episode ${currentEp}, view torrent metadata, streaming options, and anime episode information on StreamNyaa.`}
+        canonicalPath={watchPath(anime)}
+      />
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Main Content */}
         <div className="flex-1">
@@ -269,7 +276,7 @@ export default function Watch() {
           <div className="text-sm text-muted-foreground mb-4 flex items-center gap-2">
             <Link to="/" className="hover:text-primary">Home</Link>
             <span>/</span>
-            <Link to={`/anime/${id}`} className="hover:text-primary line-clamp-1">{anime?.title}</Link>
+            <Link to={anime ? animePath(anime) : `/anime/${id}`} className="hover:text-primary line-clamp-1">{anime?.title}</Link>
             <span>/</span>
             <span className="text-foreground">Episode {currentEp}</span>
           </div>

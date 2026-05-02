@@ -1,4 +1,5 @@
 import { useStore } from '../store/useStore';
+import { extractNumericId } from '../lib/slug';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 
@@ -309,7 +310,7 @@ export const fetchAnimeDetails = async (id: string) => {
   let res = await fetch(ANILIST_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables: { id: parseInt(id) } })
+    body: JSON.stringify({ query, variables: { id: parseInt(extractNumericId(id)) } })
   });
   
   let data = await res.json();
@@ -319,7 +320,7 @@ export const fetchAnimeDetails = async (id: string) => {
     res = await fetch(ANILIST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: fallbackQuery, variables: { id: parseInt(id) } })
+      body: JSON.stringify({ query: fallbackQuery, variables: { id: parseInt(extractNumericId(id)) } })
     });
     data = await res.json();
   }
@@ -369,7 +370,7 @@ export const fetchMangaDetails = async (id: string) => {
   let res = await fetch(ANILIST_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables: { id: parseInt(id) } })
+    body: JSON.stringify({ query, variables: { id: parseInt(extractNumericId(id)) } })
   });
   
   let data = await res.json();
@@ -379,7 +380,7 @@ export const fetchMangaDetails = async (id: string) => {
     res = await fetch(ANILIST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: fallbackQuery, variables: { id: parseInt(id) } })
+      body: JSON.stringify({ query: fallbackQuery, variables: { id: parseInt(extractNumericId(id)) } })
     });
     data = await res.json();
   }
@@ -403,7 +404,7 @@ export const fetchMangaDetails = async (id: string) => {
 
 export const fetchAnimeEpisodes = async (id: string, page: number = 1) => {
   try {
-    const res = await fetch(`https://api.jikan.moe/v4/anime/${id}/episodes?page=${page}`);
+    const res = await fetch(`https://api.jikan.moe/v4/anime/${extractNumericId(id)}/episodes?page=${page}`);
     const json = await res.json();
     return json;
   } catch (error) {
