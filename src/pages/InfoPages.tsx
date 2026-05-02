@@ -76,7 +76,7 @@ export function About() {
 
         <InfoBlock title="Editorial and Policy Standards">
           <p>
-            StreamNyaa is designed as a discovery and indexing tool. The site includes a privacy policy, terms of use, contact page, and disclaimer so visitors, search engines, and advertising reviewers can understand how the site operates.
+            StreamNyaa is designed as a discovery and indexing tool. The site includes a privacy policy, terms of use, and disclaimer so visitors, search engines, and advertising reviewers can understand how the site operates.
           </p>
         </InfoBlock>
       </PageShell>
@@ -201,12 +201,6 @@ export function Disclaimer() {
         <InfoBlock title="External Links">
           <p>
             External links may lead to websites or services that StreamNyaa does not control. Users should follow local laws, platform terms, and rights-holder requirements when using external resources.
-          </p>
-        </InfoBlock>
-
-        <InfoBlock title="Removal Requests">
-          <p>
-            For copyright or policy concerns, contact <a href="mailto:support@streamnyaa.xyz" className="text-primary hover:underline">support@streamnyaa.xyz</a> with the affected URL and supporting details.
           </p>
         </InfoBlock>
       </PageShell>
