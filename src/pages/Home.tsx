@@ -54,6 +54,7 @@ export default function Home() {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
     name: 'StreamNyaa',
+    alternateName: ['Stream Nyaa', 'StreamNyaa Anime'],
     url: 'https://www.streamnyaa.xyz/',
     description: 'Anime discovery, release schedules, episode updates, seasonal anime browsing, and anime metadata search.',
     potentialAction: {
