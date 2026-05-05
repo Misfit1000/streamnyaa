@@ -1,7 +1,9 @@
 const ANILIST_URL = 'https://graphql.anilist.co';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 7;
+const FALLBACK_CACHE_TTL_MS = 1000 * 60 * 15;
 const STALE_TTL_MS = 1000 * 60 * 60 * 24;
+const FALLBACK_STALE_TTL_MS = 1000 * 60 * 60;
 const EDGE_CACHE_HEADER = 'public, s-maxage=25200, stale-while-revalidate=86400';
 
 const memoryCache = new Map<string, { expiresAt: number; staleAt: number; data: BlogPostData }>();
@@ -209,6 +211,14 @@ async function aniListRequest(query: string, variables: Record<string, unknown>)
   const json = await response.json();
   if (json.errors) throw new Error('Anime data returned an error');
   return json.data;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldRetryGemini(status: number) {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
 async function fetchMediaList(sort: string, status: string = 'RELEASING') {
@@ -425,39 +435,52 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
   if (!items.length) return { article: fallback, source: 'fallback' as const, status: 'no_anime_items' };
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': key,
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: buildGeminiPrompt(definition, items) }] }],
-        generationConfig: {
-          temperature: 0.65,
-          topP: 0.9,
-          maxOutputTokens: 2200,
-        },
-      }),
-    });
+    let lastStatus = 0;
+    let lastErrorText = '';
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Gemini article request failed', response.status, errorText.slice(0, 500));
-      return { article: fallback, source: 'fallback' as const, status: 'gemini_request_failed_' + response.status };
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) await sleep(700 * attempt);
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': key,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: buildGeminiPrompt(definition, items) }] }],
+          generationConfig: {
+            temperature: 0.65,
+            topP: 0.9,
+            maxOutputTokens: 2200,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        lastStatus = response.status;
+        lastErrorText = await response.text();
+        if (attempt < 2 && shouldRetryGemini(response.status)) continue;
+        console.error('Gemini article request failed', response.status, lastErrorText.slice(0, 500));
+        return { article: fallback, source: 'fallback' as const, status: 'gemini_request_failed_' + response.status };
+      }
+
+      const json = await response.json();
+      const geminiText = extractGeminiText(json);
+      const rawArticle = parseGeminiJson(geminiText);
+      if (!rawArticle) {
+        console.error('Gemini JSON parse failed', JSON.stringify({
+          finishReason: json?.candidates?.[0]?.finishReason,
+          partKeys: json?.candidates?.[0]?.content?.parts?.map((part: any) => Object.keys(part)),
+          textSample: geminiText.slice(0, 500),
+        }));
+        return { article: fallback, source: 'fallback' as const, status: 'gemini_json_parse_failed' };
+      }
+
+      return { article: sanitizeArticle(rawArticle, fallback), source: 'gemini' as const, status: 'ok' };
     }
-    const json = await response.json();
-    const geminiText = extractGeminiText(json);
-    const rawArticle = parseGeminiJson(geminiText);
-    if (!rawArticle) {
-      console.error('Gemini JSON parse failed', JSON.stringify({
-        finishReason: json?.candidates?.[0]?.finishReason,
-        partKeys: json?.candidates?.[0]?.content?.parts?.map((part: any) => Object.keys(part)),
-        textSample: geminiText.slice(0, 500),
-      }));
-      return { article: fallback, source: 'fallback' as const, status: 'gemini_json_parse_failed' };
-    }
-    return { article: sanitizeArticle(rawArticle, fallback), source: 'gemini' as const, status: 'ok' };
+
+    return { article: fallback, source: 'fallback' as const, status: 'gemini_request_failed_' + lastStatus };
   } catch (error) {
     console.error(error);
     return { article: fallback, source: 'fallback' as const, status: 'gemini_exception' };
@@ -487,7 +510,12 @@ export async function getCachedBlogPost(slug: string) {
 
   try {
     const data = await buildBlogPost(slug);
-    memoryCache.set(slug, { data, expiresAt: now + CACHE_TTL_MS, staleAt: now + STALE_TTL_MS });
+    const isGeminiArticle = data.articleSource === 'gemini';
+    memoryCache.set(slug, {
+      data,
+      expiresAt: now + (isGeminiArticle ? CACHE_TTL_MS : FALLBACK_CACHE_TTL_MS),
+      staleAt: now + (isGeminiArticle ? STALE_TTL_MS : FALLBACK_STALE_TTL_MS),
+    });
     return data;
   } catch (error) {
     if (cached && cached.staleAt > now) return cached.data;
