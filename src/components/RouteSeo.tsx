@@ -28,7 +28,7 @@ const routeMeta: Record<string, { title: string; description: string }> = {
   },
   '/blog': {
     title: 'Anime Blog - Trending Anime, Schedules and Episode Updates | StreamNyaa',
-    description: 'Read auto-updated anime blog posts about trending anime, popular airing shows, upcoming anime, daily release schedules, and recent episode updates.',
+    description: 'Read useful anime blog articles about trending anime, popular airing shows, upcoming anime, daily release schedules, and recent episode updates.',
   },
   '/about': {
     title: 'About StreamNyaa',

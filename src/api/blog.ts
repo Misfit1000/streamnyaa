@@ -1,17 +1,87 @@
 const ANILIST_URL = 'https://graphql.anilist.co';
 
 export const BLOG_POSTS = [
-  { slug: 'trending-anime-this-week', title: 'Trending Anime This Week', seoTitle: 'Trending Anime This Week - Current Top Airing Shows | StreamNyaa', category: 'Trending', description: 'Find trending anime this week with current top airing shows, genres, scores, episode context, and StreamNyaa anime discovery links.', summary: 'A live snapshot of anime titles with strong current momentum.', intro: 'This auto-updated guide highlights anime with strong current momentum. It uses AniList trend data so the list can shift as seasonal shows, new episodes, and fan activity change.' },
-  { slug: 'popular-anime-right-now', title: 'Popular Anime Right Now', seoTitle: 'Popular Anime Right Now - Most Watched Airing Shows | StreamNyaa', category: 'Popular', description: 'Browse popular anime right now with current airing titles, popularity data, genres, scores, anime details, and StreamNyaa discovery links.', summary: 'A current popularity list for widely watched anime titles.', intro: 'Popularity rankings are useful when you want familiar, high-traffic anime with large viewer interest. This page refreshes from AniList data and links into StreamNyaa detail pages.' },
-  { slug: 'upcoming-anime-this-season', title: 'Upcoming Anime This Season', seoTitle: 'Upcoming Anime This Season - New Anime Release Guide | StreamNyaa', category: 'Upcoming', description: 'Find upcoming anime this season with new release context, genres, anime metadata, seasonal discovery, and StreamNyaa title links.', summary: 'Upcoming anime picks sourced from current seasonal metadata.', intro: 'Use this page to spot upcoming anime before they begin airing. The list is generated from AniList upcoming title data and designed for quick seasonal browsing.' },
-  { slug: 'todays-anime-release-schedule', title: "Today's Anime Release Schedule", seoTitle: "Today's Anime Release Schedule - New Episodes Airing Today | StreamNyaa", category: 'Schedule', description: 'See today\'s anime release schedule with new episodes airing today, episode numbers, release timing, and StreamNyaa anime detail links.', summary: 'A daily anime schedule article generated from airing data.', intro: 'This schedule article is built from current AniList airing schedule data. It focuses on shows with episodes expected today, making it easier to follow daily anime updates.' },
-  { slug: 'recent-anime-episode-updates', title: 'Recent Anime Episode Updates', seoTitle: 'Recent Anime Episode Updates - Latest Airing Anime | StreamNyaa', category: 'Episodes', description: 'Track recent anime episode updates with latest airing anime, episode numbers, current schedule data, anime metadata, and StreamNyaa links.', summary: 'Recently aired anime episode updates for active viewers.', intro: 'Recent episode activity helps you find shows that just aired or updated. This article uses AniList airing data and links into StreamNyaa pages for fast follow-up.' },
+  {
+    slug: 'trending-anime-this-week',
+    title: 'Trending Anime This Week',
+    seoTitle: 'Trending Anime This Week - Current Top Airing Shows | StreamNyaa',
+    category: 'Trending',
+    description: 'Find trending anime this week with current top airing shows, scores, genres, episode context, and StreamNyaa anime pages.',
+    summary: 'A useful weekly article for finding anime with the strongest current momentum.',
+    intro: 'These are the anime titles getting the most attention right now. Use this guide when you want something active, talked about, and easy to follow from the current season.',
+    angle: 'current momentum',
+    readerPromise: 'Use this article to quickly compare the shows that are moving fastest this week, then jump into the StreamNyaa title page for more details.',
+  },
+  {
+    slug: 'popular-anime-right-now',
+    title: 'Popular Anime Right Now',
+    seoTitle: 'Popular Anime Right Now - Most Watched Airing Shows | StreamNyaa',
+    category: 'Popular',
+    description: 'Browse popular anime right now with current airing titles, popularity signals, scores, genres, and StreamNyaa discovery links.',
+    summary: 'A practical article for finding anime with large current viewer interest.',
+    intro: 'Popular anime lists are useful when you want familiar titles with strong audience activity. This article focuses on widely watched anime that are currently relevant.',
+    angle: 'viewer interest',
+    readerPromise: 'Use this article to find safe picks with broad appeal, then compare scores, genres, episodes, and title pages before choosing what to watch.',
+  },
+  {
+    slug: 'upcoming-anime-this-season',
+    title: 'Upcoming Anime This Season',
+    seoTitle: 'Upcoming Anime This Season - New Anime Release Guide | StreamNyaa',
+    category: 'Upcoming',
+    description: 'Find upcoming anime this season with new release context, genres, expected formats, metadata, and StreamNyaa title links.',
+    summary: 'A forward-looking article for spotting anime before they start airing.',
+    intro: 'Upcoming anime are worth tracking early, especially when sequels, studio projects, and high-interest adaptations are close to release. This guide keeps the next wave easy to scan.',
+    angle: 'season preview',
+    readerPromise: 'Use this article to build a watchlist before the season gets crowded, with quick context for each title and direct StreamNyaa discovery links.',
+  },
+  {
+    slug: 'todays-anime-release-schedule',
+    title: "Today's Anime Release Schedule",
+    seoTitle: "Today's Anime Release Schedule - New Episodes Airing Today | StreamNyaa",
+    category: 'Schedule',
+    description: 'See today\'s anime release schedule with new episodes airing today, episode numbers, timing, genres, and StreamNyaa anime detail links.',
+    summary: 'A daily article for checking which anime episodes are expected today.',
+    intro: 'This daily schedule helps you see what is airing today without digging through multiple pages. It is best for quickly spotting new episodes and choosing what to follow next.',
+    angle: 'daily releases',
+    readerPromise: 'Use this article as a simple daily checklist for new anime episodes, release times, episode numbers, and follow-up title pages.',
+  },
+  {
+    slug: 'recent-anime-episode-updates',
+    title: 'Recent Anime Episode Updates',
+    seoTitle: 'Recent Anime Episode Updates - Latest Airing Anime | StreamNyaa',
+    category: 'Episodes',
+    description: 'Track recent anime episode updates with latest airing anime, episode numbers, scores, genres, schedule data, and StreamNyaa links.',
+    summary: 'A recent-update article for finding anime that just aired or moved forward.',
+    intro: 'Recent episode updates are the fastest way to catch active shows after they air. This guide highlights fresh activity so you can decide what to continue, start, or revisit.',
+    angle: 'fresh episode activity',
+    readerPromise: 'Use this article to catch up on newly updated anime and open the StreamNyaa title pages for more context.',
+  },
 ] as const;
 export type BlogSlug = typeof BLOG_POSTS[number]['slug'];
 export type BlogPostDefinition = typeof BLOG_POSTS[number];
-export interface BlogMediaItem { id: number; mal_id: number; title: string; description: string; image: string; genres: string[]; format?: string; status?: string; score?: number; episodes?: number; episode?: number; airingAt?: number; }
-export interface BlogPostData extends BlogPostDefinition { updatedAt: string; items: BlogMediaItem[]; }
-const MEDIA_FIELDS = 'id idMal title { romaji english native } description format status episodes genres averageScore coverImage { extraLarge large }';
+export interface BlogMediaItem {
+  id: number;
+  mal_id: number;
+  title: string;
+  description: string;
+  image: string;
+  genres: string[];
+  studios: string[];
+  format?: string;
+  status?: string;
+  score?: number;
+  episodes?: number;
+  episode?: number;
+  airingAt?: number;
+  nextEpisode?: number;
+  nextAiringAt?: number;
+  season?: string;
+  seasonYear?: number;
+  popularity?: number;
+  trending?: number;
+}
+export type BlogPostData = BlogPostDefinition & { updatedAt: string; items: BlogMediaItem[]; };
+const MEDIA_FIELDS = 'id idMal title { romaji english native } description format status episodes genres averageScore popularity trending season seasonYear coverImage { extraLarge large } studios(isMain: true) { nodes { name } } nextAiringEpisode { episode airingAt }';
 function cleanText(value = '') { return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim(); }
 function mediaTitle(media: any) { return media.title?.english || media.title?.romaji || media.title?.native || 'Untitled Anime'; }
 function mapMedia(media: any, extra: Partial<BlogMediaItem> = {}): BlogMediaItem | null {
@@ -19,7 +89,26 @@ function mapMedia(media: any, extra: Partial<BlogMediaItem> = {}): BlogMediaItem
   const id = media.idMal || media.id;
   const title = mediaTitle(media);
   if (!id || !title || !image) return null;
-  return { id: media.id, mal_id: id, title, description: cleanText(media.description).slice(0, 220), image, genres: media.genres || [], format: media.format, status: media.status, score: media.averageScore, episodes: media.episodes, ...extra };
+  return {
+    id: media.id,
+    mal_id: id,
+    title,
+    description: cleanText(media.description).slice(0, 360),
+    image,
+    genres: media.genres || [],
+    studios: media.studios?.nodes?.map((studio: any) => studio.name).filter(Boolean).slice(0, 2) || [],
+    format: media.format,
+    status: media.status,
+    score: media.averageScore,
+    episodes: media.episodes,
+    season: media.season,
+    seasonYear: media.seasonYear,
+    popularity: media.popularity,
+    trending: media.trending,
+    nextEpisode: media.nextAiringEpisode?.episode,
+    nextAiringAt: media.nextAiringEpisode?.airingAt,
+    ...extra,
+  };
 }
 function onlyRealItems(items: Array<BlogMediaItem | null>) { return items.filter((item): item is BlogMediaItem => Boolean(item && item.mal_id && item.title && item.image)); }
 async function aniListRequest(query: string, variables: Record<string, unknown>) {
