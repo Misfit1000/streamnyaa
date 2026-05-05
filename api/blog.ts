@@ -391,6 +391,10 @@ function parseGeminiJson(text: string) {
   }
 }
 
+function statusSafe(value: unknown) {
+  return String(value || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'unknown';
+}
+
 function normalizeArray<T>(value: unknown, mapper: (item: any) => T | null, limit: number) {
   if (!Array.isArray(value)) return [];
   return value.map(mapper).filter((item): item is T => Boolean(item)).slice(0, limit);
@@ -470,12 +474,14 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
       const geminiText = extractGeminiText(json);
       const rawArticle = parseGeminiJson(geminiText);
       if (!rawArticle) {
+        const finishReason = json?.candidates?.[0]?.finishReason || 'unknown';
+        const textState = geminiText ? 'non_json_text' : 'empty_text';
         console.error('Gemini JSON parse failed', JSON.stringify({
-          finishReason: json?.candidates?.[0]?.finishReason,
+          finishReason,
           partKeys: json?.candidates?.[0]?.content?.parts?.map((part: any) => Object.keys(part)),
           textSample: geminiText.slice(0, 500),
         }));
-        return { article: fallback, source: 'fallback' as const, status: 'gemini_json_parse_failed' };
+        return { article: fallback, source: 'fallback' as const, status: 'gemini_json_parse_failed_' + statusSafe(finishReason) + '_' + textState };
       }
 
       return { article: sanitizeArticle(rawArticle, fallback), source: 'gemini' as const, status: 'ok' };
@@ -484,7 +490,7 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
     return { article: fallback, source: 'fallback' as const, status: 'gemini_request_failed_' + lastStatus };
   } catch (error) {
     console.error(error);
-    return { article: fallback, source: 'fallback' as const, status: 'gemini_exception' };
+    return { article: fallback, source: 'fallback' as const, status: 'gemini_exception_' + statusSafe(error instanceof Error ? error.message : error) };
   }
 }
 
