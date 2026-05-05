@@ -11,6 +11,8 @@ import MyList from './pages/MyList';
 import TorrentPlayer from './pages/TorrentPlayer';
 import NyaaSearchPage from './pages/NyaaSearchPage';
 import AnimeDownloads from './pages/AnimeDownloads';
+import Blog from './pages/Blog';
+import BlogPost from './pages/BlogPost';
 import { About, Disclaimer, PrivacyPolicy, Terms } from './pages/InfoPages';
 
 const queryClient = new QueryClient({
@@ -38,6 +40,8 @@ export default function App() {
             <Route path="my-list" element={<MyList />} />
             <Route path="torrent" element={<TorrentPlayer />} />
             <Route path="nyaa" element={<NyaaSearchPage />} />
+            <Route path="blog" element={<Blog />} />
+            <Route path="blog/:slug" element={<BlogPost />} />
             <Route path="about" element={<About />} />
             <Route path="privacy-policy" element={<PrivacyPolicy />} />
             <Route path="terms" element={<Terms />} />

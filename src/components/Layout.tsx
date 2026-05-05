@@ -37,6 +37,7 @@ export default function Layout() {
             We do not host or store anime video files, torrent files, or copyrighted media on our servers.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-semibold">
+            <Link to="/blog" className="hover:text-primary transition-colors">Blog</Link>
             <Link to="/about" className="hover:text-primary transition-colors">About</Link>
             <Link to="/privacy-policy" className="hover:text-primary transition-colors">Privacy Policy</Link>
             <Link to="/terms" className="hover:text-primary transition-colors">Terms</Link>

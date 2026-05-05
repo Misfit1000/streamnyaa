@@ -10920,4 +10920,40 @@
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/blog</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/blog/trending-anime-this-week</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/blog/popular-anime-right-now</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/blog/upcoming-anime-this-season</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/blog/todays-anime-release-schedule</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/blog/recent-anime-episode-updates</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>
 </urlset>

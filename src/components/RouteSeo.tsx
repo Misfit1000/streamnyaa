@@ -26,6 +26,10 @@ const routeMeta: Record<string, { title: string; description: string }> = {
     title: 'My Anime List | StreamNyaa',
     description: 'Keep a local browser-based list of anime titles you want to follow.',
   },
+  '/blog': {
+    title: 'Anime Blog and Release Updates | StreamNyaa',
+    description: 'Read auto-updated anime blog posts about trending anime, popular shows, upcoming anime, daily release schedules, and recent episode updates.',
+  },
   '/about': {
     title: 'About StreamNyaa',
     description: 'Learn what StreamNyaa is, how it works, and how it uses public anime metadata and third-party services.',

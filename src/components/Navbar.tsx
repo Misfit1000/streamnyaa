@@ -70,6 +70,7 @@ export default function Navbar() {
             <Link to="/search" className="hover:text-foreground transition-colors">Browse</Link>
             <Link to="/my-list" className="hover:text-foreground transition-colors">My List</Link>
             <Link to="/schedule" className="hover:text-foreground transition-colors">Schedule</Link>
+            <Link to="/blog" className="hover:text-foreground transition-colors">Blog</Link>
             <Link to="/nyaa" className="hover:text-foreground transition-colors text-primary font-bold">Torrents</Link>
             <Link to="/torrent" className="hover:text-foreground transition-colors">Player</Link>
           </div>
@@ -237,6 +238,7 @@ export default function Navbar() {
               <Link to="/search" className="hover:text-primary transition-colors py-2 border-b border-border/50">Browse</Link>
               <Link to="/my-list" className="hover:text-primary transition-colors py-2 border-b border-border/50">My List</Link>
               <Link to="/schedule" className="hover:text-primary transition-colors py-2 border-b border-border/50">Schedule</Link>
+              <Link to="/blog" className="hover:text-primary transition-colors py-2 border-b border-border/50">Blog</Link>
               <Link to="/nyaa" className="hover:text-primary transition-colors py-2 border-b border-border/50 text-primary font-bold">Torrents</Link>
               <Link to="/torrent" className="hover:text-primary transition-colors py-2 border-b border-border/50">Player</Link>
             </div>
