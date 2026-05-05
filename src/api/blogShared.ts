@@ -1,5 +1,16 @@
 export const BLOG_POSTS = [
   {
+    slug: 'anime-trending-news-today',
+    title: 'Anime Trending News Today',
+    seoTitle: 'Anime Trending News Today - Current Anime Buzz | StreamNyaa',
+    category: 'News',
+    description: 'Read one focused anime news article based on current trending anime, real anime headlines, episode activity, and popularity signals.',
+    summary: 'One focused anime news-style article based on current anime buzz.',
+    intro: 'This article follows one current anime topic at a time, using recent anime activity, headline signals, episode movement, and popularity data to explain why a title is getting attention.',
+    angle: 'current anime news',
+    readerPromise: 'Use this article for a quick, factual look at one anime topic that is worth paying attention to right now.',
+  },
+  {
     slug: 'trending-anime-this-week',
     title: 'Trending Anime This Week',
     seoTitle: 'Trending Anime This Week - Current Top Airing Shows | StreamNyaa',
@@ -79,6 +90,24 @@ export interface BlogMediaItem {
   seasonYear?: number;
   popularity?: number;
   trending?: number;
+  news?: BlogNewsItem[];
+}
+
+export interface BlogNewsItem {
+  title: string;
+  url?: string;
+  date?: string;
+  excerpt?: string;
+  image?: string;
+}
+
+export interface BlogTopic {
+  type: string;
+  title: string;
+  animeTitle?: string;
+  summary: string;
+  confidence: 'headline' | 'trend';
+  headlines?: BlogNewsItem[];
 }
 
 export interface BlogArticleFaq {
@@ -114,6 +143,7 @@ export type BlogPostData = BlogPostDefinition & {
   generatedAt?: string;
   articleSource?: 'gemini' | 'fallback';
   articleStatus?: string;
+  topic?: BlogTopic;
   items: BlogMediaItem[];
   article?: BlogArticleContent;
 };

@@ -1,4 +1,5 @@
 const ANILIST_URL = 'https://graphql.anilist.co';
+const JIKAN_URL = 'https://api.jikan.moe/v4';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 7;
 const FALLBACK_CACHE_TTL_MS = 1000 * 60 * 15;
@@ -11,6 +12,17 @@ const memoryCache = new Map<string, { expiresAt: number; staleAt: number; data: 
 const MEDIA_FIELDS = 'id idMal title { romaji english native } description format status episodes genres averageScore popularity trending season seasonYear coverImage { extraLarge large } studios(isMain: true) { nodes { name } } nextAiringEpisode { episode airingAt }';
 
 const BLOG_POSTS = [
+  {
+    slug: 'anime-trending-news-today',
+    title: 'Anime Trending News Today',
+    seoTitle: 'Anime Trending News Today - Current Anime Buzz | StreamNyaa',
+    category: 'News',
+    description: 'Read one focused anime news article based on current trending anime, real anime headlines, episode activity, and popularity signals.',
+    summary: 'One focused anime news-style article based on current anime buzz.',
+    intro: 'This article follows one current anime topic at a time, using recent anime activity, headline signals, episode movement, and popularity data to explain why a title is getting attention.',
+    angle: 'current anime news',
+    readerPromise: 'Use this article for a quick, factual look at one anime topic that is worth paying attention to right now.',
+  },
   {
     slug: 'trending-anime-this-week',
     title: 'Trending Anime This Week',
@@ -90,6 +102,24 @@ interface BlogMediaItem {
   seasonYear?: number;
   popularity?: number;
   trending?: number;
+  news?: BlogNewsItem[];
+}
+
+interface BlogNewsItem {
+  title: string;
+  url?: string;
+  date?: string;
+  excerpt?: string;
+  image?: string;
+}
+
+interface BlogTopic {
+  type: string;
+  title: string;
+  animeTitle?: string;
+  summary: string;
+  confidence: 'headline' | 'trend';
+  headlines?: BlogNewsItem[];
 }
 
 interface BlogArticleFaq {
@@ -125,6 +155,7 @@ type BlogPostData = BlogPostDefinition & {
   generatedAt?: string;
   articleSource?: 'gemini' | 'fallback';
   articleStatus?: string;
+  topic?: BlogTopic;
   items: BlogMediaItem[];
   article?: BlogArticleContent;
 };
@@ -227,6 +258,95 @@ async function fetchMediaList(sort: string, status: string = 'RELEASING') {
   return onlyRealItems((data.Page.media || []).map((media: any) => mapMedia(media)));
 }
 
+function mapNewsItem(item: any): BlogNewsItem | null {
+  const title = cleanText(item?.title || '');
+  if (!title) return null;
+  return {
+    title,
+    url: item?.url,
+    date: item?.date,
+    excerpt: cleanText(item?.excerpt || '').slice(0, 260),
+    image: item?.images?.jpg?.image_url || '',
+  };
+}
+
+async function fetchAnimeNews(malId: number) {
+  try {
+    const response = await fetch(`${JIKAN_URL}/anime/${malId}/news`, {
+      headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa/1.0' },
+    });
+    if (!response.ok) return [];
+    const json = await response.json();
+    return (json.data || []).map(mapNewsItem).filter(Boolean).slice(0, 3) as BlogNewsItem[];
+  } catch {
+    return [];
+  }
+}
+
+function headlineScore(news: BlogNewsItem) {
+  const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
+  let score = 1;
+  if (/delay|delayed|postpone|postponed|hiatus|halt|suspend|production|broadcast/.test(text)) score += 8;
+  if (/episode|viral|record|ranking|tops|trend|buzz|reaction/.test(text)) score += 5;
+  if (/season|sequel|trailer|visual|cast|staff|premiere|release/.test(text)) score += 4;
+  if (/opening|ending|theme|movie|film/.test(text)) score += 2;
+  if (news.date) score += 1;
+  return score;
+}
+
+function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
+  const headlineCandidates = items.flatMap((item) => (item.news || []).map((news) => ({ item, news, score: headlineScore(news) + Math.floor((item.trending || 0) / 1000) })));
+  headlineCandidates.sort((a, b) => b.score - a.score);
+  const bestHeadline = headlineCandidates[0];
+  if (bestHeadline) {
+    const text = `${bestHeadline.news.title} ${bestHeadline.news.excerpt || ''}`.toLowerCase();
+    const type = /delay|delayed|postpone|postponed|hiatus|halt|suspend|production|broadcast/.test(text)
+      ? 'production-or-airing-update'
+      : /episode|viral|record|ranking|tops|trend|buzz|reaction/.test(text)
+        ? 'viral-or-trending-episode'
+        : /season|sequel|trailer|visual|cast|staff|premiere|release/.test(text)
+          ? 'announcement-or-preview'
+          : 'anime-headline';
+
+    return {
+      type,
+      title: bestHeadline.news.title,
+      animeTitle: bestHeadline.item.title,
+      summary: bestHeadline.news.excerpt || `${bestHeadline.item.title} has a current headline worth following.`,
+      confidence: 'headline',
+      headlines: [bestHeadline.news, ...(bestHeadline.item.news || []).filter((news) => news.title !== bestHeadline.news.title).slice(0, 2)],
+    };
+  }
+
+  const sorted = [...items].sort((a, b) => ((b.trending || 0) + (b.popularity || 0) / 100) - ((a.trending || 0) + (a.popularity || 0) / 100));
+  const top = sorted[0];
+  const weakButPopular = sorted.find((item) => (item.popularity || 0) > 150000 && (item.score || 100) < 72);
+  const topicItem = weakButPopular || top;
+  return {
+    type: weakButPopular ? 'popular-anime-underperforming' : 'anime-trend-analysis',
+    title: weakButPopular ? `${topicItem.title} is popular, but its score suggests mixed reception` : `${topicItem.title} is leading current anime buzz`,
+    animeTitle: topicItem.title,
+    summary: weakButPopular
+      ? `${topicItem.title} has strong popularity but a lower score signal, making it a useful topic for why a popular anime may be dividing viewers.`
+      : `${topicItem.title} is currently strong in the trend data, with genre, score, studio, and episode context available for a focused update.`,
+    confidence: 'trend',
+  };
+}
+
+async function fetchTrendingNewsItems(preview = false) {
+  const items = await fetchMediaList('TRENDING_DESC', 'RELEASING');
+  if (preview) return { items, topic: selectNewsTopic(items) };
+
+  const enriched: BlogMediaItem[] = [];
+  for (const item of items.slice(0, 8)) {
+    const news = item.mal_id ? await fetchAnimeNews(item.mal_id) : [];
+    enriched.push({ ...item, news });
+    await sleep(350);
+  }
+
+  return { items: [...enriched, ...items.slice(enriched.length)], topic: selectNewsTopic([...enriched, ...items.slice(enriched.length)]) };
+}
+
 async function fetchTodaysSchedule() {
   const now = new Date();
   const start = new Date(now);
@@ -266,11 +386,43 @@ async function fetchRecentEpisodes() {
     .map((schedule: any) => mapMedia(schedule.media, { episode: schedule.episode, airingAt: schedule.airingAt })));
 }
 
-function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[]): BlogArticleContent {
+function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[], topic?: BlogTopic): BlogArticleContent {
   const top = items[0];
   const genres = uniqueGenres(items);
   const score = averageScore(items);
   const topStudio = top?.studios?.[0];
+  if (topic) {
+    return {
+      seoTitle: `${topic.animeTitle || 'Anime'} News Update | StreamNyaa`.slice(0, 70),
+      metaDescription: topic.summary.slice(0, 155),
+      headline: topic.title,
+      excerpt: topic.summary,
+      heroCallout: topic.summary,
+      paragraphs: [
+        topic.summary,
+        topic.confidence === 'headline'
+          ? `The current topic is tied to a real anime headline for ${topic.animeTitle || 'a trending anime'}, so this update focuses on what is known instead of guessing beyond the available details.`
+          : `The current topic is based on trend, score, popularity, genre, and episode signals. It is a useful snapshot when no stronger verified headline is available.`,
+        `${items.length} current anime titles were checked for context, including trending placement, score, status, studio, genres, and episode timing where available.`,
+        definition.readerPromise,
+      ],
+      sections: [
+        { heading: 'Why this topic matters', body: topic.summary },
+        { heading: 'What to watch next', body: 'Compare the anime title page, genre fit, score signal, and latest episode context before deciding whether this topic is worth following.' },
+      ],
+      takeaways: [
+        { label: 'Topic type', value: topic.type.replace(/-/g, ' '), detail: topic.confidence === 'headline' ? 'Based on a current headline' : 'Based on trend signals' },
+        topic.animeTitle ? { label: 'Main anime', value: topic.animeTitle, detail: 'Primary title in this update' } : null,
+        top?.score ? { label: 'Score signal', value: `${top.score}/100`, detail: 'Useful but not the only quality signal' } : null,
+      ].filter((item): item is BlogArticleTakeaway => Boolean(item)),
+      faq: [
+        { question: 'Is this anime news article based on real information?', answer: topic.confidence === 'headline' ? 'Yes. The main topic is based on a current anime headline and available title data.' : 'It is based on current anime trend and title data, not an unverified headline.' },
+        { question: 'How often does this anime news article update?', answer: 'It refreshes about every 7 hours when the server cache expires.' },
+        { question: 'Does this article invent production issues or viral claims?', answer: 'No. Production issues, delays, and similar claims are only used when a current headline supports them.' },
+      ],
+    };
+  }
+
   const paragraphs = top ? [
     `${definition.intro} The current lead title is ${top.title}${topStudio ? ` from ${topStudio}` : ''}, which gives this article a clear starting point for ${definition.angle}.`,
     `${items.length} titles are included with practical details like score, format, status, episode count, genres, and direct StreamNyaa pages.${score ? ` The average score across scored titles is about ${score}/100.` : ''}`,
@@ -308,7 +460,7 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[])
   };
 }
 
-function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[]) {
+function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[], topic?: BlogTopic) {
   const facts = items.slice(0, 10).map((item, index) => ({
     rank: index + 1,
     title: item.title,
@@ -325,6 +477,7 @@ function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[
     popularity: item.popularity,
     trending: item.trending,
     description: item.description,
+    newsHeadlines: item.news?.slice(0, 3).map((news) => ({ title: news.title, date: news.date, excerpt: news.excerpt })),
   }));
 
   return `Write a factual, human-sounding anime blog article for StreamNyaa.
@@ -336,6 +489,7 @@ ${JSON.stringify({
     description: definition.description,
     articleAngle: definition.angle,
     readerGoal: definition.readerPromise,
+    selectedTopic: topic || null,
   }, null, 2)}
 
 Current anime facts you may use:
@@ -343,6 +497,9 @@ ${JSON.stringify(facts, null, 2)}
 
 Rules:
 - Use only the facts above. Do not invent announcements, staff, release dates, platform availability, awards, trailers, rumors, or production details.
+- If selectedTopic.confidence is "headline", write one focused news article about that selected topic.
+- If selectedTopic.confidence is "trend", write one trend-analysis article and do not present it as confirmed news.
+- Only mention delays, halted airing, production issues, viral episodes, trailers, sequels, or announcements when the selected topic or newsHeadlines explicitly support that claim.
 - Do not mention APIs, AI, automation, AniList, Jikan, sources, scraping, or generated content.
 - Keep it natural and editorial, like a manually updated anime blog.
 - Avoid piracy language and avoid telling users where to watch copyrighted content.
@@ -435,8 +592,8 @@ function sanitizeArticle(raw: any, fallback: BlogArticleContent): BlogArticleCon
   };
 }
 
-async function generateArticle(definition: BlogPostDefinition, items: BlogMediaItem[]) {
-  const fallback = fallbackArticle(definition, items);
+async function generateArticle(definition: BlogPostDefinition, items: BlogMediaItem[], topic?: BlogTopic) {
+  const fallback = fallbackArticle(definition, items, topic);
   const key = process.env.GEMINI_API_KEY;
   if (!key) return { article: fallback, source: 'fallback' as const, status: 'missing_gemini_key' };
   if (!items.length) return { article: fallback, source: 'fallback' as const, status: 'no_anime_items' };
@@ -455,7 +612,7 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
           'x-goog-api-key': key,
         },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: buildGeminiPrompt(definition, items) }] }],
+          contents: [{ parts: [{ text: buildGeminiPrompt(definition, items, topic) }] }],
           generationConfig: {
             temperature: 0.65,
             topP: 0.9,
@@ -502,17 +659,23 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
   if (!definition) throw new Error('Blog post not found');
 
   let items: BlogMediaItem[];
-  if (slug === 'trending-anime-this-week') items = await fetchMediaList('TRENDING_DESC', 'RELEASING');
+  let topic: BlogTopic | undefined;
+  if (slug === 'anime-trending-news-today') {
+    const result = await fetchTrendingNewsItems(preview);
+    items = result.items;
+    topic = result.topic;
+  }
+  else if (slug === 'trending-anime-this-week') items = await fetchMediaList('TRENDING_DESC', 'RELEASING');
   else if (slug === 'popular-anime-right-now') items = await fetchMediaList('POPULARITY_DESC', 'RELEASING');
   else if (slug === 'upcoming-anime-this-season') items = await fetchMediaList('POPULARITY_DESC', 'NOT_YET_RELEASED');
   else if (slug === 'todays-anime-release-schedule') items = await fetchTodaysSchedule();
   else items = await fetchRecentEpisodes();
 
   const generatedAt = new Date().toISOString();
-  if (preview) return { ...definition, updatedAt: generatedAt, generatedAt, items, articleSource: 'fallback', articleStatus: 'preview_no_gemini' };
+  if (preview) return { ...definition, updatedAt: generatedAt, generatedAt, items, topic, articleSource: 'fallback', articleStatus: 'preview_no_gemini' };
 
-  const generated = await generateArticle(definition, items);
-  return { ...definition, updatedAt: generatedAt, generatedAt, items, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
+  const generated = await generateArticle(definition, items, topic);
+  return { ...definition, updatedAt: generatedAt, generatedAt, items, topic, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
 }
 
 export async function getCachedBlogPost(slug: string, preview = false) {
