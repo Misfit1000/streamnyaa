@@ -355,10 +355,23 @@ JSON shape:
 }
 
 function extractGeminiText(json: any) {
-  return json?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || '').join('\n').trim() || '';
+  const candidate = json?.candidates?.[0];
+  const parts = candidate?.content?.parts || [];
+  const text = parts.map((part: any) => {
+    if (typeof part.text === 'string') return part.text;
+    if (part.functionCall) return JSON.stringify(part.functionCall);
+    if (part.inlineData?.data) return part.inlineData.data;
+    return '';
+  }).join('\n').trim();
+
+  if (text) return text;
+  if (typeof candidate?.content?.text === 'string') return candidate.content.text;
+  if (typeof json?.text === 'string') return json.text;
+  return '';
 }
 
 function parseGeminiJson(text: string) {
+  if (!text) return null;
   const clean = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
   try {
     return JSON.parse(clean);
@@ -424,7 +437,6 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
           temperature: 0.65,
           topP: 0.9,
           maxOutputTokens: 2200,
-          responseMimeType: 'application/json',
         },
       }),
     });
@@ -435,8 +447,16 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
       return { article: fallback, source: 'fallback' as const, status: 'gemini_request_failed_' + response.status };
     }
     const json = await response.json();
-    const rawArticle = parseGeminiJson(extractGeminiText(json));
-    if (!rawArticle) return { article: fallback, source: 'fallback' as const, status: 'gemini_json_parse_failed' };
+    const geminiText = extractGeminiText(json);
+    const rawArticle = parseGeminiJson(geminiText);
+    if (!rawArticle) {
+      console.error('Gemini JSON parse failed', JSON.stringify({
+        finishReason: json?.candidates?.[0]?.finishReason,
+        partKeys: json?.candidates?.[0]?.content?.parts?.map((part: any) => Object.keys(part)),
+        textSample: geminiText.slice(0, 500),
+      }));
+      return { article: fallback, source: 'fallback' as const, status: 'gemini_json_parse_failed' };
+    }
     return { article: sanitizeArticle(rawArticle, fallback), source: 'gemini' as const, status: 'ok' };
   } catch (error) {
     console.error(error);
