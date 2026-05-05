@@ -349,6 +349,7 @@ Rules:
 - Make the writing useful for Google search: clear headings, direct wording, helpful comparisons, and natural keywords.
 - Keep every sentence fact-safe. If a fact is missing, skip it.
 - Return JSON only. No markdown, no code fences.
+- Keep the full JSON concise enough to complete in one response.
 
 JSON shape:
 {
@@ -357,11 +358,13 @@ JSON shape:
   "headline": "article headline",
   "excerpt": "2 sentence summary",
   "heroCallout": "one sentence focused on the top anime",
-  "paragraphs": ["4-6 useful intro/body paragraphs"],
-  "sections": [{"heading": "short heading", "body": "90-160 words"}],
+  "paragraphs": ["exactly 4 useful paragraphs, 45-75 words each"],
+  "sections": [{"heading": "short heading", "body": "80-120 words"}],
   "takeaways": [{"label": "short label", "value": "short value", "detail": "short detail"}],
   "faq": [{"question": "question", "answer": "answer"}]
-}`;
+}
+
+Use exactly 2 sections, exactly 4 takeaways, and exactly 3 FAQ items.`;
 }
 
 function extractGeminiText(json: any) {
@@ -456,7 +459,7 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
           generationConfig: {
             temperature: 0.65,
             topP: 0.9,
-            maxOutputTokens: 2200,
+            maxOutputTokens: 4096,
             responseMimeType: 'application/json',
           },
         }),
