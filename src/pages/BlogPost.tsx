@@ -2,7 +2,8 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, BarChart3, CalendarClock, CheckCircle2, ExternalLink, HelpCircle, Loader2, Newspaper, Star } from 'lucide-react';
 import Seo from '../components/Seo';
-import { BlogMediaItem, fetchBlogPost, getBlogPost } from '../api/blog';
+import { fetchBlogPost, getBlogPost } from '../api/blog';
+import type { BlogMediaItem } from '../api/blog';
 import { animePath } from '../lib/slug';
 
 function formatDate(value: string) {
@@ -104,7 +105,7 @@ export default function BlogPost() {
     queryKey: ['blog-post', slug],
     queryFn: () => fetchBlogPost(slug!),
     enabled: !!definition,
-    staleTime: 1000 * 60 * 15,
+    staleTime: 1000 * 60 * 60 * 7,
   });
 
   if (!definition) {
@@ -113,19 +114,24 @@ export default function BlogPost() {
 
   const post = data || { ...definition, updatedAt: new Date().toISOString(), items: [] };
   const canonicalPath = '/blog/' + definition.slug;
-  const paragraphs = buildArticleParagraphs(definition, post.items);
-  const takeaways = buildTakeaways(post.items);
-  const faq = buildFaq(definition, post.items);
+  const article = post.article;
+  const paragraphs = article?.paragraphs?.length ? article.paragraphs : buildArticleParagraphs(definition, post.items);
+  const takeaways = article?.takeaways?.length ? article.takeaways : buildTakeaways(post.items);
+  const faq = article?.faq?.length ? article.faq : buildFaq(definition, post.items);
+  const seoTitle = article?.seoTitle || definition.seoTitle;
+  const seoDescription = article?.metaDescription || definition.description;
+  const headline = article?.headline || definition.title;
+  const intro = article?.excerpt || definition.intro;
   const image = post.items[0]?.image;
   const jsonLd = [
     {
       '@context': 'https://schema.org',
       '@type': 'BlogPosting',
-      headline: definition.title,
-      description: definition.description,
+      headline,
+      description: seoDescription,
       articleSection: definition.category,
       datePublished: '2026-05-05',
-      dateModified: post.updatedAt,
+      dateModified: post.generatedAt || post.updatedAt,
       mainEntityOfPage: 'https://www.streamnyaa.xyz' + canonicalPath,
       image: image ? [image] : undefined,
       author: { '@type': 'Organization', name: 'StreamNyaa' },
@@ -141,15 +147,15 @@ export default function BlogPost() {
 
   return (
     <article className="container mx-auto px-4 md:px-10 py-10 md:py-14">
-      <Seo title={definition.seoTitle} description={definition.description} canonicalPath={canonicalPath} jsonLd={jsonLd} />
+      <Seo title={seoTitle} description={seoDescription} canonicalPath={canonicalPath} jsonLd={jsonLd} />
       <Link to="/blog" className="inline-flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-colors mb-8"><ArrowLeft className="w-4 h-4" />Blog</Link>
       <header className="max-w-4xl">
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <span className="text-[11px] uppercase font-black tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full">{definition.category}</span>
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><CalendarClock className="w-4 h-4" />Updated {formatDate(post.updatedAt)}</span>
         </div>
-        <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight mb-5">{definition.title}</h1>
-        <p className="text-base md:text-lg text-muted-foreground leading-relaxed max-w-3xl">{definition.intro}</p>
+        <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight mb-5">{headline}</h1>
+        <p className="text-base md:text-lg text-muted-foreground leading-relaxed max-w-3xl">{intro}</p>
       </header>
 
       {isLoading ? <div className="min-h-[280px] flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div> : error ? <div className="mt-10 border border-border rounded-2xl p-6 bg-secondary/40 text-muted-foreground">The current anime details could not load right now. Try refreshing this page in a moment.</div> : (
@@ -163,7 +169,7 @@ export default function BlogPost() {
                   <img src={image} alt={post.items[0].title} className="absolute inset-0 h-full w-full object-cover brightness-[0.38]" loading="lazy" referrerPolicy="no-referrer" />
                   <div className="relative p-6 md:p-8 max-w-2xl">
                     <p className="text-xs font-black uppercase tracking-wider text-primary mb-3">Current article</p>
-                    <h2 className="text-2xl md:text-3xl font-black text-white leading-tight">{post.items[0].title} is the main title to watch here</h2>
+                    <h2 className="text-2xl md:text-3xl font-black text-white leading-tight">{article?.heroCallout || `${post.items[0].title} is the main title to watch here`}</h2>
                     <p className="mt-3 text-sm md:text-base text-white/85 leading-relaxed">{whyWatchText(post.items[0], 0)}</p>
                   </div>
                 </div> : null}
@@ -174,6 +180,13 @@ export default function BlogPost() {
                     {paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                   </div>
                 </section>
+
+                {article?.sections?.length ? <section className="space-y-4">
+                  {article.sections.map((section) => <div key={section.heading} className="border border-border bg-secondary/30 rounded-2xl p-5 md:p-6">
+                    <h2 className="text-xl md:text-2xl font-black tracking-tight">{section.heading}</h2>
+                    <p className="mt-3 text-sm md:text-base text-muted-foreground leading-relaxed">{section.body}</p>
+                  </div>)}
+                </section> : null}
 
                 {takeaways.length ? <section className="grid gap-3 sm:grid-cols-2">
                   {takeaways.map((item) => <div key={item.label} className="border border-border bg-secondary/30 rounded-2xl p-4">

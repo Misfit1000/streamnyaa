@@ -2,6 +2,8 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { XMLParser } from "fast-xml-parser";
+import { getCachedBlogPost } from "./api/blog";
+import { getBlogPost } from "./src/api/blogShared";
 
 async function startServer() {
   const app = express();
@@ -55,6 +57,22 @@ async function startServer() {
     } catch (e: any) {
       console.error(e);
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/blog", async (req, res) => {
+    const slug = Array.isArray(req.query.slug) ? req.query.slug[0] : req.query.slug;
+    if (!slug || typeof slug !== "string" || !getBlogPost(slug)) {
+      return res.status(404).json({ error: "Blog post not found" });
+    }
+
+    try {
+      const data = await getCachedBlogPost(slug);
+      res.setHeader("Cache-Control", "public, s-maxage=25200, stale-while-revalidate=86400");
+      return res.json(data);
+    } catch (e: any) {
+      console.error(e);
+      return res.status(500).json({ error: e.message });
     }
   });
 
