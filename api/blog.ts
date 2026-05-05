@@ -453,6 +453,7 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
             temperature: 0.65,
             topP: 0.9,
             maxOutputTokens: 2200,
+            responseMimeType: 'application/json',
           },
         }),
       });
