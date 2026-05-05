@@ -78,7 +78,7 @@ export default function Home() {
   return (
     <div className="pb-20">
       <Seo
-        title="StreamNyaa - Anime Discovery, Release Schedules and Episode Updates"
+        title="StreamNyaa"
         description="Discover anime, track release schedules, browse seasonal shows, follow episode updates, and search anime metadata with StreamNyaa."
         canonicalPath="/"
         jsonLd={homeJsonLd}

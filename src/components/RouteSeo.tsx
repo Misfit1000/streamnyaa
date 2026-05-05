@@ -3,7 +3,7 @@ import Seo from './Seo';
 
 const routeMeta: Record<string, { title: string; description: string }> = {
   '/': {
-    title: 'StreamNyaa - Anime Discovery, Release Schedules and Episode Updates',
+    title: 'StreamNyaa',
     description: 'Discover anime, track release schedules, browse seasonal shows, follow episode updates, and search anime metadata with StreamNyaa.',
   },
   '/search': {
