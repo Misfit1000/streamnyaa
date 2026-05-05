@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node dist/server.cjs",
-    "build": "npm run generate:sitemap && vite build --config vite.config.mjs --configLoader native",
+    "build": "node scripts/check-gemini-env.mjs && npm run generate:sitemap && vite build --config vite.config.mjs --configLoader native",
     "build:server": "esbuild server.ts --bundle --platform=node --target=node20 --outfile=dist/server.cjs --format=cjs",
     "build:local": "npm run build && npm run build:server",
     "preview": "vite preview",
