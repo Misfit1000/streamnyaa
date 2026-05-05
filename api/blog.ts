@@ -497,7 +497,7 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
   }
 }
 
-async function buildBlogPost(slug: string): Promise<BlogPostData> {
+async function buildBlogPost(slug: string, preview = false): Promise<BlogPostData> {
   const definition = getBlogPost(slug);
   if (!definition) throw new Error('Blog post not found');
 
@@ -509,22 +509,25 @@ async function buildBlogPost(slug: string): Promise<BlogPostData> {
   else items = await fetchRecentEpisodes();
 
   const generatedAt = new Date().toISOString();
+  if (preview) return { ...definition, updatedAt: generatedAt, generatedAt, items, articleSource: 'fallback', articleStatus: 'preview_no_gemini' };
+
   const generated = await generateArticle(definition, items);
   return { ...definition, updatedAt: generatedAt, generatedAt, items, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
 }
 
-export async function getCachedBlogPost(slug: string) {
+export async function getCachedBlogPost(slug: string, preview = false) {
   const now = Date.now();
-  const cached = memoryCache.get(slug);
+  const cacheKey = preview ? slug + ':preview' : slug + ':article';
+  const cached = memoryCache.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.data;
 
   try {
-    const data = await buildBlogPost(slug);
+    const data = await buildBlogPost(slug, preview);
     const isGeminiArticle = data.articleSource === 'gemini';
-    memoryCache.set(slug, {
+    memoryCache.set(cacheKey, {
       data,
-      expiresAt: now + (isGeminiArticle ? CACHE_TTL_MS : FALLBACK_CACHE_TTL_MS),
-      staleAt: now + (isGeminiArticle ? STALE_TTL_MS : FALLBACK_STALE_TTL_MS),
+      expiresAt: now + (preview || isGeminiArticle ? CACHE_TTL_MS : FALLBACK_CACHE_TTL_MS),
+      staleAt: now + (preview || isGeminiArticle ? STALE_TTL_MS : FALLBACK_STALE_TTL_MS),
     });
     return data;
   } catch (error) {
@@ -535,12 +538,13 @@ export async function getCachedBlogPost(slug: string) {
 
 export default async function handler(req: any, res: any) {
   const slug = Array.isArray(req.query.slug) ? req.query.slug[0] : req.query.slug;
+  const preview = req.query.preview === '1' || req.query.preview === 'true';
   if (!slug || !getBlogPost(slug)) {
     return res.status(404).json({ error: 'Blog post not found' });
   }
 
   try {
-    const data = await getCachedBlogPost(slug);
+    const data = await getCachedBlogPost(slug, preview);
     res.setHeader('Cache-Control', EDGE_CACHE_HEADER);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.status(200).json(data);

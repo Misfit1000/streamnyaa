@@ -62,12 +62,13 @@ async function startServer() {
 
   app.get("/api/blog", async (req, res) => {
     const slug = Array.isArray(req.query.slug) ? req.query.slug[0] : req.query.slug;
+    const preview = req.query.preview === "1" || req.query.preview === "true";
     if (!slug || typeof slug !== "string" || !getBlogPost(slug)) {
       return res.status(404).json({ error: "Blog post not found" });
     }
 
     try {
-      const data = await getCachedBlogPost(slug);
+      const data = await getCachedBlogPost(slug, preview);
       res.setHeader("Cache-Control", "public, s-maxage=25200, stale-while-revalidate=86400");
       return res.json(data);
     } catch (e: any) {

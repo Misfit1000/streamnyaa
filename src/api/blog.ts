@@ -3,8 +3,10 @@ export type { BlogMediaItem, BlogPostData, BlogPostDefinition, BlogSlug } from '
 
 import type { BlogPostData } from './blogShared';
 
-export async function fetchBlogPost(slug: string): Promise<BlogPostData> {
-  const response = await fetch('/api/blog?slug=' + encodeURIComponent(slug), {
+export async function fetchBlogPost(slug: string, preview = false): Promise<BlogPostData> {
+  const params = new URLSearchParams({ slug });
+  if (preview) params.set('preview', '1');
+  const response = await fetch('/api/blog?' + params.toString(), {
     headers: { Accept: 'application/json' },
   });
 

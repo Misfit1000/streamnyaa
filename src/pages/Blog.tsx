@@ -4,7 +4,7 @@ import { CalendarDays, Loader2, Newspaper, Sparkles, TrendingUp } from 'lucide-r
 import Seo from '../components/Seo';
 import { BLOG_POSTS, fetchBlogPost } from '../api/blog';
 export default function Blog() {
-  const previews = useQueries({ queries: BLOG_POSTS.map((post) => ({ queryKey: ['blog-preview', post.slug], queryFn: () => fetchBlogPost(post.slug), staleTime: 1000 * 60 * 60 * 7 })) });
+  const previews = useQueries({ queries: BLOG_POSTS.map((post) => ({ queryKey: ['blog-preview', post.slug], queryFn: () => fetchBlogPost(post.slug, true), staleTime: 1000 * 60 * 60 * 7 })) });
   const jsonLd = { '@context': 'https://schema.org', '@type': 'Blog', name: 'StreamNyaa Blog', url: 'https://www.streamnyaa.xyz/blog', description: 'Anime discovery articles covering current trends, release schedules, upcoming titles, and recent episode updates.', publisher: { '@type': 'Organization', name: 'StreamNyaa', url: 'https://www.streamnyaa.xyz/' } };
   return (
     <div className="container mx-auto px-4 md:px-10 py-10 md:py-14">
