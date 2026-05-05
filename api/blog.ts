@@ -121,6 +121,8 @@ interface BlogArticleContent {
 type BlogPostData = BlogPostDefinition & {
   updatedAt: string;
   generatedAt?: string;
+  articleSource?: 'gemini' | 'fallback';
+  articleStatus?: string;
   items: BlogMediaItem[];
   article?: BlogArticleContent;
 };
@@ -406,7 +408,8 @@ function sanitizeArticle(raw: any, fallback: BlogArticleContent): BlogArticleCon
 async function generateArticle(definition: BlogPostDefinition, items: BlogMediaItem[]) {
   const fallback = fallbackArticle(definition, items);
   const key = process.env.GEMINI_API_KEY;
-  if (!key || !items.length) return fallback;
+  if (!key) return { article: fallback, source: 'fallback' as const, status: 'missing_gemini_key' };
+  if (!items.length) return { article: fallback, source: 'fallback' as const, status: 'no_anime_items' };
 
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
@@ -426,13 +429,18 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
       }),
     });
 
-    if (!response.ok) throw new Error('Gemini article request failed');
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Gemini article request failed', response.status, errorText.slice(0, 500));
+      return { article: fallback, source: 'fallback' as const, status: 'gemini_request_failed_' + response.status };
+    }
     const json = await response.json();
     const rawArticle = parseGeminiJson(extractGeminiText(json));
-    return sanitizeArticle(rawArticle, fallback);
+    if (!rawArticle) return { article: fallback, source: 'fallback' as const, status: 'gemini_json_parse_failed' };
+    return { article: sanitizeArticle(rawArticle, fallback), source: 'gemini' as const, status: 'ok' };
   } catch (error) {
     console.error(error);
-    return fallback;
+    return { article: fallback, source: 'fallback' as const, status: 'gemini_exception' };
   }
 }
 
@@ -448,8 +456,8 @@ async function buildBlogPost(slug: string): Promise<BlogPostData> {
   else items = await fetchRecentEpisodes();
 
   const generatedAt = new Date().toISOString();
-  const article = await generateArticle(definition, items);
-  return { ...definition, updatedAt: generatedAt, generatedAt, items, article };
+  const generated = await generateArticle(definition, items);
+  return { ...definition, updatedAt: generatedAt, generatedAt, items, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
 }
 
 export async function getCachedBlogPost(slug: string) {

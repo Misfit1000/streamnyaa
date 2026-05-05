@@ -112,6 +112,8 @@ export interface BlogArticleContent {
 export type BlogPostData = BlogPostDefinition & {
   updatedAt: string;
   generatedAt?: string;
+  articleSource?: 'gemini' | 'fallback';
+  articleStatus?: string;
   items: BlogMediaItem[];
   article?: BlogArticleContent;
 };
