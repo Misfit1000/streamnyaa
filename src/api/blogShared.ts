@@ -9,6 +9,8 @@ export const BLOG_POSTS = [
     intro: 'This article follows one current anime topic at a time, using recent anime activity, headline signals, episode movement, and popularity data to explain why a title is getting attention.',
     angle: 'current anime news',
     readerPromise: 'Use this article for a quick, factual look at one anime topic that is worth paying attention to right now.',
+    articleKind: 'gemini',
+    sortRank: 100,
   },
   {
     slug: 'trending-anime-this-week',
@@ -20,6 +22,8 @@ export const BLOG_POSTS = [
     intro: 'These are the anime titles getting the most attention right now. Use this guide when you want something active, talked about, and easy to follow from the current season.',
     angle: 'current momentum',
     readerPromise: 'Use this article to quickly compare the shows that are moving fastest this week, then jump into the StreamNyaa title page for more details.',
+    articleKind: 'non_ai',
+    sortRank: 90,
   },
   {
     slug: 'popular-anime-right-now',
@@ -31,6 +35,8 @@ export const BLOG_POSTS = [
     intro: 'Popular anime lists are useful when you want familiar titles with strong audience activity. This article focuses on widely watched anime that are currently relevant.',
     angle: 'viewer interest',
     readerPromise: 'Use this article to find safe picks with broad appeal, then compare scores, genres, episodes, and title pages before choosing what to watch.',
+    articleKind: 'non_ai',
+    sortRank: 80,
   },
   {
     slug: 'upcoming-anime-this-season',
@@ -42,6 +48,8 @@ export const BLOG_POSTS = [
     intro: 'Upcoming anime are worth tracking early, especially when sequels, studio projects, and high-interest adaptations are close to release. This guide keeps the next wave easy to scan.',
     angle: 'season preview',
     readerPromise: 'Use this article to build a watchlist before the season gets crowded, with quick context for each title and direct StreamNyaa discovery links.',
+    articleKind: 'non_ai',
+    sortRank: 70,
   },
   {
     slug: 'todays-anime-release-schedule',
@@ -53,6 +61,8 @@ export const BLOG_POSTS = [
     intro: 'This daily schedule helps you see what is airing today without digging through multiple pages. It is best for quickly spotting new episodes and choosing what to follow next.',
     angle: 'daily releases',
     readerPromise: 'Use this article as a simple daily checklist for new anime episodes, release times, episode numbers, and follow-up title pages.',
+    articleKind: 'non_ai',
+    sortRank: 60,
   },
   {
     slug: 'recent-anime-episode-updates',
@@ -64,6 +74,8 @@ export const BLOG_POSTS = [
     intro: 'Recent episode updates are the fastest way to catch active shows after they air. This guide highlights fresh activity so you can decide what to continue, start, or revisit.',
     angle: 'fresh episode activity',
     readerPromise: 'Use this article to catch up on newly updated anime and open the StreamNyaa title pages for more context.',
+    articleKind: 'non_ai',
+    sortRank: 50,
   },
 ] as const;
 
