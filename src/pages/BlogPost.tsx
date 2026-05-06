@@ -177,7 +177,7 @@ export default function BlogPost() {
 
   return (
     <article className="container mx-auto px-4 md:px-10 py-10 md:py-14">
-      <Seo title={seoTitle} description={seoDescription} canonicalPath={canonicalPath} jsonLd={jsonLd} />
+      <Seo title={seoTitle} description={seoDescription} canonicalPath={canonicalPath} image={image} jsonLd={jsonLd} />
       <Link to="/blog" className="inline-flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-colors mb-8"><ArrowLeft className="w-4 h-4" />Blog</Link>
       <header className="max-w-4xl">
         <div className="flex flex-wrap items-center gap-3 mb-4">
