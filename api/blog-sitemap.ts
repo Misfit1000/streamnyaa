@@ -1,5 +1,3 @@
-import { getCachedBlogPost } from './blog';
-
 const SITE_URL = process.env.SITE_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL || 'https://www.streamnyaa.xyz';
 const GEMINI_BLOG_SLUGS = ['anime-trending-news-today', 'anime-viral-topic-today'];
 
@@ -23,7 +21,14 @@ export default async function handler(_req: any, res: any) {
 
   for (const slug of GEMINI_BLOG_SLUGS) {
     try {
-      const post = await getCachedBlogPost(slug);
+      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}`, {
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'StreamNyaa-Blog-Sitemap/1.0',
+        },
+      });
+      if (!response.ok) throw new Error(`Blog API returned ${response.status}`);
+      const post = await response.json();
       const articleSlug = post.articleSlug || slug;
       urls.push({
         loc: `${origin}/blog/${articleSlug}`,
