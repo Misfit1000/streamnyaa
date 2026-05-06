@@ -549,6 +549,51 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
   };
 };
 
+export const fetchAnimeSeason = async (season: string, year: number, page = 1) => {
+  const validSeason = season.toUpperCase();
+  const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
+  const gqlQuery = `
+    query($page: Int, $seasonYear: Int, $season: MediaSeason) {
+      Page(page: $page, perPage: 24) {
+        pageInfo {
+          hasNextPage
+          lastPage
+        }
+        media(type: ANIME, seasonYear: $seasonYear, season: $season, sort: POPULARITY_DESC${isAdultArg}) {
+          id
+          idMal
+          title { romaji english native }
+          description
+          episodes
+          status
+          format
+          seasonYear
+          coverImage { extraLarge large color } bannerImage
+          genres
+          averageScore
+          isAdult
+        }
+      }
+    }
+  `;
+
+  const res = await fetch(ANILIST_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: gqlQuery, variables: { page, seasonYear: year, season: validSeason } }),
+  });
+  if (!res.ok) throw new Error('Failed to fetch seasonal anime');
+  const data = await res.json();
+  if (data.errors) throw new Error('Failed to fetch seasonal anime');
+  return {
+    data: (data.data.Page.media || []).map(mapAnilistToJikan),
+    pagination: {
+      has_next_page: data.data.Page.pageInfo.hasNextPage,
+      last_visible_page: data.data.Page.pageInfo.lastPage,
+    },
+  };
+};
+
 export const fetchGenres = async () => {
   const query = `
     query {
