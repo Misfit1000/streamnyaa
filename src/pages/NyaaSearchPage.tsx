@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { searchNyaa } from '../api/nyaa';
 import { Search, Loader2, Download, Tv, HardDrive, AlertTriangle } from 'lucide-react';
-import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
+import Seo from '../components/Seo';
+import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
+import type { TorrentSourceFilter } from '../lib/torrentBadges';
 
 export default function NyaaSearchPage() {
   const navigate = useNavigate();
@@ -11,6 +13,7 @@ export default function NyaaSearchPage() {
   const [searchInput, setSearchInput] = useState('');
   const [category, setCategory] = useState('1_0');
   const [filter, setFilter] = useState('0');
+  const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
 
   const { data: torrents, isLoading } = useQuery({
     queryKey: ['nyaaSearch', query, category, filter],
@@ -23,8 +26,34 @@ export default function NyaaSearchPage() {
     setQuery(searchInput);
   };
 
+  const filteredTorrents = (torrents || []).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter));
+  const faqItems = [
+    {
+      question: 'What do the source badges mean?',
+      answer: 'Badges summarize visible torrent metadata such as trusted release groups, high seeder counts, HEVC/x265 encodes, dual audio, batch packs, and individual episodes.',
+    },
+    {
+      question: 'How should I pick a source?',
+      answer: 'Start with trusted groups and high seeders when available, then choose the quality, codec, audio, and batch or episode format that matches what you need.',
+    },
+    {
+      question: 'Does StreamNyaa host these files?',
+      answer: 'No. This page displays public torrent metadata and magnet links from third-party sources; StreamNyaa does not host anime files.',
+    },
+  ];
+
   return (
     <div className="container mx-auto px-4 py-8">
+      <Seo
+        title="Anime Torrent Metadata Search | StreamNyaa"
+        description="Search public anime torrent metadata, compare source quality badges, filter by trusted releases, high seeders, HEVC, dual audio, batch, or episode results."
+        canonicalPath="/nyaa"
+        jsonLd={{
+          '@context': 'https://schema.org',
+          '@type': 'FAQPage',
+          mainEntity: faqItems.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })),
+        }}
+      />
       <div className="flex flex-col items-center mb-8">
         <h1 className="text-3xl font-black mb-4 flex items-center gap-2">
             <HardDrive className="w-8 h-8 text-primary" />
@@ -99,17 +128,46 @@ export default function NyaaSearchPage() {
         </div>
       </div>
 
+      <div className="mx-auto mb-6 max-w-5xl rounded-2xl border border-border bg-secondary/20 p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Source filters</span>
+          {sourceFilter ? <button onClick={() => setSourceFilter('')} className="text-xs font-bold text-primary hover:underline">Clear</button> : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { value: 'trusted', label: 'Trusted' },
+            { value: 'high-seeders', label: 'High seeders' },
+            { value: 'hevc', label: 'HEVC' },
+            { value: 'dual-audio', label: 'Dual Audio' },
+            { value: 'batch', label: 'Batch' },
+            { value: 'episode', label: 'Episode' },
+          ].map((item) => (
+            <button
+              key={item.value}
+              onClick={() => setSourceFilter(sourceFilter === item.value ? '' : item.value as TorrentSourceFilter)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-bold transition-colors ${
+                sourceFilter === item.value
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background/60 text-foreground hover:border-primary/40 hover:text-primary'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="w-10 h-10 text-primary animate-spin" />
         </div>
-      ) : torrents?.length === 0 ? (
+      ) : filteredTorrents.length === 0 ? (
         <div className="text-center py-20">
           <p className="text-muted-foreground text-lg">No torrents found. Try different filters or terms.</p>
         </div>
       ) : (
         <div className="space-y-4 max-w-5xl mx-auto">
-          {torrents?.map((torrent, idx) => (
+          {filteredTorrents.map((torrent, idx) => (
             <div key={idx} className="bg-secondary/20 hover:bg-secondary/40 border border-border/50 hover:border-primary/50 transition-all p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group">
                 <div className="flex-1 min-w-0">
                   <h4 className="text-[15px] font-bold text-foreground break-all leading-tight mb-3 group-hover:text-primary transition-colors">
@@ -158,6 +216,18 @@ export default function NyaaSearchPage() {
           ))}
         </div>
       )}
+
+      <section className="mx-auto mt-12 max-w-5xl border-t border-border pt-8">
+        <h2 className="text-2xl font-black text-foreground">Anime torrent search FAQ</h2>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {faqItems.map((item) => (
+            <div key={item.question} className="rounded-2xl border border-border bg-secondary/20 p-4">
+              <h3 className="font-bold text-foreground">{item.question}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.answer}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
