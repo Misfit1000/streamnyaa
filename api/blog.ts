@@ -779,7 +779,7 @@ function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[
   const facts = sourceItems.map((item, index) => ({
     rank: index + 1,
     title: item.title,
-    score: item.score,
+    audienceScoreOutOf100: item.score,
     format: item.format,
     status: formatStatus(item.status),
     episodes: item.episodes,
@@ -789,8 +789,8 @@ function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[
     genres: item.genres.slice(0, 5),
     studios: item.studios,
     season: [formatStatus(item.season), item.seasonYear].filter(Boolean).join(' '),
-    popularity: item.popularity,
-    trending: item.trending,
+    popularityCount: item.popularity,
+    currentTrendSignal: item.trending,
     description: item.description,
     newsHeadlines: item.news?.slice(0, 3).map((news) => ({ title: news.title, date: news.date, excerpt: news.excerpt })),
   }));
@@ -798,7 +798,7 @@ function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[
     ? items
       .filter((item) => item.mal_id !== topic.malId && item.id !== topic.animeId)
       .slice(0, 5)
-      .map((item) => ({ title: item.title, score: item.score, trending: item.trending, popularity: item.popularity, genres: item.genres.slice(0, 3) }))
+      .map((item) => ({ title: item.title, audienceScoreOutOf100: item.score, currentTrendSignal: item.trending, popularityCount: item.popularity, genres: item.genres.slice(0, 3) }))
     : [];
 
   return `Write a factual, human-sounding anime blog article for StreamNyaa.
@@ -845,6 +845,7 @@ Rules:
 - Keep it natural and editorial.
 - Write like a careful anime editor: explain what happened or what the trend signal shows, why it matters, what viewers should watch for next, and what remains uncertain.
 - Include useful concrete context where available: score, popularity, trend signal, genre, studio, status, episode count, next episode, season, or headline age.
+- Use the exact meaning of each number: audienceScoreOutOf100 is the 0-100 score, currentTrendSignal is a trend/momentum signal, and popularityCount is audience interest. Never call currentTrendSignal an audience score.
 - If the topic is trend-based, avoid claiming real-world virality as fact unless the selected topic type or headline explicitly says viral, ranking, reaction, record, or buzz.
 - Never write meta-process phrases like "this topic was picked", "selected topic", "strongest visible signals", "available facts", or "current topic is tied to".
 - Do not repeat the same sentence pattern across paragraphs. Avoid filler such as "worth paying attention to", "current signals", or "quick factual look" more than once.
