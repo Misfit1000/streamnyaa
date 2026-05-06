@@ -80,6 +80,8 @@ export default function AnimeDetails() {
   const nextEpisodeNumber = anime.nextAiringEpisode?.episode;
   const nextAiringTime = formatNextAiring(anime.nextAiringEpisode?.airingAt);
   const episodeCountText = anime.episodes ? `${anime.episodes} episodes` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} episodes aired so far` : 'episode count not confirmed';
+  const malScoreText = anime.score ? `MAL Score ${anime.score}` : 'MAL Score N/A';
+  const malPopularityText = anime.popularity ? `#${anime.popularity.toLocaleString()}` : 'N/A';
   const seoDescription = `${anime.title} anime details with synopsis, genres, ${episodeCountText}, status, related anime, recommendations, watch links, and download search options.`;
   const mainStudio = studios[0];
   const jsonLd = [
@@ -179,7 +181,7 @@ export default function AnimeDetails() {
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 mb-8 text-sm font-medium">
             <div className="flex items-center gap-1 text-yellow-500">
               <Star className="w-4 h-4 fill-current" />
-              <span>{anime.score || 'N/A'}</span>
+              <span>{malScoreText}</span>
             </div>
             <div className="flex items-center gap-1 text-muted-foreground">
               <Tv className="w-4 h-4" />
@@ -284,7 +286,8 @@ export default function AnimeDetails() {
                   { label: 'Status', value: statusLabel },
                   { label: 'Episodes', value: anime.episodes ? `${anime.episodes} eps` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} aired` : 'TBA' },
                   { label: 'Format', value: anime.year ? `${anime.type || 'Anime'} - ${anime.year}` : anime.type || 'Anime' },
-                  { label: 'Score', value: anime.score ? `${anime.score}/10` : 'N/A' },
+                  { label: 'MAL score', value: anime.score ? `${anime.score}/10` : 'N/A' },
+                  { label: 'Popularity', value: malPopularityText },
                   { label: 'Studio', value: mainStudio || 'TBA' },
                   { label: 'Genres', value: genres.slice(0, 2).join(', ') || 'TBA' },
                 ].map((item) => (
