@@ -1,3 +1,5 @@
+import { archiveBlogPost } from './blogArchive';
+
 const ANILIST_URL = 'https://graphql.anilist.co';
 const JIKAN_URL = 'https://api.jikan.moe/v4';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
@@ -1085,7 +1087,9 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
   }
 
   const generated = await generateArticle(definition, items, topic);
-  return { ...definition, updatedAt: generatedAt, generatedAt, articleSlug: slugifyArticleTitle(generated.article.headline || topic?.title || definition.title), items, topic, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
+  const post = { ...definition, updatedAt: generatedAt, generatedAt, articleSlug: slugifyArticleTitle(generated.article.headline || topic?.title || definition.title), items, topic, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
+  await archiveBlogPost(post);
+  return post;
 }
 
 export async function getCachedBlogPost(slug: string, preview = false) {

@@ -39,7 +39,30 @@ export default async function handler(_req: any, res: any) {
     }
   }
 
-  const body = urls.map((url) => `  <url>
+  try {
+    const response = await fetch(`${origin}/api/blog-archive`, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'StreamNyaa-Blog-Sitemap/1.0',
+      },
+    });
+    if (response.ok) {
+      const data = await response.json();
+      for (const post of data.posts || []) {
+        if (!post.articleSlug) continue;
+        urls.push({
+          loc: `${origin}/blog/${post.articleSlug}`,
+          lastmod: (post.generatedAt || post.updatedAt || new Date().toISOString()).slice(0, 10),
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Archived blog sitemap items failed', error);
+  }
+
+  const uniqueUrls = urls.filter((url, index, list) => list.findIndex((item) => item.loc === url.loc) === index);
+
+  const body = uniqueUrls.map((url) => `  <url>
     <loc>${escapeXml(url.loc)}</loc>
     <lastmod>${url.lastmod}</lastmod>
     <changefreq>daily</changefreq>

@@ -1,14 +1,22 @@
 import { Link } from 'react-router-dom';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { CalendarDays, Loader2, Newspaper, PenLine, Sparkles, TrendingUp } from 'lucide-react';
 import Seo from '../components/Seo';
-import { articlePath, BLOG_POSTS, fetchBlogPost } from '../api/blog';
+import { articlePath, BLOG_POSTS, fetchArchivedBlogPosts, fetchBlogPost } from '../api/blog';
+import type { BlogPostData } from '../api/blog';
 
 const sortedPosts = [...BLOG_POSTS].sort((a, b) => b.sortRank - a.sortRank);
 
 export default function Blog() {
+  const archive = useQuery({
+    queryKey: ['blog-archive'],
+    queryFn: fetchArchivedBlogPosts,
+    staleTime: 1000 * 60 * 60 * 24,
+  });
+  const archivedPosts = archive.data || [];
+  const staticPosts = sortedPosts.filter((post) => post.articleKind !== 'gemini' || !archivedPosts.length);
   const previews = useQueries({
-    queries: sortedPosts.map((post) => ({
+    queries: staticPosts.map((post) => ({
       queryKey: ['blog-preview', post.slug],
       queryFn: () => fetchBlogPost(post.slug, true),
       staleTime: 1000 * 60 * 60 * 24,
@@ -32,7 +40,45 @@ export default function Blog() {
         <p className="text-muted-foreground text-base md:text-lg leading-relaxed max-w-3xl">Browse the newest StreamNyaa anime articles first, including focused anime news, current trend guides, release schedules, popularity notes, and episode activity.</p>
       </section>
       <section className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {sortedPosts.map((post, index) => {
+        {archivedPosts.map((post: BlogPostData, index) => {
+          const heroAnime = post.topic
+            ? post.items.find((anime) => anime.mal_id === post.topic?.malId || anime.id === post.topic?.animeId)
+            : post.items[0];
+          const image = post.topic?.image || heroAnime?.image;
+          const headline = post.article?.headline || post.topic?.title || post.title;
+          return (
+            <Link key={post.articleSlug || post.slug + index} to={articlePath(post)} className="group border border-border bg-[var(--glass)] hover:border-primary/40 rounded-2xl overflow-hidden transition-colors min-h-[320px] flex flex-col">
+              <div className="relative h-40 bg-secondary/60 overflow-hidden border-b border-border">
+                {image ? (
+                  <>
+                    <img src={image} alt={heroAnime?.title || headline} className="absolute inset-0 w-full h-full object-cover brightness-[0.48] saturate-125 group-hover:scale-105 transition-transform duration-300" loading="lazy" referrerPolicy="no-referrer" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+                    <div className="relative h-full flex items-end p-4">
+                      <p className="text-sm font-black text-white leading-tight line-clamp-2">{headline}</p>
+                    </div>
+                  </>
+                ) : <div className="h-full flex items-center justify-center text-xs font-semibold text-muted-foreground">Article image loading</div>}
+              </div>
+              <div className="p-5 flex flex-col flex-1 bg-background/95">
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  {index === 0 ? <span className="text-[11px] uppercase font-black tracking-wider text-foreground bg-primary px-3 py-1 rounded-full">Latest</span> : null}
+                  <span className="text-[11px] uppercase font-black tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full">{post.category}</span>
+                  <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-black tracking-wider text-muted-foreground bg-secondary px-3 py-1 rounded-full"><Newspaper className="w-3 h-3" />Focused news</span>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="text-xl font-black text-foreground leading-tight group-hover:text-primary transition-colors drop-shadow-sm">{headline}</h2>
+                  <TrendingUp className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                </div>
+                <p className="mt-3 text-sm text-muted-foreground leading-relaxed flex-1">{post.article?.excerpt || post.summary}</p>
+                <div className="mt-5 flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-muted-foreground">Saved story</span>
+                  <span className="text-sm font-bold text-primary">Read article</span>
+                </div>
+              </div>
+            </Link>
+          );
+        })}
+        {staticPosts.map((post, index) => {
           const Icon = index % 3 === 0 ? TrendingUp : index % 3 === 1 ? Sparkles : CalendarDays;
           const preview = previews[index];
           const isGemini = post.articleKind === 'gemini';

@@ -25,9 +25,23 @@ export async function fetchBlogPost(slug: string, preview = false): Promise<Blog
 }
 
 export async function fetchBlogPostByArticleSlug(articleSlug: string): Promise<BlogPostData> {
+  const archived = await fetch('/api/blog-archive?slug=' + encodeURIComponent(articleSlug), {
+    headers: { Accept: 'application/json' },
+  });
+  if (archived.ok) return archived.json();
+
   const geminiPosts = BLOG_POSTS.filter((post) => post.articleKind === 'gemini');
   const posts = await Promise.all(geminiPosts.map((post) => fetchBlogPost(post.slug)));
   const match = posts.find((post) => articlePath(post).replace('/blog/', '') === articleSlug);
   if (!match) throw new Error('Blog post not found');
   return match;
+}
+
+export async function fetchArchivedBlogPosts(): Promise<BlogPostData[]> {
+  const response = await fetch('/api/blog-archive', {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) return [];
+  const data = await response.json();
+  return Array.isArray(data.posts) ? data.posts : [];
 }
