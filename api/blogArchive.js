@@ -6,15 +6,15 @@ function githubToken() {
   return process.env.GITHUB_ARTICLE_TOKEN || process.env.GH_ARTICLE_TOKEN || '';
 }
 
-function archivePath(articleSlug: string) {
+function archivePath(articleSlug) {
   return `${ARCHIVE_DIR}/${articleSlug}.json`;
 }
 
-function apiUrl(pathname: string) {
+function apiUrl(pathname) {
   return `https://api.github.com/repos/${REPOSITORY}${pathname}`;
 }
 
-async function github(pathname: string, options: any = {}) {
+async function github(pathname, options = {}) {
   const token = githubToken();
   const response = await fetch(apiUrl(pathname), {
     ...options,
@@ -27,35 +27,35 @@ async function github(pathname: string, options: any = {}) {
     },
   });
   const text = await response.text();
-  let data: any = null;
+  let data = null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
     data = text;
   }
   if (!response.ok) {
-    const error: any = new Error(typeof data === 'object' && data?.message ? data.message : text);
+    const error = new Error(typeof data === 'object' && data?.message ? data.message : text);
     error.status = response.status;
     throw error;
   }
   return data;
 }
 
-async function fileExists(pathname: string) {
+async function fileExists(pathname) {
   try {
     await github(`/contents/${encodeURIComponent(pathname).replace(/%2F/g, '/')}?ref=${encodeURIComponent(BRANCH)}`);
     return true;
-  } catch (error: any) {
+  } catch (error) {
     if (error?.status === 404) return false;
     throw error;
   }
 }
 
-function toBase64(value: string) {
+function toBase64(value) {
   return Buffer.from(value, 'utf8').toString('base64');
 }
 
-export async function archiveBlogPost(post: any) {
+export async function archiveBlogPost(post) {
   if (!post?.articleSlug || post.articleKind !== 'gemini' || !githubToken()) return false;
   const pathname = archivePath(post.articleSlug);
 
@@ -99,15 +99,15 @@ export async function listArchivedBlogPosts(limit = 60) {
 
     return posts
       .filter(Boolean)
-      .sort((a: any, b: any) => Date.parse(b.generatedAt || b.updatedAt || '') - Date.parse(a.generatedAt || a.updatedAt || ''))
+      .sort((a, b) => Date.parse(b.generatedAt || b.updatedAt || '') - Date.parse(a.generatedAt || a.updatedAt || ''))
       .slice(0, limit);
-  } catch (error: any) {
+  } catch (error) {
     if (error?.status !== 404) console.error('Blog archive list failed', error);
     return [];
   }
 }
 
-export async function findArchivedBlogPost(articleSlug: string) {
+export async function findArchivedBlogPost(articleSlug) {
   try {
     const file = await github(`/contents/${archivePath(articleSlug)}?ref=${encodeURIComponent(BRANCH)}`);
     if (!file?.download_url) return null;
@@ -116,7 +116,7 @@ export async function findArchivedBlogPost(articleSlug: string) {
     });
     if (!response.ok) return null;
     return response.json();
-  } catch (error: any) {
+  } catch (error) {
     if (error?.status !== 404) console.error('Blog archive lookup failed', error);
     return null;
   }

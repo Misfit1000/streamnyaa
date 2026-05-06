@@ -1,4 +1,4 @@
-import { findArchivedBlogPost, listArchivedBlogPosts } from './blogArchive';
+import { findArchivedBlogPost, listArchivedBlogPosts } from './blogArchive.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {

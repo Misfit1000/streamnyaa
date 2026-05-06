@@ -1,4 +1,4 @@
-import { archiveBlogPost } from './blogArchive';
+import { archiveBlogPost } from './blogArchive.js';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 const JIKAN_URL = 'https://api.jikan.moe/v4';
