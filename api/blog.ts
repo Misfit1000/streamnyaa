@@ -555,40 +555,154 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
     };
   }
 
-  const paragraphs = top ? [
-    `${definition.intro} The current lead title is ${top.title}${topStudio ? ` from ${topStudio}` : ''}, which gives this article a clear starting point for ${definition.angle}.`,
-    `${items.length} titles are included with practical details like score, format, status, episode count, genres, and direct StreamNyaa pages.${score ? ` The average score across scored titles is about ${score}/100.` : ''}`,
-    genres.length ? `Genre-wise, this update leans toward ${genres.slice(0, 3).join(', ')}. That makes it easier to pick based on mood instead of only following rank numbers.` : definition.readerPromise,
-    definition.readerPromise,
-  ] : [definition.intro, definition.readerPromise];
+  const topTitle = top?.title || 'the first title';
+  const topGenre = top?.genres?.[0];
+  const secondTitle = items[1]?.title;
+  const thirdTitle = items[2]?.title;
+  const genreLine = genres.length ? genres.slice(0, 3).join(', ') : 'several different genres';
+  const scoreLine = score ? ` The scored titles average around ${score}/100, which is useful context but not the whole story.` : '';
+  const leadLine = top ? `${topTitle}${topStudio ? ` from ${topStudio}` : ''}` : 'the lead title';
+
+  const guideCopy: Record<string, Pick<BlogArticleContent, 'headline' | 'excerpt' | 'heroCallout' | 'paragraphs' | 'sections' | 'takeaways' | 'faq'>> = {
+    'trending-anime-this-week': {
+      headline: 'Trending Anime This Week',
+      excerpt: `The weekly trend list is best read as a mood check: which shows people are actually talking about, returning to, and comparing right now.`,
+      heroCallout: `${topTitle} is setting the pace this week, but the interesting part is how the rest of the list fills in around it.`,
+      paragraphs: top ? [
+        `Trending lists can get noisy, so the useful move is to look past the rank number and ask why a title is moving. This week starts with ${leadLine}, a title that gives the page its strongest current signal.`,
+        secondTitle ? `${secondTitle}${thirdTitle ? ` and ${thirdTitle}` : ''} make the list feel less one-note. They give you a way to compare hype against genre, score, studio, and episode timing instead of simply following the biggest name.` : `The rest of the list is useful because it shows what else is moving in the same window, not just which title is sitting at the top.`,
+        `The genre mix leans toward ${genreLine}. That matters because a trending romance, action title, comedy, or fantasy show can be trending for completely different reasons.${scoreLine}`,
+        `Use this page like a quick conversation starter. Open the top titles, compare their tone, and pick the one that actually fits the kind of episode you want tonight.`,
+      ] : [definition.intro, definition.readerPromise],
+      sections: [
+        { heading: 'Read the momentum, not just the rank', body: `A high placement tells you something is moving, but it does not explain whether the anime is strong, divisive, funny, dramatic, or simply being carried by a new episode. That is why the supporting details matter: score, genres, studio, status, and episode timing give the ranking some texture.` },
+        { heading: 'How to choose from the list', body: `Start with the first few titles, then narrow by mood. If you want something safer, look for a stronger score signal. If you want to follow the conversation, check the titles with fresh episode movement. If you want a surprise, use the genre tags rather than the rank order.` },
+      ],
+      takeaways: [
+        top ? { label: 'Current pace-setter', value: topTitle, detail: top.score ? `Score signal: ${top.score}/100` : 'Leading the current trend list' } : null,
+        { label: 'Best use', value: 'Finding momentum', detail: 'Good when you want anime people are actively following' },
+        genres.length ? { label: 'Mood range', value: genreLine, detail: 'Use genres to avoid picking only by rank' } : null,
+      ].filter((item): item is BlogArticleTakeaway => Boolean(item)),
+      faq: [
+        { question: 'Is the top trending anime always the best anime?', answer: 'Not always. Trending means attention and momentum; score, genre, and episode quality still matter.' },
+        { question: 'How should I pick from this page?', answer: 'Start with the top three, then choose based on the genre and tone you actually want to watch.' },
+        { question: 'Why do lower-ranked titles still matter?', answer: 'A lower-ranked title can be a better personal fit if its genre, studio, or score signal matches your taste.' },
+      ],
+    },
+    'popular-anime-right-now': {
+      headline: 'Popular Anime Right Now',
+      excerpt: `Popularity is useful because it shows where the crowd is gathering, but the best picks are the ones whose reception and genre fit match your taste.`,
+      heroCallout: `${topTitle} is the big crowd signal here, which makes it the first title worth comparing against the rest.`,
+      paragraphs: top ? [
+        `Popular anime pages are good for finding safe starting points. ${leadLine} sits at the front here, which means it has enough audience pull to be worth a closer look.`,
+        `The trick is not to treat popularity as a guarantee. A widely followed anime can be excellent, messy, comforting, overhyped, or just easy to recommend. That is why the score and genre context are doing real work on this page.`,
+        `This group currently leans into ${genreLine}.${scoreLine} If those genres are already your lane, the list becomes much more useful than a plain popularity chart.`,
+        `Use this article when you want anime with a larger audience behind it, then let the details help you avoid picking something only because everyone else clicked it first.`,
+      ] : [definition.intro, definition.readerPromise],
+      sections: [
+        { heading: 'Why popular picks are useful', body: `A popular anime usually has enough conversation, clips, recommendations, or seasonal visibility to make it easy to follow. That makes these titles good starting points when you do not want to gamble on something obscure, but still want enough context to choose carefully.` },
+        { heading: 'Where popularity can mislead you', body: `Popularity can hide mixed reception. A title may have a huge audience because of its source material, a famous studio, a recognizable premise, or a strong first episode. Before choosing, compare the score, genres, episode count, and status so the pick feels intentional.` },
+      ],
+      takeaways: [
+        top ? { label: 'Crowd leader', value: topTitle, detail: top.popularity ? `${top.popularity.toLocaleString()} popularity` : 'Strong viewer interest' } : null,
+        { label: 'Best use', value: 'Safe discovery', detail: 'Good for finding titles with broad awareness' },
+        score ? { label: 'Reception check', value: `${score}/100 avg`, detail: 'Helps balance popularity against response' } : null,
+      ].filter((item): item is BlogArticleTakeaway => Boolean(item)),
+      faq: [
+        { question: 'Does popular mean good?', answer: 'No. Popular means a lot of people are paying attention; the score and genre fit help you decide if it is good for you.' },
+        { question: 'Who should use this article?', answer: 'Use it when you want anime that already has audience momentum and enough context to compare quickly.' },
+        { question: 'What should I check first?', answer: 'Check the genre, score, status, and episode count before opening the title page.' },
+      ],
+    },
+    'upcoming-anime-this-season': {
+      headline: 'Upcoming Anime This Season',
+      excerpt: `Upcoming anime are fun because the best picks are not always obvious yet. This guide helps you spot what deserves a place on your watchlist early.`,
+      heroCallout: `${topTitle} is the first upcoming title to keep an eye on from this batch.`,
+      paragraphs: top ? [
+        `The best time to notice a new anime is often before the season gets crowded. ${leadLine} leads this preview, giving you a practical first title to check before release-week noise takes over.`,
+        `Upcoming lists work differently from trending lists. There may not be a score yet, so the safer clues are format, genre, studio, source familiarity, and whether the premise sounds like something that can actually hold a season.`,
+        `The current mix leans toward ${genreLine}. That gives the preview some personality: you can build a watchlist by mood instead of saving every title and sorting it out later.`,
+        `Use this page as an early filter. Pick a few titles that sound genuinely interesting, then come back once episodes begin and the reception signal becomes clearer.`,
+      ] : [definition.intro, definition.readerPromise],
+      sections: [
+        { heading: 'What makes an upcoming title worth saving', body: `A good upcoming pick usually has at least one strong hook: a genre you already like, a studio you trust, a sequel connection, a sharp premise, or enough early attention to suggest people will discuss it once it airs.` },
+        { heading: 'How to avoid watchlist clutter', body: `Do not add everything. Start with the title that sounds most like your taste, then add one familiar pick and one wildcard. That keeps your watchlist useful when the season starts moving quickly.` },
+      ],
+      takeaways: [
+        top ? { label: 'First watchlist pick', value: topTitle, detail: topGenre ? `Starts in ${topGenre}` : 'Lead upcoming title' } : null,
+        { label: 'Best use', value: 'Early planning', detail: 'Good for building a cleaner seasonal watchlist' },
+        genres.length ? { label: 'Genre direction', value: genreLine, detail: 'Helpful before scores are available' } : null,
+      ].filter((item): item is BlogArticleTakeaway => Boolean(item)),
+      faq: [
+        { question: 'Should I add every upcoming anime?', answer: 'No. Pick a few strong fits so your watchlist stays useful once the season starts.' },
+        { question: 'What matters before an anime airs?', answer: 'Genre, studio, format, premise, and sequel status matter more than score before episodes are available.' },
+        { question: 'When should I check back?', answer: 'Check again after early episodes begin, because reception becomes much clearer once viewers have actually watched it.' },
+      ],
+    },
+    'todays-anime-release-schedule': {
+      headline: "Today's Anime Release Schedule",
+      excerpt: `A daily schedule should help you decide what to check first, not bury you in times. Start with the episode that best matches your mood.`,
+      heroCallout: top?.episode ? `${topTitle} episode ${top.episode} is one of today's useful starting points.` : `${topTitle} is one of today's useful starting points.`,
+      paragraphs: top ? [
+        `A release schedule is most useful when it feels like a shortlist, not a wall of dates. ${top.episode ? `${topTitle} episode ${top.episode}` : topTitle} gives today's page a clear first stop.`,
+        `From there, compare what else is airing by mood. Some days are better for continuing a weekly favorite; other days are better for trying one episode of something new before the backlog grows again.`,
+        `Today's mix leans toward ${genreLine}.${scoreLine} That gives you a quick way to choose between comfort, action, comedy, drama, or a title you have been meaning to test.`,
+        `Use this page as a light daily check-in: scan the episode numbers, open the titles that matter, and leave the rest for later without feeling like you missed the whole day.`,
+      ] : [definition.intro, definition.readerPromise],
+      sections: [
+        { heading: 'How to read today quickly', body: `Start with shows you are already following, then look for episode numbers that suggest a good checkpoint. Early episodes are good for sampling, middle episodes show whether the story has settled, and later episodes can tell you whether the season is worth catching up on.` },
+        { heading: 'What to open first', body: `Open the title that best matches your current mood, not just the first item on the schedule. A strong score, a familiar studio, or a genre you enjoy is usually a better guide than time order alone.` },
+      ],
+      takeaways: [
+        top ? { label: 'First check', value: top.episode ? `${topTitle} ep ${top.episode}` : topTitle, detail: 'Useful starting point for today' } : null,
+        { label: 'Best use', value: 'Daily triage', detail: 'Good for deciding what deserves attention now' },
+        genres.length ? { label: 'Today leans', value: genreLine, detail: 'Use mood to narrow the schedule' } : null,
+      ].filter((item): item is BlogArticleTakeaway => Boolean(item)),
+      faq: [
+        { question: 'How should I use the daily schedule?', answer: 'Check continuing shows first, then sample one new title if the genre or score looks interesting.' },
+        { question: 'Are all times exact?', answer: 'Schedule data can shift, so treat it as a helpful guide and refresh the title page if timing matters.' },
+        { question: 'What if I am behind?', answer: 'Look for the title you already care about, then use episode numbers to decide whether to catch up now or later.' },
+      ],
+    },
+    'recent-anime-episode-updates': {
+      headline: 'Recent Anime Episode Updates',
+      excerpt: `Recent episode updates are best for catching momentum after it happens: what moved forward, what is worth resuming, and what can wait.`,
+      heroCallout: top?.episode ? `${topTitle} episode ${top.episode} is the first recent update to check.` : `${topTitle} is the first recent update to check.`,
+      paragraphs: top ? [
+        `Recent updates are useful when you do not want to dig through every seasonal page. ${top.episode ? `${topTitle} episode ${top.episode}` : topTitle} leads this batch and gives you a clean place to start.`,
+        `This kind of page is less about hype and more about momentum. A show that just moved forward may be worth resuming, especially if the score, genre, or studio already made it a maybe for your list.`,
+        `The update mix leans toward ${genreLine}.${scoreLine} That helps you decide whether to continue something familiar or open a title you ignored earlier in the season.`,
+        `Use it like a catch-up board. Pick one title to continue, one to investigate, and let the rest wait until the next time you are actually looking for something to watch.`,
+      ] : [definition.intro, definition.readerPromise],
+      sections: [
+        { heading: 'Why recent updates matter', body: `A fresh episode can change how a title feels. Slow shows can finally click, popular shows can wobble, and smaller titles can become easier to recommend once there is more than a premiere to judge.` },
+        { heading: 'How to catch up without overthinking it', body: `Start with titles you already sampled. If one has a good score signal or a genre you like, open it first. If not, scan the descriptions and save only the titles that actually sound worth your time.` },
+      ],
+      takeaways: [
+        top ? { label: 'Freshest lead', value: top.episode ? `${topTitle} ep ${top.episode}` : topTitle, detail: 'First recent update in this batch' } : null,
+        { label: 'Best use', value: 'Catching up', detail: 'Good for deciding what to resume' },
+        score ? { label: 'Quality check', value: `${score}/100 avg`, detail: 'Useful when choosing between updates' } : null,
+      ].filter((item): item is BlogArticleTakeaway => Boolean(item)),
+      faq: [
+        { question: 'What is this page best for?', answer: 'Use it when you want to see which anime recently moved forward and decide what to resume.' },
+        { question: 'Should I follow every recent update?', answer: 'No. Use score, genre, and your own interest to pick only the titles worth your time.' },
+        { question: 'Why are episode numbers useful?', answer: 'They show whether a title is early enough to sample, far enough to judge, or close enough to catch up on.' },
+      ],
+    },
+  };
+
+  const article = guideCopy[definition.slug] || guideCopy['trending-anime-this-week'];
 
   return {
     seoTitle: definition.seoTitle,
     metaDescription: definition.description,
-    headline: definition.title,
-    excerpt: definition.summary,
-    heroCallout: top ? `${top.title} is the main title to watch here.` : definition.summary,
-    paragraphs,
-    sections: [
-      {
-        heading: 'What stands out',
-        body: top ? `${top.title} leads this article because it has the strongest current placement among the titles shown here.` : definition.summary,
-      },
-      {
-        heading: 'How to use this list',
-        body: 'Compare score, genre, episode status, studio, and season details before opening the StreamNyaa title page for a closer look.',
-      },
-    ],
-    takeaways: [
-      top ? { label: 'Top highlight', value: top.title, detail: top.score ? `Score signal: ${top.score}/100` : 'Strong current placement' } : null,
-      genres.length ? { label: 'Common genres', value: genres.slice(0, 3).join(', '), detail: 'Useful for picking by mood' } : null,
-      score ? { label: 'Average score', value: `${score}/100`, detail: 'Based on titles with score data' } : null,
-    ].filter((item): item is BlogArticleTakeaway => Boolean(item)),
-    faq: [
-      { question: `What is the best pick from ${definition.title}?`, answer: `${top?.title || 'The first title'} is the first title to check, but the best choice depends on the genres and episode status you prefer.` },
-      { question: 'What is this anime article useful for?', answer: 'It helps compare current anime titles by score, genre, episode status, studio, and season details.' },
-      { question: 'Can I open anime pages from this article?', answer: 'Yes. Each anime card links to its StreamNyaa title page for more details.' },
-    ],
+    headline: article.headline,
+    excerpt: article.excerpt,
+    heroCallout: article.heroCallout,
+    paragraphs: article.paragraphs,
+    sections: article.sections,
+    takeaways: article.takeaways,
+    faq: article.faq,
   };
 }
 
@@ -816,6 +930,9 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
 
   const generatedAt = new Date().toISOString();
   if (preview) return { ...definition, updatedAt: generatedAt, generatedAt, items, topic, articleSource: 'fallback', articleStatus: 'preview_no_gemini' };
+  if (definition.articleKind !== 'gemini') {
+    return { ...definition, updatedAt: generatedAt, generatedAt, items, article: fallbackArticle(definition, items), articleSource: 'fallback', articleStatus: 'guide_article' };
+  }
 
   const generated = await generateArticle(definition, items, topic);
   return { ...definition, updatedAt: generatedAt, generatedAt, items, topic, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
