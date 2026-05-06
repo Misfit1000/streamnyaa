@@ -7,6 +7,22 @@ import { useStore } from '../store/useStore';
 import { animePath, mangaPath, watchPath } from '../lib/slug';
 import Seo from '../components/Seo';
 
+function formatStatus(value?: string) {
+  return value ? value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unknown';
+}
+
+function formatNextAiring(seconds?: number) {
+  if (!seconds) return null;
+  return new Date(seconds * 1000).toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
 export default function AnimeDetails() {
   const { id } = useParams<{ id: string }>();
   const { isInMyList, addToMyList, removeFromMyList, isLiked, toggleLike } = useStore();
@@ -58,6 +74,64 @@ export default function AnimeDetails() {
 
   const inList = isInMyList(anime.mal_id);
   const liked = isLiked(anime.mal_id);
+  const genres = anime.genres?.map((genre: any) => genre.name).filter(Boolean) || [];
+  const studios = anime.studios?.map((studio: any) => studio.name).filter(Boolean) || [];
+  const statusLabel = formatStatus(anime.status);
+  const nextEpisodeNumber = anime.nextAiringEpisode?.episode;
+  const nextAiringTime = formatNextAiring(anime.nextAiringEpisode?.airingAt);
+  const episodeCountText = anime.episodes ? `${anime.episodes} episodes` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} episodes aired so far` : 'episode count not confirmed';
+  const seoDescription = `${anime.title} anime details with synopsis, genres, ${episodeCountText}, status, related anime, recommendations, watch links, and download search options.`;
+  const mainStudio = studios[0];
+  const jsonLd = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'TVSeries',
+      name: anime.title,
+      alternateName: [anime.title_english, anime.title_romaji].filter(Boolean),
+      description: anime.synopsis || seoDescription,
+      image: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url,
+      genre: genres,
+      numberOfEpisodes: anime.episodes || undefined,
+      aggregateRating: anime.score ? {
+        '@type': 'AggregateRating',
+        ratingValue: anime.score,
+        bestRating: 10,
+        worstRating: 0,
+      } : undefined,
+      productionCompany: mainStudio ? { '@type': 'Organization', name: mainStudio } : undefined,
+      url: 'https://www.streamnyaa.xyz' + animePath(anime),
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: [
+        {
+          '@type': 'Question',
+          name: `What is ${anime.title} about?`,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: anime.synopsis || `${anime.title} is an anime listed on StreamNyaa with metadata, episode information, related titles, and discovery links.`,
+          },
+        },
+        {
+          '@type': 'Question',
+          name: `How many episodes does ${anime.title} have?`,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: `${anime.title} has ${episodeCountText}. ${nextEpisodeNumber ? `The next listed episode is episode ${nextEpisodeNumber}${nextAiringTime ? `, scheduled around ${nextAiringTime}` : ''}.` : ''}`,
+          },
+        },
+        {
+          '@type': 'Question',
+          name: `Where can I find ${anime.title} downloads?`,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: `The ${anime.title} downloads page on StreamNyaa helps search public torrent metadata, including episode results, batch results, file sizes, seeders, and sub or dub filters.`,
+          },
+        },
+      ],
+    },
+  ];
 
   const handleListToggle = () => {
     if (inList) removeFromMyList(anime.mal_id);
@@ -68,8 +142,9 @@ export default function AnimeDetails() {
     <div className="pb-20">
       <Seo
         title={`${anime.title} Anime Details, Episodes and Streaming Info | StreamNyaa`}
-        description={`View ${anime.title} anime details, episode list, schedule, streaming information, and download options on StreamNyaa.`}
+        description={seoDescription}
         canonicalPath={animePath(anime)}
+        jsonLd={jsonLd}
       />
       {/* Hero Section */}
       <div className="relative h-[50vh] md:h-[60vh] w-full overflow-hidden">
@@ -179,6 +254,70 @@ export default function AnimeDetails() {
                 ))}
               </div>
             </div>
+
+            <section className="mt-8 pt-6 border-t border-[var(--glass-border)]">
+              <h3 className="text-lg font-bold mb-3">About {anime.title}</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {[
+                  { label: 'Status', value: statusLabel, detail: anime.status === 'RELEASING' ? 'Currently airing' : 'Release status' },
+                  { label: 'Episodes', value: episodeCountText, detail: nextEpisodeNumber ? `Next listed episode: ${nextEpisodeNumber}` : 'Episode information' },
+                  { label: 'Format', value: anime.type || 'Anime', detail: anime.year ? `Season year: ${anime.year}` : 'Media format' },
+                  { label: 'Score', value: anime.score ? `${anime.score}/10` : 'Not rated', detail: 'Audience score signal' },
+                  { label: 'Studio', value: mainStudio || 'Not listed', detail: studios.length > 1 ? `${studios.slice(1, 3).join(', ')} also listed` : 'Main studio info' },
+                  { label: 'Genres', value: genres.slice(0, 3).join(', ') || 'Not listed', detail: genres.length > 3 ? `${genres.length} genre tags total` : 'Genre tags' },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass)] p-4">
+                    <p className="text-xs font-black uppercase tracking-wider text-primary">{item.label}</p>
+                    <p className="mt-2 text-base font-bold text-foreground">{item.value}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="mt-8 pt-6 border-t border-[var(--glass-border)] space-y-4">
+              <div>
+                <h3 className="text-lg font-bold mb-2">Episode and release information</h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  {anime.status === 'RELEASING'
+                    ? `${anime.title} is currently airing. ${nextEpisodeNumber ? `Episode ${nextEpisodeNumber} is the next listed episode${nextAiringTime ? ` and is scheduled around ${nextAiringTime}` : ''}.` : 'New episode timing is updated when schedule data is available.'} The episode list below focuses on episodes that are already available or listed by public metadata.`
+                    : anime.status === 'FINISHED'
+                      ? `${anime.title} is listed as finished, so the episode list is useful for browsing the full release order, checking episode pages, and opening watch or download searches.`
+                      : `${anime.title} has release information listed as ${statusLabel}. Episode details may update as more official metadata becomes available.`}
+                </p>
+              </div>
+              <div>
+                <h3 className="text-lg font-bold mb-2">Watch and download context</h3>
+                <p className="text-muted-foreground leading-relaxed">
+                  StreamNyaa organizes {anime.title} with watch links, episode navigation, related anime, recommendations, and download search tools. The downloads page can search public torrent metadata by episode, batch, quality, subtitle, or dub preference, while this page keeps the anime details and episode order easy to scan.
+                </p>
+              </div>
+            </section>
+
+            <section className="mt-8 pt-6 border-t border-[var(--glass-border)]">
+              <h3 className="text-lg font-bold mb-4">FAQ</h3>
+              <div className="space-y-4">
+                {[
+                  {
+                    question: `What is ${anime.title} about?`,
+                    answer: anime.synopsis || `${anime.title} is an anime page with metadata, episode information, related titles, and StreamNyaa discovery links.`,
+                  },
+                  {
+                    question: `Is ${anime.title} currently airing?`,
+                    answer: `${anime.title} is listed as ${statusLabel}.${anime.status === 'RELEASING' && nextEpisodeNumber ? ` The next listed episode is episode ${nextEpisodeNumber}${nextAiringTime ? ` around ${nextAiringTime}` : ''}.` : ''}`,
+                  },
+                  {
+                    question: `Can I find ${anime.title} episode downloads?`,
+                    answer: `Yes. Open the downloads page to search public torrent metadata for ${anime.title}, including episode results, batch results, file sizes, seeders, and sub or dub filters.`,
+                  },
+                ].map((item) => (
+                  <div key={item.question} className="rounded-xl border border-[var(--glass-border)] bg-secondary/20 p-4">
+                    <h4 className="font-bold text-foreground">{item.question}</h4>
+                    <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{item.answer}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
 
             {anime.relations && anime.relations.length > 0 && (
               <div className="relative group/carousel">
