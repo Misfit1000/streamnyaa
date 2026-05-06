@@ -503,12 +503,19 @@ function selectNewsTopic(items: BlogMediaItem[], options: { excludeKeys?: Set<st
   return topic;
 }
 
-async function fetchTrendingNewsItems(preview = false, mode: 'primary' | 'fast' = 'primary') {
+function excludedTopicKeys(topics: BlogTopic[]) {
+  return new Set(topics.flatMap((topic) => [topic.malId, topic.animeId].filter(Boolean).map(String)));
+}
+
+async function fetchTrendingNewsItems(preview = false, mode: 'primary' | 'fast' | 'extra' = 'primary') {
   const items = await fetchMediaList('TRENDING_DESC', 'RELEASING');
   if (preview) {
     const primary = selectNewsTopic(items);
-    const topic = mode === 'fast'
-      ? selectNewsTopic(items, { excludeKeys: new Set(primary.malId || primary.animeId ? [String(primary.malId || primary.animeId)] : []), preferFastMoving: true })
+    const fast = selectNewsTopic(items, { excludeKeys: excludedTopicKeys([primary]), preferFastMoving: true });
+    const topic = mode === 'extra'
+      ? selectNewsTopic(items, { excludeKeys: excludedTopicKeys([primary, fast]), preferFastMoving: true })
+      : mode === 'fast'
+      ? fast
       : primary;
     return { items, topic };
   }
@@ -522,8 +529,11 @@ async function fetchTrendingNewsItems(preview = false, mode: 'primary' | 'fast' 
 
   const allItems = [...enriched, ...items.slice(enriched.length)];
   const primary = selectNewsTopic(allItems);
-  const topic = mode === 'fast'
-    ? selectNewsTopic(allItems, { excludeKeys: new Set(primary.malId || primary.animeId ? [String(primary.malId || primary.animeId)] : []), preferFastMoving: true })
+  const fast = selectNewsTopic(allItems, { excludeKeys: excludedTopicKeys([primary]), preferFastMoving: true });
+  const topic = mode === 'extra'
+    ? selectNewsTopic(allItems, { excludeKeys: excludedTopicKeys([primary, fast]), preferFastMoving: true })
+    : mode === 'fast'
+    ? fast
     : primary;
 
   return { items: allItems, topic };
@@ -1058,7 +1068,7 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
   }
 }
 
-async function buildBlogPost(slug: string, preview = false): Promise<BlogPostData> {
+async function buildBlogPost(slug: string, preview = false, extra = false): Promise<BlogPostData> {
   const definition = getBlogPost(slug);
   if (!definition) throw new Error('Blog post not found');
 
@@ -1070,7 +1080,7 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
     topic = result.topic;
   }
   else if (slug === 'anime-viral-topic-today') {
-    const result = await fetchTrendingNewsItems(preview, 'fast');
+    const result = await fetchTrendingNewsItems(preview, extra ? 'extra' : 'fast');
     items = result.items;
     topic = result.topic;
   }
@@ -1092,14 +1102,14 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
   return post;
 }
 
-export async function getCachedBlogPost(slug: string, preview = false) {
+export async function getCachedBlogPost(slug: string, preview = false, extra = false) {
   const now = Date.now();
-  const cacheKey = preview ? slug + ':preview' : slug + ':article';
+  const cacheKey = extra ? slug + ':extra:' + now : preview ? slug + ':preview' : slug + ':article';
   const cached = memoryCache.get(cacheKey);
   if (cached && cached.expiresAt > now) return cached.data;
 
   try {
-    const data = await buildBlogPost(slug, preview);
+    const data = await buildBlogPost(slug, preview, extra);
     const isGeminiArticle = data.articleSource === 'gemini';
     memoryCache.set(cacheKey, {
       data,
@@ -1116,12 +1126,13 @@ export async function getCachedBlogPost(slug: string, preview = false) {
 export default async function handler(req: any, res: any) {
   const slug = Array.isArray(req.query.slug) ? req.query.slug[0] : req.query.slug;
   const preview = req.query.preview === '1' || req.query.preview === 'true';
+  const extra = req.query.extra === '1' || req.query.extra === 'true';
   if (!slug || !getBlogPost(slug)) {
     return res.status(404).json({ error: 'Blog post not found' });
   }
 
   try {
-    const data = await getCachedBlogPost(slug, preview);
+    const data = await getCachedBlogPost(slug, preview, extra);
     const { articleSource: _articleSource, articleStatus: _articleStatus, ...publicData } = data;
     res.setHeader('Cache-Control', EDGE_CACHE_HEADER);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
