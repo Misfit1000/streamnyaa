@@ -5,6 +5,7 @@ import Home from './pages/Home';
 import Search from './pages/Search';
 import Schedule from './pages/Schedule';
 import AnimeDetails from './pages/AnimeDetails';
+import AnimeLanding from './pages/AnimeLanding';
 import MangaDetails from './pages/MangaDetails';
 import Watch from './pages/Watch';
 import MyList from './pages/MyList';
@@ -33,6 +34,9 @@ export default function App() {
             <Route index element={<Home />} />
             <Route path="search" element={<Search />} />
             <Route path="schedule" element={<Schedule />} />
+            <Route path="anime/popular" element={<AnimeLanding />} />
+            <Route path="anime/genre/:genre" element={<AnimeLanding />} />
+            <Route path="anime/season/:seasonSlug" element={<AnimeLanding />} />
             <Route path="anime/:id" element={<AnimeDetails />} />
             <Route path="manga/:id" element={<MangaDetails />} />
             <Route path="anime/:id/downloads" element={<AnimeDownloads />} />
