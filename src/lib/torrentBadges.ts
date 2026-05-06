@@ -42,6 +42,20 @@ export function getTorrentBadges(torrent: NyaaItem): TorrentBadge[] {
   return badges;
 }
 
+export type TorrentSourceFilter = '' | 'trusted' | 'high-seeders' | 'hevc' | 'dual-audio' | 'batch' | 'episode';
+
+export function torrentMatchesSourceFilter(torrent: NyaaItem, filter: TorrentSourceFilter) {
+  if (!filter) return true;
+  const title = torrent.title || '';
+  if (filter === 'trusted') return hasTrustedGroup(title);
+  if (filter === 'high-seeders') return torrent.rawSeeders >= 50;
+  if (filter === 'hevc') return isHevc(title);
+  if (filter === 'dual-audio') return isDualAudio(title);
+  if (filter === 'batch') return isBatch(title);
+  if (filter === 'episode') return isEpisode(title);
+  return true;
+}
+
 export function torrentBadgeClassName(tone: TorrentBadgeTone) {
   const base = 'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-black uppercase tracking-wide';
   const styles: Record<TorrentBadgeTone, string> = {
