@@ -1,5 +1,5 @@
 const ARCHIVE_DIR = 'public/generated-blog-archive';
-const REPOSITORY = process.env.GITHUB_ARTICLE_REPOSITORY || process.env.GITHUB_REPOSITORY || 'Misfit1000/StreamNyaa';
+const REPOSITORY = process.env.GITHUB_ARTICLE_REPOSITORY || 'Misfit1000/StreamNyaa';
 const BRANCH = process.env.GITHUB_ARTICLE_BRANCH || 'main';
 
 function githubToken() {
