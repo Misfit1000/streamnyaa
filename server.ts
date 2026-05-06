@@ -69,8 +69,9 @@ async function startServer() {
 
     try {
       const data = await getCachedBlogPost(slug, preview);
+      const { articleSource: _articleSource, articleStatus: _articleStatus, ...publicData } = data;
       res.setHeader("Cache-Control", "public, s-maxage=25200, stale-while-revalidate=86400");
-      return res.json(data);
+      return res.json(publicData);
     } catch (e: any) {
       console.error(e);
       return res.status(500).json({ error: e.message });

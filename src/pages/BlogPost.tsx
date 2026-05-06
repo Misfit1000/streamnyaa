@@ -89,13 +89,24 @@ function buildFaq(definition: ReturnType<typeof getBlogPost>, items: BlogMediaIt
     },
     {
       question: 'How often should I check this anime article?',
-      answer: 'For trending, schedule, and episode update pages, checking daily or every few days gives the most useful results.',
+      answer: 'This article is useful when you want a quick read on current anime momentum, episode activity, and title context.',
     },
     {
       question: 'Can I open the anime pages from this article?',
       answer: 'Yes. Each anime card links to its StreamNyaa title page so you can continue from the article into the main anime details.',
     },
   ];
+}
+
+function findTopicAnime(items: BlogMediaItem[], animeTitle?: string) {
+  if (!items.length) return null;
+  if (!animeTitle) return items[0];
+
+  const cleanTitle = animeTitle.toLowerCase();
+  return items.find((item) => {
+    const title = item.title.toLowerCase();
+    return title === cleanTitle || title.includes(cleanTitle) || cleanTitle.includes(title);
+  }) || items[0];
 }
 
 export default function BlogPost() {
@@ -113,6 +124,7 @@ export default function BlogPost() {
   }
 
   const post = data || { ...definition, updatedAt: new Date().toISOString(), items: [] };
+  const isGeminiArticle = definition.articleKind === 'gemini';
   const canonicalPath = '/blog/' + definition.slug;
   const article = post.article;
   const paragraphs = article?.paragraphs?.length ? article.paragraphs : buildArticleParagraphs(definition, post.items);
@@ -122,14 +134,15 @@ export default function BlogPost() {
   const seoDescription = article?.metaDescription || definition.description;
   const headline = article?.headline || definition.title;
   const intro = article?.excerpt || definition.intro;
-  const image = post.items[0]?.image;
+  const heroAnime = findTopicAnime(post.items, isGeminiArticle ? post.topic?.animeTitle : undefined);
+  const image = heroAnime?.image;
   const jsonLd = [
     {
       '@context': 'https://schema.org',
       '@type': 'BlogPosting',
       headline,
       description: seoDescription,
-      articleSection: definition.category,
+      articleSection: isGeminiArticle ? 'Anime News' : definition.category,
       datePublished: '2026-05-05',
       dateModified: post.generatedAt || post.updatedAt,
       mainEntityOfPage: 'https://www.streamnyaa.xyz' + canonicalPath,
@@ -151,11 +164,18 @@ export default function BlogPost() {
       <Link to="/blog" className="inline-flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-colors mb-8"><ArrowLeft className="w-4 h-4" />Blog</Link>
       <header className="max-w-4xl">
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <span className="text-[11px] uppercase font-black tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full">{definition.category}</span>
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><CalendarClock className="w-4 h-4" />Updated {formatDate(post.updatedAt)}</span>
+          <span className="text-[11px] uppercase font-black tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full">{isGeminiArticle ? 'Focused news' : definition.category}</span>
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><CalendarClock className="w-4 h-4" />Anime article</span>
         </div>
         <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight mb-5">{headline}</h1>
         <p className="text-base md:text-lg text-muted-foreground leading-relaxed max-w-3xl">{intro}</p>
+        {isGeminiArticle && post.topic ? (
+          <div className="mt-6 border border-primary/20 bg-primary/5 rounded-2xl p-4 max-w-3xl">
+            <p className="text-[11px] uppercase font-black tracking-wider text-primary mb-2">Picked topic</p>
+            <h2 className="text-lg md:text-xl font-black text-foreground">{post.topic.title}</h2>
+            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{post.topic.reason}</p>
+          </div>
+        ) : null}
       </header>
 
       {isLoading ? <div className="min-h-[280px] flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div> : error ? <div className="mt-10 border border-border rounded-2xl p-6 bg-secondary/40 text-muted-foreground">The current anime details could not load right now. Try refreshing this page in a moment.</div> : (
@@ -165,17 +185,41 @@ export default function BlogPost() {
               <div className="border border-border rounded-2xl p-6 bg-secondary/40 text-muted-foreground">No current entries are available for this article yet. Try refreshing again shortly.</div>
             ) : (
               <>
-                {image ? <div className="relative min-h-[260px] overflow-hidden rounded-2xl border border-border bg-secondary">
-                  <img src={image} alt={post.items[0].title} className="absolute inset-0 h-full w-full object-cover brightness-[0.38]" loading="lazy" referrerPolicy="no-referrer" />
-                  <div className="relative p-6 md:p-8 max-w-2xl">
-                    <p className="text-xs font-black uppercase tracking-wider text-primary mb-3">Current article</p>
-                    <h2 className="text-2xl md:text-3xl font-black text-white leading-tight">{article?.heroCallout || `${post.items[0].title} is the main title to watch here`}</h2>
-                    <p className="mt-3 text-sm md:text-base text-white/85 leading-relaxed">{whyWatchText(post.items[0], 0)}</p>
-                  </div>
-                </div> : null}
+                {image && heroAnime ? (
+                  isGeminiArticle ? (
+                    <div className="relative min-h-[340px] overflow-hidden rounded-2xl border border-primary/30 bg-secondary">
+                      <img src={image} alt={heroAnime.title} className="absolute inset-0 h-full w-full object-cover brightness-[0.36] saturate-125 scale-105" loading="lazy" referrerPolicy="no-referrer" />
+                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.18),transparent_28%),linear-gradient(90deg,rgba(0,0,0,0.9),rgba(0,0,0,0.58),rgba(0,0,0,0.28))]" />
+                      <div className="relative grid gap-6 md:grid-cols-[1fr_190px] min-h-[340px] p-6 md:p-8 items-end">
+                        <div className="max-w-2xl">
+                          <div className="flex flex-wrap items-center gap-2 mb-4">
+                            <span className="text-[11px] uppercase font-black tracking-wider text-background bg-primary px-3 py-1 rounded-full">Focused story</span>
+                            {post.topic?.type ? <span className="text-[11px] uppercase font-black tracking-wider text-white/85 bg-white/12 px-3 py-1 rounded-full">{post.topic.type.replace(/-/g, ' ')}</span> : null}
+                          </div>
+                          <h2 className="text-2xl md:text-4xl font-black text-white leading-tight">{article?.heroCallout || `${heroAnime.title} is the main title to watch here`}</h2>
+                          <p className="mt-4 text-sm md:text-base text-white/88 leading-relaxed">{post.topic?.summary || whyWatchText(heroAnime, 0)}</p>
+                        </div>
+                        <div className="hidden md:block">
+                          <div className="aspect-[2/3] overflow-hidden rounded-2xl border border-white/25 bg-black/30 shadow-2xl">
+                            <img src={image} alt={`${heroAnime.title} poster`} className="h-full w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="relative min-h-[260px] overflow-hidden rounded-2xl border border-border bg-secondary">
+                      <img src={image} alt={heroAnime.title} className="absolute inset-0 h-full w-full object-cover brightness-[0.38]" loading="lazy" referrerPolicy="no-referrer" />
+                      <div className="relative p-6 md:p-8 max-w-2xl">
+                        <p className="text-xs font-black uppercase tracking-wider text-primary mb-3">Current article</p>
+                        <h2 className="text-2xl md:text-3xl font-black text-white leading-tight">{article?.heroCallout || `${heroAnime.title} is the main title to watch here`}</h2>
+                        <p className="mt-3 text-sm md:text-base text-white/85 leading-relaxed">{whyWatchText(heroAnime, 0)}</p>
+                      </div>
+                    </div>
+                  )
+                ) : null}
 
                 <section className="border border-border bg-[var(--glass)] rounded-2xl p-5 md:p-6">
-                  <div className="flex items-center gap-2 mb-4"><Newspaper className="w-5 h-5 text-primary" /><h2 className="text-xl md:text-2xl font-black">Quick read</h2></div>
+                  <div className="flex items-center gap-2 mb-4"><Newspaper className="w-5 h-5 text-primary" /><h2 className="text-xl md:text-2xl font-black">{isGeminiArticle ? 'Story breakdown' : 'Quick read'}</h2></div>
                   <div className="space-y-4 text-sm md:text-base text-muted-foreground leading-relaxed">
                     {paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                   </div>
@@ -198,8 +242,8 @@ export default function BlogPost() {
 
                 <section className="space-y-4">
                   <div>
-                    <h2 className="text-2xl md:text-3xl font-black tracking-tight">Current anime picks</h2>
-                    <p className="mt-2 text-sm text-muted-foreground">Each title includes useful context so you can decide faster instead of opening random pages one by one.</p>
+                    <h2 className="text-2xl md:text-3xl font-black tracking-tight">{isGeminiArticle ? 'Related anime context' : 'Current anime picks'}</h2>
+                    <p className="mt-2 text-sm text-muted-foreground">{isGeminiArticle ? 'These titles are included as background signals around the focused article topic.' : 'Each title includes useful context so you can decide faster instead of opening random pages one by one.'}</p>
                   </div>
                   {post.items.map((anime, index) => (
                     <Link key={anime.mal_id + '-' + index} to={animePath(anime)} className="group grid grid-cols-[86px_1fr] sm:grid-cols-[120px_1fr] gap-4 border border-border bg-[var(--glass)] hover:border-primary/40 rounded-2xl p-4 transition-colors">
@@ -244,8 +288,10 @@ export default function BlogPost() {
           </main>
           <aside className="space-y-5">
             <div className="border border-border rounded-2xl p-5 bg-secondary/30">
-              <div className="flex items-center gap-2 font-black text-foreground mb-2"><BarChart3 className="w-5 h-5 text-primary" />Article stats</div>
+              <div className="flex items-center gap-2 font-black text-foreground mb-2"><BarChart3 className="w-5 h-5 text-primary" />{isGeminiArticle ? 'Topic signals' : 'Article stats'}</div>
               <div className="space-y-2 text-sm text-muted-foreground">
+                {isGeminiArticle && post.topic?.animeTitle ? <p>Main topic: {post.topic.animeTitle}</p> : null}
+                {isGeminiArticle && post.topic?.type ? <p>Angle: {post.topic.type.replace(/-/g, ' ')}</p> : null}
                 <p>{post.items.length} anime titles included</p>
                 {averageScore(post.items) ? <p>Average score: {averageScore(post.items)}/100</p> : null}
                 {uniqueGenres(post.items).length ? <p>Top genres: {uniqueGenres(post.items).slice(0, 3).join(', ')}</p> : null}

@@ -119,6 +119,8 @@ export interface BlogTopic {
   animeTitle?: string;
   summary: string;
   confidence: 'headline' | 'trend';
+  reason: string;
+  evidence: string[];
   headlines?: BlogNewsItem[];
 }
 

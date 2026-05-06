@@ -131,6 +131,8 @@ interface BlogTopic {
   animeTitle?: string;
   summary: string;
   confidence: 'headline' | 'trend';
+  reason: string;
+  evidence: string[];
   headlines?: BlogNewsItem[];
 }
 
@@ -295,6 +297,14 @@ async function fetchAnimeNews(malId: number) {
   }
 }
 
+function classifyHeadline(news: BlogNewsItem) {
+  const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
+  if (/delay|delayed|postpone|postponed|hiatus|halt|suspend|production|broadcast/.test(text)) return 'delayed-or-paused-airing';
+  if (/episode|viral|record|ranking|tops|trend|buzz|reaction/.test(text)) return 'viral-episode-or-ranking';
+  if (/season|sequel|trailer|visual|cast|staff|premiere|release/.test(text)) return 'new-season-trailer-cast-update';
+  return 'anime-headline';
+}
+
 function headlineScore(news: BlogNewsItem) {
   const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
   let score = 1;
@@ -307,42 +317,92 @@ function headlineScore(news: BlogNewsItem) {
 }
 
 function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
-  const headlineCandidates = items.flatMap((item) => (item.news || []).map((news) => ({ item, news, score: headlineScore(news) + Math.floor((item.trending || 0) / 1000) })));
-  headlineCandidates.sort((a, b) => b.score - a.score);
-  const bestHeadline = headlineCandidates[0];
-  if (bestHeadline) {
-    const text = `${bestHeadline.news.title} ${bestHeadline.news.excerpt || ''}`.toLowerCase();
-    const type = /delay|delayed|postpone|postponed|hiatus|halt|suspend|production|broadcast/.test(text)
-      ? 'production-or-airing-update'
-      : /episode|viral|record|ranking|tops|trend|buzz|reaction/.test(text)
-        ? 'viral-or-trending-episode'
-        : /season|sequel|trailer|visual|cast|staff|premiere|release/.test(text)
-          ? 'announcement-or-preview'
-          : 'anime-headline';
-
-    return {
-      type,
-      title: bestHeadline.news.title,
-      animeTitle: bestHeadline.item.title,
-      summary: bestHeadline.news.excerpt || `${bestHeadline.item.title} has a current headline worth following.`,
-      confidence: 'headline',
-      headlines: [bestHeadline.news, ...(bestHeadline.item.news || []).filter((news) => news.title !== bestHeadline.news.title).slice(0, 2)],
-    };
-  }
-
   const sorted = [...items].sort((a, b) => ((b.trending || 0) + (b.popularity || 0) / 100) - ((a.trending || 0) + (a.popularity || 0) / 100));
   const top = sorted[0];
-  const weakButPopular = sorted.find((item) => (item.popularity || 0) > 150000 && (item.score || 100) < 72);
-  const topicItem = weakButPopular || top;
-  return {
-    type: weakButPopular ? 'popular-anime-underperforming' : 'anime-trend-analysis',
-    title: weakButPopular ? `${topicItem.title} is popular, but its score suggests mixed reception` : `${topicItem.title} is leading current anime buzz`,
-    animeTitle: topicItem.title,
-    summary: weakButPopular
-      ? `${topicItem.title} has strong popularity but a lower score signal, making it a useful topic for why a popular anime may be dividing viewers.`
-      : `${topicItem.title} is currently strong in the trend data, with genre, score, studio, and episode context available for a focused update.`,
-    confidence: 'trend',
-  };
+  const candidates: Array<BlogTopic & { priority: number }> = [];
+
+  for (const item of items) {
+    for (const news of item.news || []) {
+      const type = classifyHeadline(news);
+      const priority = headlineScore(news) + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000);
+      candidates.push({
+        type,
+        title: news.title,
+        animeTitle: item.title,
+        summary: news.excerpt || `${item.title} has a current anime headline worth following.`,
+        confidence: 'headline',
+        reason: type === 'delayed-or-paused-airing'
+          ? 'A real headline points to an airing, broadcast, delay, or production-related update.'
+          : type === 'viral-episode-or-ranking'
+            ? 'A real headline points to episode buzz, ranking movement, reactions, or trend activity.'
+            : type === 'new-season-trailer-cast-update'
+              ? 'A real headline points to a season, trailer, cast, staff, premiere, or release update.'
+              : 'A real headline is available for a currently relevant anime.',
+        evidence: [
+          `Headline: ${news.title}`,
+          item.trending ? `Current trend score: ${item.trending}` : '',
+          item.popularity ? `Popularity: ${item.popularity}` : '',
+        ].filter(Boolean),
+        headlines: [news, ...(item.news || []).filter((other) => other.title !== news.title).slice(0, 2)],
+        priority,
+      });
+    }
+  }
+
+  const weakButPopular = sorted.find((item) => (item.popularity || 0) > 80000 && (item.score || 100) < 72);
+  if (weakButPopular) {
+    candidates.push({
+      type: 'popular-anime-with-mixed-reception',
+      title: `${weakButPopular.title} is popular, but its score suggests mixed reception`,
+      animeTitle: weakButPopular.title,
+      summary: `${weakButPopular.title} has strong popularity with a weaker score signal, making it a useful topic for why a widely watched anime may be dividing viewers.`,
+      confidence: 'trend',
+      reason: 'The title has high popularity but a lower average score than strong consensus picks.',
+      evidence: [
+        `Popularity: ${weakButPopular.popularity || 'available'}`,
+        weakButPopular.score ? `Score signal: ${weakButPopular.score}/100` : '',
+        weakButPopular.trending ? `Current trend score: ${weakButPopular.trending}` : '',
+      ].filter(Boolean),
+      priority: 8 + Math.floor((weakButPopular.popularity || 0) / 100000),
+    });
+  }
+
+  if (top) {
+    const doingWell = (top.score || 0) >= 80 && (top.trending || 0) > 0;
+    candidates.push({
+      type: doingWell ? 'why-this-anime-is-doing-well' : 'anime-trending-up-now',
+      title: doingWell ? `Why ${top.title} is doing well right now` : `${top.title} is leading current anime trend signals`,
+      animeTitle: top.title,
+      summary: doingWell
+        ? `${top.title} combines strong current trend placement with a healthy score signal, making it a good topic for why the anime is connecting right now.`
+        : `${top.title} is currently strong in the trend data, with genre, score, studio, and episode context available for a focused update.`,
+      confidence: 'trend',
+      reason: doingWell
+        ? 'The title has both strong trend placement and a strong score signal.'
+        : 'The title is the strongest current trend signal available in the latest anime data.',
+      evidence: [
+        top.trending ? `Current trend score: ${top.trending}` : '',
+        top.score ? `Score signal: ${top.score}/100` : '',
+        top.popularity ? `Popularity: ${top.popularity}` : '',
+        top.nextEpisode ? `Next episode listed: ${top.nextEpisode}` : '',
+      ].filter(Boolean),
+      priority: doingWell ? 7 : 6,
+    });
+  }
+
+  candidates.sort((a, b) => b.priority - a.priority);
+  if (!candidates.length) {
+    return {
+      type: 'current-anime-topic',
+      title: 'Current anime trend signals are being checked',
+      summary: 'Current anime trend data is available, but no single stronger topic could be selected yet.',
+      confidence: 'trend',
+      reason: 'No verified headline or strong trend outlier was available.',
+      evidence: [],
+    };
+  }
+  const { priority: _priority, ...topic } = candidates[0];
+  return topic;
 }
 
 async function fetchTrendingNewsItems(preview = false) {
@@ -415,21 +475,22 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
         topic.confidence === 'headline'
           ? `The current topic is tied to a real anime headline for ${topic.animeTitle || 'a trending anime'}, so this update focuses on what is known instead of guessing beyond the available details.`
           : `The current topic is based on trend, score, popularity, genre, and episode signals. It is a useful snapshot when no stronger verified headline is available.`,
-        `${items.length} current anime titles were checked for context, including trending placement, score, status, studio, genres, and episode timing where available.`,
+        `This topic was picked because ${topic.reason.toLowerCase()} ${topic.evidence.length ? `The strongest visible signals are ${topic.evidence.slice(0, 3).join(', ')}.` : ''}`,
         definition.readerPromise,
       ],
       sections: [
-        { heading: 'Why this topic matters', body: topic.summary },
-        { heading: 'What to watch next', body: 'Compare the anime title page, genre fit, score signal, and latest episode context before deciding whether this topic is worth following.' },
+        { heading: 'Why this topic matters now', body: `${topic.summary} ${topic.reason}` },
+        { heading: 'What the signals show', body: topic.evidence.length ? topic.evidence.join('. ') + '.' : 'The article is built around the strongest current anime signal available for this update.' },
       ],
       takeaways: [
-        { label: 'Topic type', value: topic.type.replace(/-/g, ' '), detail: topic.confidence === 'headline' ? 'Based on a current headline' : 'Based on trend signals' },
+        { label: 'Selected angle', value: topic.type.replace(/-/g, ' '), detail: topic.confidence === 'headline' ? 'Chosen from a current headline' : 'Chosen from trend signals' },
         topic.animeTitle ? { label: 'Main anime', value: topic.animeTitle, detail: 'Primary title in this update' } : null,
+        { label: 'Why picked', value: topic.confidence === 'headline' ? 'Verified headline' : 'Trend signal', detail: topic.reason },
         top?.score ? { label: 'Score signal', value: `${top.score}/100`, detail: 'Useful but not the only quality signal' } : null,
-      ].filter((item): item is BlogArticleTakeaway => Boolean(item)),
+      ].filter((item): item is BlogArticleTakeaway => Boolean(item)).slice(0, 4),
       faq: [
         { question: 'Is this anime news article based on real information?', answer: topic.confidence === 'headline' ? 'Yes. The main topic is based on a current anime headline and available title data.' : 'It is based on current anime trend and title data, not an unverified headline.' },
-        { question: 'How often does this anime news article update?', answer: 'It refreshes about every 7 hours when the server cache expires.' },
+        { question: 'What makes this anime topic worth reading?', answer: topic.reason },
         { question: 'Does this article invent production issues or viral claims?', answer: 'No. Production issues, delays, and similar claims are only used when a current headline supports them.' },
       ],
     };
@@ -466,7 +527,7 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
     ].filter((item): item is BlogArticleTakeaway => Boolean(item)),
     faq: [
       { question: `What is the best pick from ${definition.title}?`, answer: `${top?.title || 'The first title'} is the first title to check, but the best choice depends on the genres and episode status you prefer.` },
-      { question: 'How often is this article refreshed?', answer: 'This article is refreshed about every 7 hours so it stays useful without making unnecessary API requests.' },
+      { question: 'What is this anime article useful for?', answer: 'It helps compare current anime titles by score, genre, episode status, studio, and season details.' },
       { question: 'Can I open anime pages from this article?', answer: 'Yes. Each anime card links to its StreamNyaa title page for more details.' },
     ],
   };
@@ -509,14 +570,23 @@ ${JSON.stringify(facts, null, 2)}
 
 Rules:
 - Use only the facts above. Do not invent announcements, staff, release dates, platform availability, awards, trailers, rumors, or production details.
-- If selectedTopic.confidence is "headline", write one focused news article about that selected topic.
-- If selectedTopic.confidence is "trend", write one trend-analysis article and do not present it as confirmed news.
+- Write about exactly one strongest topic: selectedTopic. Do not turn the article into a general list of many anime.
+- Make this article clearly different from StreamNyaa's guide blogs: it should read like a focused current news/editorial story, not a schedule guide, ranking page, or generic recommendation list.
+- If selectedTopic.confidence is "headline", write one focused news article about that selected topic and explain only what the headline/facts support.
+- If selectedTopic.confidence is "trend", write one focused trend-analysis article and do not present it as confirmed news.
+- Match the selected topic type:
+  - delayed-or-paused-airing: explain the verified airing/update context without adding unlisted causes.
+  - new-season-trailer-cast-update: explain the announcement or preview angle only if the headline supports it.
+  - viral-episode-or-ranking: explain the episode/ranking/buzz angle only if the headline supports it.
+  - popular-anime-with-mixed-reception: explain the gap between popularity and weaker score/reception signals.
+  - anime-trending-up-now or why-this-anime-is-doing-well: explain current momentum, score, genre, studio, and episode context.
 - Only mention delays, halted airing, production issues, viral episodes, trailers, sequels, or announcements when the selected topic or newsHeadlines explicitly support that claim.
 - Do not mention APIs, AI, automation, AniList, Jikan, sources, scraping, or generated content.
-- Keep it natural and editorial, like a manually updated anime blog.
+- Keep it natural and editorial.
 - Avoid piracy language and avoid telling users where to watch copyrighted content.
-- Make the writing useful for Google search: clear headings, direct wording, helpful comparisons, and natural keywords.
+- Make the writing useful for Google search: clear headings, direct wording, helpful context, and natural keywords around the selected anime/topic.
 - Keep every sentence fact-safe. If a fact is missing, skip it.
+- The headline, excerpt, heroCallout, paragraphs, sections, takeaways, and FAQ must all stay on the same selected topic.
 - Return JSON only. No markdown, no code fences.
 - Keep the full JSON concise enough to complete in one response.
 
@@ -720,9 +790,10 @@ export default async function handler(req: any, res: any) {
 
   try {
     const data = await getCachedBlogPost(slug, preview);
+    const { articleSource: _articleSource, articleStatus: _articleStatus, ...publicData } = data;
     res.setHeader('Cache-Control', EDGE_CACHE_HEADER);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    return res.status(200).json(data);
+    return res.status(200).json(publicData);
   } catch (error: any) {
     console.error(error);
     return res.status(500).json({ error: error.message || 'Failed to load blog post' });

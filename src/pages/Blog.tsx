@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
-import { Bot, CalendarDays, Loader2, Newspaper, PenLine, Sparkles, TrendingUp } from 'lucide-react';
+import { CalendarDays, Loader2, Newspaper, PenLine, Sparkles, TrendingUp } from 'lucide-react';
 import Seo from '../components/Seo';
 import { BLOG_POSTS, fetchBlogPost } from '../api/blog';
 
@@ -29,25 +29,46 @@ export default function Blog() {
       <section className="max-w-5xl">
         <div className="flex items-center gap-3 text-primary text-sm font-bold uppercase mb-4"><span className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center"><Newspaper className="w-5 h-5" /></span>StreamNyaa Blog</div>
         <h1 className="text-3xl md:text-5xl font-black tracking-tight mb-4">Latest anime articles, news, and update guides</h1>
-        <p className="text-muted-foreground text-base md:text-lg leading-relaxed max-w-3xl">Browse the newest StreamNyaa anime articles first, including Gemini-generated trending news and non-AI guide articles for schedules, popularity, and episode activity.</p>
+        <p className="text-muted-foreground text-base md:text-lg leading-relaxed max-w-3xl">Browse the newest StreamNyaa anime articles first, including focused anime news, current trend guides, release schedules, popularity notes, and episode activity.</p>
       </section>
       <section className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {sortedPosts.map((post, index) => {
           const Icon = index % 3 === 0 ? TrendingUp : index % 3 === 1 ? Sparkles : CalendarDays;
           const preview = previews[index];
-          const images = preview.data?.items.slice(0, 3) || [];
           const isGemini = post.articleKind === 'gemini';
-          const KindIcon = isGemini ? Bot : PenLine;
+          const topicTitle = preview.data?.topic?.animeTitle?.toLowerCase();
+          const topicAnime = isGemini && topicTitle
+            ? preview.data?.items.find((anime) => {
+              const title = anime.title.toLowerCase();
+              return title === topicTitle || title.includes(topicTitle) || topicTitle.includes(title);
+            })
+            : undefined;
+          const images = topicAnime ? [topicAnime] : preview.data?.items.slice(0, 3) || [];
+          const KindIcon = isGemini ? Newspaper : PenLine;
           return (
             <Link key={post.slug} to={'/blog/' + post.slug} className="group border border-border bg-[var(--glass)] hover:border-primary/40 rounded-2xl overflow-hidden transition-colors min-h-[320px] flex flex-col">
-              <div className="h-36 bg-secondary/60 grid grid-cols-3 gap-1 p-1 border-b border-border">
-                {preview.isLoading ? <div className="col-span-3 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : images.length ? images.map((anime) => <img key={anime.mal_id} src={anime.image} alt={anime.title} className="w-full h-full object-cover rounded-lg brightness-75 group-hover:brightness-90 transition-all" loading="lazy" referrerPolicy="no-referrer" />) : <div className="col-span-3 flex items-center justify-center text-xs font-semibold text-muted-foreground">Live data loading</div>}
-              </div>
+              {isGemini ? (
+                <div className="relative h-40 bg-secondary/60 overflow-hidden border-b border-border">
+                  {preview.isLoading ? <div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : images[0] ? (
+                    <>
+                      <img src={images[0].image} alt={images[0].title} className="absolute inset-0 w-full h-full object-cover brightness-[0.48] saturate-125 group-hover:scale-105 transition-transform duration-300" loading="lazy" referrerPolicy="no-referrer" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+                      <div className="relative h-full flex items-end p-4">
+                        <p className="text-sm font-black text-white leading-tight line-clamp-2">{preview.data?.topic?.title || images[0].title}</p>
+                      </div>
+                    </>
+                  ) : <div className="h-full flex items-center justify-center text-xs font-semibold text-muted-foreground">Live data loading</div>}
+                </div>
+              ) : (
+                <div className="h-36 bg-secondary/60 grid grid-cols-3 gap-1 p-1 border-b border-border">
+                  {preview.isLoading ? <div className="col-span-3 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : images.length ? images.map((anime) => <img key={anime.mal_id} src={anime.image} alt={anime.title} className="w-full h-full object-cover rounded-lg brightness-75 group-hover:brightness-90 transition-all" loading="lazy" referrerPolicy="no-referrer" />) : <div className="col-span-3 flex items-center justify-center text-xs font-semibold text-muted-foreground">Live data loading</div>}
+                </div>
+              )}
               <div className="p-5 flex flex-col flex-1 bg-background/95">
                 <div className="flex flex-wrap items-center gap-2 mb-4">
                   {index === 0 ? <span className="text-[11px] uppercase font-black tracking-wider text-foreground bg-primary px-3 py-1 rounded-full">Latest</span> : null}
                   <span className="text-[11px] uppercase font-black tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full">{post.category}</span>
-                  <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-black tracking-wider text-muted-foreground bg-secondary px-3 py-1 rounded-full"><KindIcon className="w-3 h-3" />{isGemini ? 'Gemini article' : 'Non-AI article'}</span>
+                  <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-black tracking-wider text-muted-foreground bg-secondary px-3 py-1 rounded-full"><KindIcon className="w-3 h-3" />{isGemini ? 'Focused news' : 'Guide article'}</span>
                 </div>
                 <div className="flex items-start justify-between gap-3">
                   <h2 className="text-xl font-black text-foreground leading-tight group-hover:text-primary transition-colors drop-shadow-sm">{post.title}</h2>
@@ -55,7 +76,7 @@ export default function Blog() {
                 </div>
                 <p className="mt-3 text-sm text-muted-foreground leading-relaxed flex-1">{post.summary}</p>
                 <div className="mt-5 flex items-center justify-between gap-3">
-                  <span className="text-xs font-semibold text-muted-foreground">{isGemini ? 'Refreshes every 7 hours' : 'Stable guide article'}</span>
+                  <span className="text-xs font-semibold text-muted-foreground">{isGemini ? 'Featured story' : 'Guide article'}</span>
                   <span className="text-sm font-bold text-primary">Read update</span>
                 </div>
               </div>
@@ -63,7 +84,7 @@ export default function Blog() {
           );
         })}
       </section>
-      <section className="mt-12 border-t border-border pt-8 max-w-4xl text-muted-foreground leading-relaxed"><h2 className="text-2xl font-black text-foreground mb-3">Anime discovery notes</h2><p>StreamNyaa blog pages are sorted newest first, with Gemini-generated trend news shown alongside non-AI anime guide articles.</p></section>
+      <section className="mt-12 border-t border-border pt-8 max-w-4xl text-muted-foreground leading-relaxed"><h2 className="text-2xl font-black text-foreground mb-3">Anime discovery notes</h2><p>StreamNyaa blog pages are sorted newest first, with focused anime news shown alongside practical anime guide articles.</p></section>
     </div>
   );
 }
