@@ -84,14 +84,25 @@ export default function AnimeDetails() {
   const malPopularityText = anime.popularity ? `#${anime.popularity.toLocaleString()}` : 'N/A';
   const seoDescription = `${anime.title} anime details with synopsis, genres, ${episodeCountText}, status, related anime, recommendations, watch links, and download search options.`;
   const mainStudio = studios[0];
+  const animeImage = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
+  const updatedLabel = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   const jsonLd = [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://www.streamnyaa.xyz/' },
+        { '@type': 'ListItem', position: 2, name: 'Anime', item: 'https://www.streamnyaa.xyz/anime/popular' },
+        { '@type': 'ListItem', position: 3, name: anime.title, item: 'https://www.streamnyaa.xyz' + animePath(anime) },
+      ],
+    },
     {
       '@context': 'https://schema.org',
       '@type': 'TVSeries',
       name: anime.title,
       alternateName: [anime.title_english, anime.title_romaji].filter(Boolean),
       description: anime.synopsis || seoDescription,
-      image: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url,
+      image: animeImage,
       genre: genres,
       numberOfEpisodes: anime.episodes || undefined,
       aggregateRating: anime.score ? {
@@ -146,6 +157,7 @@ export default function AnimeDetails() {
         title={`${anime.title} Anime Details, Episodes and Streaming Info | StreamNyaa`}
         description={seoDescription}
         canonicalPath={animePath(anime)}
+        image={animeImage}
         jsonLd={jsonLd}
       />
       {/* Hero Section */}
@@ -197,6 +209,9 @@ export default function AnimeDetails() {
             </div>
             <div className="px-2 py-0.5 bg-secondary rounded text-foreground uppercase">
               {anime.status || 'N/A'}
+            </div>
+            <div className="px-2 py-0.5 bg-secondary/60 rounded text-muted-foreground">
+              Updated {updatedLabel}
             </div>
           </div>
 
@@ -321,6 +336,21 @@ export default function AnimeDetails() {
                 <p className="text-muted-foreground leading-relaxed">
                   StreamNyaa organizes {anime.title} with watch links, episode navigation, related anime, recommendations, and download search tools. The downloads page can search public torrent metadata by episode, batch, quality, subtitle, or dub preference, while this page keeps the anime details and episode order easy to scan.
                 </p>
+              </div>
+            </section>
+
+            <section className="mt-8 pt-6 border-t border-[var(--glass-border)]">
+              <h3 className="text-lg font-bold mb-3">Explore {anime.title}</h3>
+              <div className="flex flex-wrap gap-2">
+                <Link to={watchPath(anime)} className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary hover:bg-primary/20 transition-colors">Watch episodes</Link>
+                <Link to={animePath(anime, '/downloads')} className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Download sources</Link>
+                <Link to="/schedule" className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Airing schedule</Link>
+                <Link to="/anime/popular" className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Popular anime</Link>
+                {genres.slice(0, 3).map((genre: string) => (
+                  <Link key={genre} to={`/anime/genre/${genre.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`} className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">
+                    {genre} anime
+                  </Link>
+                ))}
               </div>
             </section>
 
