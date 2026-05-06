@@ -2,10 +2,12 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails } from '../api/jikan';
 import { searchNyaa } from '../api/nyaa';
-import { Download, Tv, HardDrive, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
+import { Download, Tv, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2 } from 'lucide-react';
 import { useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
+
+type AudioFilter = 'sub' | 'dub';
 
 export default function AnimeDownloads() {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +17,7 @@ export default function AnimeDownloads() {
   
   // If epParam is present, default filter to empty or "1080p" instead of "[Batch]"
   const [downloadFilter, setDownloadFilter] = useState(epParam ? '1080p' : '[Batch]');
+  const [audioFilter, setAudioFilter] = useState<AudioFilter>(typeParam === 'dub' ? 'dub' : 'sub');
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
 
   const { data, isLoading: animeLoading } = useQuery({
@@ -26,14 +29,14 @@ export default function AnimeDownloads() {
   const anime = data?.data;
 
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
-    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam],
+    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter],
     queryFn: async () => {
       const romaji = anime?.title_romaji;
       const english = anime?.title_english;
       const native = anime?.title;
 
       const epStr = epParam ? epParam.padStart(2, '0') : '';
-      const isDub = typeParam === 'dub';
+      const isDub = audioFilter === 'dub';
 
       const cleanTitle = (t: string) => {
         if (!t) return '';
@@ -60,6 +63,14 @@ export default function AnimeDownloads() {
         return res;
       };
 
+      const prefersDub = (title = '') => /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title);
+      const applyAudioFilter = (items: Awaited<ReturnType<typeof searchNyaa>>) => {
+        const filtered = isDub
+          ? items.filter((item) => prefersDub(item.title))
+          : items.filter((item) => !prefersDub(item.title));
+        return filtered.length ? filtered : items;
+      };
+
       let results = await trySearches(epStr);
 
       // Fallback without padding if still 0
@@ -72,7 +83,7 @@ export default function AnimeDownloads() {
         results = await trySearches("");
       }
       
-      return results;
+      return applyAudioFilter(results);
     },
     enabled: !!anime?.title,
   });
@@ -127,21 +138,43 @@ export default function AnimeDownloads() {
             </p>
           </div>
         </div>
-        <div className="flex flex-col items-end gap-3">
-          <div className="flex flex-wrap gap-2">
-            {['[Batch]', '1080p', '720p', 'RAW'].map(filter => (
-              <button
-                key={filter}
-                onClick={() => setDownloadFilter(filter === downloadFilter ? '' : filter)}
-                className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
-                  downloadFilter === filter
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'bg-secondary hover:bg-secondary/80 text-foreground'
-                }`}
-              >
-                {filter}
-              </button>
-            ))}
+        <div className="flex flex-col items-stretch md:items-end gap-3 w-full md:w-auto">
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto] md:grid-cols-1">
+            <div className="flex flex-wrap gap-2">
+              {['[Batch]', '1080p', '720p', 'RAW'].map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setDownloadFilter(filter === downloadFilter ? '' : filter)}
+                  className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
+                    downloadFilter === filter
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'bg-secondary hover:bg-secondary/80 text-foreground'
+                  }`}
+                >
+                  {filter === '[Batch]' ? 'Batch' : filter}
+                </button>
+              ))}
+            </div>
+            <div className="inline-flex rounded-full border border-border bg-background/70 p-1 shadow-sm w-fit">
+              {[
+                { value: 'sub' as const, label: 'Sub', icon: Languages },
+                { value: 'dub' as const, label: 'Dub', icon: Volume2 },
+              ].map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  onClick={() => setAudioFilter(value)}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-black transition-all ${
+                    audioFilter === value
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-secondary/80'
+                  }`}
+                  aria-pressed={audioFilter === value}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sort by:</span>
@@ -155,6 +188,9 @@ export default function AnimeDownloads() {
               <option value="size">File Size</option>
             </select>
           </div>
+          <p className="text-xs text-muted-foreground text-left md:text-right">
+            {downloadFilter === '[Batch]' ? 'Batch' : 'Episode'} results are filtered for {audioFilter === 'dub' ? 'dubbed or dual-audio releases' : 'subbed releases'}.
+          </p>
         </div>
       </div>
 
@@ -173,7 +209,7 @@ export default function AnimeDownloads() {
       {torrentsLoading ? (
         <div className="py-20 flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
-            <p className="text-muted-foreground font-medium">Searching Nyaa for {downloadFilter ? downloadFilter : 'torrents'}...</p>
+            <p className="text-muted-foreground font-medium">Searching Nyaa for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'torrents'}...</p>
         </div>
       ) : torrents?.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-12 rounded-3xl text-center flex flex-col items-center">
@@ -202,6 +238,13 @@ export default function AnimeDownloads() {
                       {torrent.leechers} LE
                     </span>
                     <span className="bg-background px-2 py-0.5 rounded-full border border-border">{torrent.category}</span>
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
+                      /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(torrent.title)
+                        ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                        : 'bg-primary/10 text-primary border-primary/20'
+                    }`}>
+                      {/\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(torrent.title) ? 'Dub' : 'Sub'}
+                    </span>
                     <span className="opacity-70">{new Date(torrent.pubDate).toLocaleDateString()}</span>
                   </div>
                 </div>
