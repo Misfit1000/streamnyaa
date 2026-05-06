@@ -19,6 +19,42 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://www.streamnyaa.xyz/anime/popular</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/genre/action</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/genre/fantasy</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/genre/romance</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/genre/comedy</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/season/spring-2026</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://www.streamnyaa.xyz/nyaa</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>daily</changefreq>
