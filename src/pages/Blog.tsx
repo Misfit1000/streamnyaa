@@ -36,25 +36,29 @@ export default function Blog() {
           const Icon = index % 3 === 0 ? TrendingUp : index % 3 === 1 ? Sparkles : CalendarDays;
           const preview = previews[index];
           const isGemini = post.articleKind === 'gemini';
-          const topicTitle = preview.data?.topic?.animeTitle?.toLowerCase();
-          const topicAnime = isGemini && topicTitle
+          const topic = preview.data?.topic;
+          const topicTitle = topic?.animeTitle?.toLowerCase();
+          const topicAnime = isGemini && topic
             ? preview.data?.items.find((anime) => {
+              if (anime.mal_id === topic.malId || anime.id === topic.animeId) return true;
+              if (!topicTitle) return false;
               const title = anime.title.toLowerCase();
               return title === topicTitle || title.includes(topicTitle) || topicTitle.includes(title);
             })
             : undefined;
           const images = topicAnime ? [topicAnime] : preview.data?.items.slice(0, 3) || [];
           const KindIcon = isGemini ? Newspaper : PenLine;
+          const displayTitle = isGemini ? (topic?.title || post.title) : post.title;
           return (
             <Link key={post.slug} to={'/blog/' + post.slug} className="group border border-border bg-[var(--glass)] hover:border-primary/40 rounded-2xl overflow-hidden transition-colors min-h-[320px] flex flex-col">
               {isGemini ? (
                 <div className="relative h-40 bg-secondary/60 overflow-hidden border-b border-border">
                   {preview.isLoading ? <div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : images[0] ? (
                     <>
-                      <img src={images[0].image} alt={images[0].title} className="absolute inset-0 w-full h-full object-cover brightness-[0.48] saturate-125 group-hover:scale-105 transition-transform duration-300" loading="lazy" referrerPolicy="no-referrer" />
+                      <img src={topic?.image || images[0].image} alt={images[0].title} className="absolute inset-0 w-full h-full object-cover brightness-[0.48] saturate-125 group-hover:scale-105 transition-transform duration-300" loading="lazy" referrerPolicy="no-referrer" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
                       <div className="relative h-full flex items-end p-4">
-                        <p className="text-sm font-black text-white leading-tight line-clamp-2">{preview.data?.topic?.title || images[0].title}</p>
+                        <p className="text-sm font-black text-white leading-tight line-clamp-2">{displayTitle}</p>
                       </div>
                     </>
                   ) : <div className="h-full flex items-center justify-center text-xs font-semibold text-muted-foreground">Live data loading</div>}
@@ -71,7 +75,7 @@ export default function Blog() {
                   <span className="inline-flex items-center gap-1.5 text-[11px] uppercase font-black tracking-wider text-muted-foreground bg-secondary px-3 py-1 rounded-full"><KindIcon className="w-3 h-3" />{isGemini ? 'Focused news' : 'Guide article'}</span>
                 </div>
                 <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-xl font-black text-foreground leading-tight group-hover:text-primary transition-colors drop-shadow-sm">{post.title}</h2>
+                  <h2 className="text-xl font-black text-foreground leading-tight group-hover:text-primary transition-colors drop-shadow-sm">{displayTitle}</h2>
                   <Icon className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
                 </div>
                 <p className="mt-3 text-sm text-muted-foreground leading-relaxed flex-1">{post.summary}</p>

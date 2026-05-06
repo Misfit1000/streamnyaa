@@ -98,11 +98,15 @@ function buildFaq(definition: ReturnType<typeof getBlogPost>, items: BlogMediaIt
   ];
 }
 
-function findTopicAnime(items: BlogMediaItem[], animeTitle?: string) {
+function findTopicAnime(items: BlogMediaItem[], topic?: { animeTitle?: string; malId?: number; animeId?: number }) {
   if (!items.length) return null;
-  if (!animeTitle) return items[0];
+  if (!topic) return items[0];
 
-  const cleanTitle = animeTitle.toLowerCase();
+  const exact = items.find((item) => item.mal_id === topic.malId || item.id === topic.animeId);
+  if (exact) return exact;
+  if (!topic.animeTitle) return items[0];
+
+  const cleanTitle = topic.animeTitle.toLowerCase();
   return items.find((item) => {
     const title = item.title.toLowerCase();
     return title === cleanTitle || title.includes(cleanTitle) || cleanTitle.includes(title);
@@ -134,8 +138,8 @@ export default function BlogPost() {
   const seoDescription = article?.metaDescription || definition.description;
   const headline = article?.headline || definition.title;
   const intro = article?.excerpt || definition.intro;
-  const heroAnime = findTopicAnime(post.items, isGeminiArticle ? post.topic?.animeTitle : undefined);
-  const image = heroAnime?.image;
+  const heroAnime = findTopicAnime(post.items, isGeminiArticle ? post.topic : undefined);
+  const image = isGeminiArticle ? (post.topic?.image || heroAnime?.image) : heroAnime?.image;
   const jsonLd = [
     {
       '@context': 'https://schema.org',
@@ -196,7 +200,7 @@ export default function BlogPost() {
                             <span className="text-[11px] uppercase font-black tracking-wider text-background bg-primary px-3 py-1 rounded-full">Focused story</span>
                             {post.topic?.type ? <span className="text-[11px] uppercase font-black tracking-wider text-white/85 bg-white/12 px-3 py-1 rounded-full">{post.topic.type.replace(/-/g, ' ')}</span> : null}
                           </div>
-                          <h2 className="text-2xl md:text-4xl font-black text-white leading-tight">{article?.heroCallout || `${heroAnime.title} is the main title to watch here`}</h2>
+                          <h2 className="text-2xl md:text-4xl font-black text-white leading-tight">{headline}</h2>
                           <p className="mt-4 text-sm md:text-base text-white/88 leading-relaxed">{post.topic?.summary || whyWatchText(heroAnime, 0)}</p>
                         </div>
                         <div className="hidden md:block">

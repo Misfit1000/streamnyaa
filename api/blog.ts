@@ -129,6 +129,9 @@ interface BlogTopic {
   type: string;
   title: string;
   animeTitle?: string;
+  animeId?: number;
+  malId?: number;
+  image?: string;
   summary: string;
   confidence: 'headline' | 'trend';
   reason: string;
@@ -348,6 +351,9 @@ function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
         type,
         title: news.title,
         animeTitle: item.title,
+        animeId: item.id,
+        malId: item.mal_id,
+        image: item.image,
         summary: news.excerpt || `${item.title} has a current anime headline worth following.`,
         confidence: 'headline',
         reason: type === 'delayed-or-paused-airing'
@@ -374,6 +380,9 @@ function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
       type: 'popular-anime-with-mixed-reception',
       title: `${weakButPopular.title} is popular, but its score suggests mixed reception`,
       animeTitle: weakButPopular.title,
+      animeId: weakButPopular.id,
+      malId: weakButPopular.mal_id,
+      image: weakButPopular.image,
       summary: `${weakButPopular.title} has strong popularity with a weaker score signal, making it a useful topic for why a widely watched anime may be dividing viewers.`,
       confidence: 'trend',
       reason: 'The title has high popularity but a lower average score than strong consensus picks.',
@@ -392,6 +401,9 @@ function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
       type: doingWell ? 'why-this-anime-is-doing-well' : 'anime-trending-up-now',
       title: doingWell ? `Why ${top.title} is doing well right now` : `${top.title} is leading current anime trend signals`,
       animeTitle: top.title,
+      animeId: top.id,
+      malId: top.mal_id,
+      image: top.image,
       summary: doingWell
         ? `${top.title} combines strong current trend placement with a healthy score signal, making it a good topic for why the anime is connecting right now.`
         : `${top.title} is currently strong in the trend data, with genre, score, studio, and episode context available for a focused update.`,

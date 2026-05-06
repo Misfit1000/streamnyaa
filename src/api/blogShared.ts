@@ -117,6 +117,9 @@ export interface BlogTopic {
   type: string;
   title: string;
   animeTitle?: string;
+  animeId?: number;
+  malId?: number;
+  image?: string;
   summary: string;
   confidence: 'headline' | 'trend';
   reason: string;
