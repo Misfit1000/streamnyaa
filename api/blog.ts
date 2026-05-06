@@ -30,7 +30,7 @@ const BLOG_POSTS = [
     slug: 'anime-viral-topic-today',
     title: 'Fast Rising Anime Topic Today',
     seoTitle: 'Fast Rising Anime Topic Today - Anime Buzz | StreamNyaa',
-    category: 'Viral',
+    category: 'Rising',
     description: 'Read one focused anime article about a separate fast-moving anime topic when current trend, episode, or headline signals are strong enough.',
     summary: 'A second focused anime story for a fast-rising topic with its own current angle.',
     intro: 'This article follows a separate anime topic when current momentum, episode activity, or a fresh headline gives it enough weight for a focused story.',
