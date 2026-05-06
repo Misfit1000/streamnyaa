@@ -173,6 +173,7 @@ export interface BlogArticleContent {
 export type BlogPostData = BlogPostDefinition & {
   updatedAt: string;
   generatedAt?: string;
+  articleSlug?: string;
   articleSource?: 'gemini' | 'fallback';
   articleStatus?: string;
   topic?: BlogTopic;

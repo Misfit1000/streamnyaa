@@ -2,7 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, BarChart3, CalendarClock, CheckCircle2, ExternalLink, HelpCircle, Loader2, Newspaper, Star } from 'lucide-react';
 import Seo from '../components/Seo';
-import { BLOG_POSTS, fetchBlogPost, getBlogPost } from '../api/blog';
+import { articlePath, BLOG_POSTS, fetchBlogPost, fetchBlogPostByArticleSlug, getBlogPost } from '../api/blog';
 import type { BlogMediaItem } from '../api/blog';
 import { animePath } from '../lib/slug';
 
@@ -122,21 +122,26 @@ function relatedBlogArticles(currentSlug: string) {
 
 export default function BlogPost() {
   const { slug } = useParams<{ slug: string }>();
-  const definition = getBlogPost(slug);
+  const staticDefinition = getBlogPost(slug);
   const { data, isLoading, error } = useQuery({
-    queryKey: ['blog-post', slug],
-    queryFn: () => fetchBlogPost(slug!),
-    enabled: !!definition,
+    queryKey: staticDefinition ? ['blog-post', staticDefinition.slug] : ['blog-generated-post', slug],
+    queryFn: () => staticDefinition ? fetchBlogPost(staticDefinition.slug) : fetchBlogPostByArticleSlug(slug!),
+    enabled: !!slug,
     staleTime: 1000 * 60 * 60 * 24,
   });
+  const definition = staticDefinition || getBlogPost(data?.slug);
 
-  if (!definition) {
+  if (!definition && isLoading) {
+    return <div className="container mx-auto px-4 md:px-10 py-16 text-center"><Loader2 className="w-8 h-8 animate-spin text-primary mx-auto" /></div>;
+  }
+
+  if (!definition || error) {
     return <div className="container mx-auto px-4 md:px-10 py-16 text-center"><h1 className="text-3xl font-black mb-3">Blog post not found</h1><Link to="/blog" className="text-primary font-bold hover:underline">Back to blog</Link></div>;
   }
 
   const post = data || { ...definition, updatedAt: new Date().toISOString(), items: [] };
   const isGeminiArticle = definition.articleKind === 'gemini';
-  const canonicalPath = '/blog/' + definition.slug;
+  const canonicalPath = isGeminiArticle ? articlePath(post) : '/blog/' + definition.slug;
   const article = post.article;
   const paragraphs = article?.paragraphs?.length ? article.paragraphs : buildArticleParagraphs(definition, post.items);
   const takeaways = article?.takeaways?.length ? article.takeaways : buildTakeaways(post.items);

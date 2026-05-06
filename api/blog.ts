@@ -186,6 +186,7 @@ interface BlogArticleContent {
 type BlogPostData = BlogPostDefinition & {
   updatedAt: string;
   generatedAt?: string;
+  articleSlug?: string;
   articleSource?: 'gemini' | 'fallback';
   articleStatus?: string;
   topic?: BlogTopic;
@@ -199,6 +200,17 @@ function getBlogPost(slug: string | undefined) {
 
 function cleanText(value = '') {
   return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function slugifyArticleTitle(title: string | undefined) {
+  return String(title || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 90) || 'anime-news';
 }
 
 function mediaTitle(media: any) {
@@ -1067,13 +1079,13 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
   else items = await fetchRecentEpisodes();
 
   const generatedAt = new Date().toISOString();
-  if (preview) return { ...definition, updatedAt: generatedAt, generatedAt, items, topic, articleSource: 'fallback', articleStatus: 'preview_no_gemini' };
+  if (preview) return { ...definition, updatedAt: generatedAt, generatedAt, articleSlug: topic ? slugifyArticleTitle(topic.title) : definition.slug, items, topic, articleSource: 'fallback', articleStatus: 'preview_no_gemini' };
   if (definition.articleKind !== 'gemini') {
-    return { ...definition, updatedAt: generatedAt, generatedAt, items, article: fallbackArticle(definition, items), articleSource: 'fallback', articleStatus: 'guide_article' };
+    return { ...definition, updatedAt: generatedAt, generatedAt, articleSlug: definition.slug, items, article: fallbackArticle(definition, items), articleSource: 'fallback', articleStatus: 'guide_article' };
   }
 
   const generated = await generateArticle(definition, items, topic);
-  return { ...definition, updatedAt: generatedAt, generatedAt, items, topic, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
+  return { ...definition, updatedAt: generatedAt, generatedAt, articleSlug: slugifyArticleTitle(generated.article.headline || topic?.title || definition.title), items, topic, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
 }
 
 export async function getCachedBlogPost(slug: string, preview = false) {

@@ -5,3 +5,4 @@ User-agent: Googlebot
 Allow: /
 
 Sitemap: https://www.streamnyaa.xyz/sitemap.xml
+Sitemap: https://www.streamnyaa.xyz/api/blog-sitemap

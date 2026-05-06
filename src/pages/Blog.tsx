@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { CalendarDays, Loader2, Newspaper, PenLine, Sparkles, TrendingUp } from 'lucide-react';
 import Seo from '../components/Seo';
-import { BLOG_POSTS, fetchBlogPost } from '../api/blog';
+import { articlePath, BLOG_POSTS, fetchBlogPost } from '../api/blog';
 
 const sortedPosts = [...BLOG_POSTS].sort((a, b) => b.sortRank - a.sortRank);
 
@@ -49,8 +49,9 @@ export default function Blog() {
           const images = topicAnime ? [topicAnime] : preview.data?.items.slice(0, 3) || [];
           const KindIcon = isGemini ? Newspaper : PenLine;
           const displayTitle = isGemini ? (topic?.title || post.title) : post.title;
+          const linkPath = isGemini && preview.data ? articlePath(preview.data) : '/blog/' + post.slug;
           return (
-            <Link key={post.slug} to={'/blog/' + post.slug} className="group border border-border bg-[var(--glass)] hover:border-primary/40 rounded-2xl overflow-hidden transition-colors min-h-[320px] flex flex-col">
+            <Link key={post.slug} to={linkPath} className="group border border-border bg-[var(--glass)] hover:border-primary/40 rounded-2xl overflow-hidden transition-colors min-h-[320px] flex flex-col">
               {isGemini ? (
                 <div className="relative h-40 bg-secondary/60 overflow-hidden border-b border-border">
                   {preview.isLoading ? <div className="h-full flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : images[0] ? (
