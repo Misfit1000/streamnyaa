@@ -305,9 +305,27 @@ function classifyHeadline(news: BlogNewsItem) {
   return 'anime-headline';
 }
 
+function isGenericReleaseDigest(news: BlogNewsItem) {
+  const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
+  return /north american anime|anime & manga releases|anime and manga releases|manga releases|light novel releases|home video releases|blu-ray|dvd|release calendar|week \d|releases for (january|february|march|april|may|june|july|august|september|october|november|december)/.test(text);
+}
+
+function headlineMatchesAnime(news: BlogNewsItem, animeTitle: string) {
+  const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
+  const normalizedTitle = animeTitle.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!normalizedTitle) return false;
+  if (text.includes(normalizedTitle)) return true;
+
+  const titleWords = normalizedTitle.split(' ').filter((word) => word.length > 2 && !['the', 'season', 'part'].includes(word));
+  if (!titleWords.length) return false;
+  const matches = titleWords.filter((word) => text.includes(word)).length;
+  return matches >= Math.min(2, titleWords.length);
+}
+
 function headlineScore(news: BlogNewsItem) {
   const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
   let score = 1;
+  if (isGenericReleaseDigest(news)) score -= 10;
   if (/delay|delayed|postpone|postponed|hiatus|halt|suspend|production|broadcast/.test(text)) score += 8;
   if (/episode|viral|record|ranking|tops|trend|buzz|reaction/.test(text)) score += 5;
   if (/season|sequel|trailer|visual|cast|staff|premiere|release/.test(text)) score += 4;
@@ -323,6 +341,7 @@ function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
 
   for (const item of items) {
     for (const news of item.news || []) {
+      if (isGenericReleaseDigest(news) || !headlineMatchesAnime(news, item.title)) continue;
       const type = classifyHeadline(news);
       const priority = headlineScore(news) + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000);
       candidates.push({
@@ -464,6 +483,24 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
   const score = averageScore(items);
   const topStudio = top?.studios?.[0];
   if (topic) {
+    const focus = items.find((item) => item.title === topic.animeTitle) || top;
+    const focusTitle = topic.animeTitle || focus?.title || 'This anime';
+    const focusGenres = focus?.genres?.slice(0, 3).join(', ');
+    const focusStudio = focus?.studios?.[0];
+    const focusScore = focus?.score ? `${focus.score}/100` : null;
+    const focusTrend = focus?.trending ? `trend score of ${focus.trending}` : null;
+    const focusPopularity = focus?.popularity ? `${focus.popularity.toLocaleString()} popularity` : null;
+    const headlineLine = topic.confidence === 'headline'
+      ? `The latest headline around ${focusTitle} gives the article a clear news hook: ${topic.title}.`
+      : `${focusTitle} stands out because its current trend, score, popularity, and episode signals are stronger than the surrounding titles.`;
+    const contextLine = [
+      focusScore ? `a ${focusScore} score signal` : '',
+      focusTrend,
+      focusPopularity,
+      focusGenres ? `${focusGenres} genre tags` : '',
+      focusStudio ? `${focusStudio} involvement` : '',
+    ].filter(Boolean).join(', ');
+
     return {
       seoTitle: `${topic.animeTitle || 'Anime'} News Update | StreamNyaa`.slice(0, 70),
       metaDescription: topic.summary.slice(0, 155),
@@ -471,27 +508,37 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
       excerpt: topic.summary,
       heroCallout: topic.summary,
       paragraphs: [
-        topic.summary,
-        topic.confidence === 'headline'
-          ? `The current topic is tied to a real anime headline for ${topic.animeTitle || 'a trending anime'}, so this update focuses on what is known instead of guessing beyond the available details.`
-          : `The current topic is based on trend, score, popularity, genre, and episode signals. It is a useful snapshot when no stronger verified headline is available.`,
-        `This topic was picked because ${topic.reason.toLowerCase()} ${topic.evidence.length ? `The strongest visible signals are ${topic.evidence.slice(0, 3).join(', ')}.` : ''}`,
-        definition.readerPromise,
+        `${focusTitle} is the focus of this update because it has the clearest signal among the current anime being tracked. ${headlineLine}`,
+        contextLine
+          ? `The useful part is the context around the title: ${contextLine}. Those signals help separate normal seasonal noise from a title that is actually worth checking more closely.`
+          : `${focusTitle} has enough current activity to deserve a closer look, especially for viewers comparing active seasonal titles.`,
+        topic.type === 'popular-anime-with-mixed-reception'
+          ? `The main tension is simple: popularity does not always mean strong reception. When a widely followed anime carries a weaker score signal, it can mean the premise is pulling viewers in while the execution is creating mixed reactions.`
+          : topic.type === 'why-this-anime-is-doing-well'
+            ? `The reason ${focusTitle} is doing well appears to be a mix of visibility and audience response. A strong score signal matters because it suggests people are not just noticing the anime; they are responding positively after watching.`
+            : `For readers, the best takeaway is to judge the headline alongside the anime's score, genre fit, studio context, and episode status. That gives a more useful picture than treating one headline as the whole story.`,
+        `If you are deciding whether ${focusTitle} belongs on your watchlist, start with the genre fit and current reception, then use the StreamNyaa title page to compare the latest details before jumping in.`,
       ],
       sections: [
-        { heading: 'Why this topic matters now', body: `${topic.summary} ${topic.reason}` },
-        { heading: 'What the signals show', body: topic.evidence.length ? topic.evidence.join('. ') + '.' : 'The article is built around the strongest current anime signal available for this update.' },
+        {
+          heading: `Why ${focusTitle} stands out`,
+          body: `${topic.summary} ${contextLine ? `The strongest public signals around the title are ${contextLine}.` : 'The title has enough current activity to stand apart from the surrounding seasonal list.'} This makes it a better topic than a broad release roundup because the article can stay focused on one anime and one clear angle.`,
+        },
+        {
+          heading: 'What to look at next',
+          body: `A good next step is to compare the title's score, genre tags, episode movement, and studio information. ${focus?.nextEpisode ? `The listed next episode is episode ${focus.nextEpisode}, which gives viewers a practical reason to keep the title on their radar.` : 'If episode timing is not listed, the safer read is to treat this as a current-interest snapshot rather than a confirmed release update.'}`,
+        },
       ],
       takeaways: [
-        { label: 'Selected angle', value: topic.type.replace(/-/g, ' '), detail: topic.confidence === 'headline' ? 'Chosen from a current headline' : 'Chosen from trend signals' },
-        topic.animeTitle ? { label: 'Main anime', value: topic.animeTitle, detail: 'Primary title in this update' } : null,
-        { label: 'Why picked', value: topic.confidence === 'headline' ? 'Verified headline' : 'Trend signal', detail: topic.reason },
-        top?.score ? { label: 'Score signal', value: `${top.score}/100`, detail: 'Useful but not the only quality signal' } : null,
+        { label: 'Story angle', value: topic.type.replace(/-/g, ' '), detail: topic.confidence === 'headline' ? 'Built around a title-specific headline' : 'Built around current trend signals' },
+        { label: 'Main anime', value: focusTitle, detail: focusGenres ? `Genre context: ${focusGenres}` : 'Primary title in this update' },
+        focusScore ? { label: 'Reception signal', value: focusScore, detail: 'Useful for judging audience response' } : null,
+        focusTrend ? { label: 'Trend signal', value: focusTrend.replace('trend score of ', ''), detail: 'Current momentum indicator' } : null,
       ].filter((item): item is BlogArticleTakeaway => Boolean(item)).slice(0, 4),
       faq: [
-        { question: 'Is this anime news article based on real information?', answer: topic.confidence === 'headline' ? 'Yes. The main topic is based on a current anime headline and available title data.' : 'It is based on current anime trend and title data, not an unverified headline.' },
-        { question: 'What makes this anime topic worth reading?', answer: topic.reason },
-        { question: 'Does this article invent production issues or viral claims?', answer: 'No. Production issues, delays, and similar claims are only used when a current headline supports them.' },
+        { question: `Why is ${focusTitle} being discussed here?`, answer: topic.summary },
+        { question: `Is ${focusTitle} worth watching right now?`, answer: focusScore ? `The ${focusScore} score signal is a useful starting point, but genre fit and episode status matter too.` : 'It is worth checking if the genre, premise, and current episode status match what you want to follow.' },
+        { question: 'What should I compare before choosing it?', answer: 'Compare score, genres, studio context, popularity, trend movement, and the title page details before deciding.' },
       ],
     };
   }
@@ -572,6 +619,7 @@ Rules:
 - Use only the facts above. Do not invent announcements, staff, release dates, platform availability, awards, trailers, rumors, or production details.
 - Write about exactly one strongest topic: selectedTopic. Do not turn the article into a general list of many anime.
 - Make this article clearly different from StreamNyaa's guide blogs: it should read like a focused current news/editorial story, not a schedule guide, ranking page, or generic recommendation list.
+- Ignore broad industry release roundups if they are not directly about the selected anime. Do not write an article from generic headlines like North American releases, DVD/Blu-ray lists, manga release calendars, or weekly retail roundups.
 - If selectedTopic.confidence is "headline", write one focused news article about that selected topic and explain only what the headline/facts support.
 - If selectedTopic.confidence is "trend", write one focused trend-analysis article and do not present it as confirmed news.
 - Match the selected topic type:
@@ -583,6 +631,7 @@ Rules:
 - Only mention delays, halted airing, production issues, viral episodes, trailers, sequels, or announcements when the selected topic or newsHeadlines explicitly support that claim.
 - Do not mention APIs, AI, automation, AniList, Jikan, sources, scraping, or generated content.
 - Keep it natural and editorial.
+- Never write meta-process phrases like "this topic was picked", "selected topic", "strongest visible signals", "available facts", or "current topic is tied to".
 - Avoid piracy language and avoid telling users where to watch copyrighted content.
 - Make the writing useful for Google search: clear headings, direct wording, helpful context, and natural keywords around the selected anime/topic.
 - Keep every sentence fact-safe. If a fact is missing, skip it.

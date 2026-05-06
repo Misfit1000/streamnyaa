@@ -171,9 +171,9 @@ export default function BlogPost() {
         <p className="text-base md:text-lg text-muted-foreground leading-relaxed max-w-3xl">{intro}</p>
         {isGeminiArticle && post.topic ? (
           <div className="mt-6 border border-primary/20 bg-primary/5 rounded-2xl p-4 max-w-3xl">
-            <p className="text-[11px] uppercase font-black tracking-wider text-primary mb-2">Picked topic</p>
+            <p className="text-[11px] uppercase font-black tracking-wider text-primary mb-2">Story focus</p>
             <h2 className="text-lg md:text-xl font-black text-foreground">{post.topic.title}</h2>
-            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{post.topic.reason}</p>
+            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{post.topic.summary}</p>
           </div>
         ) : null}
       </header>
