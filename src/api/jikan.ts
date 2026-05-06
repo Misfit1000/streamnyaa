@@ -24,6 +24,9 @@ const mapAnilistToJikan = (m: any) => ({
   episodes: m.episodes,
   status: m.status,
   score: m.averageScore ? m.averageScore / 10 : 0,
+  popularity: m.popularity || null,
+  rank: m.rank || null,
+  scored_by: m.scored_by || null,
   type: m.format || 'TV',
   year: m.seasonYear,
   genres: (m.genres || []).map((g: string) => ({ name: g })),
@@ -70,6 +73,24 @@ const mapAnilistToJikan = (m: any) => ({
     };
   }).filter((x: any) => x) || []
 });
+
+const fetchJikanAnimeStats = async (malId: number) => {
+  try {
+    const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const item = json?.data;
+    if (!item) return null;
+    return {
+      score: item.score || 0,
+      popularity: item.popularity || null,
+      rank: item.rank || null,
+      scored_by: item.scored_by || null,
+    };
+  } catch {
+    return null;
+  }
+};
 
 export const fetchTopAiring = async () => {
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
@@ -332,7 +353,15 @@ export const fetchAnimeDetails = async (id: string) => {
     throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
   }
 
-  return { data: mapAnilistToJikan(data.data.Media) };
+  const mappedAnime = mapAnilistToJikan(data.data.Media);
+  const jikanStats = mappedAnime.mal_id ? await fetchJikanAnimeStats(mappedAnime.mal_id) : null;
+
+  return {
+    data: {
+      ...mappedAnime,
+      ...(jikanStats || {}),
+    }
+  };
 };
 
 export const fetchMangaDetails = async (id: string) => {
