@@ -2,7 +2,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails } from '../api/jikan';
 import { searchNyaa } from '../api/nyaa';
-import { Download, Tv, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2 } from 'lucide-react';
+import { Download, Tv, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo } from 'lucide-react';
 import { useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
@@ -27,9 +27,12 @@ export default function AnimeDownloads() {
   });
 
   const anime = data?.data;
+  const isBatchView = !epParam && downloadFilter === '[Batch]';
+  const isCurrentlyAiring = anime?.status === 'RELEASING';
+  const showAiringEpisodeResults = Boolean(isCurrentlyAiring && isBatchView);
 
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
-    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter],
+    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults],
     queryFn: async () => {
       const romaji = anime?.title_romaji;
       const english = anime?.title_english;
@@ -37,6 +40,7 @@ export default function AnimeDownloads() {
 
       const epStr = epParam ? epParam.padStart(2, '0') : '';
       const isDub = audioFilter === 'dub';
+      const effectiveDownloadFilter = showAiringEpisodeResults ? '1080p' : downloadFilter;
 
       const cleanTitle = (t: string) => {
         if (!t) return '';
@@ -47,7 +51,7 @@ export default function AnimeDownloads() {
         if (!t) return [];
         let query = `${cleanTitle(t)}`;
         if (ep) query += ` ${ep}`;
-        if (downloadFilter) query += ` ${downloadFilter}`;
+        if (effectiveDownloadFilter) query += ` ${effectiveDownloadFilter}`;
         if (isDub) query += ' dub';
         return await searchNyaa(query);
       };
@@ -70,6 +74,11 @@ export default function AnimeDownloads() {
           : items.filter((item) => !prefersDub(item.title));
         return filtered.length ? filtered : items;
       };
+      const removeBatchResults = (items: Awaited<ReturnType<typeof searchNyaa>>) => (
+        showAiringEpisodeResults
+          ? items.filter((item) => !/\b(batch|complete|season pack|complete season)\b/i.test(item.title))
+          : items
+      );
 
       let results = await trySearches(epStr);
 
@@ -83,7 +92,8 @@ export default function AnimeDownloads() {
         results = await trySearches("");
       }
       
-      return applyAudioFilter(results);
+      const filteredResults = removeBatchResults(applyAudioFilter(results));
+      return filteredResults.length ? filteredResults : applyAudioFilter(results);
     },
     enabled: !!anime?.title,
   });
@@ -189,10 +199,24 @@ export default function AnimeDownloads() {
             </select>
           </div>
           <p className="text-xs text-muted-foreground text-left md:text-right">
-            {downloadFilter === '[Batch]' ? 'Batch' : 'Episode'} results are filtered for {audioFilter === 'dub' ? 'dubbed or dual-audio releases' : 'subbed releases'}.
+            {showAiringEpisodeResults ? 'Airing episode' : downloadFilter === '[Batch]' ? 'Batch' : 'Episode'} results are filtered for {audioFilter === 'dub' ? 'dubbed or dual-audio releases' : 'subbed releases'}.
           </p>
         </div>
       </div>
+
+      {showAiringEpisodeResults ? (
+        <div className="mb-6 rounded-xl border border-primary/20 bg-primary/10 p-4 text-sm text-muted-foreground">
+          <div className="flex items-start gap-3">
+            <ListVideo className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div>
+              <p className="font-semibold text-primary">Currently airing</p>
+              <p className="mt-1">
+                Full batch torrents usually appear after a season finishes, so this section is showing available individual episode releases for now.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mb-6 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-muted-foreground">
         <div className="flex items-start gap-3">
@@ -209,7 +233,7 @@ export default function AnimeDownloads() {
       {torrentsLoading ? (
         <div className="py-20 flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
-            <p className="text-muted-foreground font-medium">Searching Nyaa for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'torrents'}...</p>
+            <p className="text-muted-foreground font-medium">Searching Nyaa for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {showAiringEpisodeResults ? 'episode releases' : downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'torrents'}...</p>
         </div>
       ) : torrents?.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-12 rounded-3xl text-center flex flex-col items-center">
