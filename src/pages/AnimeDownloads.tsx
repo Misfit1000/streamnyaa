@@ -6,7 +6,8 @@ import { Download, Tv, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, 
 import { useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
-import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
+import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
+import type { TorrentSourceFilter } from '../lib/torrentBadges';
 
 type AudioFilter = 'sub' | 'dub';
 
@@ -20,6 +21,7 @@ export default function AnimeDownloads() {
   const [downloadFilter, setDownloadFilter] = useState(epParam ? '1080p' : '[Batch]');
   const [audioFilter, setAudioFilter] = useState<AudioFilter>(typeParam === 'dub' ? 'dub' : 'sub');
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
+  const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
 
   const { data, isLoading: animeLoading } = useQuery({
     queryKey: ['anime', id],
@@ -109,7 +111,7 @@ export default function AnimeDownloads() {
 
   if (!anime) return <div className="text-center py-20">Anime not found</div>;
 
-  const sortedTorrents = [...(torrents || [])].sort((a, b) => {
+  const sortedTorrents = [...(torrents || [])].filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
     if (sortBy === 'best') {
         const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
         const trustedA = trustedGroups.some(g => a.title.includes(g)) ? 1 : 0;
@@ -132,6 +134,7 @@ export default function AnimeDownloads() {
         title={`${anime.title} Episode Downloads and Torrent Search | StreamNyaa`}
         description={`Find ${anime.title} episode search results, torrent metadata, file sizes, seeders, and download options on StreamNyaa.`}
         canonicalPath={animePath(anime, '/downloads')}
+        image={anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url}
       />
       <Link to={data?.data ? animePath(data.data) : `/anime/${id}`} className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6 w-fit">
         <ArrowLeft className="w-5 h-5" />
@@ -146,6 +149,9 @@ export default function AnimeDownloads() {
             <p className="text-muted-foreground flex items-center gap-2">
               <HardDrive className="w-4 h-4" />
               Download Options
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Last updated {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
             </p>
           </div>
         </div>
@@ -205,6 +211,37 @@ export default function AnimeDownloads() {
         </div>
       </div>
 
+      <div className="mb-6 rounded-2xl border border-border bg-secondary/20 p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Source filters</span>
+          {sourceFilter ? (
+            <button onClick={() => setSourceFilter('')} className="text-xs font-bold text-primary hover:underline">Clear</button>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[
+            { value: 'trusted', label: 'Trusted' },
+            { value: 'high-seeders', label: 'High seeders' },
+            { value: 'hevc', label: 'HEVC' },
+            { value: 'dual-audio', label: 'Dual Audio' },
+            { value: 'batch', label: 'Batch' },
+            { value: 'episode', label: 'Episode' },
+          ].map((item) => (
+            <button
+              key={item.value}
+              onClick={() => setSourceFilter(sourceFilter === item.value ? '' : item.value as TorrentSourceFilter)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-bold transition-colors ${
+                sourceFilter === item.value
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background/60 text-foreground hover:border-primary/40 hover:text-primary'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {showAiringEpisodeResults ? (
         <div className="mb-6 rounded-xl border border-primary/20 bg-primary/10 p-4 text-sm text-muted-foreground">
           <div className="flex items-start gap-3">
@@ -236,12 +273,12 @@ export default function AnimeDownloads() {
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
             <p className="text-muted-foreground font-medium">Searching Nyaa for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {showAiringEpisodeResults ? 'episode releases' : downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'torrents'}...</p>
         </div>
-      ) : torrents?.length === 0 ? (
+      ) : sortedTorrents.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-12 rounded-3xl text-center flex flex-col items-center">
           <HardDrive className="w-16 h-16 text-muted-foreground mb-4" />
           <p className="text-xl font-bold text-foreground mb-2">No Torrents Found</p>
           <p className="text-muted-foreground">
-            No torrents were found for "{anime.title}" with the selected filter. Try a different filter or search.
+            No torrents were found for "{anime.title}" with the selected filters. Try a different filter or search.
           </p>
         </div>
       ) : (
