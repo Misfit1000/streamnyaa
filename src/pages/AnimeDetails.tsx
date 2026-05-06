@@ -268,24 +268,29 @@ export default function AnimeDetails() {
               </div>
             </div>
 
-            <section className="mt-8 pt-6 border-t border-[var(--glass-border)]">
-              <h3 className="text-lg font-bold mb-3">About {anime.title}</h3>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <section className="mt-7 pt-5 border-t border-[var(--glass-border)]">
+              <h3 className="text-base font-bold mb-3">Quick info</h3>
+              <div className="flex flex-wrap gap-2.5">
                 {[
-                  { label: 'Status', value: statusLabel, detail: anime.status === 'RELEASING' ? 'Currently airing' : 'Release status' },
-                  { label: 'Episodes', value: episodeCountText, detail: nextEpisodeNumber ? `Next listed episode: ${nextEpisodeNumber}` : 'Episode information' },
-                  { label: 'Format', value: anime.type || 'Anime', detail: anime.year ? `Season year: ${anime.year}` : 'Media format' },
-                  { label: 'Score', value: anime.score ? `${anime.score}/10` : 'Not rated', detail: 'Audience score signal' },
-                  { label: 'Studio', value: mainStudio || 'Not listed', detail: studios.length > 1 ? `${studios.slice(1, 3).join(', ')} also listed` : 'Main studio info' },
-                  { label: 'Genres', value: genres.slice(0, 3).join(', ') || 'Not listed', detail: genres.length > 3 ? `${genres.length} genre tags total` : 'Genre tags' },
+                  { label: 'Status', value: statusLabel },
+                  { label: 'Episodes', value: anime.episodes ? `${anime.episodes} eps` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} aired` : 'TBA' },
+                  { label: 'Format', value: anime.year ? `${anime.type || 'Anime'} · ${anime.year}` : anime.type || 'Anime' },
+                  { label: 'Score', value: anime.score ? `${anime.score}/10` : 'N/A' },
+                  { label: 'Studio', value: mainStudio || 'TBA' },
+                  { label: 'Genres', value: genres.slice(0, 2).join(', ') || 'TBA' },
                 ].map((item) => (
-                  <div key={item.label} className="rounded-xl border border-[var(--glass-border)] bg-[var(--glass)] p-4">
-                    <p className="text-xs font-black uppercase tracking-wider text-primary">{item.label}</p>
-                    <p className="mt-2 text-base font-bold text-foreground">{item.value}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
+                  <div key={item.label} className="flex max-w-full items-center gap-2 rounded-full border border-[var(--glass-border)] bg-[var(--glass)] px-3 py-2">
+                    <span className="text-[11px] font-black uppercase text-primary">{item.label}</span>
+                    <span className="max-w-[180px] truncate text-sm font-semibold text-foreground">{item.value}</span>
                   </div>
                 ))}
               </div>
+              {(nextEpisodeNumber || genres.length > 2) && (
+                <p className="mt-3 text-sm text-muted-foreground">
+                  {nextEpisodeNumber ? `Next listed episode: ${nextEpisodeNumber}${nextAiringTime ? ` · ${nextAiringTime}` : ''}.` : ''}
+                  {genres.length > 2 ? ` More genres: ${genres.slice(2, 5).join(', ')}.` : ''}
+                </p>
+              )}
             </section>
 
             <section className="mt-8 pt-6 border-t border-[var(--glass-border)] space-y-4">
