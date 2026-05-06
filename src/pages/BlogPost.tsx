@@ -2,7 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, BarChart3, CalendarClock, CheckCircle2, ExternalLink, HelpCircle, Loader2, Newspaper, Star } from 'lucide-react';
 import Seo from '../components/Seo';
-import { fetchBlogPost, getBlogPost } from '../api/blog';
+import { BLOG_POSTS, fetchBlogPost, getBlogPost } from '../api/blog';
 import type { BlogMediaItem } from '../api/blog';
 import { animePath } from '../lib/slug';
 
@@ -113,6 +113,13 @@ function findTopicAnime(items: BlogMediaItem[], topic?: { animeTitle?: string; m
   }) || items[0];
 }
 
+function relatedBlogArticles(currentSlug: string) {
+  return BLOG_POSTS
+    .filter((post) => post.slug !== currentSlug && post.articleKind !== 'gemini')
+    .sort((a, b) => b.sortRank - a.sortRank)
+    .slice(0, 4);
+}
+
 export default function BlogPost() {
   const { slug } = useParams<{ slug: string }>();
   const definition = getBlogPost(slug);
@@ -140,6 +147,7 @@ export default function BlogPost() {
   const intro = article?.excerpt || definition.intro;
   const heroAnime = findTopicAnime(post.items, isGeminiArticle ? post.topic : undefined);
   const image = isGeminiArticle ? (post.topic?.image || heroAnime?.image) : heroAnime?.image;
+  const relatedArticles = relatedBlogArticles(definition.slug);
   const jsonLd = [
     {
       '@context': 'https://schema.org',
@@ -244,39 +252,61 @@ export default function BlogPost() {
                   </div>)}
                 </section> : null}
 
-                <section className="space-y-4">
-                  <div>
-                    <h2 className="text-2xl md:text-3xl font-black tracking-tight">{isGeminiArticle ? 'Related anime context' : 'Current anime picks'}</h2>
-                    <p className="mt-2 text-sm text-muted-foreground">{isGeminiArticle ? 'These titles are included as background signals around the focused article topic.' : 'Each title includes useful context so you can decide faster instead of opening random pages one by one.'}</p>
-                  </div>
-                  {post.items.map((anime, index) => (
-                    <Link key={anime.mal_id + '-' + index} to={animePath(anime)} className="group grid grid-cols-[86px_1fr] sm:grid-cols-[120px_1fr] gap-4 border border-border bg-[var(--glass)] hover:border-primary/40 rounded-2xl p-4 transition-colors">
-                      <div className="aspect-[2/3] bg-secondary rounded-xl overflow-hidden border border-border">
-                        {anime.image ? <img src={anime.image} alt={anime.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 brightness-90" loading="lazy" referrerPolicy="no-referrer" /> : null}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-2">
-                          <span className="text-xs font-black text-primary">#{index + 1}</span>
-                          {anime.format ? <span className="text-[11px] uppercase font-bold text-muted-foreground bg-secondary px-2 py-0.5 rounded">{anime.format}</span> : null}
-                          {anime.score ? <span className="inline-flex items-center gap-1 text-[11px] font-bold text-yellow-500"><Star className="w-3 h-3 fill-current" />{anime.score}/100</span> : null}
-                          {formatSeason(anime) ? <span className="text-[11px] font-bold text-muted-foreground">{formatSeason(anime)}</span> : null}
+                {isGeminiArticle ? (
+                  <section className="space-y-4">
+                    <div>
+                      <h2 className="text-2xl md:text-3xl font-black tracking-tight">Related articles</h2>
+                      <p className="mt-2 text-sm text-muted-foreground">Keep reading with StreamNyaa guides that help compare momentum, popularity, schedules, and recent episode activity.</p>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {relatedArticles.map((related) => (
+                        <Link key={related.slug} to={'/blog/' + related.slug} className="group border border-border bg-[var(--glass)] hover:border-primary/40 rounded-2xl p-5 transition-colors">
+                          <div className="flex items-center justify-between gap-3 mb-3">
+                            <span className="text-[11px] uppercase font-black tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full">{related.category}</span>
+                            <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                          </div>
+                          <h3 className="text-lg md:text-xl font-black text-foreground group-hover:text-primary transition-colors leading-tight">{related.title}</h3>
+                          <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{related.summary}</p>
+                          <p className="mt-4 text-sm font-bold text-primary">Read article</p>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                ) : (
+                  <section className="space-y-4">
+                    <div>
+                      <h2 className="text-2xl md:text-3xl font-black tracking-tight">Current anime picks</h2>
+                      <p className="mt-2 text-sm text-muted-foreground">Each title includes useful context so you can decide faster instead of opening random pages one by one.</p>
+                    </div>
+                    {post.items.map((anime, index) => (
+                      <Link key={anime.mal_id + '-' + index} to={animePath(anime)} className="group grid grid-cols-[86px_1fr] sm:grid-cols-[120px_1fr] gap-4 border border-border bg-[var(--glass)] hover:border-primary/40 rounded-2xl p-4 transition-colors">
+                        <div className="aspect-[2/3] bg-secondary rounded-xl overflow-hidden border border-border">
+                          {anime.image ? <img src={anime.image} alt={anime.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 brightness-90" loading="lazy" referrerPolicy="no-referrer" /> : null}
                         </div>
-                        <h3 className="text-lg md:text-xl font-black text-foreground group-hover:text-primary transition-colors line-clamp-2">{anime.title}</h3>
-                        <p className="mt-2 text-sm text-muted-foreground leading-relaxed line-clamp-3">{anime.description || 'Anime metadata and discovery details are available on the StreamNyaa title page.'}</p>
-                        <p className="mt-3 text-sm font-semibold text-foreground">{whyWatchText(anime, index)}</p>
-                        <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold text-muted-foreground">
-                          {anime.episode ? <span>Episode {anime.episode}</span> : null}
-                          {anime.nextEpisode ? <span>Next ep {anime.nextEpisode}</span> : null}
-                          {formatTime(anime.airingAt || anime.nextAiringAt) ? <span>{formatTime(anime.airingAt || anime.nextAiringAt)}</span> : null}
-                          {formatStatus(anime.status) ? <span>{formatStatus(anime.status)}</span> : null}
-                          {anime.episodes ? <span>{anime.episodes} episodes</span> : null}
-                          {anime.studios.slice(0, 1).map((studio) => <span key={studio}>{studio}</span>)}
-                          {anime.genres.slice(0, 3).map((genre) => <span key={genre}>{genre}</span>)}
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <span className="text-xs font-black text-primary">#{index + 1}</span>
+                            {anime.format ? <span className="text-[11px] uppercase font-bold text-muted-foreground bg-secondary px-2 py-0.5 rounded">{anime.format}</span> : null}
+                            {anime.score ? <span className="inline-flex items-center gap-1 text-[11px] font-bold text-yellow-500"><Star className="w-3 h-3 fill-current" />{anime.score}/100</span> : null}
+                            {formatSeason(anime) ? <span className="text-[11px] font-bold text-muted-foreground">{formatSeason(anime)}</span> : null}
+                          </div>
+                          <h3 className="text-lg md:text-xl font-black text-foreground group-hover:text-primary transition-colors line-clamp-2">{anime.title}</h3>
+                          <p className="mt-2 text-sm text-muted-foreground leading-relaxed line-clamp-3">{anime.description || 'Anime metadata and discovery details are available on the StreamNyaa title page.'}</p>
+                          <p className="mt-3 text-sm font-semibold text-foreground">{whyWatchText(anime, index)}</p>
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold text-muted-foreground">
+                            {anime.episode ? <span>Episode {anime.episode}</span> : null}
+                            {anime.nextEpisode ? <span>Next ep {anime.nextEpisode}</span> : null}
+                            {formatTime(anime.airingAt || anime.nextAiringAt) ? <span>{formatTime(anime.airingAt || anime.nextAiringAt)}</span> : null}
+                            {formatStatus(anime.status) ? <span>{formatStatus(anime.status)}</span> : null}
+                            {anime.episodes ? <span>{anime.episodes} episodes</span> : null}
+                            {anime.studios.slice(0, 1).map((studio) => <span key={studio}>{studio}</span>)}
+                            {anime.genres.slice(0, 3).map((genre) => <span key={genre}>{genre}</span>)}
+                          </div>
                         </div>
-                      </div>
-                    </Link>
-                  ))}
-                </section>
+                      </Link>
+                    ))}
+                  </section>
+                )}
 
                 <section className="border border-border bg-secondary/30 rounded-2xl p-5 md:p-6">
                   <div className="flex items-center gap-2 mb-4"><HelpCircle className="w-5 h-5 text-primary" /><h2 className="text-xl md:text-2xl font-black">FAQ</h2></div>
