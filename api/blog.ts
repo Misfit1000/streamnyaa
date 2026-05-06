@@ -707,7 +707,11 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
 }
 
 function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[], topic?: BlogTopic) {
-  const facts = items.slice(0, 10).map((item, index) => ({
+  const focusItem = topic
+    ? items.find((item) => item.mal_id === topic.malId || item.id === topic.animeId || item.title === topic.animeTitle)
+    : null;
+  const sourceItems = focusItem ? [focusItem] : items.slice(0, 10);
+  const facts = sourceItems.map((item, index) => ({
     rank: index + 1,
     title: item.title,
     score: item.score,
@@ -725,6 +729,12 @@ function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[
     description: item.description,
     newsHeadlines: item.news?.slice(0, 3).map((news) => ({ title: news.title, date: news.date, excerpt: news.excerpt })),
   }));
+  const relatedContext = topic
+    ? items
+      .filter((item) => item.mal_id !== topic.malId && item.id !== topic.animeId)
+      .slice(0, 5)
+      .map((item) => ({ title: item.title, score: item.score, trending: item.trending, popularity: item.popularity, genres: item.genres.slice(0, 3) }))
+    : [];
 
   return `Write a factual, human-sounding anime blog article for StreamNyaa.
 
@@ -738,13 +748,17 @@ ${JSON.stringify({
     selectedTopic: topic || null,
   }, null, 2)}
 
-Current anime facts you may use:
+Selected anime facts you may use:
 ${JSON.stringify(facts, null, 2)}
+
+Other current anime context, for light comparison only:
+${JSON.stringify(relatedContext, null, 2)}
 
 Rules:
 - Use only the facts above. Do not invent announcements, staff, release dates, platform availability, awards, trailers, rumors, or production details.
 - Write about exactly one strongest topic: selectedTopic. Do not turn the article into a general list of many anime.
 - The article must be about selectedTopic.animeTitle and selectedTopic.title. Do not switch to another anime, even if another anime appears in the facts list.
+- Use the selected anime facts as the main body source. Other current anime context may be used only for one short comparison sentence, not as the subject.
 - Set "headline" exactly to selectedTopic.title. Do not rewrite it, shorten it, translate it, or make a different headline.
 - The heroCallout, excerpt, paragraphs, sections, takeaways, and FAQ must clearly match selectedTopic.animeTitle.
 - Make this article clearly different from StreamNyaa's guide blogs: it should read like a focused current news/editorial story, not a schedule guide, ranking page, or generic recommendation list.
