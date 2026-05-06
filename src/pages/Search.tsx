@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { searchAnime, fetchGenres } from '../api/jikan';
 import AnimeCard from '../components/AnimeCard';
+import Seo from '../components/Seo';
+import { slugifyTitle } from '../lib/slug';
 import { Filter, Search as SearchIcon } from 'lucide-react';
 
 export default function Search() {
@@ -31,6 +33,24 @@ export default function Search() {
   const allAnimes = (data?.pages.flatMap(page => page.data) || []).filter((anime, index, self) => 
     index === self.findIndex((a) => a.mal_id === anime.mal_id)
   );
+  const sort = searchParams.get('sort') || '';
+  const hasSimpleGenreFilter = Boolean(genre) && !query && !type && !status && !rating;
+  const hasPopularFilter = sort === 'popular' && !query && !genre && !type && !status && !rating;
+  const canonicalPath = hasSimpleGenreFilter
+    ? `/anime/genre/${slugifyTitle(genre)}`
+    : hasPopularFilter
+      ? '/anime/popular'
+      : '/search';
+  const seoTitle = hasSimpleGenreFilter
+    ? `${genre} Anime | StreamNyaa`
+    : hasPopularFilter
+      ? 'Popular Anime | StreamNyaa'
+      : 'Search Anime | StreamNyaa';
+  const seoDescription = hasSimpleGenreFilter
+    ? `Browse ${genre} anime on StreamNyaa with title pages, watch links, related anime, schedules, and download search options.`
+    : hasPopularFilter
+      ? 'Browse popular anime on StreamNyaa with title pages, watch links, related anime, schedules, and download search options.'
+      : 'Search anime on StreamNyaa by title, genre, type, status, and rating with clean anime pages and source search options.';
 
   useEffect(() => {
     setQuery(searchParams.get('q') || '');
@@ -59,6 +79,11 @@ export default function Search() {
 
   return (
     <div className="container mx-auto px-4 py-8">
+      <Seo
+        title={seoTitle}
+        description={seoDescription}
+        canonicalPath={canonicalPath}
+      />
       <div className="flex flex-col md:flex-row gap-6">
         {/* Filters Sidebar */}
         <div className="w-full md:w-64 shrink-0 space-y-6">

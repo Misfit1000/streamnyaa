@@ -111,8 +111,10 @@ export default function Blog() {
                   ) : <div className="h-full flex items-center justify-center text-xs font-semibold text-muted-foreground">Live data loading</div>}
                 </div>
               ) : (
-                <div className="h-36 bg-secondary/60 grid grid-cols-3 gap-1 p-1 border-b border-border">
-                  {preview.isLoading ? <div className="col-span-3 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : images.length ? images.map((anime) => <img key={anime.mal_id} src={anime.image} alt={anime.title} className="w-full h-full object-cover rounded-lg brightness-75 group-hover:brightness-90 transition-all" loading="lazy" referrerPolicy="no-referrer" />) : <div className="col-span-3 flex items-center justify-center text-xs font-semibold text-muted-foreground">Live data loading</div>}
+                <div className="relative h-36 overflow-hidden bg-secondary/60 border-b border-border">
+                  <div className="absolute inset-0 grid grid-cols-3 gap-1 p-1">
+                    {preview.isLoading ? <div className="col-span-3 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : images.length ? images.map((anime) => <img key={anime.mal_id} src={anime.image} alt={anime.title} className="h-full min-h-0 w-full object-cover rounded-lg brightness-75 group-hover:brightness-90 transition-all" loading="lazy" referrerPolicy="no-referrer" />) : <div className="col-span-3 flex items-center justify-center text-xs font-semibold text-muted-foreground">Live data loading</div>}
+                  </div>
                 </div>
               )}
               <div className="p-5 flex flex-col flex-1 bg-background/95">

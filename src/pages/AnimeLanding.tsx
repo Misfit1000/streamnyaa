@@ -4,6 +4,7 @@ import { ArrowLeft, CalendarDays, Filter, Flame, Loader2 } from 'lucide-react';
 import { fetchAnimeSeason, searchAnime } from '../api/jikan';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
+import { animePath } from '../lib/slug';
 
 const seasonNames = ['winter', 'spring', 'summer', 'fall'];
 
@@ -53,6 +54,18 @@ export default function AnimeLanding() {
   );
 
   const Icon = isGenrePage ? Filter : isSeasonPage ? CalendarDays : Flame;
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: pageTitle,
+    description,
+    itemListElement: items.slice(0, 24).map((anime: any, index: number) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: anime.title,
+      url: 'https://www.streamnyaa.xyz' + animePath(anime),
+    })),
+  };
 
   return (
     <div className="container mx-auto px-4 md:px-10 py-10">
@@ -60,6 +73,8 @@ export default function AnimeLanding() {
         title={`${pageTitle} | StreamNyaa`}
         description={description}
         canonicalPath={location.pathname}
+        image={items[0]?.images?.jpg?.large_image_url || items[0]?.images?.jpg?.image_url}
+        jsonLd={jsonLd}
       />
       <Link to="/search" className="inline-flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-colors mb-7">
         <ArrowLeft className="h-4 w-4" />

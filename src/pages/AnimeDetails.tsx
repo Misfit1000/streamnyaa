@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { Download, Plus, Check, Heart, Star, Calendar, Clock, Tv, Play, Monitor, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -25,6 +25,7 @@ function formatNextAiring(seconds?: number) {
 
 export default function AnimeDetails() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { isInMyList, addToMyList, removeFromMyList, isLiked, toggleLike } = useStore();
   const relationsScrollRef = useRef<HTMLDivElement>(null);
   const recommendationsScrollRef = useRef<HTMLDivElement>(null);
@@ -52,6 +53,14 @@ export default function AnimeDetails() {
   });
 
   const anime = data?.data;
+
+  useEffect(() => {
+    if (!anime || !id) return;
+    const cleanPath = animePath(anime);
+    if (/^\d+$/.test(id) && cleanPath !== `/anime/${id}`) {
+      navigate(cleanPath, { replace: true });
+    }
+  }, [anime, id, navigate]);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center">
