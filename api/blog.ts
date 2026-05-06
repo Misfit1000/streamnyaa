@@ -744,6 +744,9 @@ ${JSON.stringify(facts, null, 2)}
 Rules:
 - Use only the facts above. Do not invent announcements, staff, release dates, platform availability, awards, trailers, rumors, or production details.
 - Write about exactly one strongest topic: selectedTopic. Do not turn the article into a general list of many anime.
+- The article must be about selectedTopic.animeTitle and selectedTopic.title. Do not switch to another anime, even if another anime appears in the facts list.
+- Set "headline" exactly to selectedTopic.title. Do not rewrite it, shorten it, translate it, or make a different headline.
+- The heroCallout, excerpt, paragraphs, sections, takeaways, and FAQ must clearly match selectedTopic.animeTitle.
 - Make this article clearly different from StreamNyaa's guide blogs: it should read like a focused current news/editorial story, not a schedule guide, ranking page, or generic recommendation list.
 - Ignore broad industry release roundups if they are not directly about the selected anime. Do not write an article from generic headlines like North American releases, DVD/Blu-ray lists, manga release calendars, or weekly retail roundups.
 - If selectedTopic.confidence is "headline", write one focused news article about that selected topic and explain only what the headline/facts support.
@@ -769,7 +772,7 @@ JSON shape:
 {
   "seoTitle": "max 70 chars, include StreamNyaa",
   "metaDescription": "max 155 chars",
-  "headline": "article headline",
+  "headline": "exactly selectedTopic.title",
   "excerpt": "2 sentence summary",
   "heroCallout": "one sentence focused on the top anime",
   "paragraphs": ["exactly 4 useful paragraphs, 45-75 words each"],
@@ -815,6 +818,47 @@ function statusSafe(value: unknown) {
 function normalizeArray<T>(value: unknown, mapper: (item: any) => T | null, limit: number) {
   if (!Array.isArray(value)) return [];
   return value.map(mapper).filter((item): item is T => Boolean(item)).slice(0, limit);
+}
+
+function normalizedContentWords(value = '') {
+  return value.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter((word) => word.length > 2 && !['the', 'and', 'for', 'with', 'anime', 'season', 'part'].includes(word));
+}
+
+function articleMentionsTopic(article: BlogArticleContent, topic?: BlogTopic) {
+  if (!topic?.animeTitle) return true;
+  const articleText = [
+    article.headline,
+    article.excerpt,
+    article.heroCallout,
+    ...article.paragraphs,
+    ...article.sections.flatMap((section) => [section.heading, section.body]),
+    ...article.takeaways.flatMap((item) => [item.value, item.detail]),
+  ].join(' ').toLowerCase();
+  const animeTitle = topic.animeTitle.toLowerCase();
+  if (articleText.includes(animeTitle)) return true;
+
+  const words = normalizedContentWords(topic.animeTitle);
+  if (!words.length) return true;
+  const matches = words.filter((word) => articleText.includes(word)).length;
+  return matches >= Math.min(2, words.length);
+}
+
+function alignArticleToTopic(article: BlogArticleContent, fallback: BlogArticleContent, topic?: BlogTopic) {
+  if (!topic) return article;
+  const aligned = articleMentionsTopic(article, topic) ? article : fallback;
+  const seoBase = `${topic.animeTitle || 'Anime'} News Update | StreamNyaa`;
+  return {
+    ...aligned,
+    seoTitle: clampText(aligned.seoTitle || seoBase, seoBase, 70),
+    metaDescription: clampText(aligned.metaDescription, topic.summary || fallback.metaDescription, 155),
+    headline: clampText(topic.title, fallback.headline, 140),
+    heroCallout: articleMentionsTopic(aligned, topic) ? aligned.heroCallout : fallback.heroCallout,
+  };
 }
 
 function sanitizeArticle(raw: any, fallback: BlogArticleContent): BlogArticleContent {
@@ -901,7 +945,8 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
         return { article: fallback, source: 'fallback' as const, status: 'gemini_json_parse_failed_' + statusSafe(finishReason) + '_' + textState };
       }
 
-      return { article: sanitizeArticle(rawArticle, fallback), source: 'gemini' as const, status: 'ok' };
+      const article = alignArticleToTopic(sanitizeArticle(rawArticle, fallback), fallback, topic);
+      return { article, source: 'gemini' as const, status: article === fallback ? 'topic_mismatch_fallback' : 'ok' };
     }
 
     return { article: fallback, source: 'fallback' as const, status: 'gemini_request_failed_' + lastStatus };
