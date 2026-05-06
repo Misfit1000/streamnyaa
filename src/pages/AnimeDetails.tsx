@@ -231,15 +231,24 @@ export default function AnimeDetails() {
               <Heart className={`w-5 h-5 ${liked ? 'fill-primary text-primary' : ''}`} />
             </button>
             {anime.trailer?.embed_url && (
-              <div className="w-full max-w-[260px] sm:w-[240px] md:w-[280px]">
-                <div className="aspect-video overflow-hidden rounded-xl border border-[var(--glass-border)] bg-black shadow-lg shadow-black/20">
-                  <iframe
-                    src={anime.trailer.embed_url}
-                    className="h-full w-full border-0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                    title={`${anime.title} Trailer`}
-                  />
+              <div className="w-full max-w-[320px] sm:w-[300px] lg:w-[340px]">
+                <div className="rounded-2xl border border-[var(--glass-border)] bg-background/70 p-2 shadow-xl shadow-black/20 backdrop-blur">
+                  <div className="mb-2 flex items-center justify-between gap-3 px-1">
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-foreground">
+                      <Play className="h-3.5 w-3.5 fill-primary text-primary" />
+                      Trailer
+                    </span>
+                    <span className="text-xs text-muted-foreground">{anime.year || anime.type || 'Preview'}</span>
+                  </div>
+                  <div className="aspect-video overflow-hidden rounded-xl border border-white/10 bg-black">
+                    <iframe
+                      src={anime.trailer.embed_url}
+                      className="h-full w-full border-0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      title={`${anime.title} Trailer`}
+                    />
+                  </div>
                 </div>
               </div>
             )}
@@ -274,7 +283,7 @@ export default function AnimeDetails() {
                 {[
                   { label: 'Status', value: statusLabel },
                   { label: 'Episodes', value: anime.episodes ? `${anime.episodes} eps` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} aired` : 'TBA' },
-                  { label: 'Format', value: anime.year ? `${anime.type || 'Anime'} · ${anime.year}` : anime.type || 'Anime' },
+                  { label: 'Format', value: anime.year ? `${anime.type || 'Anime'} - ${anime.year}` : anime.type || 'Anime' },
                   { label: 'Score', value: anime.score ? `${anime.score}/10` : 'N/A' },
                   { label: 'Studio', value: mainStudio || 'TBA' },
                   { label: 'Genres', value: genres.slice(0, 2).join(', ') || 'TBA' },
@@ -287,7 +296,7 @@ export default function AnimeDetails() {
               </div>
               {(nextEpisodeNumber || genres.length > 2) && (
                 <p className="mt-3 text-sm text-muted-foreground">
-                  {nextEpisodeNumber ? `Next listed episode: ${nextEpisodeNumber}${nextAiringTime ? ` · ${nextAiringTime}` : ''}.` : ''}
+                  {nextEpisodeNumber ? `Next listed episode: ${nextEpisodeNumber}${nextAiringTime ? ` - ${nextAiringTime}` : ''}.` : ''}
                   {genres.length > 2 ? ` More genres: ${genres.slice(2, 5).join(', ')}.` : ''}
                 </p>
               )}
@@ -309,31 +318,6 @@ export default function AnimeDetails() {
                 <p className="text-muted-foreground leading-relaxed">
                   StreamNyaa organizes {anime.title} with watch links, episode navigation, related anime, recommendations, and download search tools. The downloads page can search public torrent metadata by episode, batch, quality, subtitle, or dub preference, while this page keeps the anime details and episode order easy to scan.
                 </p>
-              </div>
-            </section>
-
-            <section className="mt-8 pt-6 border-t border-[var(--glass-border)]">
-              <h3 className="text-lg font-bold mb-4">FAQ</h3>
-              <div className="space-y-4">
-                {[
-                  {
-                    question: `What is ${anime.title} about?`,
-                    answer: anime.synopsis || `${anime.title} is an anime page with metadata, episode information, related titles, and StreamNyaa discovery links.`,
-                  },
-                  {
-                    question: `Is ${anime.title} currently airing?`,
-                    answer: `${anime.title} is listed as ${statusLabel}.${anime.status === 'RELEASING' && nextEpisodeNumber ? ` The next listed episode is episode ${nextEpisodeNumber}${nextAiringTime ? ` around ${nextAiringTime}` : ''}.` : ''}`,
-                  },
-                  {
-                    question: `Can I find ${anime.title} episode downloads?`,
-                    answer: `Yes. Open the downloads page to search public torrent metadata for ${anime.title}, including episode results, batch results, file sizes, seeders, and sub or dub filters.`,
-                  },
-                ].map((item) => (
-                  <div key={item.question} className="rounded-xl border border-[var(--glass-border)] bg-secondary/20 p-4">
-                    <h4 className="font-bold text-foreground">{item.question}</h4>
-                    <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{item.answer}</p>
-                  </div>
-                ))}
               </div>
             </section>
 
@@ -516,6 +500,31 @@ export default function AnimeDetails() {
                 </div>
               </div>
             </div>
+
+            <section className="mt-8 pt-6 border-t border-[var(--glass-border)]">
+              <h3 className="text-lg font-bold mb-4">FAQ</h3>
+              <div className="grid gap-4 md:grid-cols-3">
+                {[
+                  {
+                    question: `What is ${anime.title} about?`,
+                    answer: anime.synopsis || `${anime.title} is an anime page with metadata, episode information, related titles, and StreamNyaa discovery links.`,
+                  },
+                  {
+                    question: `Is ${anime.title} currently airing?`,
+                    answer: `${anime.title} is listed as ${statusLabel}.${anime.status === 'RELEASING' && nextEpisodeNumber ? ` The next listed episode is episode ${nextEpisodeNumber}${nextAiringTime ? ` around ${nextAiringTime}` : ''}.` : ''}`,
+                  },
+                  {
+                    question: `Can I find ${anime.title} episode downloads?`,
+                    answer: `Yes. Open the downloads page to search public torrent metadata for ${anime.title}, including episode results, batch results, file sizes, seeders, and sub or dub filters.`,
+                  },
+                ].map((item) => (
+                  <div key={item.question} className="rounded-xl border border-[var(--glass-border)] bg-secondary/20 p-4">
+                    <h4 className="font-bold text-foreground">{item.question}</h4>
+                    <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{item.answer}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
             
           </div>
         </div>
