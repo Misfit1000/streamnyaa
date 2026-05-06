@@ -158,7 +158,7 @@ export default function TorrentPlayer() {
             Stream directly from a Magnet URI in your browser.<br/>
             <span className="text-yellow-500 font-medium">Note:</span> Connection speed depends entirely on the torrent's seeder count.
           </p>
-          <div className="mt-4 max-w-2xl rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-muted-foreground">
+          <div className="mt-4 max-w-2xl rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-muted-foreground md:hidden">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
               <div>
