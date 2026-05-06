@@ -230,6 +230,19 @@ export default function AnimeDetails() {
             >
               <Heart className={`w-5 h-5 ${liked ? 'fill-primary text-primary' : ''}`} />
             </button>
+            {anime.trailer?.embed_url && (
+              <div className="w-full max-w-[260px] sm:w-[240px] md:w-[280px]">
+                <div className="aspect-video overflow-hidden rounded-xl border border-[var(--glass-border)] bg-black shadow-lg shadow-black/20">
+                  <iframe
+                    src={anime.trailer.embed_url}
+                    className="h-full w-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    title={`${anime.title} Trailer`}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-6">
@@ -396,23 +409,6 @@ export default function AnimeDetails() {
                 >
                   <ChevronRight className="w-5 h-5" />
                 </button>
-              </div>
-            )}
-
-            {anime.trailer?.embed_url && (
-              <div className="mt-8 pt-6 border-t border-[var(--glass-border)]">
-                <h3 className="text-lg font-bold mb-4">Trailer</h3>
-                <div className="max-w-2xl mx-auto lg:mx-0">
-                  <div className="aspect-video bg-black rounded-xl overflow-hidden border border-[var(--glass-border)] relative">
-                    <iframe 
-                      src={anime.trailer.embed_url}
-                      className="w-full h-full border-0 absolute inset-0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      title={`${anime.title} Trailer`}
-                    />
-                  </div>
-                </div>
               </div>
             )}
 
