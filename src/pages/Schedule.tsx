@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchSchedule } from '../api/jikan';
 import AnimeCard from '../components/AnimeCard';
 import { Loader2, Calendar } from 'lucide-react';
+import Seo from '../components/Seo';
 
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0); // 0 = today, 1 = tomorrow, etc.
@@ -39,11 +40,17 @@ export default function Schedule() {
 
   return (
     <div className="container mx-auto px-4 md:px-10 py-10">
+      <Seo
+        title="Anime Airing Schedule | StreamNyaa"
+        description="Check the StreamNyaa anime airing schedule with local timezone episode times, title pages, and current anime discovery links."
+        canonicalPath="/schedule"
+      />
       <div className="flex items-center gap-3 mb-8">
         <Calendar className="w-8 h-8 text-primary" />
         <div>
           <h1 className="text-3xl font-black text-foreground">Airing Schedule</h1>
           <p className="text-sm text-muted-foreground mt-1">Times shown in your local timezone: {localTimezone}</p>
+          <p className="text-xs text-muted-foreground mt-1">Last updated {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</p>
         </div>
       </div>
 
