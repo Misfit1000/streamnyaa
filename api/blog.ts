@@ -6,6 +6,7 @@ const FALLBACK_CACHE_TTL_MS = 1000 * 60 * 15;
 const STALE_TTL_MS = 1000 * 60 * 60 * 24;
 const FALLBACK_STALE_TTL_MS = 1000 * 60 * 60;
 const EDGE_CACHE_HEADER = 'public, s-maxage=25200, stale-while-revalidate=86400';
+const MAX_HEADLINE_AGE_MS = 1000 * 60 * 60 * 48;
 
 const memoryCache = new Map<string, { expiresAt: number; staleAt: number; data: BlogPostData }>();
 
@@ -136,6 +137,8 @@ interface BlogTopic {
   confidence: 'headline' | 'trend';
   reason: string;
   evidence: string[];
+  publishedAt?: string;
+  ageHours?: number;
   headlines?: BlogNewsItem[];
 }
 
@@ -294,7 +297,7 @@ async function fetchAnimeNews(malId: number) {
     });
     if (!response.ok) return [];
     const json = await response.json();
-    return (json.data || []).map(mapNewsItem).filter(Boolean).slice(0, 3) as BlogNewsItem[];
+    return (json.data || []).map(mapNewsItem).filter(Boolean).slice(0, 8) as BlogNewsItem[];
   } catch {
     return [];
   }
@@ -311,6 +314,25 @@ function classifyHeadline(news: BlogNewsItem) {
 function isGenericReleaseDigest(news: BlogNewsItem) {
   const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
   return /north american anime|anime & manga releases|anime and manga releases|manga releases|light novel releases|home video releases|blu-ray|dvd|release calendar|week \d|releases for (january|february|march|april|may|june|july|august|september|october|november|december)/.test(text);
+}
+
+function newsDateMs(news: BlogNewsItem) {
+  if (!news.date) return null;
+  const parsed = Date.parse(news.date);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function newsAgeHours(news: BlogNewsItem) {
+  const dateMs = newsDateMs(news);
+  if (!dateMs) return null;
+  return Math.max(0, Math.round((Date.now() - dateMs) / (1000 * 60 * 60)));
+}
+
+function isFreshHeadline(news: BlogNewsItem) {
+  const dateMs = newsDateMs(news);
+  if (!dateMs) return false;
+  const age = Date.now() - dateMs;
+  return age >= 0 && age <= MAX_HEADLINE_AGE_MS;
 }
 
 function headlineMatchesAnime(news: BlogNewsItem, animeTitle: string) {
@@ -344,9 +366,11 @@ function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
 
   for (const item of items) {
     for (const news of item.news || []) {
-      if (isGenericReleaseDigest(news) || !headlineMatchesAnime(news, item.title)) continue;
+      if (!isFreshHeadline(news) || isGenericReleaseDigest(news) || !headlineMatchesAnime(news, item.title)) continue;
       const type = classifyHeadline(news);
-      const priority = headlineScore(news) + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000);
+      const ageHours = newsAgeHours(news);
+      const freshnessBoost = ageHours === null ? 0 : Math.max(0, 48 - ageHours);
+      const priority = headlineScore(news) + freshnessBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000);
       candidates.push({
         type,
         title: news.title,
@@ -365,10 +389,13 @@ function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
               : 'A real headline is available for a currently relevant anime.',
         evidence: [
           `Headline: ${news.title}`,
+          ageHours !== null ? `Published about ${ageHours} hours ago` : '',
           item.trending ? `Current trend score: ${item.trending}` : '',
           item.popularity ? `Popularity: ${item.popularity}` : '',
         ].filter(Boolean),
-        headlines: [news, ...(item.news || []).filter((other) => other.title !== news.title).slice(0, 2)],
+        publishedAt: news.date ? new Date(newsDateMs(news) || news.date).toISOString() : undefined,
+        ageHours: ageHours || undefined,
+        headlines: [news, ...(item.news || []).filter((other) => other.title !== news.title && isFreshHeadline(other)).slice(0, 2)],
         priority,
       });
     }
@@ -520,7 +547,7 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
       excerpt: topic.summary,
       heroCallout: topic.summary,
       paragraphs: [
-        `${focusTitle} is the focus of this update because it has the clearest signal among the current anime being tracked. ${headlineLine}`,
+        `${focusTitle} is the focus of this update because it has the clearest fresh signal among the current anime being tracked. ${headlineLine}`,
         contextLine
           ? `The useful part is the context around the title: ${contextLine}. Those signals help separate normal seasonal noise from a title that is actually worth checking more closely.`
           : `${focusTitle} has enough current activity to deserve a closer look, especially for viewers comparing active seasonal titles.`,
@@ -534,7 +561,7 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
       sections: [
         {
           heading: `Why ${focusTitle} stands out`,
-          body: `${topic.summary} ${contextLine ? `The strongest public signals around the title are ${contextLine}.` : 'The title has enough current activity to stand apart from the surrounding seasonal list.'} This makes it a better topic than a broad release roundup because the article can stay focused on one anime and one clear angle.`,
+          body: `${topic.summary} ${topic.ageHours ? `The headline is recent, at about ${topic.ageHours} hours old.` : ''} ${contextLine ? `The strongest public signals around the title are ${contextLine}.` : 'The title has enough current activity to stand apart from the surrounding seasonal list.'} This makes it a better topic than a broad release roundup because the article can stay focused on one anime and one clear angle.`,
         },
         {
           heading: 'What to look at next',
@@ -745,6 +772,8 @@ ${JSON.stringify({
     description: definition.description,
     articleAngle: definition.angle,
     readerGoal: definition.readerPromise,
+    currentTimeIso: new Date().toISOString(),
+    headlineFreshnessRule: 'Use headline-based news only when selectedTopic.publishedAt is within the last 48 hours. Older headlines are not allowed.',
     selectedTopic: topic || null,
   }, null, 2)}
 
@@ -759,6 +788,7 @@ Rules:
 - Write about exactly one strongest topic: selectedTopic. Do not turn the article into a general list of many anime.
 - The article must be about selectedTopic.animeTitle and selectedTopic.title. Do not switch to another anime, even if another anime appears in the facts list.
 - Use the selected anime facts as the main body source. Other current anime context may be used only for one short comparison sentence, not as the subject.
+- If selectedTopic.confidence is "headline", the headline must be fresh: selectedTopic.publishedAt must be within the last 48 hours. Do not use old headlines as current news.
 - Set "headline" exactly to selectedTopic.title. Do not rewrite it, shorten it, translate it, or make a different headline.
 - The heroCallout, excerpt, paragraphs, sections, takeaways, and FAQ must clearly match selectedTopic.animeTitle.
 - Make this article clearly different from StreamNyaa's guide blogs: it should read like a focused current news/editorial story, not a schedule guide, ranking page, or generic recommendation list.

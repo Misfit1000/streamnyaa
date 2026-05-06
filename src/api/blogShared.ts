@@ -124,6 +124,8 @@ export interface BlogTopic {
   confidence: 'headline' | 'trend';
   reason: string;
   evidence: string[];
+  publishedAt?: string;
+  ageHours?: number;
   headlines?: BlogNewsItem[];
 }
 
