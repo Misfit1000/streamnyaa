@@ -4,6 +4,7 @@ interface SeoProps {
   title: string;
   description: string;
   canonicalPath?: string;
+  image?: string;
   jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 }
 
@@ -48,9 +49,10 @@ function setJsonLd(jsonLd?: SeoProps['jsonLd']) {
   script.text = JSON.stringify(jsonLd);
 }
 
-export default function Seo({ title, description, canonicalPath = '/', jsonLd }: SeoProps) {
+export default function Seo({ title, description, canonicalPath = '/', image, jsonLd }: SeoProps) {
   useEffect(() => {
     const canonicalUrl = new URL(canonicalPath, SITE_URL).toString();
+    const imageUrl = image ? new URL(image, SITE_URL).toString() : SITE_URL + '/logo.svg';
 
     document.title = title;
     setMeta('description', description);
@@ -59,12 +61,14 @@ export default function Seo({ title, description, canonicalPath = '/', jsonLd }:
     setMeta('og:description', description, 'property');
     setMeta('og:url', canonicalUrl, 'property');
     setMeta('og:type', 'website', 'property');
+    setMeta('og:image', imageUrl, 'property');
     setMeta('twitter:card', 'summary_large_image');
     setMeta('twitter:title', title);
     setMeta('twitter:description', description);
+    setMeta('twitter:image', imageUrl);
     setCanonical(canonicalUrl);
     setJsonLd(jsonLd);
-  }, [title, description, canonicalPath, jsonLd]);
+  }, [title, description, canonicalPath, image, jsonLd]);
 
   return null;
 }
