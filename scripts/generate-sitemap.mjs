@@ -10,6 +10,7 @@ const staticRoutes = [
   { path: '/torrent', changefreq: 'weekly', priority: '0.6' },
   { path: '/blog', changefreq: 'daily', priority: '0.8' },
   { path: '/blog/anime-trending-news-today', changefreq: 'daily', priority: '0.8' },
+  { path: '/blog/anime-viral-topic-today', changefreq: 'daily', priority: '0.8' },
   { path: '/blog/trending-anime-this-week', changefreq: 'daily', priority: '0.7' },
   { path: '/blog/popular-anime-right-now', changefreq: 'daily', priority: '0.7' },
   { path: '/blog/upcoming-anime-this-season', changefreq: 'daily', priority: '0.7' },

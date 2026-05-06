@@ -1,11 +1,11 @@
 const ANILIST_URL = 'https://graphql.anilist.co';
 const JIKAN_URL = 'https://api.jikan.moe/v4';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const CACHE_TTL_MS = 1000 * 60 * 60 * 7;
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24;
 const FALLBACK_CACHE_TTL_MS = 1000 * 60 * 15;
 const STALE_TTL_MS = 1000 * 60 * 60 * 24;
 const FALLBACK_STALE_TTL_MS = 1000 * 60 * 60;
-const EDGE_CACHE_HEADER = 'public, s-maxage=25200, stale-while-revalidate=86400';
+const EDGE_CACHE_HEADER = 'public, s-maxage=86400, stale-while-revalidate=86400';
 const MAX_HEADLINE_AGE_MS = 1000 * 60 * 60 * 48;
 
 const memoryCache = new Map<string, { expiresAt: number; staleAt: number; data: BlogPostData }>();
@@ -25,6 +25,19 @@ const BLOG_POSTS = [
     readerPromise: 'Use this article for a quick, factual look at one anime topic that is worth paying attention to right now.',
     articleKind: 'gemini',
     sortRank: 100,
+  },
+  {
+    slug: 'anime-viral-topic-today',
+    title: 'Fast Rising Anime Topic Today',
+    seoTitle: 'Fast Rising Anime Topic Today - Anime Buzz | StreamNyaa',
+    category: 'Viral',
+    description: 'Read one focused anime article about a separate fast-moving anime topic when current trend, episode, or headline signals are strong enough.',
+    summary: 'A second focused anime story for a fast-rising topic with its own current angle.',
+    intro: 'This article follows a separate anime topic when current momentum, episode activity, or a fresh headline gives it enough weight for a focused story.',
+    angle: 'fast-moving anime topic',
+    readerPromise: 'Use this article for a focused look at another anime topic gaining attention right now.',
+    articleKind: 'gemini',
+    sortRank: 95,
   },
   {
     slug: 'trending-anime-this-week',
@@ -359,18 +372,26 @@ function headlineScore(news: BlogNewsItem) {
   return score;
 }
 
-function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
-  const sorted = [...items].sort((a, b) => ((b.trending || 0) + (b.popularity || 0) / 100) - ((a.trending || 0) + (a.popularity || 0) / 100));
+function mediaTopicKey(item: BlogMediaItem) {
+  return String(item.mal_id || item.id || item.title);
+}
+
+function selectNewsTopic(items: BlogMediaItem[], options: { excludeKeys?: Set<string>; preferFastMoving?: boolean } = {}): BlogTopic {
+  const sorted = [...items]
+    .filter((item) => !options.excludeKeys?.has(mediaTopicKey(item)))
+    .sort((a, b) => ((b.trending || 0) + (b.popularity || 0) / 100) - ((a.trending || 0) + (a.popularity || 0) / 100));
   const top = sorted[0];
   const candidates: Array<BlogTopic & { priority: number }> = [];
 
-  for (const item of items) {
+  for (const item of sorted) {
     for (const news of item.news || []) {
       if (!isFreshHeadline(news) || isGenericReleaseDigest(news) || !headlineMatchesAnime(news, item.title)) continue;
       const type = classifyHeadline(news);
+      if (options.preferFastMoving && !['viral-episode-or-ranking', 'delayed-or-paused-airing', 'new-season-trailer-cast-update'].includes(type)) continue;
       const ageHours = newsAgeHours(news);
       const freshnessBoost = ageHours === null ? 0 : Math.max(0, 48 - ageHours);
-      const priority = headlineScore(news) + freshnessBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000);
+      const fastMovingBoost = options.preferFastMoving && type === 'viral-episode-or-ranking' ? 8 : 0;
+      const priority = headlineScore(news) + freshnessBoost + fastMovingBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000);
       candidates.push({
         type,
         title: news.title,
@@ -418,24 +439,29 @@ function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
         weakButPopular.score ? `Score signal: ${weakButPopular.score}/100` : '',
         weakButPopular.trending ? `Current trend score: ${weakButPopular.trending}` : '',
       ].filter(Boolean),
-      priority: 8 + Math.floor((weakButPopular.popularity || 0) / 100000),
+      priority: (options.preferFastMoving ? 4 : 8) + Math.floor((weakButPopular.popularity || 0) / 100000),
     });
   }
 
   if (top) {
     const doingWell = (top.score || 0) >= 80 && (top.trending || 0) > 0;
+    const fastMoving = options.preferFastMoving && (top.trending || 0) >= 50;
     candidates.push({
-      type: doingWell ? 'why-this-anime-is-doing-well' : 'anime-trending-up-now',
-      title: doingWell ? `Why ${top.title} is doing well right now` : `${top.title} is leading current anime trend signals`,
+      type: fastMoving ? 'anime-trending-up-now' : doingWell ? 'why-this-anime-is-doing-well' : 'anime-trending-up-now',
+      title: fastMoving ? `${top.title} is gaining attention right now` : doingWell ? `Why ${top.title} is doing well right now` : `${top.title} is leading current anime trend signals`,
       animeTitle: top.title,
       animeId: top.id,
       malId: top.mal_id,
       image: top.image,
-      summary: doingWell
+      summary: fastMoving
+        ? `${top.title} has a separate current trend signal strong enough for a focused second story, with score, genre, studio, popularity, and episode context available.`
+        : doingWell
         ? `${top.title} combines strong current trend placement with a healthy score signal, making it a good topic for why the anime is connecting right now.`
         : `${top.title} is currently strong in the trend data, with genre, score, studio, and episode context available for a focused update.`,
       confidence: 'trend',
-      reason: doingWell
+      reason: fastMoving
+        ? 'The title has a separate fast-moving current trend signal from the main daily story.'
+        : doingWell
         ? 'The title has both strong trend placement and a strong score signal.'
         : 'The title is the strongest current trend signal available in the latest anime data.',
       evidence: [
@@ -444,7 +470,7 @@ function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
         top.popularity ? `Popularity: ${top.popularity}` : '',
         top.nextEpisode ? `Next episode listed: ${top.nextEpisode}` : '',
       ].filter(Boolean),
-      priority: doingWell ? 7 : 6,
+      priority: fastMoving ? 9 : doingWell ? 7 : 6,
     });
   }
 
@@ -463,9 +489,15 @@ function selectNewsTopic(items: BlogMediaItem[]): BlogTopic {
   return topic;
 }
 
-async function fetchTrendingNewsItems(preview = false) {
+async function fetchTrendingNewsItems(preview = false, mode: 'primary' | 'fast' = 'primary') {
   const items = await fetchMediaList('TRENDING_DESC', 'RELEASING');
-  if (preview) return { items, topic: selectNewsTopic(items) };
+  if (preview) {
+    const primary = selectNewsTopic(items);
+    const topic = mode === 'fast'
+      ? selectNewsTopic(items, { excludeKeys: new Set(primary.malId || primary.animeId ? [String(primary.malId || primary.animeId)] : []), preferFastMoving: true })
+      : primary;
+    return { items, topic };
+  }
 
   const enriched: BlogMediaItem[] = [];
   for (const item of items.slice(0, 8)) {
@@ -474,7 +506,13 @@ async function fetchTrendingNewsItems(preview = false) {
     await sleep(350);
   }
 
-  return { items: [...enriched, ...items.slice(enriched.length)], topic: selectNewsTopic([...enriched, ...items.slice(enriched.length)]) };
+  const allItems = [...enriched, ...items.slice(enriched.length)];
+  const primary = selectNewsTopic(allItems);
+  const topic = mode === 'fast'
+    ? selectNewsTopic(allItems, { excludeKeys: new Set(primary.malId || primary.animeId ? [String(primary.malId || primary.animeId)] : []), preferFastMoving: true })
+    : primary;
+
+  return { items: allItems, topic };
 }
 
 async function fetchTodaysSchedule() {
@@ -785,6 +823,7 @@ ${JSON.stringify(relatedContext, null, 2)}
 
 Rules:
 - Use only the facts above. Do not invent announcements, staff, release dates, platform availability, awards, trailers, rumors, or production details.
+- Treat the supplied facts as a fact-checking boundary. Every specific claim must be supported by selectedTopic, selected anime facts, or listed newsHeadlines.
 - Write about exactly one strongest topic: selectedTopic. Do not turn the article into a general list of many anime.
 - The article must be about selectedTopic.animeTitle and selectedTopic.title. Do not switch to another anime, even if another anime appears in the facts list.
 - Use the selected anime facts as the main body source. Other current anime context may be used only for one short comparison sentence, not as the subject.
@@ -804,7 +843,11 @@ Rules:
 - Only mention delays, halted airing, production issues, viral episodes, trailers, sequels, or announcements when the selected topic or newsHeadlines explicitly support that claim.
 - Do not mention APIs, AI, automation, AniList, Jikan, sources, scraping, or generated content.
 - Keep it natural and editorial.
+- Write like a careful anime editor: explain what happened or what the trend signal shows, why it matters, what viewers should watch for next, and what remains uncertain.
+- Include useful concrete context where available: score, popularity, trend signal, genre, studio, status, episode count, next episode, season, or headline age.
+- If the topic is trend-based, avoid claiming real-world virality as fact unless the selected topic type or headline explicitly says viral, ranking, reaction, record, or buzz.
 - Never write meta-process phrases like "this topic was picked", "selected topic", "strongest visible signals", "available facts", or "current topic is tied to".
+- Do not repeat the same sentence pattern across paragraphs. Avoid filler such as "worth paying attention to", "current signals", or "quick factual look" more than once.
 - Avoid piracy language and avoid telling users where to watch copyrighted content.
 - Make the writing useful for Google search: clear headings, direct wording, helpful context, and natural keywords around the selected anime/topic.
 - Keep every sentence fact-safe. If a fact is missing, skip it.
@@ -819,13 +862,13 @@ JSON shape:
   "headline": "exactly selectedTopic.title",
   "excerpt": "2 sentence summary",
   "heroCallout": "one sentence focused on the top anime",
-  "paragraphs": ["exactly 4 useful paragraphs, 45-75 words each"],
-  "sections": [{"heading": "short heading", "body": "80-120 words"}],
+  "paragraphs": ["exactly 5 useful paragraphs, 55-90 words each"],
+  "sections": [{"heading": "short heading", "body": "90-140 words"}],
   "takeaways": [{"label": "short label", "value": "short value", "detail": "short detail"}],
   "faq": [{"question": "question", "answer": "answer"}]
 }
 
-Use exactly 2 sections, exactly 4 takeaways, and exactly 3 FAQ items.`;
+Use exactly 3 sections, exactly 4 takeaways, and exactly 3 FAQ items.`;
 }
 
 function extractGeminiText(json: any) {
@@ -959,9 +1002,9 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
         body: JSON.stringify({
           contents: [{ parts: [{ text: buildGeminiPrompt(definition, items, topic) }] }],
           generationConfig: {
-            temperature: 0.65,
-            topP: 0.9,
-            maxOutputTokens: 4096,
+            temperature: 0.45,
+            topP: 0.85,
+            maxOutputTokens: 6144,
             responseMimeType: 'application/json',
           },
         }),
@@ -1008,6 +1051,11 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
   let topic: BlogTopic | undefined;
   if (slug === 'anime-trending-news-today') {
     const result = await fetchTrendingNewsItems(preview);
+    items = result.items;
+    topic = result.topic;
+  }
+  else if (slug === 'anime-viral-topic-today') {
+    const result = await fetchTrendingNewsItems(preview, 'fast');
     items = result.items;
     topic = result.topic;
   }

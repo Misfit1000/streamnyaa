@@ -1,5 +1,5 @@
 const SITE_URL = process.env.SITE_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL || 'https://www.streamnyaa.xyz';
-const BLOG_SLUGS = ['anime-trending-news-today'];
+const BLOG_SLUGS = ['anime-trending-news-today', 'anime-viral-topic-today'];
 
 function siteOrigin() {
   const value = SITE_URL.startsWith('http') ? SITE_URL : `https://${SITE_URL}`;

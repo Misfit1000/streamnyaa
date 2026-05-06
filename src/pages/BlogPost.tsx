@@ -127,7 +127,7 @@ export default function BlogPost() {
     queryKey: ['blog-post', slug],
     queryFn: () => fetchBlogPost(slug!),
     enabled: !!definition,
-    staleTime: 1000 * 60 * 60 * 7,
+    staleTime: 1000 * 60 * 60 * 24,
   });
 
   if (!definition) {

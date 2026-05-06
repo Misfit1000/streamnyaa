@@ -11,7 +11,7 @@ export default function Blog() {
     queries: sortedPosts.map((post) => ({
       queryKey: ['blog-preview', post.slug],
       queryFn: () => fetchBlogPost(post.slug, true),
-      staleTime: 1000 * 60 * 60 * 7,
+      staleTime: 1000 * 60 * 60 * 24,
     })),
   });
   const jsonLd = {
