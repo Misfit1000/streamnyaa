@@ -106,6 +106,18 @@
       "destination": "/index.html"
     },
     {
+      "source": "/anime/popular",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/anime/genre/:genre",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/anime/season/:seasonSlug",
+      "destination": "/index.html"
+    },
+    {
       "source": "/anime/:id",
       "destination": "/index.html"
     },
