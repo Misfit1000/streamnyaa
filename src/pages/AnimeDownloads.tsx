@@ -6,6 +6,7 @@ import { Download, Tv, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, 
 import { useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
+import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 
 type AudioFilter = 'sub' | 'dub';
 
@@ -270,6 +271,13 @@ export default function AnimeDownloads() {
                       {/\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(torrent.title) ? 'Dub' : 'Sub'}
                     </span>
                     <span className="opacity-70">{new Date(torrent.pubDate).toLocaleDateString()}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {getTorrentBadges(torrent).map((badge) => (
+                      <span key={`${torrent.infoHash}-${badge.label}`} className={torrentBadgeClassName(badge.tone)}>
+                        {badge.label}
+                      </span>
+                    ))}
                   </div>
                 </div>
                 

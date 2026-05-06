@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { searchNyaa } from '../api/nyaa';
 import { Search, Loader2, Download, Tv, HardDrive, AlertTriangle } from 'lucide-react';
+import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 
 export default function NyaaSearchPage() {
   const navigate = useNavigate();
@@ -126,6 +127,13 @@ export default function NyaaSearchPage() {
                     </span>
                     <span className="bg-background px-2 py-0.5 rounded-full border border-border">{torrent.category}</span>
                     <span className="opacity-70">{new Date(torrent.pubDate).toLocaleDateString()}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {getTorrentBadges(torrent).map((badge) => (
+                      <span key={`${torrent.infoHash}-${badge.label}`} className={torrentBadgeClassName(badge.tone)}>
+                        {badge.label}
+                      </span>
+                    ))}
                   </div>
                 </div>
                 
