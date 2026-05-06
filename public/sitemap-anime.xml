@@ -1657,24 +1657,6 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/2001-gurren-lagann</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/2001-gurren-lagann/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/2001-gurren-lagann</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
     <loc>https://www.streamnyaa.xyz/anime/14813-my-teen-romantic-comedy-snafu</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
@@ -1688,6 +1670,24 @@
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/watch/14813-my-teen-romantic-comedy-snafu</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/2001-gurren-lagann</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/2001-gurren-lagann/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/2001-gurren-lagann</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -1891,24 +1891,6 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/35120-devilman-crybaby</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/35120-devilman-crybaby/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/35120-devilman-crybaby</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
     <loc>https://www.streamnyaa.xyz/anime/33255-the-disastrous-life-of-saiki-k</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
@@ -1927,19 +1909,19 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/49926-demon-slayer-kimetsu-no-yaiba-mugen-train-arc</loc>
+    <loc>https://www.streamnyaa.xyz/anime/35120-devilman-crybaby</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/49926-demon-slayer-kimetsu-no-yaiba-mugen-train-arc/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/35120-devilman-crybaby/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/49926-demon-slayer-kimetsu-no-yaiba-mugen-train-arc</loc>
+    <loc>https://www.streamnyaa.xyz/watch/35120-devilman-crybaby</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -1958,6 +1940,24 @@
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/watch/12189-hyouka</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/49926-demon-slayer-kimetsu-no-yaiba-mugen-train-arc</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/49926-demon-slayer-kimetsu-no-yaiba-mugen-train-arc/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/49926-demon-slayer-kimetsu-no-yaiba-mugen-train-arc</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -2701,55 +2701,19 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/56734-i-made-friends-with-the-second-prettiest-girl-in-my-class</loc>
+    <loc>https://www.streamnyaa.xyz/anime/61316-re-zero-starting-life-in-another-world-season-4</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/56734-i-made-friends-with-the-second-prettiest-girl-in-my-class/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/61316-re-zero-starting-life-in-another-world-season-4/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/56734-i-made-friends-with-the-second-prettiest-girl-in-my-class</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/51553-witch-hat-atelier</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/51553-witch-hat-atelier/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/51553-witch-hat-atelier</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62601-marriagetoxin</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62601-marriagetoxin/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/62601-marriagetoxin</loc>
+    <loc>https://www.streamnyaa.xyz/watch/61316-re-zero-starting-life-in-another-world-season-4</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -2773,6 +2737,150 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://www.streamnyaa.xyz/anime/62604-gals-can-t-be-kind-to-otaku</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62604-gals-can-t-be-kind-to-otaku/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/62604-gals-can-t-be-kind-to-otaku</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/51553-witch-hat-atelier</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/51553-witch-hat-atelier/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/51553-witch-hat-atelier</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/56734-i-made-friends-with-the-second-prettiest-girl-in-my-class</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/56734-i-made-friends-with-the-second-prettiest-girl-in-my-class/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/56734-i-made-friends-with-the-second-prettiest-girl-in-my-class</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61831-the-beginning-after-the-end-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61831-the-beginning-after-the-end-season-2/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/61831-the-beginning-after-the-end-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62601-marriagetoxin</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62601-marriagetoxin/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/62601-marriagetoxin</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/57779-dorohedoro-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/57779-dorohedoro-season-2/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/57779-dorohedoro-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62893-always-a-catch</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62893-always-a-catch/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/62893-always-a-catch</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62485-rent-a-girlfriend-season-5</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62485-rent-a-girlfriend-season-5/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/62485-rent-a-girlfriend-season-5</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://www.streamnyaa.xyz/anime/61839-i-want-to-end-this-love-game</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
@@ -2786,6 +2894,24 @@
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/watch/61839-i-want-to-end-this-love-game</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62512-reborn-as-a-vending-machine-i-now-wander-the-dungeon-season-3</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62512-reborn-as-a-vending-machine-i-now-wander-the-dungeon-season-3/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/62512-reborn-as-a-vending-machine-i-now-wander-the-dungeon-season-3</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -2827,42 +2953,6 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/61316-re-zero-starting-life-in-another-world-season-4</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61316-re-zero-starting-life-in-another-world-season-4/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61316-re-zero-starting-life-in-another-world-season-4</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63376-my-ribdiculous-reincarnation</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63376-my-ribdiculous-reincarnation/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/63376-my-ribdiculous-reincarnation</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
     <loc>https://www.streamnyaa.xyz/anime/62146-farming-life-in-another-world-2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
@@ -2876,60 +2966,6 @@
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/watch/62146-farming-life-in-another-world-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61931-the-most-heretical-last-boss-queen-from-villainess-to-savior-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61931-the-most-heretical-last-boss-queen-from-villainess-to-savior-season-2/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61931-the-most-heretical-last-boss-queen-from-villainess-to-savior-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63375-nippon-sangoku-the-three-nations-of-the-crimson-sun</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63375-nippon-sangoku-the-three-nations-of-the-crimson-sun/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/63375-nippon-sangoku-the-three-nations-of-the-crimson-sun</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62331-liar-game</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62331-liar-game/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/62331-liar-game</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -2971,73 +3007,19 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/55825-hell-s-paradise-season-2</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62331-liar-game</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/55825-hell-s-paradise-season-2/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62331-liar-game/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/55825-hell-s-paradise-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63014-pardon-the-intrusion-i-m-home</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63014-pardon-the-intrusion-i-m-home/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/63014-pardon-the-intrusion-i-m-home</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61443-agents-of-the-four-seasons-dance-of-spring</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61443-agents-of-the-four-seasons-dance-of-spring/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61443-agents-of-the-four-seasons-dance-of-spring</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62604-gals-can-t-be-kind-to-otaku</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62604-gals-can-t-be-kind-to-otaku/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/62604-gals-can-t-be-kind-to-otaku</loc>
+    <loc>https://www.streamnyaa.xyz/watch/62331-liar-game</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -3061,6 +3043,24 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://www.streamnyaa.xyz/anime/63376-my-ribdiculous-reincarnation</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63376-my-ribdiculous-reincarnation/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/63376-my-ribdiculous-reincarnation</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://www.streamnyaa.xyz/anime/58059-wistoria-wand-and-sword</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
@@ -3079,109 +3079,55 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62568-dr-stone-science-future-cour-3</loc>
+    <loc>https://www.streamnyaa.xyz/anime/63375-nippon-sangoku-the-three-nations-of-the-crimson-sun</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62568-dr-stone-science-future-cour-3/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/63375-nippon-sangoku-the-three-nations-of-the-crimson-sun/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/62568-dr-stone-science-future-cour-3</loc>
+    <loc>https://www.streamnyaa.xyz/watch/63375-nippon-sangoku-the-three-nations-of-the-crimson-sun</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62164-akane-banashi</loc>
+    <loc>https://www.streamnyaa.xyz/anime/55825-hell-s-paradise-season-2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62164-akane-banashi/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/55825-hell-s-paradise-season-2/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/62164-akane-banashi</loc>
+    <loc>https://www.streamnyaa.xyz/watch/55825-hell-s-paradise-season-2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/56876-the-angel-next-door-spoils-me-rotten2</loc>
+    <loc>https://www.streamnyaa.xyz/anime/61443-agents-of-the-four-seasons-dance-of-spring</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/56876-the-angel-next-door-spoils-me-rotten2/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/61443-agents-of-the-four-seasons-dance-of-spring/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/56876-the-angel-next-door-spoils-me-rotten2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60852-the-ramparts-of-ice</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60852-the-ramparts-of-ice/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/60852-the-ramparts-of-ice</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63130-my-hero-academia-more</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63130-my-hero-academia-more/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/63130-my-hero-academia-more</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61013-even-a-replica-can-fall-in-love</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61013-even-a-replica-can-fall-in-love/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61013-even-a-replica-can-fall-in-love</loc>
+    <loc>https://www.streamnyaa.xyz/watch/61443-agents-of-the-four-seasons-dance-of-spring</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -3205,541 +3151,55 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/56009-sentenced-to-be-a-hero</loc>
+    <loc>https://www.streamnyaa.xyz/anime/56876-the-angel-next-door-spoils-me-rotten2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/56009-sentenced-to-be-a-hero/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/56876-the-angel-next-door-spoils-me-rotten2/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/56009-sentenced-to-be-a-hero</loc>
+    <loc>https://www.streamnyaa.xyz/watch/56876-the-angel-next-door-spoils-me-rotten2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62391-kill-blue</loc>
+    <loc>https://www.streamnyaa.xyz/anime/63130-my-hero-academia-more</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62391-kill-blue/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/63130-my-hero-academia-more/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/62391-kill-blue</loc>
+    <loc>https://www.streamnyaa.xyz/watch/63130-my-hero-academia-more</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/60371-you-and-i-are-polar-opposites</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62568-dr-stone-science-future-cour-3</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/60371-you-and-i-are-polar-opposites/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62568-dr-stone-science-future-cour-3/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/60371-you-and-i-are-polar-opposites</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59062-gachiakuta</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59062-gachiakuta/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/59062-gachiakuta</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60028-the-warrior-princess-and-the-barbaric-king</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60028-the-warrior-princess-and-the-barbaric-king/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/60028-the-warrior-princess-and-the-barbaric-king</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/57779-dorohedoro-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/57779-dorohedoro-season-2/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/57779-dorohedoro-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59229-fire-force-season-3-part-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59229-fire-force-season-3-part-2/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/59229-fire-force-season-3-part-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/58514-the-apothecary-diaries-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/58514-the-apothecary-diaries-season-2/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/58514-the-apothecary-diaries-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/53732-eren-the-southpaw</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/53732-eren-the-southpaw/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/53732-eren-the-southpaw</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61831-the-beginning-after-the-end-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61831-the-beginning-after-the-end-season-2/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61831-the-beginning-after-the-end-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61687-an-observation-log-of-my-fiancee-who-calls-herself-a-villainess</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61687-an-observation-log-of-my-fiancee-who-calls-herself-a-villainess/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61687-an-observation-log-of-my-fiancee-who-calls-herself-a-villainess</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61501-mistress-kanan-is-devilishly-easy</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61501-mistress-kanan-is-devilishly-easy/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61501-mistress-kanan-is-devilishly-easy</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59845-the-fragrant-flower-blooms-with-dignity</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59845-the-fragrant-flower-blooms-with-dignity/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/59845-the-fragrant-flower-blooms-with-dignity</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62913-needy-girl-overdose</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62913-needy-girl-overdose/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/62913-needy-girl-overdose</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60058-oshi-no-ko-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60058-oshi-no-ko-season-3/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/60058-oshi-no-ko-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62825-the-strongest-job-is-apparently-not-a-hero-or-a-sage-but-an-appraiser-provisiona</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62825-the-strongest-job-is-apparently-not-a-hero-or-a-sage-but-an-appraiser-provisiona/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/62825-the-strongest-job-is-apparently-not-a-hero-or-a-sage-but-an-appraiser-provisiona</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62485-rent-a-girlfriend-season-5</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62485-rent-a-girlfriend-season-5/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/62485-rent-a-girlfriend-season-5</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62171-the-classroom-of-the-black-cat-and-a-witch</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62171-the-classroom-of-the-black-cat-and-a-witch/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/62171-the-classroom-of-the-black-cat-and-a-witch</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59027-spy-x-family-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59027-spy-x-family-season-3/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/59027-spy-x-family-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/58567-solo-leveling-season-2-arise-from-the-shadow</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/58567-solo-leveling-season-2-arise-from-the-shadow/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/58567-solo-leveling-season-2-arise-from-the-shadow</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/51180-classroom-of-the-elite-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/51180-classroom-of-the-elite-season-3/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/51180-classroom-of-the-elite-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61943-haibara-s-teenage-new-game</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61943-haibara-s-teenage-new-game/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61943-haibara-s-teenage-new-game</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60310-welcome-to-demon-school-iruma-kun-season-4</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60310-welcome-to-demon-school-iruma-kun-season-4/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/60310-welcome-to-demon-school-iruma-kun-season-4</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60098-my-hero-academia-final-season</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/60098-my-hero-academia-final-season/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/60098-my-hero-academia-final-season</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/54857-re-zero-starting-life-in-another-world-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/54857-re-zero-starting-life-in-another-world-season-3/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/54857-re-zero-starting-life-in-another-world-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/57555-chainsaw-man-the-movie-reze-arc</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/57555-chainsaw-man-the-movie-reze-arc/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/57555-chainsaw-man-the-movie-reze-arc</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/53580-that-time-i-got-reincarnated-as-a-slime-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/53580-that-time-i-got-reincarnated-as-a-slime-season-3/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/53580-that-time-i-got-reincarnated-as-a-slime-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/48316-the-eminence-in-shadow</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/48316-the-eminence-in-shadow/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/48316-the-eminence-in-shadow</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61469-steel-ball-run-jojo-s-bizarre-adventure-1st-stage</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61469-steel-ball-run-jojo-s-bizarre-adventure-1st-stage/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61469-steel-ball-run-jojo-s-bizarre-adventure-1st-stage</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61186-botan-kamiina-fully-blossoms-when-drunk</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61186-botan-kamiina-fully-blossoms-when-drunk/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61186-botan-kamiina-fully-blossoms-when-drunk</loc>
+    <loc>https://www.streamnyaa.xyz/watch/62568-dr-stone-science-future-cour-3</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -3763,181 +3223,487 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/57466-ascendance-of-a-bookworm-adopted-daughter-of-an-archduke</loc>
+    <loc>https://www.streamnyaa.xyz/anime/61931-the-most-heretical-last-boss-queen-from-villainess-to-savior-season-2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/57466-ascendance-of-a-bookworm-adopted-daughter-of-an-archduke/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/61931-the-most-heretical-last-boss-queen-from-villainess-to-savior-season-2/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/57466-ascendance-of-a-bookworm-adopted-daughter-of-an-archduke</loc>
+    <loc>https://www.streamnyaa.xyz/watch/61931-the-most-heretical-last-boss-queen-from-villainess-to-savior-season-2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/54789-my-hero-academia-season-7</loc>
+    <loc>https://www.streamnyaa.xyz/anime/60852-the-ramparts-of-ice</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/54789-my-hero-academia-season-7/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/60852-the-ramparts-of-ice/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/54789-my-hero-academia-season-7</loc>
+    <loc>https://www.streamnyaa.xyz/watch/60852-the-ramparts-of-ice</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/52215-orb-on-the-movements-of-the-earth</loc>
+    <loc>https://www.streamnyaa.xyz/anime/56009-sentenced-to-be-a-hero</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/52215-orb-on-the-movements-of-the-earth/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/56009-sentenced-to-be-a-hero/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/52215-orb-on-the-movements-of-the-earth</loc>
+    <loc>https://www.streamnyaa.xyz/watch/56009-sentenced-to-be-a-hero</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/51096-classroom-of-the-elite-season-2</loc>
+    <loc>https://www.streamnyaa.xyz/anime/61013-even-a-replica-can-fall-in-love</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/51096-classroom-of-the-elite-season-2/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/61013-even-a-replica-can-fall-in-love/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/51096-classroom-of-the-elite-season-2</loc>
+    <loc>https://www.streamnyaa.xyz/watch/61013-even-a-replica-can-fall-in-love</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62893-always-a-catch</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62164-akane-banashi</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62893-always-a-catch/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62164-akane-banashi/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/62893-always-a-catch</loc>
+    <loc>https://www.streamnyaa.xyz/watch/62164-akane-banashi</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62512-reborn-as-a-vending-machine-i-now-wander-the-dungeon-season-3</loc>
+    <loc>https://www.streamnyaa.xyz/anime/60371-you-and-i-are-polar-opposites</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62512-reborn-as-a-vending-machine-i-now-wander-the-dungeon-season-3/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/60371-you-and-i-are-polar-opposites/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/62512-reborn-as-a-vending-machine-i-now-wander-the-dungeon-season-3</loc>
+    <loc>https://www.streamnyaa.xyz/watch/60371-you-and-i-are-polar-opposites</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62050-kusunoki-s-garden-of-gods</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62825-the-strongest-job-is-apparently-not-a-hero-or-a-sage-but-an-appraiser-provisiona</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62050-kusunoki-s-garden-of-gods/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62825-the-strongest-job-is-apparently-not-a-hero-or-a-sage-but-an-appraiser-provisiona/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/62050-kusunoki-s-garden-of-gods</loc>
+    <loc>https://www.streamnyaa.xyz/watch/62825-the-strongest-job-is-apparently-not-a-hero-or-a-sage-but-an-appraiser-provisiona</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62048-mao</loc>
+    <loc>https://www.streamnyaa.xyz/anime/59062-gachiakuta</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/62048-mao/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/59062-gachiakuta/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/62048-mao</loc>
+    <loc>https://www.streamnyaa.xyz/watch/59062-gachiakuta</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/61217-scum-of-the-brave</loc>
+    <loc>https://www.streamnyaa.xyz/anime/60058-oshi-no-ko-season-3</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/61217-scum-of-the-brave/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/60058-oshi-no-ko-season-3/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/61217-scum-of-the-brave</loc>
+    <loc>https://www.streamnyaa.xyz/watch/60058-oshi-no-ko-season-3</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/60692-noble-reincarnation-born-blessed-so-i-ll-obtain-ultimate-power</loc>
+    <loc>https://www.streamnyaa.xyz/anime/63014-pardon-the-intrusion-i-m-home</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/60692-noble-reincarnation-born-blessed-so-i-ll-obtain-ultimate-power/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/63014-pardon-the-intrusion-i-m-home/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/60692-noble-reincarnation-born-blessed-so-i-ll-obtain-ultimate-power</loc>
+    <loc>https://www.streamnyaa.xyz/watch/63014-pardon-the-intrusion-i-m-home</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/54857-re-zero-starting-life-in-another-world-season-3</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/54857-re-zero-starting-life-in-another-world-season-3/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/54857-re-zero-starting-life-in-another-world-season-3</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61501-mistress-kanan-is-devilishly-easy</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61501-mistress-kanan-is-devilishly-easy/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/61501-mistress-kanan-is-devilishly-easy</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/53580-that-time-i-got-reincarnated-as-a-slime-season-3</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/53580-that-time-i-got-reincarnated-as-a-slime-season-3/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/53580-that-time-i-got-reincarnated-as-a-slime-season-3</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61186-botan-kamiina-fully-blossoms-when-drunk</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61186-botan-kamiina-fully-blossoms-when-drunk/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/61186-botan-kamiina-fully-blossoms-when-drunk</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/60028-the-warrior-princess-and-the-barbaric-king</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/60028-the-warrior-princess-and-the-barbaric-king/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/60028-the-warrior-princess-and-the-barbaric-king</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/58514-the-apothecary-diaries-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/58514-the-apothecary-diaries-season-2/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/58514-the-apothecary-diaries-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62391-kill-blue</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62391-kill-blue/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/62391-kill-blue</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62171-the-classroom-of-the-black-cat-and-a-witch</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62171-the-classroom-of-the-black-cat-and-a-witch/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/62171-the-classroom-of-the-black-cat-and-a-witch</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/59229-fire-force-season-3-part-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/59229-fire-force-season-3-part-2/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/59229-fire-force-season-3-part-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/51179-mushoku-tensei-jobless-reincarnation-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/51179-mushoku-tensei-jobless-reincarnation-season-2/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/51179-mushoku-tensei-jobless-reincarnation-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63830-re-zero-kara-hajimeru-kyuukei-jikan-break-time-4th-season</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63830-re-zero-kara-hajimeru-kyuukei-jikan-break-time-4th-season/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/63830-re-zero-kara-hajimeru-kyuukei-jikan-break-time-4th-season</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62913-needy-girl-overdose</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/62913-needy-girl-overdose/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/62913-needy-girl-overdose</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63276-candy-caries</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63276-candy-caries/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/63276-candy-caries</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/60098-my-hero-academia-final-season</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/60098-my-hero-academia-final-season/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/60098-my-hero-academia-final-season</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/54744-alya-sometimes-hides-her-feelings-in-russian</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/54744-alya-sometimes-hides-her-feelings-in-russian/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/54744-alya-sometimes-hides-her-feelings-in-russian</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/49918-my-hero-academia-season-6</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/49918-my-hero-academia-season-6/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/49918-my-hero-academia-season-6</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/48316-the-eminence-in-shadow</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/48316-the-eminence-in-shadow/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/48316-the-eminence-in-shadow</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -3974,6 +3740,24 @@
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/watch/28977-gintama-season-3</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/57555-chainsaw-man-the-movie-reze-arc</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/57555-chainsaw-man-the-movie-reze-arc/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/57555-chainsaw-man-the-movie-reze-arc</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -4118,6 +3902,24 @@
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/watch/34096-gintama-season-4</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61469-steel-ball-run-jojo-s-bizarre-adventure-1st-stage</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61469-steel-ball-run-jojo-s-bizarre-adventure-1st-stage/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/61469-steel-ball-run-jojo-s-bizarre-adventure-1st-stage</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -4699,6 +4501,24 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://www.streamnyaa.xyz/anime/52215-orb-on-the-movements-of-the-earth</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/52215-orb-on-the-movements-of-the-earth/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/52215-orb-on-the-movements-of-the-earth</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://www.streamnyaa.xyz/anime/40682-kingdom-season-3</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
@@ -5113,721 +4933,379 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33573-bang-dream</loc>
+    <loc>https://www.streamnyaa.xyz/anime/21473-persona-3-the-movie-2-midsummer-knight-s-dream</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33573-bang-dream/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/21473-persona-3-the-movie-2-midsummer-knight-s-dream/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33573-bang-dream</loc>
+    <loc>https://www.streamnyaa.xyz/watch/21473-persona-3-the-movie-2-midsummer-knight-s-dream</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/31201-doraemon-shin-nobita-no-nippon-tanjou</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/31201-doraemon-shin-nobita-no-nippon-tanjou/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/31201-doraemon-shin-nobita-no-nippon-tanjou</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33783-godzilla-planet-of-the-monsters</loc>
+    <loc>https://www.streamnyaa.xyz/anime/272-noir</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33783-godzilla-planet-of-the-monsters/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/272-noir/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33783-godzilla-planet-of-the-monsters</loc>
+    <loc>https://www.streamnyaa.xyz/watch/272-noir</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33712-bikini-warriors-ova</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33712-bikini-warriors-ova/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/33712-bikini-warriors-ova</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33835-pj-berri-no-mogumogu-munyamunya</loc>
+    <loc>https://www.streamnyaa.xyz/anime/19973-ashita-no-joe-pilots</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33835-pj-berri-no-mogumogu-munyamunya/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/19973-ashita-no-joe-pilots/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33835-pj-berri-no-mogumogu-munyamunya</loc>
+    <loc>https://www.streamnyaa.xyz/watch/19973-ashita-no-joe-pilots</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/34077-cardfight-vanguard-g-next</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/34077-cardfight-vanguard-g-next/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/34077-cardfight-vanguard-g-next</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/26183-ikki-tousen-extravaganza-epoch</loc>
+    <loc>https://www.streamnyaa.xyz/anime/51495-the-fruit-of-evolution-before-i-knew-it-my-life-had-it-made-season-2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/26183-ikki-tousen-extravaganza-epoch/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/51495-the-fruit-of-evolution-before-i-knew-it-my-life-had-it-made-season-2/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/26183-ikki-tousen-extravaganza-epoch</loc>
+    <loc>https://www.streamnyaa.xyz/watch/51495-the-fruit-of-evolution-before-i-knew-it-my-life-had-it-made-season-2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33685-cyborg009-call-of-justice-1</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33685-cyborg009-call-of-justice-1/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/33685-cyborg009-call-of-justice-1</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33929-boku-no-hero-academia-sukue-kyuujo-kunren</loc>
+    <loc>https://www.streamnyaa.xyz/anime/283-anne-of-green-gables</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33929-boku-no-hero-academia-sukue-kyuujo-kunren/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/283-anne-of-green-gables/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33929-boku-no-hero-academia-sukue-kyuujo-kunren</loc>
+    <loc>https://www.streamnyaa.xyz/watch/283-anne-of-green-gables</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33808-girlfriend</loc>
+    <loc>https://www.streamnyaa.xyz/anime/3342-rin-daughters-of-mnemosyne</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33808-girlfriend/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/3342-rin-daughters-of-mnemosyne/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33808-girlfriend</loc>
+    <loc>https://www.streamnyaa.xyz/watch/3342-rin-daughters-of-mnemosyne</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33618-ozmafia-special</loc>
+    <loc>https://www.streamnyaa.xyz/anime/10507-inazuma-eleven-go</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33618-ozmafia-special/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/10507-inazuma-eleven-go/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33618-ozmafia-special</loc>
+    <loc>https://www.streamnyaa.xyz/watch/10507-inazuma-eleven-go</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33456-fate-kaleid-liner-prisma-illya-3rei-specials</loc>
+    <loc>https://www.streamnyaa.xyz/anime/40595-our-last-crusade-or-the-rise-of-a-new-world</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33456-fate-kaleid-liner-prisma-illya-3rei-specials/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/40595-our-last-crusade-or-the-rise-of-a-new-world/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33456-fate-kaleid-liner-prisma-illya-3rei-specials</loc>
+    <loc>https://www.streamnyaa.xyz/watch/40595-our-last-crusade-or-the-rise-of-a-new-world</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33372-overlord-ple-ple-pleiades-nazarick-saidai-no-kiki</loc>
+    <loc>https://www.streamnyaa.xyz/anime/54250-made-in-abyss-mezameru-shinpi</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33372-overlord-ple-ple-pleiades-nazarick-saidai-no-kiki/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/54250-made-in-abyss-mezameru-shinpi/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33372-overlord-ple-ple-pleiades-nazarick-saidai-no-kiki</loc>
+    <loc>https://www.streamnyaa.xyz/watch/54250-made-in-abyss-mezameru-shinpi</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33654-hitorijime-my-hero</loc>
+    <loc>https://www.streamnyaa.xyz/anime/38573-do-you-love-your-mom-and-her-two-hit-multi-target-attacks</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33654-hitorijime-my-hero/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/38573-do-you-love-your-mom-and-her-two-hit-multi-target-attacks/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33654-hitorijime-my-hero</loc>
+    <loc>https://www.streamnyaa.xyz/watch/38573-do-you-love-your-mom-and-her-two-hit-multi-target-attacks</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33899-idolish7</loc>
+    <loc>https://www.streamnyaa.xyz/anime/15133-world-war-blue</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33899-idolish7/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/15133-world-war-blue/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33899-idolish7</loc>
+    <loc>https://www.streamnyaa.xyz/watch/15133-world-war-blue</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33089-kemono-friends</loc>
+    <loc>https://www.streamnyaa.xyz/anime/44412-dou-po-cangqiong-4</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33089-kemono-friends/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/44412-dou-po-cangqiong-4/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33089-kemono-friends</loc>
+    <loc>https://www.streamnyaa.xyz/watch/44412-dou-po-cangqiong-4</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33726-saiyuki-reload-blast</loc>
+    <loc>https://www.streamnyaa.xyz/anime/50139-disney-twisted-wonderland-the-animation</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33726-saiyuki-reload-blast/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/50139-disney-twisted-wonderland-the-animation/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33726-saiyuki-reload-blast</loc>
+    <loc>https://www.streamnyaa.xyz/watch/50139-disney-twisted-wonderland-the-animation</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33840-kabukibu</loc>
+    <loc>https://www.streamnyaa.xyz/anime/35746-6-lovers</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33840-kabukibu/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/35746-6-lovers/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33840-kabukibu</loc>
+    <loc>https://www.streamnyaa.xyz/watch/35746-6-lovers</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33889-dances-with-the-dragons</loc>
+    <loc>https://www.streamnyaa.xyz/anime/7695-pokemon-zoroark-master-of-illusions</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33889-dances-with-the-dragons/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/7695-pokemon-zoroark-master-of-illusions/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33889-dances-with-the-dragons</loc>
+    <loc>https://www.streamnyaa.xyz/watch/7695-pokemon-zoroark-master-of-illusions</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33728-chain-chronicle-haecceitas-no-hikari-part-1</loc>
+    <loc>https://www.streamnyaa.xyz/anime/3092-junjo-romantica</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33728-chain-chronicle-haecceitas-no-hikari-part-1/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/3092-junjo-romantica/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33728-chain-chronicle-haecceitas-no-hikari-part-1</loc>
+    <loc>https://www.streamnyaa.xyz/watch/3092-junjo-romantica</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33737-megaton-musashi</loc>
+    <loc>https://www.streamnyaa.xyz/anime/32189-danganronpa-3-the-end-of-hope-s-peak-high-school-future-arc</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33737-megaton-musashi/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/32189-danganronpa-3-the-end-of-hope-s-peak-high-school-future-arc/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33737-megaton-musashi</loc>
+    <loc>https://www.streamnyaa.xyz/watch/32189-danganronpa-3-the-end-of-hope-s-peak-high-school-future-arc</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33729-chain-chronicle-haecceitas-no-hikari-part-2</loc>
+    <loc>https://www.streamnyaa.xyz/anime/10012-carnival-phantasm</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33729-chain-chronicle-haecceitas-no-hikari-part-2/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/10012-carnival-phantasm/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33729-chain-chronicle-haecceitas-no-hikari-part-2</loc>
+    <loc>https://www.streamnyaa.xyz/watch/10012-carnival-phantasm</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33566-baki-ova</loc>
+    <loc>https://www.streamnyaa.xyz/anime/2072-idol-project</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33566-baki-ova/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/2072-idol-project/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33566-baki-ova</loc>
+    <loc>https://www.streamnyaa.xyz/watch/2072-idol-project</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33730-chain-chronicle-haecceitas-no-hikari-part-3</loc>
+    <loc>https://www.streamnyaa.xyz/anime/57533-a-terrified-teacher-at-ghoul-school</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33730-chain-chronicle-haecceitas-no-hikari-part-3/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/57533-a-terrified-teacher-at-ghoul-school/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33730-chain-chronicle-haecceitas-no-hikari-part-3</loc>
+    <loc>https://www.streamnyaa.xyz/watch/57533-a-terrified-teacher-at-ghoul-school</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33948-hinako-note</loc>
+    <loc>https://www.streamnyaa.xyz/anime/9736-astarotte-s-toy</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/33948-hinako-note/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/9736-astarotte-s-toy/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/33948-hinako-note</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33949-please-tell-me-galko-chan-ova</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33949-please-tell-me-galko-chan-ova/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/33949-please-tell-me-galko-chan-ova</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33950-black-clover-jump-festa-2016-special</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33950-black-clover-jump-festa-2016-special/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/33950-black-clover-jump-festa-2016-special</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/21305-trick-or-alice</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/21305-trick-or-alice/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/21305-trick-or-alice</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33045-dream-festival</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33045-dream-festival/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/33045-dream-festival</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33308-tantei-opera-milky-holmes-fun-fun-party-night-ken-to-janet-no-okurimono</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33308-tantei-opera-milky-holmes-fun-fun-party-night-ken-to-janet-no-okurimono/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/33308-tantei-opera-milky-holmes-fun-fun-party-night-ken-to-janet-no-okurimono</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/34549-the-dragon-dentist</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/34549-the-dragon-dentist/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/34549-the-dragon-dentist</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/51105-nier-automata-ver1-1a</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/51105-nier-automata-ver1-1a/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/51105-nier-automata-ver1-1a</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/517-school-rumble-ova</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/517-school-rumble-ova/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/517-school-rumble-ova</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63120-akatsuki-no-yona-zoku-hen</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63120-akatsuki-no-yona-zoku-hen/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/63120-akatsuki-no-yona-zoku-hen</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/37869-bang-dream-2nd-season</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/37869-bang-dream-2nd-season/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/37869-bang-dream-2nd-season</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/514-le-portrait-de-petit-cossette</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/514-le-portrait-de-petit-cossette/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/514-le-portrait-de-petit-cossette</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/513-castle-in-the-sky</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/513-castle-in-the-sky/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/513-castle-in-the-sky</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/12293-campione</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/12293-campione/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/12293-campione</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/48830-free-the-final-stroke-the-second-volume</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/48830-free-the-final-stroke-the-second-volume/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/48830-free-the-final-stroke-the-second-volume</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59010-theatre-of-darkness-yamishibai-13</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/59010-theatre-of-darkness-yamishibai-13/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/59010-theatre-of-darkness-yamishibai-13</loc>
+    <loc>https://www.streamnyaa.xyz/watch/9736-astarotte-s-toy</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -5851,577 +5329,181 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/52093-trigun-stampede</loc>
+    <loc>https://www.streamnyaa.xyz/anime/49701-dou-po-cangqiong-san-nian-zhi-yue</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/52093-trigun-stampede/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/49701-dou-po-cangqiong-san-nian-zhi-yue/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/52093-trigun-stampede</loc>
+    <loc>https://www.streamnyaa.xyz/watch/49701-dou-po-cangqiong-san-nian-zhi-yue</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/37597-dakaichi-i-m-being-harassed-by-the-sexiest-man-of-the-year</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62981-the-drops-of-god</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/37597-dakaichi-i-m-being-harassed-by-the-sexiest-man-of-the-year/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62981-the-drops-of-god/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/37597-dakaichi-i-m-being-harassed-by-the-sexiest-man-of-the-year</loc>
+    <loc>https://www.streamnyaa.xyz/watch/62981-the-drops-of-god</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/196613-dou-po-cangqiong-nian-fan-4</loc>
+    <loc>https://www.streamnyaa.xyz/anime/2076-kindaichi-shounen-no-jikenbo-tv</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/196613-dou-po-cangqiong-nian-fan-4/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/2076-kindaichi-shounen-no-jikenbo-tv/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/196613-dou-po-cangqiong-nian-fan-4</loc>
+    <loc>https://www.streamnyaa.xyz/watch/2076-kindaichi-shounen-no-jikenbo-tv</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/53410-laid-back-camp-season-3</loc>
+    <loc>https://www.streamnyaa.xyz/anime/1030-pom-poko</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/53410-laid-back-camp-season-3/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/1030-pom-poko/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/53410-laid-back-camp-season-3</loc>
+    <loc>https://www.streamnyaa.xyz/watch/1030-pom-poko</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/11013-inu-x-boku-secret-service</loc>
+    <loc>https://www.streamnyaa.xyz/anime/41781-bang-dream-episode-of-roselia-ii-song-i-am</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/11013-inu-x-boku-secret-service/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/41781-bang-dream-episode-of-roselia-ii-song-i-am/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/11013-inu-x-boku-secret-service</loc>
+    <loc>https://www.streamnyaa.xyz/watch/41781-bang-dream-episode-of-roselia-ii-song-i-am</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/12291-place-to-place</loc>
+    <loc>https://www.streamnyaa.xyz/anime/532-sailor-moon-s</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/12291-place-to-place/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/532-sailor-moon-s/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/12291-place-to-place</loc>
+    <loc>https://www.streamnyaa.xyz/watch/532-sailor-moon-s</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/512-kiki-s-delivery-service</loc>
+    <loc>https://www.streamnyaa.xyz/anime/14349-little-witch-academia</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/512-kiki-s-delivery-service/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/14349-little-witch-academia/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/512-kiki-s-delivery-service</loc>
+    <loc>https://www.streamnyaa.xyz/watch/14349-little-witch-academia</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/60557-fanren-xiu-xian-zhuan-di-si-ji</loc>
+    <loc>https://www.streamnyaa.xyz/anime/208665-plover</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/60557-fanren-xiu-xian-zhuan-di-si-ji/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/208665-plover/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/60557-fanren-xiu-xian-zhuan-di-si-ji</loc>
+    <loc>https://www.streamnyaa.xyz/watch/208665-plover</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/50528-golden-kamuy-season-4</loc>
+    <loc>https://www.streamnyaa.xyz/anime/531-sailor-moon-r-the-movie</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/50528-golden-kamuy-season-4/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/531-sailor-moon-r-the-movie/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/50528-golden-kamuy-season-4</loc>
+    <loc>https://www.streamnyaa.xyz/watch/531-sailor-moon-r-the-movie</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/38793-that-time-i-got-reincarnated-as-a-slime-oad</loc>
+    <loc>https://www.streamnyaa.xyz/anime/24543-persona-3-the-movie-3-falling-down</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/38793-that-time-i-got-reincarnated-as-a-slime-oad/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/24543-persona-3-the-movie-3-falling-down/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/38793-that-time-i-got-reincarnated-as-a-slime-oad</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/53723-acro-trip</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/53723-acro-trip/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/53723-acro-trip</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/1288-mobile-police-patlabor</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/1288-mobile-police-patlabor/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/1288-mobile-police-patlabor</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/6166-cat-planet-cuties</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/6166-cat-planet-cuties/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/6166-cat-planet-cuties</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/20457-inari-kon-kon</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/20457-inari-kon-kon/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/20457-inari-kon-kon</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/40936-oresuki-are-you-the-only-one-who-loves-me-our-playball-our-end-run-our-game</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/40936-oresuki-are-you-the-only-one-who-loves-me-our-playball-our-end-run-our-game/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/40936-oresuki-are-you-the-only-one-who-loves-me-our-playball-our-end-run-our-game</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/3335-smart-san</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/3335-smart-san/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/3335-smart-san</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/38163-show-me-your-panties-while-you-give-me-that-disgusted-look-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/38163-show-me-your-panties-while-you-give-me-that-disgusted-look-2/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/38163-show-me-your-panties-while-you-give-me-that-disgusted-look-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33075-myriad-colors-phantom-world-the-polka-dot-miracle</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/33075-myriad-colors-phantom-world-the-polka-dot-miracle/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/33075-myriad-colors-phantom-world-the-polka-dot-miracle</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/40594-suppose-a-kid-from-the-last-dungeon-boonies-moved-to-a-starter-town</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/40594-suppose-a-kid-from-the-last-dungeon-boonies-moved-to-a-starter-town/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/40594-suppose-a-kid-from-the-last-dungeon-boonies-moved-to-a-starter-town</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/2828-nobody-s-boy-remi</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/2828-nobody-s-boy-remi/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/2828-nobody-s-boy-remi</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/20973-world-conquest-zvezda-plot</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/20973-world-conquest-zvezda-plot/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/20973-world-conquest-zvezda-plot</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/38481-a-certain-scientific-railgun-t</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/38481-a-certain-scientific-railgun-t/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/38481-a-certain-scientific-railgun-t</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/40059-golden-kamuy-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/40059-golden-kamuy-season-3/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/40059-golden-kamuy-season-3</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62924-kanchigai-no-atelier-meister-eiyuu-party-no-moto-zatsuyougakari-ga-jitsu-wa-sent</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/62924-kanchigai-no-atelier-meister-eiyuu-party-no-moto-zatsuyougakari-ga-jitsu-wa-sent/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/62924-kanchigai-no-atelier-meister-eiyuu-party-no-moto-zatsuyougakari-ga-jitsu-wa-sent</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/518-fairy-princess-minky-momo</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/518-fairy-princess-minky-momo/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/518-fairy-princess-minky-momo</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/38572-assassins-pride</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/38572-assassins-pride/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/38572-assassins-pride</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61203-kono-subarashii-sekai-ni-shukufuku-wo-4</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61203-kono-subarashii-sekai-ni-shukufuku-wo-4/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61203-kono-subarashii-sekai-ni-shukufuku-wo-4</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/40052-great-pretender</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/40052-great-pretender/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/40052-great-pretender</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/35376-himouto-umaru-chan-r</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/35376-himouto-umaru-chan-r/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/35376-himouto-umaru-chan-r</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/16149-kick-heart</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/16149-kick-heart/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/16149-kick-heart</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/265-hajime-no-ippo-the-fighting-mashiba-vs-kimura</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/265-hajime-no-ippo-the-fighting-mashiba-vs-kimura/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/265-hajime-no-ippo-the-fighting-mashiba-vs-kimura</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/9734-k-on-season-2-plan</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/9734-k-on-season-2-plan/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/9734-k-on-season-2-plan</loc>
+    <loc>https://www.streamnyaa.xyz/watch/24543-persona-3-the-movie-3-falling-down</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -6445,91 +5527,73 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/38663-cagaster-of-an-insect-cage</loc>
+    <loc>https://www.streamnyaa.xyz/anime/39355-radiant-season-2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/38663-cagaster-of-an-insect-cage/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/39355-radiant-season-2/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/38663-cagaster-of-an-insect-cage</loc>
+    <loc>https://www.streamnyaa.xyz/watch/39355-radiant-season-2</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/37598-phantom-in-the-twilight</loc>
+    <loc>https://www.streamnyaa.xyz/anime/535-the-slayers-next</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/37598-phantom-in-the-twilight/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/535-the-slayers-next/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/37598-phantom-in-the-twilight</loc>
+    <loc>https://www.streamnyaa.xyz/watch/535-the-slayers-next</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/20835-joshikousei-nobunaga-chan</loc>
+    <loc>https://www.streamnyaa.xyz/anime/31149-persona-3-the-movie-4-winter-of-rebirth</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/20835-joshikousei-nobunaga-chan/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/31149-persona-3-the-movie-4-winter-of-rebirth/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/20835-joshikousei-nobunaga-chan</loc>
+    <loc>https://www.streamnyaa.xyz/watch/31149-persona-3-the-movie-4-winter-of-rebirth</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/56242-sengoku-youko</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62936-toumei-na-yoru-ni-kakeru-kimi-to-me-ni-mienai-koi-wo-shita</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/56242-sengoku-youko/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/62936-toumei-na-yoru-ni-kakeru-kimi-to-me-ni-mienai-koi-wo-shita/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/56242-sengoku-youko</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61897-from-old-country-bumpkin-to-master-swordsman-season-2</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/61897-from-old-country-bumpkin-to-master-swordsman-season-2/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/61897-from-old-country-bumpkin-to-master-swordsman-season-2</loc>
+    <loc>https://www.streamnyaa.xyz/watch/62936-toumei-na-yoru-ni-kakeru-kimi-to-me-ni-mienai-koi-wo-shita</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -6553,91 +5617,613 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/3091-xxxholic-kei</loc>
+    <loc>https://www.streamnyaa.xyz/anime/51038-dou-po-cangqiong-yuanqi</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/3091-xxxholic-kei/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/51038-dou-po-cangqiong-yuanqi/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/3091-xxxholic-kei</loc>
+    <loc>https://www.streamnyaa.xyz/watch/51038-dou-po-cangqiong-yuanqi</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/41530-magia-record-puella-magi-madoka-magica-side-story-season-2-the-eve-of-awakening</loc>
+    <loc>https://www.streamnyaa.xyz/anime/14345-btooom</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/41530-magia-record-puella-magi-madoka-magica-side-story-season-2-the-eve-of-awakening/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/14345-btooom/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/41530-magia-record-puella-magi-madoka-magica-side-story-season-2-the-eve-of-awakening</loc>
+    <loc>https://www.streamnyaa.xyz/watch/14345-btooom</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/29427-ratio-of-forest</loc>
+    <loc>https://www.streamnyaa.xyz/anime/2828-nobody-s-boy-remi</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/29427-ratio-of-forest/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/2828-nobody-s-boy-remi/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/29427-ratio-of-forest</loc>
+    <loc>https://www.streamnyaa.xyz/watch/2828-nobody-s-boy-remi</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/6920-blade</loc>
+    <loc>https://www.streamnyaa.xyz/anime/514-le-portrait-de-petit-cossette</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/6920-blade/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/514-le-portrait-de-petit-cossette/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/6920-blade</loc>
+    <loc>https://www.streamnyaa.xyz/watch/514-le-portrait-de-petit-cossette</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/57315-isekai-onsen-paradise</loc>
+    <loc>https://www.streamnyaa.xyz/anime/9750-a-dark-rabbit-has-seven-lives</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/57315-isekai-onsen-paradise/downloads</loc>
+    <loc>https://www.streamnyaa.xyz/anime/9750-a-dark-rabbit-has-seven-lives/downloads</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/watch/57315-isekai-onsen-paradise</loc>
+    <loc>https://www.streamnyaa.xyz/watch/9750-a-dark-rabbit-has-seven-lives</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/40060-bna</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/40060-bna/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/40060-bna</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/265-hajime-no-ippo-the-fighting-mashiba-vs-kimura</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/265-hajime-no-ippo-the-fighting-mashiba-vs-kimura/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/265-hajime-no-ippo-the-fighting-mashiba-vs-kimura</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/18195-little-busters-refrain</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/18195-little-busters-refrain/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/18195-little-busters-refrain</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/53026-synduality-noir</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/53026-synduality-noir/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/53026-synduality-noir</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61153-tenshou-shita-dai-seijo-wa-seijo-de-aru-koto-wo-hita-kakusu</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61153-tenshou-shita-dai-seijo-wa-seijo-de-aru-koto-wo-hita-kakusu/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/61153-tenshou-shita-dai-seijo-wa-seijo-de-aru-koto-wo-hita-kakusu</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/27-trinity-blood</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/27-trinity-blood/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/27-trinity-blood</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63958-majo-to-youhei</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63958-majo-to-youhei/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/63958-majo-to-youhei</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/16419-glitter-force-doki-doki</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/16419-glitter-force-doki-doki/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/16419-glitter-force-doki-doki</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/6178-pokemon-arceus-and-the-jewel-of-life</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/6178-pokemon-arceus-and-the-jewel-of-life/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/6178-pokemon-arceus-and-the-jewel-of-life</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/10278-the-idol-master</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/10278-the-idol-master/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/10278-the-idol-master</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63712-tensei-goblin-dakedo-shitsumon-aru</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63712-tensei-goblin-dakedo-shitsumon-aru/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/63712-tensei-goblin-dakedo-shitsumon-aru</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/46093-the-aquatope-on-white-sand</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/46093-the-aquatope-on-white-sand/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/46093-the-aquatope-on-white-sand</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61090-zui-qiang-shengji</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61090-zui-qiang-shengji/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/61090-zui-qiang-shengji</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/38003-bungo-stray-dogs-3</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/38003-bungo-stray-dogs-3/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/38003-bungo-stray-dogs-3</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63934-date-a-live-f-last-date</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63934-date-a-live-f-last-date/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/63934-date-a-live-f-last-date</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/59484-mechanical-marie</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/59484-mechanical-marie/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/59484-mechanical-marie</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/60548-skip-and-loafer-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/60548-skip-and-loafer-season-2/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/60548-skip-and-loafer-season-2</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/25537-fate-stay-night-heaven-s-feel-i-presage-flower</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/25537-fate-stay-night-heaven-s-feel-i-presage-flower/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/25537-fate-stay-night-heaven-s-feel-i-presage-flower</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/49316-strike-the-blood-final</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/49316-strike-the-blood-final/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/49316-strike-the-blood-final</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/49979-i-m-the-villainess-so-i-m-taming-the-final-boss</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/49979-i-m-the-villainess-so-i-m-taming-the-final-boss/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/49979-i-m-the-villainess-so-i-m-taming-the-final-boss</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/1589-bartender</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/1589-bartender/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/1589-bartender</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/55889-my-happy-marriage-the-shape-of-my-happiness</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/55889-my-happy-marriage-the-shape-of-my-happiness/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/55889-my-happy-marriage-the-shape-of-my-happiness</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/204080-iris-out</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/204080-iris-out/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/204080-iris-out</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/25397-absolute-duo</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/25397-absolute-duo/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/25397-absolute-duo</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/9515-high-school-of-the-dead-drifters-of-the-dead</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/9515-high-school-of-the-dead-drifters-of-the-dead/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/9515-high-school-of-the-dead-drifters-of-the-dead</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/51817-yuri-is-my-job</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/51817-yuri-is-my-job/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/51817-yuri-is-my-job</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/2847-pokemon-the-rise-of-darkrai</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/2847-pokemon-the-rise-of-darkrai/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/2847-pokemon-the-rise-of-darkrai</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/10033-toriko</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/10033-toriko/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/10033-toriko</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/35821-chio-s-school-road</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/35821-chio-s-school-road/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/35821-chio-s-school-road</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -7525,6 +7111,24 @@
     <priority>0.6</priority>
   </url>
   <url>
+    <loc>https://www.streamnyaa.xyz/anime/63120-akatsuki-no-yona-zoku-hen</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/63120-akatsuki-no-yona-zoku-hen/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/63120-akatsuki-no-yona-zoku-hen</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://www.streamnyaa.xyz/anime/63066-code-geass-hoshi-oi-no-aspar</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
@@ -7958,19 +7562,19 @@
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/anime/62024-unmei-no-makimodoshi</loc>
-    <lastmod>2026-05-05</lastmod>
+    <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/anime/62024-unmei-no-makimodoshi/downloads</loc>
-    <lastmod>2026-05-05</lastmod>
+    <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/watch/62024-unmei-no-makimodoshi</loc>
-    <lastmod>2026-05-05</lastmod>
+    <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>
@@ -8137,24 +7741,6 @@
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://www.streamnyaa.xyz/anime/63934-date-a-live-f-last-date</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/anime/63934-date-a-live-f-last-date/downloads</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
-    <loc>https://www.streamnyaa.xyz/watch/63934-date-a-live-f-last-date</loc>
-    <lastmod>2026-05-06</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>
-  <url>
     <loc>https://www.streamnyaa.xyz/anime/61398-make-heroine-ga-oosugiru-2nd-season</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
@@ -8222,6 +7808,24 @@
   </url>
   <url>
     <loc>https://www.streamnyaa.xyz/watch/61292-rurouni-kenshin-meiji-kenkaku-romantan-3rd-season</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61203-kono-subarashii-sekai-ni-shukufuku-wo-4</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/anime/61203-kono-subarashii-sekai-ni-shukufuku-wo-4/downloads</loc>
+    <lastmod>2026-05-06</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.streamnyaa.xyz/watch/61203-kono-subarashii-sekai-ni-shukufuku-wo-4</loc>
     <lastmod>2026-05-06</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
