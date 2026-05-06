@@ -1,6 +1,7 @@
 const ARCHIVE_DIR = 'public/generated-blog-archive';
 const REPOSITORY = process.env.GITHUB_ARTICLE_REPOSITORY || 'Misfit1000/StreamNyaa';
 const BRANCH = process.env.GITHUB_ARTICLE_BRANCH || 'main';
+const SITE_URL = (process.env.SITE_URL || 'https://www.streamnyaa.xyz').replace(/\/+$/, '');
 
 function githubToken() {
   return process.env.GITHUB_ARTICLE_TOKEN || process.env.GH_ARTICLE_TOKEN || '';
@@ -8,6 +9,14 @@ function githubToken() {
 
 function archivePath(articleSlug) {
   return `${ARCHIVE_DIR}/${articleSlug}.json`;
+}
+
+function publicArchiveUrl(articleSlug) {
+  return `${SITE_URL}/generated-blog-archive/${encodeURIComponent(articleSlug)}.json`;
+}
+
+function publicIndexUrl() {
+  return `${SITE_URL}/generated-blog-archive/index.json`;
 }
 
 function apiUrl(pathname) {
@@ -55,20 +64,47 @@ function toBase64(value) {
   return Buffer.from(value, 'utf8').toString('base64');
 }
 
+async function archiveIndexSha() {
+  try {
+    const file = await github(`/contents/${ARCHIVE_DIR}/index.json?ref=${encodeURIComponent(BRANCH)}`);
+    return file?.sha || undefined;
+  } catch (error) {
+    if (error?.status === 404) return undefined;
+    throw error;
+  }
+}
+
+async function updateArchiveIndex(articleSlug) {
+  const current = await listArchiveSlugs();
+  const slugs = [articleSlug, ...current.filter((slug) => slug !== articleSlug)];
+  const sha = await archiveIndexSha();
+  await github(`/contents/${ARCHIVE_DIR}/index.json`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      message: 'Update blog archive index',
+      content: toBase64(JSON.stringify({ slugs }, null, 2)),
+      branch: BRANCH,
+      ...(sha ? { sha } : {}),
+    }),
+  });
+}
+
 export async function archiveBlogPost(post) {
   if (!post?.articleSlug || post.articleKind !== 'gemini' || !githubToken()) return false;
   const pathname = archivePath(post.articleSlug);
 
   try {
-    if (await fileExists(pathname)) return true;
-    await github(`/contents/${encodeURIComponent(pathname).replace(/%2F/g, '/')}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        message: `Archive blog article: ${post.articleSlug}`,
-        content: toBase64(JSON.stringify(post, null, 2)),
-        branch: BRANCH,
-      }),
-    });
+    if (!(await fileExists(pathname))) {
+      await github(`/contents/${encodeURIComponent(pathname).replace(/%2F/g, '/')}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          message: `Archive blog article: ${post.articleSlug}`,
+          content: toBase64(JSON.stringify(post, null, 2)),
+          branch: BRANCH,
+        }),
+      });
+    }
+    await updateArchiveIndex(post.articleSlug);
     return true;
   } catch (error) {
     console.error('Blog archive save failed', error);
@@ -76,17 +112,28 @@ export async function archiveBlogPost(post) {
   }
 }
 
+async function listArchiveSlugs() {
+  try {
+    const response = await fetch(publicIndexUrl(), {
+      headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa-Article-Archive' },
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data.slugs) ? data.slugs.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function listArchivedBlogPosts(limit = 60) {
   try {
-    const files = await github(`/contents/${ARCHIVE_DIR}?ref=${encodeURIComponent(BRANCH)}`);
-    if (!Array.isArray(files)) return [];
+    const slugs = await listArchiveSlugs();
     const posts = await Promise.all(
-      files
-        .filter((file) => file.type === 'file' && file.name.endsWith('.json') && file.download_url)
+      slugs
         .slice(0, limit)
-        .map(async (file) => {
+        .map(async (slug) => {
           try {
-            const response = await fetch(file.download_url, {
+            const response = await fetch(publicArchiveUrl(slug), {
               headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa-Article-Archive' },
             });
             if (!response.ok) return null;
@@ -109,9 +156,7 @@ export async function listArchivedBlogPosts(limit = 60) {
 
 export async function findArchivedBlogPost(articleSlug) {
   try {
-    const file = await github(`/contents/${archivePath(articleSlug)}?ref=${encodeURIComponent(BRANCH)}`);
-    if (!file?.download_url) return null;
-    const response = await fetch(file.download_url, {
+    const response = await fetch(publicArchiveUrl(articleSlug), {
       headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa-Article-Archive' },
     });
     if (!response.ok) return null;
