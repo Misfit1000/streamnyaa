@@ -1,4 +1,4 @@
-import { archiveBlogPost } from './blogArchive.js';
+import { archiveBlogPost, listArchivedBlogPosts } from './blogArchive.js';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 const JIKAN_URL = 'https://api.jikan.moe/v4';
@@ -9,6 +9,15 @@ const STALE_TTL_MS = 1000 * 60 * 60 * 24;
 const FALLBACK_STALE_TTL_MS = 1000 * 60 * 60;
 const EDGE_CACHE_HEADER = 'public, s-maxage=86400, stale-while-revalidate=86400';
 const MAX_HEADLINE_AGE_MS = 1000 * 60 * 60 * 48;
+const TOPIC_TYPES = [
+  'delayed-or-paused-airing',
+  'viral-episode-or-ranking',
+  'new-season-trailer-cast-update',
+  'popular-anime-with-mixed-reception',
+  'anime-trending-up-now',
+  'why-this-anime-is-doing-well',
+  'anime-headline',
+];
 
 const memoryCache = new Map<string, { expiresAt: number; staleAt: number; data: BlogPostData }>();
 
@@ -390,9 +399,99 @@ function mediaTopicKey(item: BlogMediaItem) {
   return String(item.mal_id || item.id || item.title);
 }
 
-function selectNewsTopic(items: BlogMediaItem[], options: { excludeKeys?: Set<string>; preferFastMoving?: boolean } = {}): BlogTopic {
+function stableIndex(seed: string | number | undefined, count: number) {
+  const text = String(seed || 'streamnyaa');
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  return count ? hash % count : 0;
+}
+
+function pickTemplate(seed: string | number | undefined, templates: string[]) {
+  return templates[stableIndex(seed, templates.length)];
+}
+
+function trendTopicTitle(item: BlogMediaItem, type: string) {
+  const title = item.title;
+  const seed = `${item.mal_id || item.id || title}-${type}`;
+  if (type === 'popular-anime-with-mixed-reception') {
+    return pickTemplate(seed, [
+      `${title} is popular, but its score points to split reactions`,
+      `Why ${title} is drawing attention despite mixed reception`,
+      `${title} has viewers watching, but the reception looks divided`,
+    ]);
+  }
+  if (type === 'why-this-anime-is-doing-well') {
+    return pickTemplate(seed, [
+      `Why ${title} is connecting with anime viewers right now`,
+      `${title} is building momentum with a stronger score signal`,
+      `What ${title}'s current rise says about its season`,
+    ]);
+  }
+  return pickTemplate(seed, [
+    `${title} is climbing in current anime trend signals`,
+    `${title} is gaining attention as its season moves forward`,
+    `Why ${title} is becoming harder to ignore this week`,
+  ]);
+}
+
+type TopicSelectionOptions = {
+  excludeKeys?: Set<string>;
+  excludeTitles?: Set<string>;
+  avoidTypes?: Set<string>;
+  preferredTypes?: Set<string>;
+  preferFastMoving?: boolean;
+};
+
+function titleKey(value?: string) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function adjustedTopicPriority(type: string, priority: number, options: TopicSelectionOptions) {
+  let nextPriority = priority;
+  if (options.preferredTypes?.size) nextPriority += options.preferredTypes.has(type) ? 10 : -3;
+  if (options.avoidTypes?.has(type)) nextPriority -= 9;
+  return nextPriority;
+}
+
+function recentTopicContext(posts: BlogPostData[]) {
+  const animeKeys = new Set<string>();
+  const animeTitles = new Set<string>();
+  const typeCounts = new Map<string, number>();
+
+  for (const post of posts.slice(0, 14)) {
+    const topic = post.topic;
+    if (!topic) continue;
+    if (topic.malId || topic.animeId) animeKeys.add(String(topic.malId || topic.animeId));
+    if (topic.animeTitle) animeTitles.add(titleKey(topic.animeTitle));
+    if (topic.type) typeCounts.set(topic.type, (typeCounts.get(topic.type) || 0) + 1);
+  }
+
+  const preferredTypes = new Set(
+    TOPIC_TYPES
+      .filter((type) => (typeCounts.get(type) || 0) === 0)
+      .slice(0, 4),
+  );
+  const avoidTypes = new Set(
+    [...typeCounts.entries()]
+      .filter(([, count]) => count >= 2)
+      .map(([type]) => type),
+  );
+
+  return { animeKeys, animeTitles, preferredTypes, avoidTypes };
+}
+
+async function loadRecentTopicContext() {
+  try {
+    return recentTopicContext(await listArchivedBlogPosts(24));
+  } catch {
+    return recentTopicContext([]);
+  }
+}
+
+function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions = {}): BlogTopic {
   const sorted = [...items]
     .filter((item) => !options.excludeKeys?.has(mediaTopicKey(item)))
+    .filter((item) => !options.excludeTitles?.has(titleKey(item.title)))
     .sort((a, b) => ((b.trending || 0) + (b.popularity || 0) / 100) - ((a.trending || 0) + (a.popularity || 0) / 100));
   const top = sorted[0];
   const candidates: Array<BlogTopic & { priority: number }> = [];
@@ -405,7 +504,7 @@ function selectNewsTopic(items: BlogMediaItem[], options: { excludeKeys?: Set<st
       const ageHours = newsAgeHours(news);
       const freshnessBoost = ageHours === null ? 0 : Math.max(0, 48 - ageHours);
       const fastMovingBoost = options.preferFastMoving && type === 'viral-episode-or-ranking' ? 8 : 0;
-      const priority = headlineScore(news) + freshnessBoost + fastMovingBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000);
+      const priority = adjustedTopicPriority(type, headlineScore(news) + freshnessBoost + fastMovingBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000), options);
       candidates.push({
         type,
         title: news.title,
@@ -453,16 +552,17 @@ function selectNewsTopic(items: BlogMediaItem[], options: { excludeKeys?: Set<st
         weakButPopular.score ? `Score signal: ${weakButPopular.score}/100` : '',
         weakButPopular.trending ? `Current trend score: ${weakButPopular.trending}` : '',
       ].filter(Boolean),
-      priority: (options.preferFastMoving ? 4 : 8) + Math.floor((weakButPopular.popularity || 0) / 100000),
+      priority: adjustedTopicPriority('popular-anime-with-mixed-reception', (options.preferFastMoving ? 4 : 8) + Math.floor((weakButPopular.popularity || 0) / 100000), options),
     });
   }
 
   if (top) {
     const doingWell = (top.score || 0) >= 80 && (top.trending || 0) > 0;
     const fastMoving = options.preferFastMoving && (top.trending || 0) >= 50;
+    const type = fastMoving ? 'anime-trending-up-now' : doingWell ? 'why-this-anime-is-doing-well' : 'anime-trending-up-now';
     candidates.push({
-      type: fastMoving ? 'anime-trending-up-now' : doingWell ? 'why-this-anime-is-doing-well' : 'anime-trending-up-now',
-      title: fastMoving ? `${top.title} is gaining attention right now` : doingWell ? `Why ${top.title} is doing well right now` : `${top.title} is leading current anime trend signals`,
+      type,
+      title: trendTopicTitle(top, type),
       animeTitle: top.title,
       animeId: top.id,
       malId: top.mal_id,
@@ -484,7 +584,7 @@ function selectNewsTopic(items: BlogMediaItem[], options: { excludeKeys?: Set<st
         top.popularity ? `Popularity: ${top.popularity}` : '',
         top.nextEpisode ? `Next episode listed: ${top.nextEpisode}` : '',
       ].filter(Boolean),
-      priority: fastMoving ? 9 : doingWell ? 7 : 6,
+      priority: adjustedTopicPriority(type, fastMoving ? 9 : doingWell ? 7 : 6, options),
     });
   }
 
@@ -505,10 +605,28 @@ function selectNewsTopic(items: BlogMediaItem[], options: { excludeKeys?: Set<st
 
 async function fetchTrendingNewsItems(preview = false, mode: 'primary' | 'fast' = 'primary') {
   const items = await fetchMediaList('TRENDING_DESC', 'RELEASING');
+  const recent = preview
+    ? recentTopicContext([])
+    : await loadRecentTopicContext();
+  const baseOptions: TopicSelectionOptions = {
+    excludeKeys: recent.animeKeys,
+    excludeTitles: recent.animeTitles,
+    avoidTypes: recent.avoidTypes,
+    preferredTypes: recent.preferredTypes,
+  };
+
   if (preview) {
-    const primary = selectNewsTopic(items);
+    const primary = selectNewsTopic(items, baseOptions);
+    const fastAvoidTypes = new Set(baseOptions.avoidTypes);
+    if (primary.type) fastAvoidTypes.add(primary.type);
     const topic = mode === 'fast'
-      ? selectNewsTopic(items, { excludeKeys: new Set(primary.malId || primary.animeId ? [String(primary.malId || primary.animeId)] : []), preferFastMoving: true })
+      ? selectNewsTopic(items, {
+        ...baseOptions,
+        excludeKeys: new Set([...baseOptions.excludeKeys || [], ...(primary.malId || primary.animeId ? [String(primary.malId || primary.animeId)] : [])]),
+        excludeTitles: new Set([...baseOptions.excludeTitles || [], ...(primary.animeTitle ? [titleKey(primary.animeTitle)] : [])]),
+        avoidTypes: fastAvoidTypes,
+        preferFastMoving: true,
+      })
       : primary;
     return { items, topic };
   }
@@ -521,9 +639,17 @@ async function fetchTrendingNewsItems(preview = false, mode: 'primary' | 'fast' 
   }
 
   const allItems = [...enriched, ...items.slice(enriched.length)];
-  const primary = selectNewsTopic(allItems);
+  const primary = selectNewsTopic(allItems, baseOptions);
+  const fastAvoidTypes = new Set(baseOptions.avoidTypes);
+  if (primary.type) fastAvoidTypes.add(primary.type);
   const topic = mode === 'fast'
-    ? selectNewsTopic(allItems, { excludeKeys: new Set(primary.malId || primary.animeId ? [String(primary.malId || primary.animeId)] : []), preferFastMoving: true })
+    ? selectNewsTopic(allItems, {
+      ...baseOptions,
+      excludeKeys: new Set([...baseOptions.excludeKeys || [], ...(primary.malId || primary.animeId ? [String(primary.malId || primary.animeId)] : [])]),
+      excludeTitles: new Set([...baseOptions.excludeTitles || [], ...(primary.animeTitle ? [titleKey(primary.animeTitle)] : [])]),
+      avoidTypes: fastAvoidTypes,
+      preferFastMoving: true,
+    })
     : primary;
 
   return { items: allItems, topic };
