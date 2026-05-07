@@ -2,6 +2,7 @@ const ARCHIVE_DIR = 'public/generated-blog-archive';
 const REPOSITORY = process.env.GITHUB_ARTICLE_REPOSITORY || 'Misfit1000/StreamNyaa';
 const BRANCH = process.env.GITHUB_ARTICLE_BRANCH || 'main';
 const SITE_URL = (process.env.SITE_URL || 'https://www.streamnyaa.xyz').replace(/\/+$/, '');
+const supabaseArchiveErrors = [];
 
 function supabaseUrl() {
   return (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
@@ -166,6 +167,11 @@ async function archiveSupabaseBlogPost(post) {
     return true;
   } catch (error) {
     console.error('Supabase blog archive save failed', error);
+    supabaseArchiveErrors.push({
+      slug: post.articleSlug,
+      status: error?.status || null,
+      message: String(error?.message || error || 'Unknown Supabase error').slice(0, 300),
+    });
     return false;
   }
 }
@@ -228,6 +234,7 @@ async function listGithubArchivedBlogPosts(limit = 60) {
 }
 
 export async function migrateArchivedBlogPostsToSupabase(limit = 60) {
+  supabaseArchiveErrors.length = 0;
   const supabaseConfigured = Boolean(supabaseUrl() && supabaseKey());
   const supabasePosts = await listSupabaseBlogPosts(limit);
   const githubPosts = await listGithubArchivedBlogPosts(limit);
@@ -243,6 +250,7 @@ export async function migrateArchivedBlogPostsToSupabase(limit = 60) {
     existingSupabasePosts: supabasePosts.length,
     attempted: supabaseConfigured ? missingSupabasePosts.length : 0,
     saved: results.filter(Boolean).length,
+    errors: supabaseArchiveErrors.slice(0, 3),
   };
 }
 
