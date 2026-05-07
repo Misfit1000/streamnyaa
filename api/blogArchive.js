@@ -3,6 +3,14 @@ const REPOSITORY = process.env.GITHUB_ARTICLE_REPOSITORY || 'Misfit1000/StreamNy
 const BRANCH = process.env.GITHUB_ARTICLE_BRANCH || 'main';
 const SITE_URL = (process.env.SITE_URL || 'https://www.streamnyaa.xyz').replace(/\/+$/, '');
 
+function supabaseUrl() {
+  return (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+}
+
+function supabaseKey() {
+  return process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+}
+
 function githubToken() {
   return process.env.GITHUB_ARTICLE_TOKEN || process.env.GH_ARTICLE_TOKEN || '';
 }
@@ -50,6 +58,40 @@ async function github(pathname, options = {}) {
   return data;
 }
 
+async function supabase(pathname, options = {}) {
+  const url = supabaseUrl();
+  const key = supabaseKey();
+  if (!url || !key) return null;
+
+  const response = await fetch(`${url}/rest/v1/${pathname}`, {
+    ...options,
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'StreamNyaa-Article-Archive',
+      ...(options.headers || {}),
+    },
+  });
+
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!response.ok) {
+    const error = new Error(typeof data === 'object' && data?.message ? data.message : text);
+    error.status = response.status;
+    throw error;
+  }
+
+  return data;
+}
+
 async function fileExists(pathname) {
   try {
     await github(`/contents/${encodeURIComponent(pathname).replace(/%2F/g, '/')}?ref=${encodeURIComponent(BRANCH)}`);
@@ -90,7 +132,46 @@ async function updateArchiveIndex(articleSlug) {
 }
 
 export async function archiveBlogPost(post) {
-  if (!post?.articleSlug || post.articleKind !== 'gemini' || !githubToken()) return false;
+  if (!post?.articleSlug || post.articleKind !== 'gemini') return false;
+
+  const savedToSupabase = await archiveSupabaseBlogPost(post);
+  const savedToGithub = await archiveGithubBlogPost(post);
+  return savedToSupabase || savedToGithub;
+}
+
+async function archiveSupabaseBlogPost(post) {
+  if (!supabaseUrl() || !supabaseKey()) return false;
+
+  try {
+    const heroAnime = post.topic
+      ? post.items?.find((anime) => anime.mal_id === post.topic?.malId || anime.id === post.topic?.animeId)
+      : post.items?.[0];
+
+    await supabase('blog_articles?on_conflict=slug', {
+      method: 'POST',
+      headers: {
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({
+        slug: post.articleSlug,
+        title: post.article?.headline || post.topic?.title || post.title,
+        excerpt: post.article?.excerpt || post.summary || '',
+        content: post,
+        topic: post.topic || null,
+        image: post.topic?.image || heroAnime?.image || null,
+        source: post.articleSource || 'gemini',
+        updated_at: post.generatedAt || post.updatedAt || new Date().toISOString(),
+      }),
+    });
+    return true;
+  } catch (error) {
+    console.error('Supabase blog archive save failed', error);
+    return false;
+  }
+}
+
+async function archiveGithubBlogPost(post) {
+  if (!githubToken()) return false;
   const pathname = archivePath(post.articleSlug);
 
   try {
@@ -127,6 +208,7 @@ async function listArchiveSlugs() {
 
 export async function listArchivedBlogPosts(limit = 60) {
   try {
+    const supabasePosts = await listSupabaseBlogPosts(limit);
     const slugs = await listArchiveSlugs();
     const posts = await Promise.all(
       slugs
@@ -144,8 +226,9 @@ export async function listArchivedBlogPosts(limit = 60) {
         }),
     );
 
-    return posts
+    return [...supabasePosts, ...posts.filter(Boolean)]
       .filter(Boolean)
+      .filter((post, index, list) => list.findIndex((item) => item.articleSlug === post.articleSlug) === index)
       .sort((a, b) => Date.parse(b.generatedAt || b.updatedAt || '') - Date.parse(a.generatedAt || a.updatedAt || ''))
       .slice(0, limit);
   } catch (error) {
@@ -154,7 +237,27 @@ export async function listArchivedBlogPosts(limit = 60) {
   }
 }
 
+async function listSupabaseBlogPosts(limit = 60) {
+  if (!supabaseUrl() || !supabaseKey()) return [];
+
+  try {
+    const params = new URLSearchParams({
+      select: 'content',
+      order: 'updated_at.desc',
+      limit: String(limit),
+    });
+    const rows = await supabase(`blog_articles?${params.toString()}`);
+    return Array.isArray(rows) ? rows.map((row) => row.content).filter(Boolean) : [];
+  } catch (error) {
+    console.error('Supabase blog archive list failed', error);
+    return [];
+  }
+}
+
 export async function findArchivedBlogPost(articleSlug) {
+  const supabasePost = await findSupabaseBlogPost(articleSlug);
+  if (supabasePost) return supabasePost;
+
   try {
     const response = await fetch(publicArchiveUrl(articleSlug), {
       headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa-Article-Archive' },
@@ -163,6 +266,23 @@ export async function findArchivedBlogPost(articleSlug) {
     return response.json();
   } catch (error) {
     if (error?.status !== 404) console.error('Blog archive lookup failed', error);
+    return null;
+  }
+}
+
+async function findSupabaseBlogPost(articleSlug) {
+  if (!supabaseUrl() || !supabaseKey()) return null;
+
+  try {
+    const params = new URLSearchParams({
+      select: 'content',
+      slug: `eq.${articleSlug}`,
+      limit: '1',
+    });
+    const rows = await supabase(`blog_articles?${params.toString()}`);
+    return Array.isArray(rows) && rows[0]?.content ? rows[0].content : null;
+  } catch (error) {
+    console.error('Supabase blog archive lookup failed', error);
     return null;
   }
 }

@@ -15,7 +15,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const posts = await listArchivedBlogPosts();
-    res.setHeader('Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=86400');
+    res.setHeader('Cache-Control', 'public, s-maxage=900, stale-while-revalidate=3600');
     return res.status(200).json({ posts });
   } catch (error: any) {
     console.error(error);
