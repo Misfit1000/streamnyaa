@@ -134,6 +134,22 @@ export async function fetchAccount(session: AuthSession) {
   const response = await fetch('/api/auth/me', {
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
-  if (!response.ok) throw new Error('Your session expired. Please sign in again.');
+  if (!response.ok) {
+    const text = await response.text();
+    let data: any = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+
+    const error = new Error(
+      response.status === 401
+        ? 'Your sign-in expired. Please sign in again.'
+        : data?.error || 'Account status could not be checked. Please try again.',
+    );
+    (error as any).status = response.status;
+    throw error;
+  }
   return response.json();
 }

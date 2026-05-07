@@ -11,7 +11,13 @@ export default async function handler(req: any, res: any) {
     const user = await fetchSupabaseUser(token);
     if (!user?.email) return res.status(401).json({ error: 'Invalid session' });
 
-    const isAdmin = await isAdminEmail(user.email);
+    let isAdmin = false;
+    try {
+      isAdmin = await isAdminEmail(user.email);
+    } catch (adminError) {
+      console.error('Admin lookup failed', adminError);
+    }
+
     return res.status(200).json({
       user: {
         id: user.id,

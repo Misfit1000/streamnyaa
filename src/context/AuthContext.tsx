@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const applySession = async (nextSession: AuthSession | null) => {
+  const applySession = async (nextSession: AuthSession | null, allowRefresh = true) => {
     setSession(nextSession);
     if (!nextSession?.access_token) {
       setUser(null);
@@ -40,9 +40,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const account = await fetchAccount(nextSession);
-    setUser(account.user);
-    setIsAdmin(Boolean(account.isAdmin));
+    try {
+      const account = await fetchAccount(nextSession);
+      setUser(account.user);
+      setIsAdmin(Boolean(account.isAdmin));
+    } catch (accountError: any) {
+      if (allowRefresh && nextSession.refresh_token && accountError?.status === 401) {
+        const refreshedSession = await refreshSession(nextSession);
+        setSession(refreshedSession);
+        const account = await fetchAccount(refreshedSession);
+        setUser(account.user);
+        setIsAdmin(Boolean(account.isAdmin));
+        return;
+      }
+      throw accountError;
+    }
   };
 
   const refreshAccount = async () => {
@@ -99,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     signOut: async () => {
       await signOutSession(session);
-      await applySession(null);
+      await applySession(null, false);
     },
     refreshAccount,
   }), [session, user, isAdmin, loading, error]);
