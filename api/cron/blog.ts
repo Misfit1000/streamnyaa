@@ -1,10 +1,6 @@
-const SITE_URL = process.env.SITE_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL || 'https://www.streamnyaa.xyz';
-const BLOG_SLUGS = ['anime-trending-news-today', 'anime-viral-topic-today'];
+import { getCachedBlogPost } from '../blog';
 
-function siteOrigin() {
-  const value = SITE_URL.startsWith('http') ? SITE_URL : `https://${SITE_URL}`;
-  return value.replace(/\/+$/, '');
-}
+const BLOG_SLUGS = ['anime-trending-news-today', 'anime-viral-topic-today'];
 
 export default async function handler(req: any, res: any) {
   const secret = process.env.CRON_SECRET;
@@ -18,23 +14,26 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ ok: false, error: 'Method not allowed' });
   }
 
-  const origin = siteOrigin();
   const warmed = [];
 
   for (const slug of BLOG_SLUGS) {
-    const url = `${origin}/api/blog?slug=${encodeURIComponent(slug)}`;
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'StreamNyaa-Cron/1.0',
-      },
-    });
-
-    warmed.push({
-      slug,
-      status: response.status,
-      ok: response.ok,
-    });
+    try {
+      const post = await getCachedBlogPost(slug, false, true);
+      warmed.push({
+        slug,
+        status: 200,
+        ok: true,
+        articleSlug: post.articleSlug,
+        generatedAt: post.generatedAt,
+      });
+    } catch (error: any) {
+      console.error('Cron blog generation failed', slug, error);
+      warmed.push({
+        slug,
+        status: 500,
+        ok: false,
+      });
+    }
   }
 
   return res.status(warmed.every((item) => item.ok) ? 200 : 502).json({

@@ -1218,11 +1218,11 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
   return post;
 }
 
-export async function getCachedBlogPost(slug: string, preview = false) {
+export async function getCachedBlogPost(slug: string, preview = false, forceRefresh = false) {
   const now = Date.now();
   const cacheKey = preview ? slug + ':preview' : slug + ':article';
   const cached = memoryCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.data;
+  if (!forceRefresh && cached && cached.expiresAt > now) return cached.data;
 
   try {
     const data = await buildBlogPost(slug, preview);
