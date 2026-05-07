@@ -14,7 +14,11 @@ import NyaaSearchPage from './pages/NyaaSearchPage';
 import AnimeDownloads from './pages/AnimeDownloads';
 import Blog from './pages/Blog';
 import BlogPost from './pages/BlogPost';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import { About, Disclaimer, PrivacyPolicy, Terms } from './pages/InfoPages';
+import { AuthProvider } from './context/AuthContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -28,31 +32,36 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Home />} />
-            <Route path="search" element={<Search />} />
-            <Route path="schedule" element={<Schedule />} />
-            <Route path="anime/popular" element={<AnimeLanding />} />
-            <Route path="anime/genre/:genre" element={<AnimeLanding />} />
-            <Route path="anime/season/:seasonSlug" element={<AnimeLanding />} />
-            <Route path="anime/:id" element={<AnimeDetails />} />
-            <Route path="manga/:id" element={<MangaDetails />} />
-            <Route path="anime/:id/downloads" element={<AnimeDownloads />} />
-            <Route path="watch/:id" element={<Watch />} />
-            <Route path="my-list" element={<MyList />} />
-            <Route path="torrent" element={<TorrentPlayer />} />
-            <Route path="nyaa" element={<NyaaSearchPage />} />
-            <Route path="blog" element={<Blog />} />
-            <Route path="blog/:slug" element={<BlogPost />} />
-            <Route path="about" element={<About />} />
-            <Route path="privacy-policy" element={<PrivacyPolicy />} />
-            <Route path="terms" element={<Terms />} />
-            <Route path="disclaimer" element={<Disclaimer />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Home />} />
+              <Route path="search" element={<Search />} />
+              <Route path="schedule" element={<Schedule />} />
+              <Route path="anime/popular" element={<AnimeLanding />} />
+              <Route path="anime/genre/:genre" element={<AnimeLanding />} />
+              <Route path="anime/season/:seasonSlug" element={<AnimeLanding />} />
+              <Route path="anime/:id" element={<AnimeDetails />} />
+              <Route path="manga/:id" element={<MangaDetails />} />
+              <Route path="anime/:id/downloads" element={<AnimeDownloads />} />
+              <Route path="watch/:id" element={<Watch />} />
+              <Route path="my-list" element={<MyList />} />
+              <Route path="torrent" element={<TorrentPlayer />} />
+              <Route path="nyaa" element={<NyaaSearchPage />} />
+              <Route path="blog" element={<Blog />} />
+              <Route path="blog/:slug" element={<BlogPost />} />
+              <Route path="login" element={<Login />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="admin" element={<AdminDashboard />} />
+              <Route path="about" element={<About />} />
+              <Route path="privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="terms" element={<Terms />} />
+              <Route path="disclaimer" element={<Disclaimer />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

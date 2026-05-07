@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Menu, X, Moon, Sun, Bookmark, Cat, Filter } from 'lucide-react';
+import { Search, Menu, X, Moon, Sun, Bookmark, Cat, UserCircle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
   const { theme, toggleTheme, nsfwMode, toggleNsfwMode } = useStore();
+  const { user, isAdmin } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -171,6 +173,9 @@ export default function Navbar() {
           <Link to="/my-list" className="p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground hidden sm:block">
             <Bookmark className="w-5 h-5" />
           </Link>
+          <Link to={user ? '/dashboard' : '/login'} className="p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground" title={user ? 'Dashboard' : 'Login'}>
+            <UserCircle className="w-5 h-5" />
+          </Link>
           <button 
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="lg:hidden p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground"
@@ -239,6 +244,8 @@ export default function Navbar() {
               <Link to="/my-list" className="hover:text-primary transition-colors py-2 border-b border-border/50">My List</Link>
               <Link to="/schedule" className="hover:text-primary transition-colors py-2 border-b border-border/50">Schedule</Link>
               <Link to="/blog" className="hover:text-primary transition-colors py-2 border-b border-border/50">Blog</Link>
+              <Link to={user ? '/dashboard' : '/login'} className="hover:text-primary transition-colors py-2 border-b border-border/50">{user ? 'Dashboard' : 'Login'}</Link>
+              {isAdmin ? <Link to="/admin" className="hover:text-primary transition-colors py-2 border-b border-border/50">Admin</Link> : null}
               <Link to="/nyaa" className="hover:text-primary transition-colors py-2 border-b border-border/50 text-primary font-bold">Torrents</Link>
               <Link to="/torrent" className="hover:text-primary transition-colors py-2 border-b border-border/50">Player</Link>
             </div>
