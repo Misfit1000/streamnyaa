@@ -1,4 +1,4 @@
-import { envAdminEmails, listStoredAdmins, requireAdmin, supabaseBaseUrl, supabaseRest, supabaseSecretKey } from '../_shared/adminAuth';
+import { envAdminEmails, listStoredAdmins, requireAdmin, supabaseBaseUrl, supabaseRest, supabaseSecretKey } from '../_shared/adminAuth.js';
 
 async function fetchBlogArticleCount() {
   if (!supabaseBaseUrl() || !supabaseSecretKey()) return null;

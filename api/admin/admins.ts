@@ -1,4 +1,4 @@
-import { requireAdmin, supabaseRest } from '../_shared/adminAuth';
+import { requireAdmin, supabaseRest } from '../_shared/adminAuth.js';
 
 function cleanEmail(value: string) {
   return value.trim().toLowerCase();

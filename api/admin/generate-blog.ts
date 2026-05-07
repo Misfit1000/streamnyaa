@@ -1,5 +1,5 @@
 import { getCachedBlogPost } from '../blog';
-import { requireAdmin } from '../_shared/adminAuth';
+import { requireAdmin } from '../_shared/adminAuth.js';
 
 const BLOG_SLUGS = ['anime-trending-news-today', 'anime-viral-topic-today'];
 
