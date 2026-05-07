@@ -28,7 +28,7 @@ export default function Dashboard() {
             {isAdmin ? 'Admin account' : 'User account'}
           </p>
           <h1 className="text-3xl md:text-5xl font-black tracking-tight">Dashboard</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">Signed in as <span className="font-bold text-foreground">{user.email}</span>. Your StreamNyaa account is ready for saved lists, quick anime tools, and admin access when enabled.</p>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">Signed in as <span className="font-bold text-foreground">{user.email}</span>. Your StreamNyaa account is ready for saved lists, quick anime tools, and account shortcuts.</p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link to="/my-list" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90">
               <BookOpen className="h-4 w-4" />

@@ -14,7 +14,7 @@ import NyaaSearchPage from './pages/NyaaSearchPage';
 import AnimeDownloads from './pages/AnimeDownloads';
 import Blog from './pages/Blog';
 import BlogPost from './pages/BlogPost';
-import Login from './pages/Login';
+import Login, { AdminLogin } from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import { About, Disclaimer, PrivacyPolicy, Terms } from './pages/InfoPages';
@@ -52,6 +52,7 @@ export default function App() {
               <Route path="blog" element={<Blog />} />
               <Route path="blog/:slug" element={<BlogPost />} />
               <Route path="login" element={<Login />} />
+              <Route path="login/admin" element={<AdminLogin />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="admin" element={<AdminDashboard />} />
               <Route path="about" element={<About />} />

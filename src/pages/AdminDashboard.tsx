@@ -25,7 +25,7 @@ export default function AdminDashboard() {
   });
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">Checking admin access...</div>;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/login/admin" replace />;
 
   if (!isAdmin) {
     return (

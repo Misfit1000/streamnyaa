@@ -154,6 +154,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/login/admin",
+      "destination": "/index.html"
+    },
+    {
       "source": "/dashboard",
       "destination": "/index.html"
     },

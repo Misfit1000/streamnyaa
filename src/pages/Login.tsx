@@ -4,7 +4,11 @@ import { Eye, EyeOff, Lock, LogIn, ShieldCheck, Sparkles, Star, UserPlus } from 
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
 
-export default function Login() {
+type LoginProps = {
+  adminOnly?: boolean;
+};
+
+export default function Login({ adminOnly = false }: LoginProps) {
   const navigate = useNavigate();
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -22,9 +26,9 @@ export default function Login() {
     setSubmitting(true);
 
     try {
-      if (mode === 'login') {
+      if (adminOnly || mode === 'login') {
         await signIn(email.trim(), password);
-        navigate('/dashboard');
+        navigate(adminOnly ? '/admin' : '/dashboard');
       } else {
         await signUp(email.trim(), password);
         setMessage('Account created. Check your email if Supabase asks you to confirm it, then sign in.');
@@ -37,10 +41,16 @@ export default function Login() {
     }
   };
 
-  const modeCopy = mode === 'login'
+  const modeCopy = adminOnly
+    ? {
+        title: 'Admin sign in',
+        description: 'Use an approved StreamNyaa admin email to open site controls, blog generation, and access management.',
+        action: 'Open admin dashboard',
+      }
+    : mode === 'login'
     ? {
         title: 'Welcome back',
-        description: 'Sign in to open your saved list, account tools, and admin controls when your email has access.',
+        description: 'Sign in to open your saved list, account tools, and quick StreamNyaa shortcuts.',
         action: 'Sign in',
       }
     : {
@@ -51,7 +61,12 @@ export default function Login() {
 
   return (
     <div className="container mx-auto px-4 md:px-10 py-10 md:py-14">
-      <Seo title="Sign in to StreamNyaa | StreamNyaa" description="Sign in to StreamNyaa to manage your account, watchlist, and admin dashboard access." canonicalPath="/login" />
+      <Seo
+        title={adminOnly ? 'Admin Sign In | StreamNyaa' : 'Sign in to StreamNyaa | StreamNyaa'}
+        description={adminOnly ? 'Private StreamNyaa admin sign in.' : 'Sign in to StreamNyaa to manage your account and watchlist.'}
+        canonicalPath={adminOnly ? '/login/admin' : '/login'}
+        robots={adminOnly ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}
+      />
       <div className="mx-auto grid max-w-6xl overflow-hidden rounded-2xl border border-border bg-background shadow-2xl shadow-black/20 lg:grid-cols-[1.05fr_0.95fr]">
         <section className="relative hidden min-h-[620px] overflow-hidden bg-zinc-950 p-8 text-white lg:flex lg:flex-col lg:justify-between">
           <div className="absolute inset-0 opacity-70">
@@ -67,15 +82,27 @@ export default function Login() {
               <Sparkles className="h-4 w-4 text-primary" />
               StreamNyaa
             </Link>
-            <h1 className="mt-12 max-w-xl text-5xl font-black leading-tight tracking-tight">Your anime hub, now with an account layer.</h1>
-            <p className="mt-5 max-w-lg text-base leading-8 text-white/72">Keep your saved pages close, reach admin tools faster, and use one clean sign-in for the features being added around StreamNyaa.</p>
+            <h1 className="mt-12 max-w-xl text-5xl font-black leading-tight tracking-tight">
+              {adminOnly ? 'Private control access for StreamNyaa.' : 'Your anime hub, now with an account layer.'}
+            </h1>
+            <p className="mt-5 max-w-lg text-base leading-8 text-white/72">
+              {adminOnly
+                ? 'Sign in through the private admin entry point to manage blog articles, storage, and trusted admin users.'
+                : 'Keep your saved pages close and use one clean sign-in for the features being added around StreamNyaa.'}
+            </p>
           </div>
           <div className="relative grid gap-3">
-            {[
-              ['Saved anime list', 'Keep watch targets easier to reach from your dashboard.'],
-              ['Admin-ready access', 'Admin emails open blog and site controls from the same login.'],
-              ['Secure session', 'Your browser keeps a private Supabase session until you sign out.'],
-            ].map(([title, body]) => (
+            {(adminOnly
+              ? [
+                  ['Private URL', 'Admin sign-in is separated from the public user login screen.'],
+                  ['Approved emails only', 'Only emails listed as admins can open the control dashboard.'],
+                  ['Site controls', 'Generate articles and manage admin access after signing in.'],
+                ]
+              : [
+                  ['Saved anime list', 'Keep watch targets easier to reach from your dashboard.'],
+                  ['Quick shortcuts', 'Jump into schedules, downloads, blog posts, and discovery pages.'],
+                  ['Secure session', 'Your browser keeps a private Supabase session until you sign out.'],
+                ]).map(([title, body]) => (
               <div key={title} className="rounded-xl border border-white/12 bg-black/35 p-4 backdrop-blur">
                 <div className="flex items-start gap-3">
                   <Star className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
@@ -95,7 +122,7 @@ export default function Login() {
               <Link to="/" className="text-sm font-black text-foreground">StreamNyaa</Link>
               <div className="inline-flex items-center gap-2 rounded-full border border-border bg-[var(--glass)] px-3 py-1.5 text-xs font-bold text-muted-foreground">
                 <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                Supabase login
+                {adminOnly ? 'Admin access' : 'User login'}
               </div>
             </div>
 
@@ -105,10 +132,12 @@ export default function Login() {
             <h1 className="text-3xl font-black tracking-tight md:text-4xl">{modeCopy.title}</h1>
             <p className="mt-3 text-sm leading-7 text-muted-foreground">{modeCopy.description}</p>
 
-            <div className="mt-7 grid grid-cols-2 rounded-xl border border-border bg-background/70 p-1 shadow-inner">
-              <button onClick={() => setMode('login')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'login' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Login</button>
-              <button onClick={() => setMode('signup')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Sign up</button>
-            </div>
+            {!adminOnly ? (
+              <div className="mt-7 grid grid-cols-2 rounded-xl border border-border bg-background/70 p-1 shadow-inner">
+                <button onClick={() => setMode('login')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'login' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Login</button>
+                <button onClick={() => setMode('signup')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Sign up</button>
+              </div>
+            ) : null}
 
             <form onSubmit={submit} className="mt-6 space-y-4">
               <div>
@@ -149,15 +178,17 @@ export default function Login() {
               {message ? <p className="rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm font-semibold text-green-400">{message}</p> : null}
 
               <button disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:opacity-60">
-                {mode === 'login' ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                {adminOnly || mode === 'login' ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                 {submitting ? 'Please wait...' : modeCopy.action}
               </button>
             </form>
 
-            <div className="mt-6 rounded-xl border border-border bg-[var(--glass)] p-4">
-              <p className="text-sm font-black text-foreground">Admin sign in</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">Use the same login. If your email is on the admin list, the admin dashboard appears automatically.</p>
-            </div>
+            {adminOnly ? (
+              <div className="mt-6 rounded-xl border border-border bg-[var(--glass)] p-4">
+                <p className="text-sm font-black text-foreground">Admin-only entry</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">If this email is not on the admin list, the dashboard will stay locked after sign-in.</p>
+              </div>
+            ) : null}
 
             <p className="mt-6 text-center text-sm text-muted-foreground">
               <Link to="/" className="font-bold text-primary hover:underline">Back to StreamNyaa</Link>
@@ -167,4 +198,8 @@ export default function Login() {
       </div>
     </div>
   );
+}
+
+export function AdminLogin() {
+  return <Login adminOnly />;
 }
