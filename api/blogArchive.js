@@ -226,7 +226,15 @@ export async function listArchivedBlogPosts(limit = 60) {
         }),
     );
 
-    return [...supabasePosts, ...posts.filter(Boolean)]
+    const githubPosts = posts.filter(Boolean);
+    const supabaseSlugs = new Set(supabasePosts.map((post) => post.articleSlug).filter(Boolean));
+    const missingSupabasePosts = githubPosts.filter((post) => post?.articleKind === 'gemini' && post.articleSlug && !supabaseSlugs.has(post.articleSlug));
+
+    if (missingSupabasePosts.length && supabaseUrl() && supabaseKey()) {
+      await Promise.all(missingSupabasePosts.slice(0, 20).map((post) => archiveSupabaseBlogPost(post)));
+    }
+
+    return [...supabasePosts, ...githubPosts]
       .filter(Boolean)
       .filter((post, index, list) => list.findIndex((item) => item.articleSlug === post.articleSlug) === index)
       .sort((a, b) => Date.parse(b.generatedAt || b.updatedAt || '') - Date.parse(a.generatedAt || a.updatedAt || ''))
