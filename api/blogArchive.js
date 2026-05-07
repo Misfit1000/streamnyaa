@@ -5,7 +5,7 @@ const SITE_URL = (process.env.SITE_URL || 'https://www.streamnyaa.xyz').replace(
 const supabaseArchiveErrors = [];
 
 function supabaseUrl() {
-  return (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+  return (process.env.SUPABASE_URL || '').replace(/\/+$/, '').replace(/\/rest\/v1$/i, '');
 }
 
 function supabaseKey() {
