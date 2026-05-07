@@ -1,4 +1,4 @@
-import { findArchivedBlogPost, listArchivedBlogPosts } from './blogArchive.js';
+import { findArchivedBlogPost, listArchivedBlogPosts, migrateArchivedBlogPostsToSupabase } from './blogArchive.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
@@ -6,6 +6,7 @@ export default async function handler(req: any, res: any) {
   }
 
   const slug = Array.isArray(req.query.slug) ? req.query.slug[0] : req.query.slug;
+  const migrate = req.query.migrate === '1' || req.query.migrate === 'true';
 
   try {
     if (slug) {
@@ -14,9 +15,10 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json(post);
     }
 
+    const migration = migrate ? await migrateArchivedBlogPostsToSupabase() : null;
     const posts = await listArchivedBlogPosts();
-    res.setHeader('Cache-Control', 'public, s-maxage=900, stale-while-revalidate=3600');
-    return res.status(200).json({ posts });
+    res.setHeader('Cache-Control', migrate ? 'no-store' : 'public, s-maxage=900, stale-while-revalidate=3600');
+    return res.status(200).json(migration ? { migration, posts } : { posts });
   } catch (error: any) {
     console.error(error);
     return res.status(500).json({ error: error.message || 'Failed to load archived blog posts' });

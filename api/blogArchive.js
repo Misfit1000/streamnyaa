@@ -206,27 +206,50 @@ async function listArchiveSlugs() {
   }
 }
 
+async function listGithubArchivedBlogPosts(limit = 60) {
+  const slugs = await listArchiveSlugs();
+  const posts = await Promise.all(
+    slugs
+      .slice(0, limit)
+      .map(async (slug) => {
+        try {
+          const response = await fetch(publicArchiveUrl(slug), {
+            headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa-Article-Archive' },
+          });
+          if (!response.ok) return null;
+          return response.json();
+        } catch {
+          return null;
+        }
+      }),
+  );
+
+  return posts.filter(Boolean);
+}
+
+export async function migrateArchivedBlogPostsToSupabase(limit = 60) {
+  const supabaseConfigured = Boolean(supabaseUrl() && supabaseKey());
+  const supabasePosts = await listSupabaseBlogPosts(limit);
+  const githubPosts = await listGithubArchivedBlogPosts(limit);
+  const supabaseSlugs = new Set(supabasePosts.map((post) => post.articleSlug).filter(Boolean));
+  const missingSupabasePosts = githubPosts.filter((post) => post?.articleKind === 'gemini' && post.articleSlug && !supabaseSlugs.has(post.articleSlug));
+  const results = supabaseConfigured
+    ? await Promise.all(missingSupabasePosts.slice(0, 20).map((post) => archiveSupabaseBlogPost(post)))
+    : [];
+
+  return {
+    supabaseConfigured,
+    githubArchivedPosts: githubPosts.length,
+    existingSupabasePosts: supabasePosts.length,
+    attempted: supabaseConfigured ? missingSupabasePosts.length : 0,
+    saved: results.filter(Boolean).length,
+  };
+}
+
 export async function listArchivedBlogPosts(limit = 60) {
   try {
     const supabasePosts = await listSupabaseBlogPosts(limit);
-    const slugs = await listArchiveSlugs();
-    const posts = await Promise.all(
-      slugs
-        .slice(0, limit)
-        .map(async (slug) => {
-          try {
-            const response = await fetch(publicArchiveUrl(slug), {
-              headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa-Article-Archive' },
-            });
-            if (!response.ok) return null;
-            return response.json();
-          } catch {
-            return null;
-          }
-        }),
-    );
-
-    const githubPosts = posts.filter(Boolean);
+    const githubPosts = await listGithubArchivedBlogPosts(limit);
     const supabaseSlugs = new Set(supabasePosts.map((post) => post.articleSlug).filter(Boolean));
     const missingSupabasePosts = githubPosts.filter((post) => post?.articleKind === 'gemini' && post.articleSlug && !supabaseSlugs.has(post.articleSlug));
 
