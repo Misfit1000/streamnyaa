@@ -1,8 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import axios from "axios";
 
+// A list of currently active Consumet instances for 2026
+const CONSUMET_INSTANCES = [
+  'https://consumet-api-production-e65a.up.railway.app', // Community instance
+  'https://api.consumet.org',                          // Main instance
+  'https://c.delusionz.xyz',                           // Alternative mirror
+];
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // 1. CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -14,41 +20,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "ID required" });
   }
 
-  try {
-    console.log(`Requesting stream for: ${id} via Consumet Proxy`);
+  let lastError = "";
 
-    /**
-     * We use a public Consumet API instance. 
-     * Consumet is a 2026 standard for anime scrapers because it 
-     * handles the decryption and Cloudflare bypass automatically.
-     */
-    const CONSUMET_API = 'https://api.consumet.org/anime/gogoanime/watch';
-    
-    const response = await axios.get(`${CONSUMET_API}/${id}`, {
-      timeout: 10000 
-    });
+  // Try each instance until one works
+  for (const instance of CONSUMET_INSTANCES) {
+    try {
+      console.log(`Trying Consumet Instance: ${instance} for ID: ${id}`);
+      
+      const response = await axios.get(`${instance}/anime/gogoanime/watch/${id}`, {
+        timeout: 8000 // If it takes too long, move to the next one
+      });
 
-    // The response from Consumet is already decrypted!
-    const data = response.data;
-
-    if (!data || !data.sources) {
-      throw new Error("No stream sources found for this ID.");
+      if (response.data && response.data.sources) {
+        res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
+        return res.status(200).json({
+          sources: response.data.sources,
+          download: response.data.download || null,
+          instance_used: instance
+        });
+      }
+    } catch (error: any) {
+      lastError = error.message;
+      console.error(`Instance ${instance} failed: ${error.message}`);
+      // Continue to the next instance in the loop
     }
-
-    // Success: Return the clean sources to your player
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
-    return res.status(200).json({ 
-        sources: data.sources,
-        download: data.download || null
-    });
-
-  } catch (error: any) {
-    console.error("Proxy Error:", error.message);
-    
-    // Fallback error message
-    return res.status(500).json({ 
-      error: "Stream provider is temporarily blocked. Try another episode.",
-      details: error.message
-    });
   }
+
+  // If all instances fail or return 451
+  return res.status(500).json({
+    error: "All stream providers are currently blocked or down.",
+    debug_id: id,
+    last_error: lastError
+  });
 }
