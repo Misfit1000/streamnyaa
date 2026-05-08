@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, Info, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { animePath, watchPath } from '../lib/slug';
+import { animePath } from '../lib/slug';
 
 interface Anime {
   mal_id: number;
@@ -101,11 +101,11 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
             className="flex flex-row flex-wrap md:flex-row gap-2 md:gap-3 mt-4"
           >
             <Link
-              to={watchPath(currentAnime)}
+              to={animePath(currentAnime, '/downloads')}
               className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-semibold text-sm transition-all hover:bg-primary/90 md:min-w-[160px]"
             >
-              <Play className="w-4 h-4 fill-current" />
-              Watch Now
+              <Download className="w-4 h-4" />
+              Download Now
             </Link>
             <Link
               to={animePath(currentAnime)}
