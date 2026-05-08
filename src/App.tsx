@@ -51,6 +51,7 @@ export default function App() {
               <Route path="blog/:slug" element={<BlogPost />} />
               <Route path="login" element={<Login />} />
               <Route path="login/admin" element={<AdminLogin />} />
+              <Route path="reset-password" element={<Login />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="admin" element={<AdminDashboard />} />
               <Route path="about" element={<About />} />

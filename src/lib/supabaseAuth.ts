@@ -105,6 +105,23 @@ export async function signUpWithPassword(email: string, password: string) {
   return { user: data.user } as AuthSession;
 }
 
+export async function requestPasswordReset(email: string) {
+  const redirectTo = `${window.location.origin}/reset-password`;
+  await authFetch('recover', {
+    method: 'POST',
+    body: JSON.stringify({ email, redirect_to: redirectTo }),
+  });
+}
+
+export async function updatePassword(accessToken: string, password: string) {
+  if (!accessToken) throw new Error('Password reset link is missing or expired.');
+  await authFetch('user', {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ password }),
+  });
+}
+
 export async function refreshSession(session: AuthSession) {
   if (!session.refresh_token) return session;
   const data = await authFetch('token?grant_type=refresh_token', {

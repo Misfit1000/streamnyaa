@@ -5,10 +5,12 @@ import {
   fetchAccount,
   loadStoredSession,
   refreshSession,
+  requestPasswordReset,
   signInWithPassword,
   signOutSession,
   signUpWithPassword,
   storeSession,
+  updatePassword,
 } from '../lib/supabaseAuth';
 
 type AuthContextValue = {
@@ -19,6 +21,8 @@ type AuthContextValue = {
   error: string;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
+  resetPassword: (accessToken: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshAccount: () => Promise<void>;
 };
@@ -108,6 +112,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError('');
       const nextSession = await signUpWithPassword(email, password);
       if (nextSession.access_token) await applySession(nextSession);
+    },
+    sendPasswordReset: async (email) => {
+      setError('');
+      await requestPasswordReset(email);
+    },
+    resetPassword: async (accessToken, password) => {
+      setError('');
+      await updatePassword(accessToken, password);
+      storeSession(null);
+      await applySession(null, false);
     },
     signOut: async () => {
       await signOutSession(session);

@@ -1,6 +1,6 @@
-import { FormEvent, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Lock, LogIn, ShieldCheck, Sparkles, Star, UserPlus } from 'lucide-react';
+import { FormEvent, useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, KeyRound, Lock, LogIn, Mail, ShieldCheck, Sparkles, Star, UserPlus } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
 
@@ -10,14 +10,33 @@ type LoginProps = {
 
 export default function Login({ adminOnly = false }: LoginProps) {
   const navigate = useNavigate();
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const location = useLocation();
+  const { signIn, signUp, sendPasswordReset, resetPassword } = useAuth();
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetToken, setResetToken] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const queryParams = new URLSearchParams(location.search);
+    const accessToken = hashParams.get('access_token') || '';
+    const type = hashParams.get('type') || queryParams.get('type');
+
+    if (accessToken && type === 'recovery') {
+      setResetToken(accessToken);
+      setMode('reset');
+      setMessage('Choose a new password for your StreamNyaa account.');
+      window.history.replaceState(null, '', '/reset-password');
+    } else if (location.pathname === '/reset-password' || queryParams.get('mode') === 'reset') {
+      setMode('reset');
+    }
+  }, [location.pathname, location.search]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -26,7 +45,18 @@ export default function Login({ adminOnly = false }: LoginProps) {
     setSubmitting(true);
 
     try {
-      if (adminOnly || mode === 'login') {
+      if (mode === 'forgot') {
+        await sendPasswordReset(email.trim());
+        setMessage('Password reset link sent. Check your email and open the link to set a new password.');
+      } else if (mode === 'reset') {
+        if (password !== confirmPassword) throw new Error('Passwords do not match.');
+        await resetPassword(resetToken, password);
+        setMessage('Password updated. You can sign in with your new password.');
+        setMode('login');
+        setPassword('');
+        setConfirmPassword('');
+        setResetToken('');
+      } else if (adminOnly || mode === 'login') {
         await signIn(email.trim(), password);
         navigate(adminOnly ? '/admin' : '/dashboard');
       } else {
@@ -46,6 +76,18 @@ export default function Login({ adminOnly = false }: LoginProps) {
         title: 'Admin sign in',
         description: 'Use an approved StreamNyaa admin email to open site controls, blog generation, and access management.',
         action: 'Open admin dashboard',
+      }
+    : mode === 'forgot'
+    ? {
+        title: 'Reset your password',
+        description: 'Enter your account email and StreamNyaa will send a secure link to create a new password.',
+        action: 'Send reset link',
+      }
+    : mode === 'reset'
+    ? {
+        title: 'Choose a new password',
+        description: 'Set a fresh password for your StreamNyaa account. Use at least 6 characters.',
+        action: 'Update password',
       }
     : mode === 'login'
     ? {
@@ -134,23 +176,30 @@ export default function Login({ adminOnly = false }: LoginProps) {
 
             {!adminOnly ? (
               <div className="mt-7 grid grid-cols-2 rounded-xl border border-border bg-background/70 p-1 shadow-inner">
-                <button onClick={() => setMode('login')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'login' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Login</button>
-                <button onClick={() => setMode('signup')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Sign up</button>
+                <button type="button" onClick={() => setMode('login')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'login' || mode === 'forgot' || mode === 'reset' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Login</button>
+                <button type="button" onClick={() => setMode('signup')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Sign up</button>
               </div>
             ) : null}
 
             <form onSubmit={submit} className="mt-6 space-y-4">
+              {mode !== 'reset' ? (
               <div>
                 <label className="mb-1.5 block text-xs font-black uppercase tracking-wider text-muted-foreground">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                  className="w-full rounded-xl border border-border bg-background px-4 py-3.5 text-sm text-foreground outline-none transition-colors focus:border-primary"
-                  placeholder="you@example.com"
-                />
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    required
+                    className="w-full rounded-xl border border-border bg-background py-3.5 pl-11 pr-4 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                    placeholder="you@example.com"
+                  />
+                </div>
               </div>
+              ) : null}
+
+              {mode !== 'forgot' ? (
               <div>
                 <label className="mb-1.5 block text-xs font-black uppercase tracking-wider text-muted-foreground">Password</label>
                 <div className="relative">
@@ -173,15 +222,60 @@ export default function Login({ adminOnly = false }: LoginProps) {
                   </button>
                 </div>
               </div>
+              ) : null}
+
+              {mode === 'reset' ? (
+                <div>
+                  <label className="mb-1.5 block text-xs font-black uppercase tracking-wider text-muted-foreground">Confirm password</label>
+                  <div className="relative">
+                    <KeyRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      required
+                      minLength={6}
+                      className="w-full rounded-xl border border-border bg-background py-3.5 pl-11 pr-4 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                      placeholder="Repeat new password"
+                    />
+                  </div>
+                </div>
+              ) : null}
 
               {error ? <p className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm font-semibold text-red-400">{error}</p> : null}
               {message ? <p className="rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm font-semibold text-green-400">{message}</p> : null}
 
               <button disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:opacity-60">
-                {adminOnly || mode === 'login' ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                {mode === 'forgot' || mode === 'reset' ? <KeyRound className="h-4 w-4" /> : adminOnly || mode === 'login' ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                 {submitting ? 'Please wait...' : modeCopy.action}
               </button>
             </form>
+
+            {(adminOnly || mode === 'login') ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setMessage('');
+                  setMode('forgot');
+                }}
+                className="mt-4 w-full text-center text-sm font-bold text-primary hover:underline"
+              >
+                Forgot your password?
+              </button>
+            ) : mode === 'forgot' || mode === 'reset' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setMessage('');
+                  setMode('login');
+                }}
+                className="mt-4 w-full text-center text-sm font-bold text-primary hover:underline"
+              >
+                Back to sign in
+              </button>
+            ) : null}
 
             {adminOnly ? (
               <div className="mt-6 rounded-xl border border-border bg-[var(--glass)] p-4">
