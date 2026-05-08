@@ -3,8 +3,6 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import CryptoJS from "crypto-js";
 
-// We use the Axios version for Vercel because Puppeteer is too 
-// large for Vercel's 50MB limit.
 const keys = {
   key: CryptoJS.enc.Utf8.parse('37911490979715163134003223491201'),
   secondKey: CryptoJS.enc.Utf8.parse('54674138327930866480207815084989'),
@@ -14,13 +12,20 @@ const keys = {
 const GOGO_BASE_URL = 'https://anitaku.to';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+  // Handle preflight request for CORS
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   const { id } = req.query;
   if (!id || typeof id !== 'string') {
     return res.status(400).json({ error: "Episode ID required" });
   }
 
   try {
-    // 1. Fetch Episode Page with Browser Headers
     const response = await axios.get(`${GOGO_BASE_URL}/${id}`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -28,15 +33,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const $ = cheerio.load(response.data);
-    const iframeUrl = $('div.anime_muti_link > ul > li.vidcdn > a').attr('data-video');
+    let iframeUrl = $('div.anime_muti_link > ul > li.vidcdn > a').attr('data-video');
     
     if (!iframeUrl) throw new Error("Video player iframe not found.");
 
-    // 2. Visit the iframe
+    if (iframeUrl.startsWith('//')) iframeUrl = `https:${iframeUrl}`;
+
     const parsedUrl = new URL(iframeUrl);
     const videoId = parsedUrl.searchParams.get('id');
+
+    if (!videoId) throw new Error("Video ID not found in iframe URL.");
+
     const iframePage = await axios.get(iframeUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
+      headers: { 
+        'User-Agent': 'Mozilla/5.0',
+        'Referer': GOGO_BASE_URL 
+      }
     });
     
     const $$ = cheerio.load(iframePage.data);
@@ -44,20 +56,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!encryptedParams) throw new Error("Encryption parameters missing.");
 
-    // 3. Decrypt the keys
     const decryptedToken = CryptoJS.AES.decrypt(encryptedParams, keys.key, { iv: keys.iv }).toString(CryptoJS.enc.Utf8);
-    const encryptedRequestId = CryptoJS.AES.encrypt(videoId!, keys.key, { iv: keys.iv }).toString();
+    const encryptedRequestId = CryptoJS.AES.encrypt(videoId, keys.key, { iv: keys.iv }).toString();
     const ajaxUrl = `${parsedUrl.protocol}//${parsedUrl.hostname}/encrypt-ajax.php?id=${encryptedRequestId}&alias=${videoId}&${decryptedToken}`;
 
     const finalResponse = await axios.get(ajaxUrl, {
-      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      headers: { 
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': iframeUrl,
+        'User-Agent': 'Mozilla/5.0'
+      }
     });
 
     const decryptedData = JSON.parse(
       CryptoJS.AES.decrypt(finalResponse.data.data, keys.secondKey, { iv: keys.iv }).toString(CryptoJS.enc.Utf8)
     );
 
-    // Set Cache for performance
     res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
     return res.status(200).json({ 
         sources: decryptedData.source,
