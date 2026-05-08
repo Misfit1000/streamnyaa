@@ -3,9 +3,10 @@ import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { searchNyaa, NyaaItem } from '../api/nyaa';
-import { Play, Settings, Maximize, Download, MessageSquare, List, HardDrive, Users, CloudRain, ShieldAlert, Loader2, Link as LinkIcon, RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Play, Download, List, HardDrive, Users, CloudRain, Loader2, Link as LinkIcon, RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react';
 import { animePath, watchPath } from '../lib/slug';
 import Seo from '../components/Seo';
+import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 
 declare global {
   interface Window {
@@ -30,6 +31,16 @@ const STREAMING_PROVIDERS = [
     getUrl: (magnet: string) => `https://ferrolho.github.io/magnet-player/?magnet=${encodeURIComponent(magnet)}` 
   }
 ];
+
+const FALLBACK_DELAY_MS = 8000;
+
+function sourceHealth(source?: NyaaItem) {
+  if (!source) return 'Waiting for source';
+  if (source.rawSeeders >= 100) return 'Fast source';
+  if (source.rawSeeders >= 50) return 'Healthy source';
+  if (source.rawSeeders >= 15) return 'Usable source';
+  return 'Low-seed source';
+}
 
 export default function Watch() {
   const { id } = useParams<{ id: string }>();
@@ -210,7 +221,7 @@ export default function Watch() {
     setShowFallback(false);
     fallbackTimer.current = setTimeout(() => {
       setShowFallback(true);
-    }, 15000);
+    }, FALLBACK_DELAY_MS);
   };
 
   useEffect(() => {
@@ -272,6 +283,11 @@ export default function Watch() {
     }
   });
 
+  const primarySource = sortedTorrents[0];
+  const activeSource = sortedTorrents.find((torrent) => torrent.magnet === activeMagnet) || primarySource;
+  const highSeederCount = sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length;
+  const selectedProviderName = STREAMING_PROVIDERS.find((item) => item.id === provider)?.name || STREAMING_PROVIDERS[0].name;
+
   const forceReload = () => {
     setIframeKey(prev => prev + 1);
     startFallbackTimer();
@@ -303,6 +319,16 @@ export default function Watch() {
 
           {/* Video Player Area */}
           <div className="aspect-video bg-[#050507] rounded-[24px] overflow-hidden relative group border border-[var(--glass-border)] shadow-2xl">
+            <div className="pointer-events-none absolute left-4 top-4 z-30 flex flex-wrap gap-2">
+              <span className="rounded-full border border-primary/25 bg-black/55 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary backdrop-blur">
+                Webtor primary
+              </span>
+              {activeSource ? (
+                <span className="rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[11px] font-bold text-white/80 backdrop-blur">
+                  {sourceHealth(activeSource)} &bull; {activeSource.seeders} seeders
+                </span>
+              ) : null}
+            </div>
             <div className="w-full h-full bg-black relative">
               {!isPlaying ? (
                 <div 
@@ -337,7 +363,13 @@ export default function Watch() {
                       'No streams found automatically. Try selecting below.'
                     )}
                   </p>
-                  <p className="text-white/30 text-xs mt-3 bg-black/40 px-3 py-1 rounded-full backdrop-blur-md">Browser stream player</p>
+                  {primarySource ? (
+                    <div className="mt-4 flex max-w-[min(92%,560px)] flex-wrap items-center justify-center gap-2 text-xs">
+                      <span className="rounded-full bg-white/10 px-3 py-1 font-bold text-white/75 backdrop-blur">Best source selected</span>
+                      <span className="rounded-full bg-white/10 px-3 py-1 font-bold text-white/75 backdrop-blur">{sortedTorrents.length} sources</span>
+                      {highSeederCount ? <span className="rounded-full bg-emerald-500/15 px-3 py-1 font-bold text-emerald-300 backdrop-blur">{highSeederCount} high-seed sources</span> : null}
+                    </div>
+                  ) : null}
                 </div>
               ) : provider === 'webtor' ? (
                 <div key={`webtor-${currentEp}-${iframeKey}`} ref={playerRef} className="webtor absolute inset-0 w-full h-full z-10"></div>
@@ -353,13 +385,42 @@ export default function Watch() {
             </div>
           </div>
 
+          {isPlaying && activeSource ? (
+            <div className="mt-4 rounded-2xl border border-border bg-[var(--glass)] p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-primary">
+                      Playing through {selectedProviderName}
+                    </span>
+                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-400">
+                      {sourceHealth(activeSource)}
+                    </span>
+                  </div>
+                  <p className="line-clamp-1 text-sm font-bold text-foreground">{activeSource.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{activeSource.size} &bull; {activeSource.seeders} seeders &bull; {activeSource.leechers} leechers</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button onClick={forceReload} className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-3 py-2 text-xs font-black text-foreground transition-colors hover:border-primary/40">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Reload
+                  </button>
+                  <button onClick={() => { setProvider('webtor-app'); setIframeKey(prev => prev + 1); startFallbackTimer(); }} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-primary-foreground transition-colors hover:bg-primary/90">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Webtor Cloud
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {showFallback && isPlaying && (
             <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between animate-in fade-in slide-in-from-top-2">
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="text-sm font-semibold text-yellow-500 mb-1">Taking too long to load?</h4>
-                  <p className="text-xs text-muted-foreground">The source might have low seed count, or the cloud provider is busy.</p>
+                  <p className="text-xs text-muted-foreground">Webtor can take a moment to prepare files. Try Cloud, reload, or pick a higher-seed source below.</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -462,9 +523,22 @@ export default function Watch() {
               <div className="space-y-3">
                 {sortedTorrents.map((torrent, idx) => {
                   const isCurrentStream = activeMagnet === torrent.magnet;
+                  const badges = getTorrentBadges(torrent);
                   return (
-                    <div key={idx} className={`bg-[var(--glass)] border p-4 rounded-xl flex flex-col xl:flex-row xl:items-center justify-between gap-4 transition-all hover:bg-[rgba(225,29,72,0.05)] ${isCurrentStream ? 'border-primary shadow-[0_0_15px_rgba(225,29,72,0.15)] bg-primary/5' : 'border-[var(--glass-border)] hover:border-primary/30'}`}>
+                    <div key={idx} className={`bg-[var(--glass)] border p-4 rounded-2xl flex flex-col xl:flex-row xl:items-center justify-between gap-4 transition-all hover:bg-[rgba(225,29,72,0.05)] ${isCurrentStream ? 'border-primary shadow-[0_0_15px_rgba(225,29,72,0.15)] bg-primary/5' : idx === 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-[var(--glass-border)] hover:border-primary/30'}`}>
                       <div className="flex-1 min-w-0 pr-4">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          {idx === 0 ? (
+                            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-emerald-400">
+                              Recommended
+                            </span>
+                          ) : null}
+                          {badges.map((badge) => (
+                            <span key={`${torrent.infoHash}-${badge.label}`} className={torrentBadgeClassName(badge.tone)}>
+                              {badge.label}
+                            </span>
+                          ))}
+                        </div>
                         <h4 className="text-sm font-semibold text-foreground line-clamp-2 md:line-clamp-1 mb-2" title={torrent.title}>{torrent.title}</h4>
                         <div className="flex flex-wrap items-center gap-4 text-xs font-medium">
                           <span className="flex items-center gap-1.5 text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md text-[11px] uppercase tracking-wider">
@@ -508,7 +582,7 @@ export default function Watch() {
                           className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${isCurrentStream ? 'bg-primary/20 text-primary cursor-default' : 'bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 active:scale-95 disabled:opacity-50'}`}
                         >
                           <Play className="w-4 h-4 fill-current" />
-                          {isCurrentStream ? 'Playing' : 'Stream'}
+                          {isCurrentStream ? 'Playing' : 'Stream with Webtor'}
                         </button>
                       </div>
                     </div>
