@@ -1,4 +1,4 @@
-import { findArchivedBlogPost, listArchivedBlogPosts, migrateArchivedBlogPostsToSupabase } from './blogArchive.js';
+import { findArchivedBlogPost, listArchivedBlogPostSummaries, listArchivedBlogPosts, migrateArchivedBlogPostsToSupabase } from './blogArchive.js';
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'GET') {
@@ -7,6 +7,7 @@ export default async function handler(req: any, res: any) {
 
   const slug = Array.isArray(req.query.slug) ? req.query.slug[0] : req.query.slug;
   const migrate = req.query.migrate === '1' || req.query.migrate === 'true';
+  const summary = req.query.summary === '1' || req.query.summary === 'true';
 
   try {
     if (slug) {
@@ -16,7 +17,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const migration = migrate ? await migrateArchivedBlogPostsToSupabase() : null;
-    const posts = await listArchivedBlogPosts();
+    const posts = summary ? await listArchivedBlogPostSummaries() : await listArchivedBlogPosts();
     res.setHeader('Cache-Control', migrate ? 'no-store' : 'public, s-maxage=900, stale-while-revalidate=3600');
     return res.status(200).json(migration ? { migration, posts } : { posts });
   } catch (error: any) {

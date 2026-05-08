@@ -37,8 +37,8 @@ export async function fetchBlogPostByArticleSlug(articleSlug: string): Promise<B
   return match;
 }
 
-export async function fetchArchivedBlogPosts(): Promise<BlogPostData[]> {
-  const response = await fetch('/api/blog-archive', {
+export async function fetchArchivedBlogPosts(summary = false): Promise<BlogPostData[]> {
+  const response = await fetch('/api/blog-archive' + (summary ? '?summary=1' : ''), {
     headers: { Accept: 'application/json' },
   });
   if (!response.ok) return [];

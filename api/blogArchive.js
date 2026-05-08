@@ -276,6 +276,102 @@ export async function listArchivedBlogPosts(limit = 60) {
   }
 }
 
+function summarizeArchivedPost(post) {
+  if (!post) return null;
+  const heroAnime = post.topic
+    ? post.items?.find((anime) => anime.mal_id === post.topic?.malId || anime.id === post.topic?.animeId)
+    : post.items?.[0];
+
+  return {
+    slug: post.slug,
+    title: post.title,
+    seoTitle: post.seoTitle,
+    category: post.category,
+    description: post.description,
+    summary: post.summary,
+    intro: post.intro,
+    angle: post.angle,
+    readerPromise: post.readerPromise,
+    articleKind: post.articleKind,
+    sortRank: post.sortRank,
+    updatedAt: post.updatedAt,
+    generatedAt: post.generatedAt,
+    articleSlug: post.articleSlug,
+    articleSource: post.articleSource,
+    articleStatus: post.articleStatus,
+    topic: post.topic || null,
+    items: heroAnime ? [heroAnime] : [],
+    article: post.article ? {
+      seoTitle: post.article.seoTitle,
+      metaDescription: post.article.metaDescription,
+      headline: post.article.headline,
+      excerpt: post.article.excerpt,
+      heroCallout: post.article.heroCallout,
+      paragraphs: [],
+      sections: [],
+      takeaways: [],
+      faq: [],
+    } : undefined,
+  };
+}
+
+export async function listArchivedBlogPostSummaries(limit = 24) {
+  if (supabaseUrl() && supabaseKey()) {
+    try {
+      const params = new URLSearchParams({
+        select: 'slug,title,excerpt,topic,image,source,updated_at',
+        order: 'updated_at.desc',
+        limit: String(limit),
+      });
+      const rows = await supabase(`blog_articles?${params.toString()}`);
+      if (Array.isArray(rows) && rows.length) {
+        return rows.map((row) => ({
+          slug: 'anime-trending-news-today',
+          title: row.title || 'Anime News',
+          seoTitle: `${row.title || 'Anime News'} | StreamNyaa`,
+          category: 'News',
+          description: row.excerpt || '',
+          summary: row.excerpt || '',
+          intro: row.excerpt || '',
+          angle: 'current anime news',
+          readerPromise: 'Read a focused anime news article.',
+          articleKind: 'gemini',
+          sortRank: 100,
+          updatedAt: row.updated_at,
+          generatedAt: row.updated_at,
+          articleSlug: row.slug,
+          articleSource: row.source || 'gemini',
+          articleStatus: 'summary',
+          topic: row.topic || null,
+          items: row.topic ? [{
+            id: row.topic.animeId || row.topic.malId || 0,
+            mal_id: row.topic.malId || row.topic.animeId || 0,
+            title: row.topic.animeTitle || row.title || 'Anime',
+            description: row.excerpt || '',
+            image: row.image || row.topic.image || '',
+            genres: [],
+            studios: [],
+          }] : [],
+          article: {
+            headline: row.title || row.topic?.title || 'Anime News',
+            excerpt: row.excerpt || row.topic?.summary || '',
+            heroCallout: row.excerpt || row.topic?.summary || '',
+            paragraphs: [],
+            sections: [],
+            takeaways: [],
+            faq: [],
+          },
+        }));
+      }
+    } catch (error) {
+      console.error('Supabase blog archive summary list failed', error);
+    }
+  }
+
+  const posts = await listGithubArchivedBlogPosts(limit);
+  return posts.map(summarizeArchivedPost).filter(Boolean);
+}
+
 async function listSupabaseBlogPosts(limit = 60) {
   if (!supabaseUrl() || !supabaseKey()) return [];
 
