@@ -431,46 +431,71 @@ function stableIndex(seed: string | number | undefined, count: number) {
   return count ? hash % count : 0;
 }
 
-function pickTemplate(seed: string | number | undefined, templates: string[]) {
-  return templates[stableIndex(seed, templates.length)];
+function headlinePattern(value = '') {
+  const text = value.toLowerCase();
+  if (/harder to ignore/.test(text)) return 'harder-to-ignore';
+  if (/gaining attention|drawing attention/.test(text)) return 'gaining-attention';
+  if (/doing well|connecting with/.test(text)) return 'doing-well';
+  if (/climbing|trend|momentum|rise|rising/.test(text)) return 'trend-rise';
+  if (/score|reception|reaction|divided|struggling|slipping/.test(text)) return 'reception';
+  if (/adaptation|confirmed|upcoming|anime update/.test(text)) return 'adaptation';
+  if (/episode|ranking|buzz|viral/.test(text)) return 'episode-buzz';
+  return text.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((word) => word.length > 3).slice(0, 4).join('-') || 'general';
 }
 
-function trendTopicTitle(item: BlogMediaItem, type: string) {
+function pickTemplate(seed: string | number | undefined, templates: string[], avoidPatterns: Set<string> = new Set()) {
+  const allowed = templates.filter((template) => !avoidPatterns.has(headlinePattern(template)));
+  const pool = allowed.length ? allowed : templates;
+  return pool[stableIndex(seed, pool.length)];
+}
+
+function trendTopicTitle(item: BlogMediaItem, type: string, avoidPatterns: Set<string> = new Set()) {
   const title = item.title;
   const seed = `${item.mal_id || item.id || title}-${type}`;
   if (type === 'upcoming-popular-adaptation-confirmed') {
     return pickTemplate(seed, [
-      `${title} anime update: what the confirmed details show so far`,
-      `${title} is one to watch after its latest anime confirmation`,
-      `What to know about ${title}'s upcoming anime adaptation`,
-    ]);
+      `${title} anime update: confirmed details to know`,
+      `What ${title}'s anime confirmation tells us so far`,
+      `${title}'s upcoming anime has a clearer picture now`,
+      `${title} adaptation preview: premise, studio, and early signals`,
+      `Why ${title}'s confirmed anime is worth tracking early`,
+    ], avoidPatterns);
   }
   if (type === 'why-anime-is-doing-poorly') {
     return pickTemplate(seed, [
-      `Why ${title} may be struggling with viewers right now`,
-      `${title} has attention, but its reception signal is slipping`,
-      `What ${title}'s weaker score says about its current run`,
-    ]);
+      `Why ${title}'s reception looks shaky right now`,
+      `${title}'s weak score raises a fair question`,
+      `Where ${title} may be losing viewers this season`,
+      `The problem signals around ${title}'s current run`,
+      `${title} has visibility, but the response is not matching it`,
+    ], avoidPatterns);
   }
   if (type === 'popular-anime-with-mixed-reception') {
     return pickTemplate(seed, [
       `${title} is popular, but its score points to split reactions`,
-      `Why ${title} is drawing attention despite mixed reception`,
+      `The split reaction around ${title} is the real story`,
       `${title} has viewers watching, but the reception looks divided`,
-    ]);
+      `Why ${title}'s popularity and score are telling different stories`,
+      `${title} is visible, but not everyone is sold yet`,
+    ], avoidPatterns);
   }
   if (type === 'why-this-anime-is-doing-well') {
     return pickTemplate(seed, [
-      `Why ${title} is connecting with anime viewers right now`,
+      `What ${title} is getting right this season`,
       `${title} is building momentum with a stronger score signal`,
-      `What ${title}'s current rise says about its season`,
-    ]);
+      `Why ${title}'s current run is landing with viewers`,
+      `${title}'s score and genre mix explain its strong week`,
+      `How ${title} is turning a good setup into steady interest`,
+    ], avoidPatterns);
   }
   return pickTemplate(seed, [
-    `${title} is climbing in current anime trend signals`,
-    `${title} is gaining attention as its season moves forward`,
-    `Why ${title} is becoming harder to ignore this week`,
-  ]);
+    `${title}'s trend jump deserves a closer look`,
+    `What is pushing ${title} up the anime charts right now`,
+    `${title} is turning seasonal curiosity into real traction`,
+    `${title} has the numbers of a sleeper topic this week`,
+    `How ${title} is pulling more attention mid-season`,
+    `${title}'s latest episode window is changing its outlook`,
+  ], avoidPatterns);
 }
 
 function headlineSupportsUpcomingAdaptation(news: BlogNewsItem) {
@@ -483,6 +508,7 @@ type TopicSelectionOptions = {
   excludeTitles?: Set<string>;
   avoidTypes?: Set<string>;
   preferredTypes?: Set<string>;
+  avoidTitlePatterns?: Set<string>;
   preferFastMoving?: boolean;
 };
 
@@ -500,6 +526,7 @@ function adjustedTopicPriority(type: string, priority: number, options: TopicSel
 function recentTopicContext(posts: BlogPostData[]) {
   const animeKeys = new Set<string>();
   const animeTitles = new Set<string>();
+  const titlePatterns = new Set<string>();
   const typeCounts = new Map<string, number>();
 
   for (const post of posts.slice(0, 14)) {
@@ -507,6 +534,7 @@ function recentTopicContext(posts: BlogPostData[]) {
     if (!topic) continue;
     if (topic.malId || topic.animeId) animeKeys.add(String(topic.malId || topic.animeId));
     if (topic.animeTitle) animeTitles.add(titleKey(topic.animeTitle));
+    if (topic.title) titlePatterns.add(headlinePattern(topic.title));
     if (topic.type) typeCounts.set(topic.type, (typeCounts.get(topic.type) || 0) + 1);
   }
 
@@ -521,7 +549,7 @@ function recentTopicContext(posts: BlogPostData[]) {
       .map(([type]) => type),
   );
 
-  return { animeKeys, animeTitles, preferredTypes, avoidTypes };
+  return { animeKeys, animeTitles, titlePatterns, preferredTypes, avoidTypes };
 }
 
 async function loadRecentTopicContext() {
@@ -555,7 +583,7 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
       const priority = adjustedTopicPriority(type, headlineScore(news) + freshnessBoost + fastMovingBoost + upcomingBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000), options);
       candidates.push({
         type,
-        title: type === 'upcoming-popular-adaptation-confirmed' ? trendTopicTitle(item, type) : news.title,
+        title: type === 'upcoming-popular-adaptation-confirmed' ? trendTopicTitle(item, type, options.avoidTitlePatterns) : news.title,
         animeTitle: item.title,
         animeId: item.id,
         malId: item.mal_id,
@@ -589,7 +617,7 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
   if (poorButWatched) {
     candidates.push({
       type: 'why-anime-is-doing-poorly',
-      title: trendTopicTitle(poorButWatched, 'why-anime-is-doing-poorly'),
+      title: trendTopicTitle(poorButWatched, 'why-anime-is-doing-poorly', options.avoidTitlePatterns),
       animeTitle: poorButWatched.title,
       animeId: poorButWatched.id,
       malId: poorButWatched.mal_id,
@@ -610,7 +638,7 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
   if (weakButPopular) {
     candidates.push({
       type: 'popular-anime-with-mixed-reception',
-      title: `${weakButPopular.title} is popular, but its score suggests mixed reception`,
+      title: trendTopicTitle(weakButPopular, 'popular-anime-with-mixed-reception', options.avoidTitlePatterns),
       animeTitle: weakButPopular.title,
       animeId: weakButPopular.id,
       malId: weakButPopular.mal_id,
@@ -633,7 +661,7 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
     const type = fastMoving ? 'anime-trending-up-now' : doingWell ? 'why-this-anime-is-doing-well' : 'anime-trending-up-now';
     candidates.push({
       type,
-      title: trendTopicTitle(top, type),
+      title: trendTopicTitle(top, type, options.avoidTitlePatterns),
       animeTitle: top.title,
       animeId: top.id,
       malId: top.mal_id,
@@ -689,6 +717,7 @@ async function fetchTrendingNewsItems(preview = false, mode: 'primary' | 'fast' 
     excludeTitles: recent.animeTitles,
     avoidTypes: recent.avoidTypes,
     preferredTypes: recent.preferredTypes,
+    avoidTitlePatterns: recent.titlePatterns,
   };
 
   if (preview) {
@@ -1096,6 +1125,8 @@ Rules:
 - Use the anime description for interpretation when useful, but do not retell the whole synopsis. Pull one or two specific premise details into the analysis.
 - Make every paragraph do a different job. Do not write five versions of "this anime is getting attention."
 - Use transitions that feel human: "That matters because", "The more interesting part", "The risk", "For viewers", "The caveat".
+- Do not make trend articles feel interchangeable. Tie the argument to the anime's actual premise, genre mix, score/reception, episode status, studio, or confirmed headline details.
+- Avoid repeating title-framing phrases from article to article. Do not use "harder to ignore", "gaining attention", "doing well", "worth watching", or "on the radar" unless that exact wording is already in selectedTopic.title.
 - Use the exact meaning of each number: audienceScoreOutOf100 is the 0-100 score, currentTrendSignal is a trend/momentum signal, and popularityCount is audience interest. Never call currentTrendSignal an audience score.
 - If the topic is trend-based, avoid claiming real-world virality as fact unless the selected topic type or headline explicitly says viral, ranking, reaction, record, or buzz.
 - Never write meta-process phrases like "this topic was picked", "selected topic", "strongest visible signals", "available facts", or "current topic is tied to".

@@ -99,6 +99,8 @@ Rules:
 - Use the anime description for interpretation when useful, but do not retell the whole synopsis. Pull one or two specific premise details into the analysis.
 - Make every paragraph do a different job. Do not write five versions of "this anime is getting attention."
 - Use transitions that feel human: "That matters because", "The more interesting part", "The risk", "For viewers", "The caveat".
+- Do not make trend articles feel interchangeable. Tie the argument to the anime's actual premise, genre mix, score/reception, episode status, studio, or confirmed headline details.
+- Avoid repeating title-framing phrases from article to article. Do not use "harder to ignore", "gaining attention", "doing well", "worth watching", or "on the radar" unless that exact wording is already in selectedTopic.title.
 - Use the exact meaning of each number: audienceScoreOutOf100 is the 0-100 score, currentTrendSignal is a trend/momentum signal, and popularityCount is audience interest. Never call currentTrendSignal an audience score.
 - If the topic is trend-based, avoid claiming real-world virality as fact unless the selected topic type or headline explicitly says viral, ranking, reaction, record, or buzz.
 - Never write meta-process phrases like "this topic was picked", "selected topic", "strongest visible signals", "available facts", or "current topic is tied to".
