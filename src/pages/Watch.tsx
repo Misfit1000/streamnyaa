@@ -16,12 +16,12 @@ declare global {
 const STREAMING_PROVIDERS = [
   { 
     id: 'webtor', 
-    name: 'Auto Player (WebTor)', 
+    name: 'Webtor Player (Primary)', 
     getUrl: (magnet: string) => '' 
   },
   { 
     id: 'webtor-app', 
-    name: 'WebTor Cloud Stream', 
+    name: 'Webtor Cloud Stream', 
     getUrl: (magnet: string) => `https://webtor.io/show?magnet=${encodeURIComponent(magnet)}&theme=dark` 
   },
   { 
@@ -247,6 +247,7 @@ export default function Watch() {
 
   const handlePlayTorrent = (magnet: string) => {
     setActiveMagnet(magnet);
+    setProvider('webtor');
     setIsPlaying(true);
     setIframeKey(prev => prev + 1);
     startFallbackTimer();
@@ -370,12 +371,13 @@ export default function Watch() {
                 </button>
                 <button 
                   onClick={() => {
-                    setProvider('magnetplayer');
+                    setProvider('webtor-app');
                     setIframeKey(prev => prev + 1);
+                    startFallbackTimer();
                   }}
                   className="flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-medium text-primary-foreground transition-colors"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" /> Try P2P Player
+                  <ExternalLink className="w-3.5 h-3.5" /> Try Webtor Cloud
                 </button>
               </div>
             </div>
