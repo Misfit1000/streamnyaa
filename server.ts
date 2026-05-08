@@ -2,67 +2,13 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { XMLParser } from "fast-xml-parser";
-
-// 1. ADD THE NEW IMPORTS FOR THE SCRAPER
-import axios from "axios";
-import * as cheerio from "cheerio";
-import CryptoJS from "crypto-js";
-
-// 2. ADD THE GOGOANIME SCRAPER UTILITY AND KEYS
-const keys = {
-  key: CryptoJS.enc.Utf8.parse('37911490979715163134003223491201'),
-  secondKey: CryptoJS.enc.Utf8.parse('54674138327930866480207815084989'),
-  iv: CryptoJS.enc.Utf8.parse('3134003223491201'),
-};
-
-const GOGO_BASE_URL = 'https://gogoanime3.co';
-
-async function extractGogoanimeSources(episodeId: string) {
-  try {
-    const episodePage = await axios.get(`${GOGO_BASE_URL}/${episodeId}`);
-    const $ = cheerio.load(episodePage.data);
-    const iframeUrl = $('div.anime_muti_link > ul > li.vidcdn > a').attr('data-video');
-    if (!iframeUrl) throw new Error("Could not find video player iframe.");
-
-    const parsedUrl = new URL(iframeUrl);
-    const videoId = parsedUrl.searchParams.get('id');
-    if (!videoId) throw new Error("Could not extract video ID.");
-
-    const iframePage = await axios.get(iframeUrl);
-    const $$ = cheerio.load(iframePage.data);
-    const encryptedParams = $$("script[data-name='episode']").attr('data-value');
-    if (!encryptedParams) throw new Error("Could not find encrypted parameters.");
-
-    const decryptedToken = CryptoJS.AES.decrypt(encryptedParams, keys.key, { iv: keys.iv }).toString(CryptoJS.enc.Utf8);
-    const encryptedRequestId = CryptoJS.AES.encrypt(videoId, keys.key, { iv: keys.iv }).toString();
-    const ajaxUrl = `${parsedUrl.protocol}//${parsedUrl.hostname}/encrypt-ajax.php?id=${encryptedRequestId}&alias=${videoId}&${decryptedToken}`;
-
-    const finalResponse = await axios.get(ajaxUrl, {
-      headers: {
-        'X-Requested-With': 'XMLHttpRequest',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-      },
-    });
-
-    const decryptedData = JSON.parse(
-      CryptoJS.AES.decrypt(finalResponse.data.data, keys.secondKey, { iv: keys.iv }).toString(CryptoJS.enc.Utf8)
-    );
-
-    return {
-      sources: decryptedData.source,
-      backupSources: decryptedData.source_bk
-    };
-  } catch (error: any) {
-    console.error("Scraping failed:", error.message);
-    throw new Error("Failed to extract video links.");
-  }
-}
+import { getCachedBlogPost } from "./api/blog";
+import { getBlogPost } from "./src/api/blogShared";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // --- YOUR EXISTING NYAA API ROUTE ---
   app.get("/api/nyaa", async (req, res) => {
     try {
       const { q, c, f, p } = req.query;
@@ -83,15 +29,28 @@ async function startServer() {
       }
 
       const xmlData = await response.text();
-      const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
+      const parser = new XMLParser({
+        ignoreAttributes: false,
+        attributeNamePrefix: "@_"
+      });
       let result = parser.parse(xmlData);
       
       const items = result.rss?.channel?.item || [];
       const formattedItems = (Array.isArray(items) ? items : [items]).map((item: any) => ({
-        title: item.title, link: item.link, guid: item.guid, pubDate: item.pubDate,
-        seeders: item["nyaa:seeders"], leechers: item["nyaa:leechers"], downloads: item["nyaa:downloads"],
-        infoHash: item["nyaa:infoHash"], categoryId: item["nyaa:categoryId"], category: item["nyaa:category"],
-        size: item["nyaa:size"], comments: item["nyaa:comments"], trusted: item["nyaa:trusted"], remake: item["nyaa:remake"],
+        title: item.title,
+        link: item.link,
+        guid: item.guid,
+        pubDate: item.pubDate,
+        seeders: item["nyaa:seeders"],
+        leechers: item["nyaa:leechers"],
+        downloads: item["nyaa:downloads"],
+        infoHash: item["nyaa:infoHash"],
+        categoryId: item["nyaa:categoryId"],
+        category: item["nyaa:category"],
+        size: item["nyaa:size"],
+        comments: item["nyaa:comments"],
+        trusted: item["nyaa:trusted"],
+        remake: item["nyaa:remake"],
       }));
 
       res.json(formattedItems);
@@ -101,23 +60,25 @@ async function startServer() {
     }
   });
 
-  // 3. ADD THE NEW STREAM SOURCES API ROUTE
-  app.get("/api/stream-sources", async (req, res) => {
-    try {
-      const { id } = req.query;
-      if (!id || typeof id !== 'string') {
-        return res.status(400).json({ error: "Missing episode ID" });
-      }
+  app.get("/api/blog", async (req, res) => {
+    const slug = Array.isArray(req.query.slug) ? req.query.slug[0] : req.query.slug;
+    const preview = req.query.preview === "1" || req.query.preview === "true";
+    if (!slug || typeof slug !== "string" || !getBlogPost(slug)) {
+      return res.status(404).json({ error: "Blog post not found" });
+    }
 
-      const videoData = await extractGogoanimeSources(id);
-      res.json(videoData);
+    try {
+      const data = await getCachedBlogPost(slug, preview);
+      const { articleSource: _articleSource, articleStatus: _articleStatus, ...publicData } = data;
+      res.setHeader("Cache-Control", "public, s-maxage=25200, stale-while-revalidate=86400");
+      return res.json(publicData);
     } catch (e: any) {
       console.error(e);
-      res.status(500).json({ error: e.message || "Failed to fetch stream sources" });
+      return res.status(500).json({ error: e.message });
     }
   });
 
-  // --- YOUR EXISTING VITE & STATIC FILE MIDDLEWARE ---
+  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -125,6 +86,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    // production static files
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*all', (req, res) => {
