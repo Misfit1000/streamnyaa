@@ -106,10 +106,10 @@ export async function signUpWithPassword(email: string, password: string) {
 }
 
 export async function requestPasswordReset(email: string) {
-  const redirectTo = `${window.location.origin}/reset-password`;
-  await authFetch('recover', {
+  const redirectTo = 'https://www.streamnyaa.xyz/reset-password';
+  await authFetch(`recover?redirect_to=${encodeURIComponent(redirectTo)}`, {
     method: 'POST',
-    body: JSON.stringify({ email, redirect_to: redirectTo }),
+    body: JSON.stringify({ email }),
   });
 }
 
