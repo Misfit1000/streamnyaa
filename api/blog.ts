@@ -11,6 +11,8 @@ const EDGE_CACHE_HEADER = 'public, s-maxage=86400, stale-while-revalidate=86400'
 const MAX_HEADLINE_AGE_MS = 1000 * 60 * 60 * 48;
 const TOPIC_TYPES = [
   'delayed-or-paused-airing',
+  'upcoming-popular-adaptation-confirmed',
+  'why-anime-is-doing-poorly',
   'viral-episode-or-ranking',
   'new-season-trailer-cast-update',
   'popular-anime-with-mixed-reception',
@@ -127,6 +129,7 @@ interface BlogMediaItem {
   image: string;
   genres: string[];
   studios: string[];
+  cast?: string[];
   format?: string;
   status?: string;
   score?: number;
@@ -339,6 +342,27 @@ async function fetchAnimeNews(malId: number) {
   }
 }
 
+async function fetchAnimeCast(malId: number) {
+  try {
+    const response = await fetch(`${JIKAN_URL}/anime/${malId}/characters`, {
+      headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa/1.0' },
+    });
+    if (!response.ok) return [];
+    const json = await response.json();
+    return (json.data || [])
+      .slice(0, 8)
+      .map((entry: any) => {
+        const character = cleanText(entry?.character?.name || '');
+        const japaneseVoice = (entry?.voice_actors || []).find((actor: any) => actor?.language === 'Japanese')?.person?.name;
+        return [character, japaneseVoice ? `VA: ${cleanText(japaneseVoice)}` : ''].filter(Boolean).join(' - ');
+      })
+      .filter(Boolean)
+      .slice(0, 5);
+  } catch {
+    return [];
+  }
+}
+
 function classifyHeadline(news: BlogNewsItem) {
   const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
   if (/delay|delayed|postpone|postponed|hiatus|halt|suspend|production|broadcast/.test(text)) return 'delayed-or-paused-airing';
@@ -389,7 +413,8 @@ function headlineScore(news: BlogNewsItem) {
   if (isGenericReleaseDigest(news)) score -= 10;
   if (/delay|delayed|postpone|postponed|hiatus|halt|suspend|production|broadcast/.test(text)) score += 8;
   if (/episode|viral|record|ranking|tops|trend|buzz|reaction/.test(text)) score += 5;
-  if (/season|sequel|trailer|visual|cast|staff|premiere|release/.test(text)) score += 4;
+  if (/season|sequel|trailer|visual|cast|staff|premiere|release|adaptation|anime adaptation|studio/.test(text)) score += 4;
+  if (/gets anime|gets tv anime|anime announced|adaptation|main cast|additional cast|staff|studio/.test(text)) score += 6;
   if (/opening|ending|theme|movie|film/.test(text)) score += 2;
   if (news.date) score += 1;
   return score;
@@ -413,6 +438,20 @@ function pickTemplate(seed: string | number | undefined, templates: string[]) {
 function trendTopicTitle(item: BlogMediaItem, type: string) {
   const title = item.title;
   const seed = `${item.mal_id || item.id || title}-${type}`;
+  if (type === 'upcoming-popular-adaptation-confirmed') {
+    return pickTemplate(seed, [
+      `${title} anime update: what the confirmed details show so far`,
+      `${title} is one to watch after its latest anime confirmation`,
+      `What to know about ${title}'s upcoming anime adaptation`,
+    ]);
+  }
+  if (type === 'why-anime-is-doing-poorly') {
+    return pickTemplate(seed, [
+      `Why ${title} may be struggling with viewers right now`,
+      `${title} has attention, but its reception signal is slipping`,
+      `What ${title}'s weaker score says about its current run`,
+    ]);
+  }
   if (type === 'popular-anime-with-mixed-reception') {
     return pickTemplate(seed, [
       `${title} is popular, but its score points to split reactions`,
@@ -432,6 +471,11 @@ function trendTopicTitle(item: BlogMediaItem, type: string) {
     `${title} is gaining attention as its season moves forward`,
     `Why ${title} is becoming harder to ignore this week`,
   ]);
+}
+
+function headlineSupportsUpcomingAdaptation(news: BlogNewsItem) {
+  const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
+  return /gets anime|gets tv anime|anime adaptation|adaptation|announces main cast|reveals main cast|additional cast|staff|studio|trailer|visual|premiere|broadcast/.test(text);
 }
 
 type TopicSelectionOptions = {
@@ -499,15 +543,19 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
   for (const item of sorted) {
     for (const news of item.news || []) {
       if (!isFreshHeadline(news) || isGenericReleaseDigest(news) || !headlineMatchesAnime(news, item.title)) continue;
-      const type = classifyHeadline(news);
-      if (options.preferFastMoving && !['viral-episode-or-ranking', 'delayed-or-paused-airing', 'new-season-trailer-cast-update'].includes(type)) continue;
+      const baseType = classifyHeadline(news);
+      const type = item.status === 'NOT_YET_RELEASED' && headlineSupportsUpcomingAdaptation(news)
+        ? 'upcoming-popular-adaptation-confirmed'
+        : baseType;
+      if (options.preferFastMoving && !['viral-episode-or-ranking', 'delayed-or-paused-airing', 'new-season-trailer-cast-update', 'upcoming-popular-adaptation-confirmed', 'why-anime-is-doing-poorly'].includes(type)) continue;
       const ageHours = newsAgeHours(news);
       const freshnessBoost = ageHours === null ? 0 : Math.max(0, 48 - ageHours);
       const fastMovingBoost = options.preferFastMoving && type === 'viral-episode-or-ranking' ? 8 : 0;
-      const priority = adjustedTopicPriority(type, headlineScore(news) + freshnessBoost + fastMovingBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000), options);
+      const upcomingBoost = type === 'upcoming-popular-adaptation-confirmed' ? 7 : 0;
+      const priority = adjustedTopicPriority(type, headlineScore(news) + freshnessBoost + fastMovingBoost + upcomingBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000), options);
       candidates.push({
         type,
-        title: news.title,
+        title: type === 'upcoming-popular-adaptation-confirmed' ? trendTopicTitle(item, type) : news.title,
         animeTitle: item.title,
         animeId: item.id,
         malId: item.mal_id,
@@ -516,6 +564,8 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
         confidence: 'headline',
         reason: type === 'delayed-or-paused-airing'
           ? 'A real headline points to an airing, broadcast, delay, or production-related update.'
+          : type === 'upcoming-popular-adaptation-confirmed'
+          ? 'A fresh title-specific headline points to confirmed upcoming anime details such as adaptation, cast, staff, trailer, visual, premiere, or broadcast context.'
           : type === 'viral-episode-or-ranking'
             ? 'A real headline points to episode buzz, ranking movement, reactions, or trend activity.'
             : type === 'new-season-trailer-cast-update'
@@ -535,7 +585,28 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
     }
   }
 
-  const weakButPopular = sorted.find((item) => (item.popularity || 0) > 80000 && (item.score || 100) < 72);
+  const poorButWatched = sorted.find((item) => item.status !== 'NOT_YET_RELEASED' && (item.popularity || 0) > 35000 && (item.score || 100) < 68);
+  if (poorButWatched) {
+    candidates.push({
+      type: 'why-anime-is-doing-poorly',
+      title: trendTopicTitle(poorButWatched, 'why-anime-is-doing-poorly'),
+      animeTitle: poorButWatched.title,
+      animeId: poorButWatched.id,
+      malId: poorButWatched.mal_id,
+      image: poorButWatched.image,
+      summary: `${poorButWatched.title} has enough viewer interest to be visible, but its weaker score signal suggests the current reception may be poor or frustrated rather than broadly positive.`,
+      confidence: 'trend',
+      reason: 'The title has meaningful popularity but a weak score signal compared with stronger seasonal picks.',
+      evidence: [
+        `Popularity: ${poorButWatched.popularity || 'available'}`,
+        poorButWatched.score ? `Score signal: ${poorButWatched.score}/100` : '',
+        poorButWatched.trending ? `Current trend score: ${poorButWatched.trending}` : '',
+      ].filter(Boolean),
+      priority: adjustedTopicPriority('why-anime-is-doing-poorly', (options.preferFastMoving ? 5 : 11) + Math.floor((poorButWatched.popularity || 0) / 100000), options),
+    });
+  }
+
+  const weakButPopular = sorted.find((item) => item.status !== 'NOT_YET_RELEASED' && (item.popularity || 0) > 80000 && (item.score || 100) < 73 && item.mal_id !== poorButWatched?.mal_id);
   if (weakButPopular) {
     candidates.push({
       type: 'popular-anime-with-mixed-reception',
@@ -604,7 +675,12 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
 }
 
 async function fetchTrendingNewsItems(preview = false, mode: 'primary' | 'fast' = 'primary') {
-  const items = await fetchMediaList('TRENDING_DESC', 'RELEASING');
+  const releasingItems = await fetchMediaList('TRENDING_DESC', 'RELEASING');
+  const upcomingItems = await fetchMediaList('POPULARITY_DESC', 'NOT_YET_RELEASED');
+  const items = [
+    ...releasingItems,
+    ...upcomingItems.filter((upcoming) => !releasingItems.some((item) => item.mal_id === upcoming.mal_id)).slice(0, 8),
+  ];
   const recent = preview
     ? recentTopicContext([])
     : await loadRecentTopicContext();
@@ -631,14 +707,21 @@ async function fetchTrendingNewsItems(preview = false, mode: 'primary' | 'fast' 
     return { items, topic };
   }
 
+  const itemsForNews = [
+    ...releasingItems.slice(0, 6),
+    ...upcomingItems.slice(0, 6),
+  ].filter((item, index, list) => list.findIndex((other) => other.mal_id === item.mal_id) === index);
   const enriched: BlogMediaItem[] = [];
-  for (const item of items.slice(0, 8)) {
+  for (const item of itemsForNews) {
     const news = item.mal_id ? await fetchAnimeNews(item.mal_id) : [];
-    enriched.push({ ...item, news });
+    const hasUpcomingNews = item.status === 'NOT_YET_RELEASED' && news.some(headlineSupportsUpcomingAdaptation);
+    const cast = hasUpcomingNews && item.mal_id ? await fetchAnimeCast(item.mal_id) : [];
+    enriched.push({ ...item, news, cast });
     await sleep(350);
   }
 
-  const allItems = [...enriched, ...items.slice(enriched.length)];
+  const enrichedIds = new Set(enriched.map((item) => item.mal_id));
+  const allItems = [...enriched, ...items.filter((item) => !enrichedIds.has(item.mal_id))];
   const primary = selectNewsTopic(allItems, baseOptions);
   const fastAvoidTypes = new Set(baseOptions.avoidTypes);
   if (primary.type) fastAvoidTypes.add(primary.type);
@@ -731,6 +814,10 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
           : `${focusTitle} has enough current activity to deserve a closer look, especially for viewers comparing active seasonal titles.`,
         topic.type === 'popular-anime-with-mixed-reception'
           ? `The main tension is simple: popularity does not always mean strong reception. When a widely followed anime carries a weaker score signal, it can mean the premise is pulling viewers in while the execution is creating mixed reactions.`
+          : topic.type === 'why-anime-is-doing-poorly'
+            ? `The concern is not visibility; it is response. When an anime has enough people checking it out but the score signal stays weak, the safer read is that viewers may be bouncing off the execution, pacing, tone, or adaptation choices.`
+          : topic.type === 'upcoming-popular-adaptation-confirmed'
+            ? `For an upcoming title, the useful details are the confirmed anime context: studio, cast, format, season, and premise where available. Those details are stronger than hype alone because they give viewers something concrete to judge before airing.`
           : topic.type === 'why-this-anime-is-doing-well'
             ? `The reason ${focusTitle} is doing well appears to be a mix of visibility and audience response. A strong score signal matters because it suggests people are not just noticing the anime; they are responding positively after watching.`
             : `For readers, the best takeaway is to judge the headline alongside the anime's score, genre fit, studio context, and episode status. That gives a more useful picture than treating one headline as the whole story.`,
@@ -911,6 +998,21 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
   };
 }
 
+function topicWritingBrief(topic?: BlogTopic) {
+  if (!topic) return 'Write a helpful guide-style article using the supplied facts.';
+  const briefs: Record<string, string> = {
+    'delayed-or-paused-airing': 'News explainer: lead with what changed, explain what is confirmed, explain what remains unknown, then give practical viewer context.',
+    'upcoming-popular-adaptation-confirmed': 'Upcoming adaptation report: focus on confirmed anime status, studio details, cast details if supplied, premise, popularity signal, and what to watch for next. Do not invent missing cast or staff.',
+    'why-anime-is-doing-poorly': 'Critical reception analysis: explain why the anime may be underperforming using score, popularity, genre, premise, episode/status context, and fair caveats. Avoid dunking or unsupported claims.',
+    'viral-episode-or-ranking': 'Buzz analysis: explain the episode/ranking/reaction hook, why it can spread, and what viewers should compare next.',
+    'new-season-trailer-cast-update': 'Announcement explainer: focus on the verified announcement details, trailer/cast/staff/premiere context only when supplied, and why fans may care.',
+    'popular-anime-with-mixed-reception': 'Mixed reception analysis: compare strong visibility against weaker or divided response, using score and popularity carefully.',
+    'anime-trending-up-now': 'Trend analysis: explain why the title is gaining momentum without calling it confirmed news or real-world viral unless the headline supports that.',
+    'why-this-anime-is-doing-well': 'Positive reception analysis: explain what is working using score, genre, studio, episode, and popularity context.',
+  };
+  return briefs[topic.type] || 'Focused anime article: stay on the selected topic and use only supported facts.';
+}
+
 function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[], topic?: BlogTopic) {
   const focusItem = topic
     ? items.find((item) => item.mal_id === topic.malId || item.id === topic.animeId || item.title === topic.animeTitle)
@@ -928,6 +1030,7 @@ function buildGeminiPrompt(definition: BlogPostDefinition, items: BlogMediaItem[
     airingAtIso: formatTime(item.airingAt || item.nextAiringAt),
     genres: item.genres.slice(0, 5),
     studios: item.studios,
+    cast: item.cast || [],
     season: [formatStatus(item.season), item.seasonYear].filter(Boolean).join(' '),
     popularityCount: item.popularity,
     currentTrendSignal: item.trending,
@@ -950,6 +1053,7 @@ ${JSON.stringify({
     description: definition.description,
     articleAngle: definition.angle,
     readerGoal: definition.readerPromise,
+    requiredWritingBrief: topicWritingBrief(topic),
     currentTimeIso: new Date().toISOString(),
     headlineFreshnessRule: 'Use headline-based news only when selectedTopic.publishedAt is within the last 48 hours. Older headlines are not allowed.',
     selectedTopic: topic || null,
@@ -976,10 +1080,13 @@ Rules:
 - If selectedTopic.confidence is "trend", write one focused trend-analysis article and do not present it as confirmed news.
 - Match the selected topic type:
   - delayed-or-paused-airing: explain the verified airing/update context without adding unlisted causes.
+  - upcoming-popular-adaptation-confirmed: explain the confirmed upcoming anime/adaptation angle. Include studio and cast only when supplied in selected anime facts or newsHeadlines.
+  - why-anime-is-doing-poorly: give a fair critical analysis of weak reception using score/popularity/status/genre facts. Do not insult fans, creators, or studios.
   - new-season-trailer-cast-update: explain the announcement or preview angle only if the headline supports it.
   - viral-episode-or-ranking: explain the episode/ranking/buzz angle only if the headline supports it.
   - popular-anime-with-mixed-reception: explain the gap between popularity and weaker score/reception signals.
   - anime-trending-up-now or why-this-anime-is-doing-well: explain current momentum, score, genre, studio, and episode context.
+- Follow requiredWritingBrief closely so each article type has a different structure and angle.
 - Only mention delays, halted airing, production issues, viral episodes, trailers, sequels, or announcements when the selected topic or newsHeadlines explicitly support that claim.
 - Do not mention APIs, AI, automation, AniList, Jikan, sources, scraping, or generated content.
 - Keep it natural and editorial.
@@ -1143,8 +1250,8 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
         body: JSON.stringify({
           contents: [{ parts: [{ text: buildGeminiPrompt(definition, items, topic) }] }],
           generationConfig: {
-            temperature: 0.45,
-            topP: 0.85,
+            temperature: 0.58,
+            topP: 0.9,
             maxOutputTokens: 6144,
             responseMimeType: 'application/json',
           },
