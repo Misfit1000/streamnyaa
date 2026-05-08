@@ -17,39 +17,58 @@ const keys = {
   iv: CryptoJS.enc.Utf8.parse('3134003223491201'),
 };
 
-const GOGO_BASE_URL = 'https://anitaku.to'; // Updated working domain
+const GOGO_BASE_URL = 'https://anitaku.to';
 
 async function extractGogoanimeSources(episodeId: string) {
   try {
-    const episodePage = await axios.get(`${GOGO_BASE_URL}/${episodeId}`);
-    const $ = cheerio.load(episodePage.data);
+    // Advanced headers to bypass Cloudflare/ISP blocks in Nepal
+    const response = await axios.get(`${GOGO_BASE_URL}/${episodeId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'max-age=0',
+        'Sec-Ch-Ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Upgrade-Insecure-Requests': '1',
+      }
+    });
+
+    const $ = cheerio.load(response.data);
     const iframeUrl = $('div.anime_muti_link > ul > li.vidcdn > a').attr('data-video');
-    if (!iframeUrl) throw new Error("Video iframe not found");
+    if (!iframeUrl) throw new Error("Video player iframe not found on page.");
 
     const parsedUrl = new URL(iframeUrl);
     const videoId = parsedUrl.searchParams.get('id');
-    if (!videoId) throw new Error("Video ID not found");
+    if (!videoId) throw new Error("Could not extract video ID.");
 
     const iframePage = await axios.get(iframeUrl);
     const $$ = cheerio.load(iframePage.data);
     const encryptedParams = $$("script[data-name='episode']").attr('data-value');
-    if (!encryptedParams) throw new Error("Encrypted params not found");
+    if (!encryptedParams) throw new Error("Encrypted parameters missing.");
 
     const decryptedToken = CryptoJS.AES.decrypt(encryptedParams, keys.key, { iv: keys.iv }).toString(CryptoJS.enc.Utf8);
     const encryptedRequestId = CryptoJS.AES.encrypt(videoId, keys.key, { iv: keys.iv }).toString();
     const ajaxUrl = `${parsedUrl.protocol}//${parsedUrl.hostname}/encrypt-ajax.php?id=${encryptedRequestId}&alias=${videoId}&${decryptedToken}`;
 
     const finalResponse = await axios.get(ajaxUrl, {
-      headers: { 'X-Requested-With': 'XMLHttpRequest', 'User-Agent': 'Mozilla/5.0' },
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      },
     });
 
     const decryptedData = JSON.parse(
       CryptoJS.AES.decrypt(finalResponse.data.data, keys.secondKey, { iv: keys.iv }).toString(CryptoJS.enc.Utf8)
     );
 
-    return { sources: decryptedData.source, backupSources: decryptedData.source_bk };
+    return {
+      sources: decryptedData.source,
+      backupSources: decryptedData.source_bk
+    };
   } catch (error: any) {
-    console.error("Scraper Error:", error.message);
+    console.error("Scraping failed:", error.message);
     throw error;
   }
 }
@@ -61,7 +80,7 @@ async function startServer() {
   // --- STREAMING API ROUTE ---
   app.get("/api/stream-sources", async (req, res) => {
     const { id } = req.query;
-    if (!id || typeof id !== 'string') return res.status(400).json({ error: "ID required" });
+    if (!id || typeof id !== 'string') return res.status(400).json({ error: "Episode ID is required" });
     try {
       const data = await extractGogoanimeSources(id);
       res.json(data);
@@ -70,7 +89,7 @@ async function startServer() {
     }
   });
 
-  // --- EXISTING NYAA API ---
+  // --- EXISTING NYAA RSS PROXY ---
   app.get("/api/nyaa", async (req, res) => {
     try {
       const { q, c, f, p } = req.query;
@@ -81,7 +100,9 @@ async function startServer() {
       if (p) url.searchParams.append("p", p as string);
 
       const response = await fetch(url.toString(), {
-        headers: { 'User-Agent': 'Mozilla/5.0' }
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
       });
       
       if (!response.ok) return res.status(response.status).json({ error: 'Nyaa fetch failed' });
@@ -121,6 +142,7 @@ async function startServer() {
     if (!slug || typeof slug !== "string" || !getBlogPost(slug)) {
       return res.status(404).json({ error: "Blog post not found" });
     }
+
     try {
       const data = await getCachedBlogPost(slug, preview);
       const { articleSource: _articleSource, articleStatus: _articleStatus, ...publicData } = data;
@@ -131,7 +153,7 @@ async function startServer() {
     }
   });
 
-  // Vite / Production middleware
+  // Vite middleware / production assets
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
