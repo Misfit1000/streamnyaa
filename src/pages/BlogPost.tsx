@@ -144,6 +144,8 @@ export default function BlogPost() {
   const canonicalPath = isGeminiArticle ? articlePath(post) : '/blog/' + definition.slug;
   const article = post.article;
   const paragraphs = article?.paragraphs?.length ? article.paragraphs : buildArticleParagraphs(definition, post.items);
+  const leadParagraph = paragraphs[0];
+  const bodyParagraphs = paragraphs.slice(1);
   const takeaways = article?.takeaways?.length ? article.takeaways : buildTakeaways(post.items);
   const faq = article?.faq?.length ? article.faq : buildFaq(definition, post.items);
   const seoTitle = article?.seoTitle || definition.seoTitle;
@@ -236,16 +238,22 @@ export default function BlogPost() {
                 ) : null}
 
                 <section className="border border-border bg-[var(--glass)] rounded-2xl p-5 md:p-6">
-                  <div className="flex items-center gap-2 mb-4"><Newspaper className="w-5 h-5 text-primary" /><h2 className="text-xl md:text-2xl font-black">{isGeminiArticle ? 'Story breakdown' : 'Quick read'}</h2></div>
-                  <div className="space-y-4 text-sm md:text-base text-muted-foreground leading-relaxed">
-                    {paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                  <div className="flex items-center gap-2 mb-5"><Newspaper className="w-5 h-5 text-primary" /><h2 className="text-xl md:text-2xl font-black">{isGeminiArticle ? 'Story breakdown' : 'Quick read'}</h2></div>
+                  {leadParagraph ? (
+                    <p className="border-l-2 border-primary pl-4 text-base md:text-lg font-semibold leading-8 text-foreground">{leadParagraph}</p>
+                  ) : null}
+                  <div className="mt-5 space-y-5 text-sm md:text-base text-muted-foreground leading-8">
+                    {bodyParagraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                   </div>
                 </section>
 
                 {article?.sections?.length ? <section className="space-y-4">
-                  {article.sections.map((section) => <div key={section.heading} className="border border-border bg-secondary/30 rounded-2xl p-5 md:p-6">
-                    <h2 className="text-xl md:text-2xl font-black tracking-tight">{section.heading}</h2>
-                    <p className="mt-3 text-sm md:text-base text-muted-foreground leading-relaxed">{section.body}</p>
+                  {article.sections.map((section, index) => <div key={section.heading} className="border border-border bg-secondary/30 rounded-2xl p-5 md:p-6">
+                    <div className="mb-3 flex items-center gap-3">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-black text-primary">{index + 1}</span>
+                      <h2 className="text-xl md:text-2xl font-black tracking-tight">{section.heading}</h2>
+                    </div>
+                    <p className="text-sm md:text-base text-muted-foreground leading-8">{section.body}</p>
                   </div>)}
                 </section> : null}
 
