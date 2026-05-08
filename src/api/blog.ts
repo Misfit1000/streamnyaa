@@ -45,3 +45,44 @@ export async function fetchArchivedBlogPosts(summary = false): Promise<BlogPostD
   const data = await response.json();
   return Array.isArray(data.posts) ? data.posts : [];
 }
+
+export interface BlogArchivePage {
+  posts: BlogPostData[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+}
+
+export async function fetchArchivedBlogPostPage(page = 1, limit = 12): Promise<BlogArchivePage> {
+  const params = new URLSearchParams({
+    summary: '1',
+    page: String(page),
+    limit: String(limit),
+  });
+  const response = await fetch('/api/blog-archive?' + params.toString(), {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) {
+    return {
+      posts: [],
+      pagination: { page, limit, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: page > 1 },
+    };
+  }
+  const data = await response.json();
+  return {
+    posts: Array.isArray(data.posts) ? data.posts : [],
+    pagination: {
+      page: Number(data.pagination?.page) || page,
+      limit: Number(data.pagination?.limit) || limit,
+      total: Number(data.pagination?.total) || 0,
+      totalPages: Math.max(1, Number(data.pagination?.totalPages) || 1),
+      hasNextPage: Boolean(data.pagination?.hasNextPage),
+      hasPreviousPage: Boolean(data.pagination?.hasPreviousPage),
+    },
+  };
+}

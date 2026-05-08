@@ -93,6 +93,40 @@ async function supabase(pathname, options = {}) {
   return data;
 }
 
+async function supabaseWithHeaders(pathname, options = {}) {
+  const url = supabaseUrl();
+  const key = supabaseKey();
+  if (!url || !key) return null;
+
+  const response = await fetch(`${url}/rest/v1/${pathname}`, {
+    ...options,
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'StreamNyaa-Article-Archive',
+      ...(options.headers || {}),
+    },
+  });
+
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (!response.ok) {
+    const error = new Error(typeof data === 'object' && data?.message ? data.message : text);
+    error.status = response.status;
+    throw error;
+  }
+
+  return { data, headers: response.headers };
+}
+
 async function fileExists(pathname) {
   try {
     await github(`/contents/${encodeURIComponent(pathname).replace(/%2F/g, '/')}?ref=${encodeURIComponent(BRANCH)}`);
@@ -370,6 +404,115 @@ export async function listArchivedBlogPostSummaries(limit = 24) {
 
   const posts = await listGithubArchivedBlogPosts(limit);
   return posts.map(summarizeArchivedPost).filter(Boolean);
+}
+
+function parseTotalCount(contentRange) {
+  const total = String(contentRange || '').split('/')[1];
+  const parsed = Number(total);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export async function listArchivedBlogPostSummaryPage({ page = 1, limit = 12 } = {}) {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 12, 24));
+  const safePage = Math.max(1, Number(page) || 1);
+  const offset = (safePage - 1) * safeLimit;
+
+  if (supabaseUrl() && supabaseKey()) {
+    try {
+      const params = new URLSearchParams({
+        select: 'slug,title,excerpt,topic,image,source,updated_at',
+        order: 'updated_at.desc',
+        limit: String(safeLimit),
+        offset: String(offset),
+      });
+      const result = await supabaseWithHeaders(`blog_articles?${params.toString()}`, {
+        headers: { Prefer: 'count=exact' },
+      });
+      const rows = result?.data;
+      const total = parseTotalCount(result?.headers?.get('content-range'));
+      if (Array.isArray(rows)) {
+        const posts = rows.map((row) => ({
+          slug: 'anime-trending-news-today',
+          title: row.title || 'Anime News',
+          seoTitle: `${row.title || 'Anime News'} | StreamNyaa`,
+          category: 'News',
+          description: row.excerpt || '',
+          summary: row.excerpt || '',
+          intro: row.excerpt || '',
+          angle: 'current anime news',
+          readerPromise: 'Read a focused anime news article.',
+          articleKind: 'gemini',
+          sortRank: 100,
+          updatedAt: row.updated_at,
+          generatedAt: row.updated_at,
+          articleSlug: row.slug,
+          articleSource: row.source || 'gemini',
+          articleStatus: 'summary',
+          topic: row.topic || null,
+          items: row.topic ? [{
+            id: row.topic.animeId || row.topic.malId || 0,
+            mal_id: row.topic.malId || row.topic.animeId || 0,
+            title: row.topic.animeTitle || row.title || 'Anime',
+            description: row.excerpt || '',
+            image: row.image || row.topic.image || '',
+            genres: [],
+            studios: [],
+          }] : [],
+          article: {
+            headline: row.title || row.topic?.title || 'Anime News',
+            excerpt: row.excerpt || row.topic?.summary || '',
+            heroCallout: row.excerpt || row.topic?.summary || '',
+            paragraphs: [],
+            sections: [],
+            takeaways: [],
+            faq: [],
+          },
+        }));
+
+        return {
+          posts,
+          pagination: {
+            page: safePage,
+            limit: safeLimit,
+            total: total ?? offset + posts.length,
+            totalPages: Math.max(1, Math.ceil((total ?? offset + posts.length) / safeLimit)),
+            hasNextPage: total === undefined ? posts.length === safeLimit : offset + posts.length < total,
+            hasPreviousPage: safePage > 1,
+          },
+        };
+      }
+    } catch (error) {
+      console.error('Supabase blog archive summary page failed', error);
+    }
+  }
+
+  const slugs = await listArchiveSlugs();
+  const pageSlugs = slugs.slice(offset, offset + safeLimit);
+  const posts = await Promise.all(
+    pageSlugs.map(async (slug) => {
+      try {
+        const response = await fetch(publicArchiveUrl(slug), {
+          headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa-Article-Archive' },
+        });
+        if (!response.ok) return null;
+        return summarizeArchivedPost(await response.json());
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return {
+    posts: posts.filter(Boolean),
+    pagination: {
+      page: safePage,
+      limit: safeLimit,
+      total: slugs.length,
+      totalPages: Math.max(1, Math.ceil(slugs.length / safeLimit)),
+      hasNextPage: offset + safeLimit < slugs.length,
+      hasPreviousPage: safePage > 1,
+    },
+  };
 }
 
 async function listSupabaseBlogPosts(limit = 60) {
