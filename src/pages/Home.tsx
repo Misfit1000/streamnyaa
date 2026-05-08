@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchPopularAnime, fetchSeasonalAnime, fetchRecentEpisodes, fetchUpcomingAnime, fetchSchedule } from '../api/jikan';
 import Spotlight from '../components/Spotlight';
 import AnimeCard from '../components/AnimeCard';
-import { ChevronRight, PlayCircle, TrendingUp, Calendar, ChevronDown, ChevronUp, Clock, Download, ShieldCheck, Search } from 'lucide-react';
+import { ChevronRight, PlayCircle, TrendingUp, Calendar, ChevronDown, ChevronUp, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import { useMemo, useState } from 'react';
@@ -84,36 +84,6 @@ export default function Home() {
         jsonLd={homeJsonLd}
       />
       <Spotlight animeList={seasonalData?.data || []} />
-
-      <section className="container mx-auto px-4 md:px-10 mt-8" aria-labelledby="download-app-heading">
-        <div className="rounded-[28px] border border-border bg-[linear-gradient(135deg,rgba(225,29,72,0.18),rgba(14,165,233,0.08)_45%,rgba(16,185,129,0.10)),var(--glass)] p-5 md:p-7">
-          <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
-            <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-background/45 px-3 py-1 text-xs font-black uppercase tracking-wider text-primary">
-                <Download className="h-3.5 w-3.5" />
-                Anime download hub
-              </div>
-              <h1 id="download-app-heading" className="text-2xl md:text-4xl font-black tracking-tight">Find anime downloads, episode pages, and release updates in one clean place</h1>
-              <p className="mt-3 max-w-3xl text-sm md:text-base leading-7 text-muted-foreground">
-                StreamNyaa is built for anime fans who want fast title discovery, organized episode information, download source search, and schedule tracking without digging through messy pages.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-              {[
-                { icon: Search, title: 'Search titles', text: 'Find anime by name, genre, status, and rating.' },
-                { icon: Download, title: 'Download options', text: 'Compare source results by quality, audio, batch, and episode.' },
-                { icon: ShieldCheck, title: 'Clean layout', text: 'Readable pages, useful metadata, and ad-friendly policy text.' },
-              ].map(({ icon: Icon, title, text }) => (
-                <div key={title} className="rounded-2xl border border-border bg-background/45 p-4">
-                  <Icon className="mb-3 h-5 w-5 text-primary" />
-                  <h2 className="font-black text-foreground">{title}</h2>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
       
       <main className="container mx-auto px-4 md:px-10 mt-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
         {/* Main Content Area */}
