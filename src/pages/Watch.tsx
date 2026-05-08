@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import ReactPlayer from 'react-player'; // <-- NEW IMPORT
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { searchNyaa, NyaaItem } from '../api/nyaa';
+import { fetchEpisodeStream } from '../api/stream'; // <-- NEW IMPORT
 import { Play, Download, List, HardDrive, Users, CloudRain, Loader2, Link as LinkIcon, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { animePath, watchPath } from '../lib/slug';
 import Seo from '../components/Seo';
@@ -26,6 +28,12 @@ export default function Watch() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
 
+  // --- NEW: DIRECT STREAM STATES ---
+  const [streamMethod, setStreamMethod] = useState<'direct' | 'torrent'>('direct');
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [streamLoading, setStreamLoading] = useState(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
+
   useEffect(() => {
     if (searchParams.get('ep')) {
       const ep = parseInt(searchParams.get('ep') as string);
@@ -41,6 +49,40 @@ export default function Watch() {
   });
 
   const anime = animeData?.data;
+
+  // --- NEW: DIRECT STREAM FETCHER ---
+  useEffect(() => {
+    if (streamMethod !== 'direct' || !anime) return;
+
+    // Use English title if available, otherwise Romaji
+    const titleToUse = anime.title_english || anime.title_romaji || anime.title;
+    if (!titleToUse) return;
+
+    let isMounted = true;
+    const getStream = async () => {
+      setStreamLoading(true);
+      setStreamError(null);
+      try {
+        const sources = await fetchEpisodeStream(titleToUse, currentEp);
+        if (isMounted && sources && sources.length > 0) {
+          // Grab highest quality link
+          const bestLink = sources.find((s: any) => s.quality === '1080p')?.url 
+                        || sources.find((s: any) => s.quality === 'auto')?.url 
+                        || sources[0].url;
+          setStreamUrl(bestLink);
+        } else if (isMounted) {
+          setStreamError("No video sources found for this episode.");
+        }
+      } catch (err: any) {
+        if (isMounted) setStreamError(err.message);
+      } finally {
+        if (isMounted) setStreamLoading(false);
+      }
+    };
+
+    getStream();
+    return () => { isMounted = false; };
+  }, [anime, currentEp, streamMethod]);
 
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
     queryKey: ['nyaa', anime?.title, currentEp, searchParams.get('type')],
@@ -98,6 +140,7 @@ export default function Watch() {
     setSearchParams({ ep: epNum.toString() });
     setIsPlaying(false);
     setActiveMagnet('');
+    setStreamUrl(null); // Reset direct stream
   };
 
   const episodes = episodesData?.data || [];
@@ -162,72 +205,115 @@ export default function Watch() {
             <span className="text-foreground">Episode {currentEp}</span>
           </div>
 
-          <div className="aspect-video bg-[#050507] rounded-[24px] overflow-hidden relative group border border-[var(--glass-border)] shadow-2xl">
-            <div className="pointer-events-none absolute left-4 top-4 z-30 flex flex-wrap gap-2">
-              <span className="rounded-full border border-primary/25 bg-black/55 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary backdrop-blur">
-                Source player
-              </span>
-              {activeSource ? (
-                <span className="rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[11px] font-bold text-white/80 backdrop-blur">
-                  {sourceHealth(activeSource)} &bull; {activeSource.seeders} seeders
-                </span>
-              ) : null}
-            </div>
-
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.18),transparent_38%),#050507]" />
-            <div className="absolute inset-0 flex flex-col items-center justify-center text-center z-10 px-4">
-              {!isPlaying ? (
-                <>
-                  <button
-                    className={`rounded-full p-6 md:p-8 bg-primary/20 text-primary border border-primary/30 transition-all ${sortedTorrents.length > 0 ? 'hover:scale-110 hover:bg-primary shadow-lg shadow-primary/20 hover:text-white hover:shadow-primary/40' : 'opacity-50 cursor-not-allowed'}`}
-                    disabled={!sortedTorrents.length}
-                    onClick={() => primarySource && selectSource(primarySource.magnet)}
-                  >
-                    <Play className="w-12 h-12 md:w-16 md:h-16 fill-current ml-2" />
-                  </button>
-                  <p className="text-white/70 font-medium mt-6 text-sm md:text-base">
-                    {torrentsLoading ? (
-                      <span className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Searching sources...
-                      </span>
-                    ) : sortedTorrents.length ? (
-                      'Select the best source below or use the quick action here.'
-                    ) : (
-                      'No sources found automatically. Try selecting another episode.'
-                    )}
-                  </p>
-                  {primarySource ? (
-                    <div className="mt-4 flex max-w-[min(92%,560px)] flex-wrap items-center justify-center gap-2 text-xs">
-                      <span className="rounded-full bg-white/10 px-3 py-1 font-bold text-white/75 backdrop-blur">Best source ready</span>
-                      <span className="rounded-full bg-white/10 px-3 py-1 font-bold text-white/75 backdrop-blur">{sortedTorrents.length} sources</span>
-                      {highSeederCount ? <span className="rounded-full bg-emerald-500/15 px-3 py-1 font-bold text-emerald-300 backdrop-blur">{highSeederCount} high-seed sources</span> : null}
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <div className="max-w-2xl rounded-2xl border border-white/10 bg-black/45 p-5 backdrop-blur">
-                  <CheckCircle2 className="mx-auto h-12 w-12 text-primary" />
-                  <h2 className="mt-4 text-xl font-black text-white">Source selected</h2>
-                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/70">{activeSource?.title}</p>
-                  <div className="mt-5 flex flex-wrap justify-center gap-3">
-                    <button onClick={() => copySource(activeSource?.magnet)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-white/15">
-                      <LinkIcon className="h-4 w-4" />
-                      Copy Link
-                    </button>
-                    {activeSource?.magnet ? (
-                      <a href={activeSource.magnet} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90">
-                        <Download className="h-4 w-4" />
-                        Open in App
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-              )}
-            </div>
+          {/* --- NEW: THE METHOD TOGGLE BUTTONS --- */}
+          <div className="flex gap-3 mb-4">
+            <button
+              onClick={() => setStreamMethod('direct')}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${streamMethod === 'direct' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'bg-[var(--glass)] text-muted-foreground border border-[var(--glass-border)] hover:text-foreground'}`}
+            >
+              Direct Stream (Fast)
+            </button>
+            <button
+              onClick={() => setStreamMethod('torrent')}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${streamMethod === 'torrent' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'bg-[var(--glass)] text-muted-foreground border border-[var(--glass-border)] hover:text-foreground'}`}
+            >
+              Torrent / Magnet
+            </button>
           </div>
 
-          {isPlaying && activeSource ? (
+          <div className="aspect-video bg-[#050507] rounded-[24px] overflow-hidden relative group border border-[var(--glass-border)] shadow-2xl">
+            {streamMethod === 'direct' ? (
+              // --- NEW DIRECT HLS PLAYER ---
+              streamLoading ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-primary gap-4">
+                  <Loader2 className="w-10 h-10 animate-spin" />
+                  <p className="font-bold text-sm">Decrypting Secure Stream...</p>
+                </div>
+              ) : streamError ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-red-500 gap-4">
+                  <AlertTriangle className="w-10 h-10" />
+                  <p className="font-bold text-sm">{streamError}</p>
+                </div>
+              ) : streamUrl ? (
+                <ReactPlayer 
+                  url={streamUrl}
+                  controls={true}
+                  width="100%"
+                  height="100%"
+                  playing={true}
+                  config={{ file: { forceHLS: true } }}
+                />
+              ) : null
+            ) : (
+              // --- YOUR EXISTING TORRENT / MAGNET UI ---
+              <>
+                <div className="pointer-events-none absolute left-4 top-4 z-30 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-primary/25 bg-black/55 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary backdrop-blur">
+                    Source player
+                  </span>
+                  {activeSource ? (
+                    <span className="rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[11px] font-bold text-white/80 backdrop-blur">
+                      {sourceHealth(activeSource)} &bull; {activeSource.seeders} seeders
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.18),transparent_38%),#050507]" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center z-10 px-4">
+                  {!isPlaying ? (
+                    <>
+                      <button
+                        className={`rounded-full p-6 md:p-8 bg-primary/20 text-primary border border-primary/30 transition-all ${sortedTorrents.length > 0 ? 'hover:scale-110 hover:bg-primary shadow-lg shadow-primary/20 hover:text-white hover:shadow-primary/40' : 'opacity-50 cursor-not-allowed'}`}
+                        disabled={!sortedTorrents.length}
+                        onClick={() => primarySource && selectSource(primarySource.magnet)}
+                      >
+                        <Play className="w-12 h-12 md:w-16 md:h-16 fill-current ml-2" />
+                      </button>
+                      <p className="text-white/70 font-medium mt-6 text-sm md:text-base">
+                        {torrentsLoading ? (
+                          <span className="flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Searching sources...
+                          </span>
+                        ) : sortedTorrents.length ? (
+                          'Select the best source below or use the quick action here.'
+                        ) : (
+                          'No sources found automatically. Try selecting another episode.'
+                        )}
+                      </p>
+                      {primarySource ? (
+                        <div className="mt-4 flex max-w-[min(92%,560px)] flex-wrap items-center justify-center gap-2 text-xs">
+                          <span className="rounded-full bg-white/10 px-3 py-1 font-bold text-white/75 backdrop-blur">Best source ready</span>
+                          <span className="rounded-full bg-white/10 px-3 py-1 font-bold text-white/75 backdrop-blur">{sortedTorrents.length} sources</span>
+                          {highSeederCount ? <span className="rounded-full bg-emerald-500/15 px-3 py-1 font-bold text-emerald-300 backdrop-blur">{highSeederCount} high-seed sources</span> : null}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="max-w-2xl rounded-2xl border border-white/10 bg-black/45 p-5 backdrop-blur">
+                      <CheckCircle2 className="mx-auto h-12 w-12 text-primary" />
+                      <h2 className="mt-4 text-xl font-black text-white">Source selected</h2>
+                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/70">{activeSource?.title}</p>
+                      <div className="mt-5 flex flex-wrap justify-center gap-3">
+                        <button onClick={() => copySource(activeSource?.magnet)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-white/15">
+                          <LinkIcon className="h-4 w-4" />
+                          Copy Link
+                        </button>
+                        {activeSource?.magnet ? (
+                          <a href={activeSource.magnet} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90">
+                            <Download className="h-4 w-4" />
+                            Open in App
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {isPlaying && activeSource && streamMethod === 'torrent' ? (
             <div className="mt-4 rounded-2xl border border-border bg-[var(--glass)] p-4">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
@@ -266,6 +352,7 @@ export default function Watch() {
             </div>
           </div>
 
+          {/* ... The rest of your Torrents Table remains exactly the same below this point! ... */}
           <div className="mt-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
               <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
