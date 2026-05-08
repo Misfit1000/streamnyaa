@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { searchNyaa } from '../api/nyaa';
-import { Search, Loader2, Download, Tv, HardDrive, AlertTriangle } from 'lucide-react';
+import { Search, Loader2, Download, HardDrive, AlertTriangle, Link as LinkIcon } from 'lucide-react';
 import Seo from '../components/Seo';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
 import type { TorrentSourceFilter } from '../lib/torrentBadges';
 
 export default function NyaaSearchPage() {
-  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [category, setCategory] = useState('1_0');
@@ -60,7 +58,7 @@ export default function NyaaSearchPage() {
             Anime Download Search
         </h1>
         <p className="text-muted-foreground mb-8 text-center max-w-xl">
-          Search anime source metadata, open compatible source links in your preferred client, or try browser-compatible streaming providers.
+          Search anime source metadata, open compatible source links in your preferred client, or copy source links for later.
         </p>
 
         <form onSubmit={handleSearch} className="w-full max-w-3xl flex flex-col md:flex-row gap-4 mb-6">
@@ -205,11 +203,11 @@ export default function NyaaSearchPage() {
                     Open Link
                   </a>
                   <button
-                    onClick={() => navigate(`/torrent?magnet=${encodeURIComponent(torrent.magnet)}`)}
+                    onClick={() => navigator.clipboard?.writeText(torrent.magnet)}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25"
                   >
-                    <Tv className="w-4 h-4" />
-                    Stream
+                    <LinkIcon className="w-4 h-4" />
+                    Copy Link
                   </button>
                 </div>
             </div>

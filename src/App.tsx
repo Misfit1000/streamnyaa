@@ -9,7 +9,6 @@ import AnimeLanding from './pages/AnimeLanding';
 import MangaDetails from './pages/MangaDetails';
 import Watch from './pages/Watch';
 import MyList from './pages/MyList';
-import TorrentPlayer from './pages/TorrentPlayer';
 import NyaaSearchPage from './pages/NyaaSearchPage';
 import AnimeDownloads from './pages/AnimeDownloads';
 import Blog from './pages/Blog';
@@ -47,7 +46,6 @@ export default function App() {
               <Route path="anime/:id/downloads" element={<AnimeDownloads />} />
               <Route path="watch/:id" element={<Watch />} />
               <Route path="my-list" element={<MyList />} />
-              <Route path="torrent" element={<TorrentPlayer />} />
               <Route path="nyaa" element={<NyaaSearchPage />} />
               <Route path="blog" element={<Blog />} />
               <Route path="blog/:slug" element={<BlogPost />} />

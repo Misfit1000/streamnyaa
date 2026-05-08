@@ -18,10 +18,6 @@ const routeMeta: Record<string, { title: string; description: string }> = {
     title: 'Anime Download Source Search | StreamNyaa',
     description: 'Search anime download source metadata, compare quality badges, seed counts, file sizes, and open compatible source links with your preferred client.',
   },
-  '/torrent': {
-    title: 'Browser Stream Player | StreamNyaa',
-    description: 'Paste a compatible source link and try browser-based playback options when compatible sources are available.',
-  },
   '/my-list': {
     title: 'My Anime List | StreamNyaa',
     description: 'Keep a local browser-based list of anime titles you want to follow.',

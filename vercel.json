@@ -134,10 +134,6 @@
       "destination": "/index.html"
     },
     {
-      "source": "/torrent",
-      "destination": "/index.html"
-    },
-    {
       "source": "/nyaa",
       "destination": "/index.html"
     },

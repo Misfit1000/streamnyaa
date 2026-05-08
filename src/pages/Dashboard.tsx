@@ -12,7 +12,6 @@ import {
   LayoutDashboard,
   LogOut,
   Newspaper,
-  PlayCircle,
   Search,
   Shield,
   Sparkles,
@@ -176,7 +175,6 @@ export default function Dashboard() {
             <ActionCard to="/nyaa" icon={Download} title="Download search" text="Open the cleaner source search and filters." />
             <ActionCard to="/blog" icon={Newspaper} title="Anime blog" text="Read the latest anime stories, guides, and updates." tone="amber" />
             <ActionCard to="/search" icon={Search} title="Search anime" text="Find title pages by name, genre, status, and score." tone="green" />
-            <ActionCard to="/torrent" icon={PlayCircle} title="Stream player" text="Open the streaming player for a compatible source link." />
             <ActionCard to="/anime/popular" icon={Compass} title="Popular anime" text="Browse landing pages built for discovery." tone="sky" />
           </div>
         </div>

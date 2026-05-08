@@ -52,10 +52,6 @@ export async function searchNyaa(query: string, category: string = '1_2', filter
         
         // Generate magnet URI from infohash
         const trackers = [
-          'wss://tracker.openwebtorrent.com',
-          'wss://tracker.webtorrent.dev',
-          'wss://tracker.fastcast.nz',
-          'wss://tracker.btorrent.xyz',
           'http://nyaa.tracker.wf:7777/announce',
           'udp://open.stealth.si:80/announce',
           'udp://tracker.opentrackr.org:1337/announce',

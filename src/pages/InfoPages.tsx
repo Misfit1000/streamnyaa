@@ -61,7 +61,7 @@ export function About() {
             StreamNyaa helps users discover anime, follow airing schedules, view anime and manga information, and compare source results from third-party services. The site focuses on clean navigation, searchable information, and useful title pages.
           </p>
           <p>
-            The app does not host, upload, or distribute anime episodes, video files, or copyrighted media. External links and embedded players are provided by third-party services.
+            The app does not host, upload, or distribute anime episodes, video files, or copyrighted media. External links are provided by third-party services.
           </p>
         </InfoBlock>
 
@@ -114,7 +114,7 @@ export function PrivacyPolicy() {
 
         <InfoBlock title="Third-Party Services">
           <p>
-            StreamNyaa can request data from external APIs and can display embedded third-party players or links. These services may collect data according to their own privacy policies.
+            StreamNyaa can request data from external APIs and can display external links. These services may collect data according to their own privacy policies.
           </p>
         </InfoBlock>
 
@@ -188,7 +188,7 @@ export function Disclaimer() {
       >
         <InfoBlock title="No Hosted Media">
           <p>
-            StreamNyaa does not upload, store, host, or distribute anime episodes, movies, or copyrighted video files. Search results, source links, title information, and embedded playback options are provided through third-party services.
+            StreamNyaa does not upload, store, host, or distribute anime episodes, movies, or copyrighted video files. Search results, source links, and title information are provided through third-party services.
           </p>
         </InfoBlock>
 

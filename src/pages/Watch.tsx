@@ -1,43 +1,30 @@
-import { useState, useEffect, useRef } from 'react';
-import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { searchNyaa, NyaaItem } from '../api/nyaa';
-import { Play, Settings, Maximize, Download, MessageSquare, List, HardDrive, Users, CloudRain, ShieldAlert, Loader2, Link as LinkIcon, RefreshCw, AlertTriangle, ExternalLink } from 'lucide-react';
+import { Play, Download, List, HardDrive, Users, CloudRain, Loader2, Link as LinkIcon, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { animePath, watchPath } from '../lib/slug';
 import Seo from '../components/Seo';
+import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 
-declare global {
-  interface Window {
-    webtor: any;
-  }
+function sourceHealth(source?: NyaaItem) {
+  if (!source) return 'Waiting for source';
+  if (source.rawSeeders >= 100) return 'Fast source';
+  if (source.rawSeeders >= 50) return 'Healthy source';
+  if (source.rawSeeders >= 15) return 'Usable source';
+  return 'Low-seed source';
 }
-
-const STREAMING_PROVIDERS = [
-  { 
-    id: 'webtor', 
-    name: 'Webtor Player (Primary)', 
-    getUrl: (magnet: string) => '' 
-  },
-  { 
-    id: 'webtor-app', 
-    name: 'Webtor Cloud Stream', 
-    getUrl: (magnet: string) => `https://webtor.io/show?magnet=${encodeURIComponent(magnet)}&theme=dark` 
-  },
-  { 
-    id: 'magnetplayer', 
-    name: 'P2P Embedded Player', 
-    getUrl: (magnet: string) => `https://ferrolho.github.io/magnet-player/?magnet=${encodeURIComponent(magnet)}` 
-  }
-];
 
 export default function Watch() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
   const [currentEp, setCurrentEp] = useState(searchParams.get('ep') ? parseInt(searchParams.get('ep') as string) : 1);
   const [showEpNames, setShowEpNames] = useState(true);
   const [epPage, setEpPage] = useState(searchParams.get('ep') ? Math.floor((parseInt(searchParams.get('ep') as string) - 1) / 100) : 0);
+  const [activeMagnet, setActiveMagnet] = useState<string>('');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
 
   useEffect(() => {
     if (searchParams.get('ep')) {
@@ -47,33 +34,6 @@ export default function Watch() {
     }
   }, [searchParams]);
 
-  const changeEp = (epNum: number) => {
-    setCurrentEp(epNum);
-    setSearchParams({ ep: epNum.toString() });
-    if (fallbackTimer.current) {
-      clearTimeout(fallbackTimer.current);
-      fallbackTimer.current = null;
-    }
-    if (playerRef.current) {
-      playerRef.current.innerHTML = '';
-    }
-    setProvider('webtor');
-    setIsPlaying(false);
-    setActiveMagnet('');
-    setShowFallback(false);
-    setIframeKey(prev => prev + 1);
-  };
-
-  // Player state
-  const [activeMagnet, setActiveMagnet] = useState<string>('');
-  const [provider, setProvider] = useState(STREAMING_PROVIDERS[0].id);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [iframeKey, setIframeKey] = useState(0);
-  const [showFallback, setShowFallback] = useState(false);
-  
-  const fallbackTimer = useRef<NodeJS.Timeout | null>(null);
-  const playerRef = useRef<HTMLDivElement>(null);
-
   const { data: animeData, isLoading: animeLoading } = useQuery({
     queryKey: ['anime', id],
     queryFn: () => fetchAnimeDetails(id!),
@@ -82,64 +42,40 @@ export default function Watch() {
 
   const anime = animeData?.data;
 
-  // Search sources when anime loads or episode changes
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
     queryKey: ['nyaa', anime?.title, currentEp, searchParams.get('type')],
     queryFn: async () => {
       const romaji = anime?.title_romaji;
       const english = anime?.title_english;
       const native = anime?.title;
-
       const epStr = currentEp.toString().padStart(2, '0');
       const audioType = searchParams.get('type');
 
-      const cleanTitle = (t: string) => {
-        if (!t) return '';
-        // Remove seasons like "Season 2", "Part 2", "2nd Season" which source listings often omit 
-        // or format differently, but let's just make it alphanumeric for safer matching.
-        // Actually, just removing special characters works best.
-        let cleaned = t.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-        return cleaned;
-      };
+      const cleanTitle = (title: string) => (
+        title ? title.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim() : ''
+      );
 
-      const performSearch = async (t: string, ep: string) => {
-        if (!t) return [];
-        let query = `${cleanTitle(t)} ${ep}`;
-        if (audioType === 'dub') {
-          query += ' dub';
-        }
+      const performSearch = async (title: string, ep: string) => {
+        if (!title) return [];
+        let query = `${cleanTitle(title)} ${ep}`;
+        if (audioType === 'dub') query += ' dub';
         return await searchNyaa(query);
       };
 
       const trySearches = async (epNumStr: string) => {
         let res = await performSearch(romaji, epNumStr);
-        if (res.length === 0 && english && english !== romaji) {
-          res = await performSearch(english, epNumStr);
-        }
-        if (res.length === 0 && native && native !== english && native !== romaji) {
-          res = await performSearch(native, epNumStr);
-        }
+        if (res.length === 0 && english && english !== romaji) res = await performSearch(english, epNumStr);
+        if (res.length === 0 && native && native !== english && native !== romaji) res = await performSearch(native, epNumStr);
         return res;
       };
 
       let results = await trySearches(epStr);
-
-      // Fallback without padding if still 0
-      if (results.length === 0 && epStr !== currentEp.toString()) {
-        results = await trySearches(currentEp.toString());
-      }
-      
-      // Secondary fallback: some uploaders don't even put episode numbers if it's a movie or single OVA
-      if (results.length === 0 && currentEp === 1) {
-        results = await trySearches("");
-      }
-      
+      if (results.length === 0 && epStr !== currentEp.toString()) results = await trySearches(currentEp.toString());
+      if (results.length === 0 && currentEp === 1) results = await trySearches('');
       return results;
     },
     enabled: !!anime?.title,
   });
-
-  const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
 
   const { data: episodesData, isLoading: episodesLoading } = useQuery({
     queryKey: ['episodes', id, epPage],
@@ -147,152 +83,77 @@ export default function Watch() {
     enabled: !!id,
   });
 
-  useEffect(() => {
-    if (isPlaying && activeMagnet && provider === 'webtor' && playerRef.current) {
-      const playerEl = playerRef.current;
-      playerEl.innerHTML = '';
-      const playerId = `webtor-player-${currentEp}-${iframeKey}`;
-      playerEl.id = playerId;
-
-      const frame = window.requestAnimationFrame(() => {
-        const { height, width } = playerEl.getBoundingClientRect();
-        const webtorConfig = {
-          id: playerId,
-          magnet: activeMagnet,
-          poster: anime?.images?.jpg?.large_image_url || '',
-          width: width ? `${Math.round(width)}px` : '100%',
-          height: `${Math.max(Math.round(height), 320)}px`,
-          theme: 'dark',
-          lang: 'en',
-          features: {
-            p2pProgress: true,
-            download: false,
-            settings: true,
-            fullscreen: true,
-            playpause: true,
-            currentTime: true,
-            timeline: true,
-            duration: true,
-            volume: true,
-            chromecast: true,
-          },
-          on: function(e: any) {
-            if (e.name === (window as any).webtor?.TORRENT_ERROR) {
-              console.error('Source playback error!');
-            }
-          }
-        };
-
-        (window as any).webtor = (window as any).webtor || [];
-        (window as any).webtor.push(webtorConfig);
-      });
-
-      return () => {
-        window.cancelAnimationFrame(frame);
-        playerEl.innerHTML = '';
-      };
-    }
-    
-    // Cleanup URL listeners or other player state if necessary
-    return () => {
-    };
-  }, [activeMagnet, isPlaying, provider, iframeKey, anime]);
-
-  const clearFallbackTimer = () => {
-    if (fallbackTimer.current) {
-      clearTimeout(fallbackTimer.current);
-      fallbackTimer.current = null;
-    }
-  };
-
-  const startFallbackTimer = () => {
-    clearFallbackTimer();
-    setShowFallback(false);
-    fallbackTimer.current = setTimeout(() => {
-      setShowFallback(true);
-    }, 15000);
-  };
-
-  useEffect(() => {
-    return () => clearFallbackTimer();
-  }, []);
-
   if (animeLoading || episodesLoading) {
-    return <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-    </div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
-  const episodes = episodesData?.data || [];
-  
-  const airedCount = anime?.nextAiringEpisode ? anime.nextAiringEpisode.episode - 1 : 
-    (anime?.status === 'RELEASING' || anime?.status === 'NOT_YET_RELEASED' ? (episodes.length > 0 ? Math.max(...episodes.map((e: any) => e.mal_id)) : 0) : (anime?.episodes || (episodes.length > 0 ? Math.max(...episodes.map((e: any) => e.mal_id)) : 12)));
-  const maxEpCount = airedCount;
+  if (!anime) return <div className="text-center py-20">Anime not found</div>;
 
-  const displayEpisodes = Array.from({ length: 100 }, (_, i) => {
-    const epNum = epPage * 100 + i + 1;
-    if (epNum > maxEpCount) return null;
-    
-    const jikanEp = episodes.find((e: any) => e.mal_id === epNum);
-    if (jikanEp) return jikanEp;
-    
-    let epTitle = `Episode ${epNum}`;
-    return {
-      mal_id: epNum,
-      title: epTitle,
-      title_japanese: '',
-      image: '',
-    };
-  }).filter(Boolean);
-
-  const handlePlayTorrent = (magnet: string) => {
-    setActiveMagnet(magnet);
-    setProvider('webtor');
-    setIsPlaying(true);
-    setIframeKey(prev => prev + 1);
-    startFallbackTimer();
-    // Scroll to player
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const changeEp = (epNum: number) => {
+    setCurrentEp(epNum);
+    setSearchParams({ ep: epNum.toString() });
+    setIsPlaying(false);
+    setActiveMagnet('');
   };
+
+  const episodes = episodesData?.data || [];
+  const airedCount = anime?.nextAiringEpisode
+    ? anime.nextAiringEpisode.episode - 1
+    : (anime?.status === 'RELEASING' || anime?.status === 'NOT_YET_RELEASED'
+        ? (episodes.length > 0 ? Math.max(...episodes.map((episode: any) => episode.mal_id)) : 0)
+        : (anime?.episodes || (episodes.length > 0 ? Math.max(...episodes.map((episode: any) => episode.mal_id)) : 12)));
+
+  const displayEpisodes = Array.from({ length: 100 }, (_, index) => {
+    const epNum = epPage * 100 + index + 1;
+    if (epNum > airedCount) return null;
+    const jikanEp = episodes.find((episode: any) => episode.mal_id === epNum);
+    return jikanEp || { mal_id: epNum, title: `Episode ${epNum}`, title_japanese: '', image: '' };
+  }).filter(Boolean);
 
   const sortedTorrents = [...(torrents || [])].sort((a, b) => {
     if (sortBy === 'best') {
-        const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
-        const trustedA = trustedGroups.some(g => a.title.includes(g)) ? 1 : 0;
-        const trustedB = trustedGroups.some(g => b.title.includes(g)) ? 1 : 0;
-        if (trustedA !== trustedB) return trustedB - trustedA;
-        if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
-        return b.rawSize - a.rawSize;
-    } else if (sortBy === 'seeders') {
-        if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
-        return b.rawSize - a.rawSize; // fallback to size if seeders are equal
-    } else {
-        if (b.rawSize !== a.rawSize) return b.rawSize - a.rawSize;
-        return b.rawSeeders - a.rawSeeders; // fallback to seeders if size is equal
+      const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
+      const trustedA = trustedGroups.some((group) => a.title.includes(group)) ? 1 : 0;
+      const trustedB = trustedGroups.some((group) => b.title.includes(group)) ? 1 : 0;
+      if (trustedA !== trustedB) return trustedB - trustedA;
+      if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
+      return b.rawSize - a.rawSize;
     }
+    if (sortBy === 'seeders') {
+      if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
+      return b.rawSize - a.rawSize;
+    }
+    if (b.rawSize !== a.rawSize) return b.rawSize - a.rawSize;
+    return b.rawSeeders - a.rawSeeders;
   });
 
-  const forceReload = () => {
-    setIframeKey(prev => prev + 1);
-    startFallbackTimer();
+  const primarySource = sortedTorrents[0];
+  const activeSource = sortedTorrents.find((torrent) => torrent.magnet === activeMagnet) || primarySource;
+  const highSeederCount = sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length;
+
+  const selectSource = (magnet: string) => {
+    setActiveMagnet(magnet);
+    setIsPlaying(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const getEmbedUrl = () => {
-    const selectedProvider = STREAMING_PROVIDERS.find(p => p.id === provider) || STREAMING_PROVIDERS[0];
-    return selectedProvider.getUrl(activeMagnet);
+  const copySource = (magnet?: string) => {
+    if (magnet && navigator.clipboard) navigator.clipboard.writeText(magnet);
   };
 
   return (
     <div className="container mx-auto px-4 py-6">
       <Seo
         title={`Watch ${anime.title} Episode ${currentEp} | StreamNyaa`}
-        description={`Watch ${anime.title} episode ${currentEp}, view source metadata, streaming options, and anime episode information on StreamNyaa.`}
+        description={`View ${anime.title} episode ${currentEp}, source metadata, download options, and anime episode information on StreamNyaa.`}
         canonicalPath={watchPath(anime)}
       />
       <div className="flex flex-col lg:flex-row gap-6">
-        {/* Main Content */}
         <div className="flex-1">
-          {/* Breadcrumb */}
           <div className="text-sm text-muted-foreground mb-4 flex items-center gap-2">
             <Link to="/" className="hover:text-primary">Home</Link>
             <span>/</span>
@@ -301,89 +162,100 @@ export default function Watch() {
             <span className="text-foreground">Episode {currentEp}</span>
           </div>
 
-          {/* Video Player Area */}
           <div className="aspect-video bg-[#050507] rounded-[24px] overflow-hidden relative group border border-[var(--glass-border)] shadow-2xl">
-            <div className="w-full h-full bg-black relative">
+            <div className="pointer-events-none absolute left-4 top-4 z-30 flex flex-wrap gap-2">
+              <span className="rounded-full border border-primary/25 bg-black/55 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary backdrop-blur">
+                Source player
+              </span>
+              {activeSource ? (
+                <span className="rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[11px] font-bold text-white/80 backdrop-blur">
+                  {sourceHealth(activeSource)} &bull; {activeSource.seeders} seeders
+                </span>
+              ) : null}
+            </div>
+
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.18),transparent_38%),#050507]" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center z-10 px-4">
               {!isPlaying ? (
-                <div 
-                  className={`absolute inset-0 flex flex-col items-center justify-center text-center z-10 transition-colors ${torrents && torrents.length > 0 ? 'cursor-pointer hover:bg-white/5' : ''}`}
-                  onClick={() => {
-                    if (torrents && torrents.length > 0) {
-                      handlePlayTorrent(torrents[0].magnet);
-                    }
-                  }}
-                >
-                  <button 
-                    className={`rounded-full p-6 md:p-8 bg-primary/20 text-primary border border-primary/30 transition-all ${torrents && torrents.length > 0 ? 'hover:scale-110 hover:bg-primary shadow-lg shadow-primary/20 hover:text-white hover:shadow-primary/40' : 'opacity-50 cursor-not-allowed'}`}
-                    disabled={!torrents || torrents.length === 0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (torrents && torrents.length > 0) {
-                        handlePlayTorrent(torrents[0].magnet);
-                      }
-                    }}
+                <>
+                  <button
+                    className={`rounded-full p-6 md:p-8 bg-primary/20 text-primary border border-primary/30 transition-all ${sortedTorrents.length > 0 ? 'hover:scale-110 hover:bg-primary shadow-lg shadow-primary/20 hover:text-white hover:shadow-primary/40' : 'opacity-50 cursor-not-allowed'}`}
+                    disabled={!sortedTorrents.length}
+                    onClick={() => primarySource && selectSource(primarySource.magnet)}
                   >
                     <Play className="w-12 h-12 md:w-16 md:h-16 fill-current ml-2" />
                   </button>
-                  <p className="text-white/60 font-medium mt-6 text-sm md:text-base px-4">
+                  <p className="text-white/70 font-medium mt-6 text-sm md:text-base">
                     {torrentsLoading ? (
-                       <span className="flex items-center gap-2">
-                         <Loader2 className="w-4 h-4 animate-spin" />
-                         Searching for streams...
-                       </span>
-                    ) : (torrents && torrents.length > 0) ? (
-                      'Click to auto-play best source'
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Searching sources...
+                      </span>
+                    ) : sortedTorrents.length ? (
+                      'Select the best source below or use the quick action here.'
                     ) : (
-                      'No streams found automatically. Try selecting below.'
+                      'No sources found automatically. Try selecting another episode.'
                     )}
                   </p>
-                  <p className="text-white/30 text-xs mt-3 bg-black/40 px-3 py-1 rounded-full backdrop-blur-md">Browser stream player</p>
-                </div>
-              ) : provider === 'webtor' ? (
-                <div key={`webtor-${currentEp}-${iframeKey}`} ref={playerRef} className="webtor absolute inset-0 w-full h-full z-10"></div>
+                  {primarySource ? (
+                    <div className="mt-4 flex max-w-[min(92%,560px)] flex-wrap items-center justify-center gap-2 text-xs">
+                      <span className="rounded-full bg-white/10 px-3 py-1 font-bold text-white/75 backdrop-blur">Best source ready</span>
+                      <span className="rounded-full bg-white/10 px-3 py-1 font-bold text-white/75 backdrop-blur">{sortedTorrents.length} sources</span>
+                      {highSeederCount ? <span className="rounded-full bg-emerald-500/15 px-3 py-1 font-bold text-emerald-300 backdrop-blur">{highSeederCount} high-seed sources</span> : null}
+                    </div>
+                  ) : null}
+                </>
               ) : (
-                <iframe
-                  key={`${provider}-${activeMagnet}-${iframeKey}`}
-                  src={getEmbedUrl()}
-                  className="w-full h-full border-none outline-none z-10 relative"
-                  allow="autoplay; fullscreen; picture-in-picture"
-                  allowFullScreen
-                />
+                <div className="max-w-2xl rounded-2xl border border-white/10 bg-black/45 p-5 backdrop-blur">
+                  <CheckCircle2 className="mx-auto h-12 w-12 text-primary" />
+                  <h2 className="mt-4 text-xl font-black text-white">Source selected</h2>
+                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/70">{activeSource?.title}</p>
+                  <div className="mt-5 flex flex-wrap justify-center gap-3">
+                    <button onClick={() => copySource(activeSource?.magnet)} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-black text-white transition-colors hover:bg-white/15">
+                      <LinkIcon className="h-4 w-4" />
+                      Copy Link
+                    </button>
+                    {activeSource?.magnet ? (
+                      <a href={activeSource.magnet} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90">
+                        <Download className="h-4 w-4" />
+                        Open in App
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
               )}
             </div>
           </div>
 
-          {showFallback && isPlaying && (
-            <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between animate-in fade-in slide-in-from-top-2">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-semibold text-yellow-500 mb-1">Taking too long to load?</h4>
-                  <p className="text-xs text-muted-foreground">The source might have low seed count, or the cloud provider is busy.</p>
+          {isPlaying && activeSource ? (
+            <div className="mt-4 rounded-2xl border border-border bg-[var(--glass)] p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-primary">
+                      Selected source
+                    </span>
+                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-black uppercase tracking-wider text-emerald-400">
+                      {sourceHealth(activeSource)}
+                    </span>
+                  </div>
+                  <p className="line-clamp-1 text-sm font-bold text-foreground">{activeSource.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{activeSource.size} &bull; {activeSource.seeders} seeders &bull; {activeSource.leechers} leechers</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button onClick={() => copySource(activeSource.magnet)} className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-3 py-2 text-xs font-black text-foreground transition-colors hover:border-primary/40">
+                    <LinkIcon className="h-3.5 w-3.5" />
+                    Copy
+                  </button>
+                  <a href={activeSource.magnet} className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-primary-foreground transition-colors hover:bg-primary/90">
+                    <Download className="h-3.5 w-3.5" />
+                    Open Link
+                  </a>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button 
-                  onClick={forceReload}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-[var(--glass)] hover:bg-[var(--glass-border)] rounded-lg text-xs font-medium text-foreground transition-colors border border-[var(--glass-border)]"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Reload Player
-                </button>
-                <button 
-                  onClick={() => {
-                    setProvider('webtor-app');
-                    setIframeKey(prev => prev + 1);
-                    startFallbackTimer();
-                  }}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-medium text-primary-foreground transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" /> Try Webtor Cloud
-                </button>
-              </div>
             </div>
-          )}
+          ) : null}
 
-          {/* Actions */}
           <div className="mt-6 flex gap-4 overflow-x-auto pb-4">
             <div className="flex items-center gap-3 bg-[var(--glass)] p-2 pr-6 rounded-2xl border border-[var(--glass-border)] shrink-0">
               <img src={anime?.images?.webp?.large_image_url || anime?.images?.jpg?.large_image_url || anime?.images?.jpg?.image_url} alt="" className="w-12 h-16 rounded-xl object-cover" />
@@ -392,43 +264,19 @@ export default function Watch() {
                 <p className="text-[12px] text-primary font-bold">Episode {currentEp}</p>
               </div>
             </div>
-            
-            {isPlaying && (
-              <div className="flex items-center gap-2 bg-[var(--glass)] px-4 py-2 rounded-xl border border-[var(--glass-border)] shrink-0">
-                <span className="text-xs font-bold text-muted-foreground mr-2 uppercase tracking-wider">Player</span>
-                <select
-                  value={provider}
-                  onChange={(e) => {
-                    const nextProvider = e.target.value;
-                    setProvider(nextProvider);
-                    if (isPlaying) {
-                      setIframeKey(prev => prev + 1);
-                      startFallbackTimer();
-                    }
-                  }}
-                  className="bg-transparent border-none text-foreground text-sm font-semibold focus:outline-none cursor-pointer [&>option]:bg-background"
-                >
-                  {STREAMING_PROVIDERS.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
 
-          {/* Sources Section */}
           <div className="mt-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
               <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-                <CloudRain className="w-5 h-5 text-primary" /> Stream Sources & Downloads
+                <CloudRain className="w-5 h-5 text-primary" /> Sources & Downloads
               </h3>
-              
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Sort by:</span>
-                <select 
+                <select
                   className="bg-transparent border border-border text-sm text-foreground rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary transition-colors cursor-pointer [&>option]:bg-background"
                   value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as 'best' | 'seeders' | 'size')}
+                  onChange={(event) => setSortBy(event.target.value as 'best' | 'seeders' | 'size')}
                 >
                   <option value="best">Best</option>
                   <option value="seeders">Seeders</option>
@@ -436,14 +284,14 @@ export default function Watch() {
                 </select>
               </div>
             </div>
-            
+
             <div className="mb-4 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-muted-foreground md:hidden">
               <div className="flex items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
                 <div>
-                  <p className="font-semibold text-yellow-500">Mobile playback note</p>
+                  <p className="font-semibold text-yellow-500">Mobile download note</p>
                   <p className="mt-1">
-                    Mobile browsers may not open every source directly. Use Copy Link, Open in App, or a cloud player if playback does not start.
+                    Mobile browsers may not open every download source directly. Use Copy Link or Open in App if the link does not open.
                   </p>
                 </div>
               </div>
@@ -455,16 +303,29 @@ export default function Watch() {
               </div>
             ) : sortedTorrents.length === 0 ? (
               <div className="bg-secondary/30 border border-border p-8 rounded-2xl text-center text-muted-foreground">
-                <p>No browser-compatible video streams found for this episode.</p>
+                <p>No source results found for this episode.</p>
                 <p className="text-sm mt-1">Make sure the anime has aired.</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {sortedTorrents.map((torrent, idx) => {
-                  const isCurrentStream = activeMagnet === torrent.magnet;
+                {sortedTorrents.map((torrent, index) => {
+                  const isCurrentSource = activeMagnet === torrent.magnet;
+                  const badges = getTorrentBadges(torrent);
                   return (
-                    <div key={idx} className={`bg-[var(--glass)] border p-4 rounded-xl flex flex-col xl:flex-row xl:items-center justify-between gap-4 transition-all hover:bg-[rgba(225,29,72,0.05)] ${isCurrentStream ? 'border-primary shadow-[0_0_15px_rgba(225,29,72,0.15)] bg-primary/5' : 'border-[var(--glass-border)] hover:border-primary/30'}`}>
+                    <div key={torrent.infoHash || index} className={`bg-[var(--glass)] border p-4 rounded-2xl flex flex-col xl:flex-row xl:items-center justify-between gap-4 transition-all hover:bg-[rgba(225,29,72,0.05)] ${isCurrentSource ? 'border-primary shadow-[0_0_15px_rgba(225,29,72,0.15)] bg-primary/5' : index === 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-[var(--glass-border)] hover:border-primary/30'}`}>
                       <div className="flex-1 min-w-0 pr-4">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          {index === 0 ? (
+                            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-wider text-emerald-400">
+                              Recommended
+                            </span>
+                          ) : null}
+                          {badges.map((badge) => (
+                            <span key={`${torrent.infoHash}-${badge.label}`} className={torrentBadgeClassName(badge.tone)}>
+                              {badge.label}
+                            </span>
+                          ))}
+                        </div>
                         <h4 className="text-sm font-semibold text-foreground line-clamp-2 md:line-clamp-1 mb-2" title={torrent.title}>{torrent.title}</h4>
                         <div className="flex flex-wrap items-center gap-4 text-xs font-medium">
                           <span className="flex items-center gap-1.5 text-blue-400 bg-blue-500/10 px-2 py-1 rounded-md text-[11px] uppercase tracking-wider">
@@ -473,42 +334,25 @@ export default function Watch() {
                           <span className="flex items-center gap-1.5 text-green-400 bg-green-500/10 px-2 py-1 rounded-md text-[11px] uppercase tracking-wider">
                             <Users className="w-3.5 h-3.5" /> Seeding: {torrent.seeders}
                           </span>
-                          {isCurrentStream && (
+                          {isCurrentSource && (
                             <span className="flex items-center gap-1.5 text-primary bg-primary/10 px-2 py-1 rounded-md text-[11px] uppercase tracking-wider font-bold">
-                              <Play className="w-3 h-3 fill-current" /> Now Playing
+                              <CheckCircle2 className="w-3 h-3" /> Selected
                             </span>
                           )}
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2 shrink-0 mt-2 sm:mt-0">
-                        <button 
-                          onClick={() => {
-                            if (navigator.clipboard) {
-                              navigator.clipboard.writeText(torrent.magnet);
-                              // Could add a toast here
-                            }
-                          }}
-                          className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-105 active:scale-95"
-                          title="Copy source link"
-                        >
+                        <button onClick={() => copySource(torrent.magnet)} className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-105 active:scale-95" title="Copy source link">
                           <LinkIcon className="w-4 h-4" />
                           <span className="hidden sm:inline">Copy Link</span>
                         </button>
-                        <a 
-                          href={torrent.magnet}
-                          className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-105 active:scale-95"
-                          title="Open source link in a compatible app"
-                        >
+                        <a href={torrent.magnet} className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-105 active:scale-95" title="Open source link in a compatible app">
                           <Download className="w-4 h-4" />
                           <span className="hidden sm:inline">Open in App</span>
                         </a>
-                        <button 
-                          onClick={() => handlePlayTorrent(torrent.magnet)}
-                          disabled={!torrent.magnet || isCurrentStream}
-                          className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${isCurrentStream ? 'bg-primary/20 text-primary cursor-default' : 'bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 active:scale-95 disabled:opacity-50'}`}
-                        >
-                          <Play className="w-4 h-4 fill-current" />
-                          {isCurrentStream ? 'Playing' : 'Stream'}
+                        <button onClick={() => selectSource(torrent.magnet)} disabled={!torrent.magnet || isCurrentSource} className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all ${isCurrentSource ? 'bg-primary/20 text-primary cursor-default' : 'bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 active:scale-95 disabled:opacity-50'}`}>
+                          <CheckCircle2 className="w-4 h-4" />
+                          {isCurrentSource ? 'Selected' : 'Select'}
                         </button>
                       </div>
                     </div>
@@ -519,67 +363,51 @@ export default function Watch() {
           </div>
         </div>
 
-        {/* Episodes Sidebar */}
         <div className="w-full lg:w-80 shrink-0">
           <div className="bg-[var(--glass)] rounded-[24px] border border-[var(--glass-border)] overflow-hidden flex flex-col h-[600px] shadow-lg sticky top-24">
             <div className="p-5 border-b border-[var(--glass-border)] flex items-center justify-between">
               <h3 className="font-bold flex items-center gap-2 text-foreground">
                 <List className="w-5 h-5 text-primary" /> Episodes
               </h3>
-              <button 
-                onClick={() => setShowEpNames(!showEpNames)}
-                className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground hover:text-foreground transition-colors"
-              >
+              <button onClick={() => setShowEpNames(!showEpNames)} className="text-[11px] uppercase tracking-wider font-bold text-muted-foreground hover:text-foreground transition-colors">
                 {showEpNames ? 'Hide' : 'Show'} details
               </button>
             </div>
-            
+
             {(() => {
-              const airedCount = anime?.nextAiringEpisode ? anime.nextAiringEpisode.episode - 1 : 
-                (anime?.status === 'RELEASING' || anime?.status === 'NOT_YET_RELEASED' ? (episodesData?.data?.length > 0 ? Math.max(...episodesData.data.map((e: any) => e.mal_id)) : 0) : (anime?.episodes || (episodesData?.data?.length > 0 ? Math.max(...episodesData.data.map((e: any) => e.mal_id)) : 12)));
               const lastVisiblePage = Math.ceil(airedCount / 100) || 1;
-              
-              if (lastVisiblePage > 1) {
-                return (
-                  <div className="px-3 pt-3 pb-1">
-                    <select 
-                      className="w-full bg-secondary text-[13px] font-semibold rounded-lg px-3 py-2 border border-border focus:outline-none focus:border-primary cursor-pointer text-foreground"
-                      value={epPage}
-                      onChange={(e) => setEpPage(parseInt(e.target.value))}
-                    >
-                      {Array.from({ length: lastVisiblePage }, (_, i) => (
-                        <option key={i} value={i} className="bg-background">
-                          Episodes {i * 100 + 1} - {i === lastVisiblePage - 1 ? airedCount : (i + 1) * 100}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                );
-              }
-              return null;
+              if (lastVisiblePage <= 1) return null;
+              return (
+                <div className="px-3 pt-3 pb-1">
+                  <select className="w-full bg-secondary text-[13px] font-semibold rounded-lg px-3 py-2 border border-border focus:outline-none focus:border-primary cursor-pointer text-foreground" value={epPage} onChange={(event) => setEpPage(parseInt(event.target.value))}>
+                    {Array.from({ length: lastVisiblePage }, (_, index) => (
+                      <option key={index} value={index} className="bg-background">
+                        Episodes {index * 100 + 1} - {index === lastVisiblePage - 1 ? airedCount : (index + 1) * 100}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
             })()}
-            
+
             <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar relative">
-              {displayEpisodes.map((ep: any, index: number) => {
-                const epNum = ep.mal_id || epPage * 100 + index + 1;
+              {displayEpisodes.map((episode: any, index: number) => {
+                const epNum = episode.mal_id || epPage * 100 + index + 1;
                 const isActive = currentEp === epNum;
-                
                 return (
                   <button
                     key={epNum}
                     onClick={() => changeEp(epNum)}
                     className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-colors ${
-                      isActive 
-                        ? 'bg-primary border border-primary/30 text-primary-foreground' 
+                      isActive
+                        ? 'bg-primary border border-primary/30 text-primary-foreground'
                         : 'hover:bg-[var(--glass)] border border-transparent text-muted-foreground hover:text-foreground'
                     }`}
                   >
-                    <span className={`text-[13px] font-black w-8 ${isActive ? 'text-primary-foreground' : ''}`}>
-                      {epNum}
-                    </span>
+                    <span className={`text-[13px] font-black w-8 ${isActive ? 'text-primary-foreground' : ''}`}>{epNum}</span>
                     {showEpNames && (
                       <span className="text-[13px] font-semibold line-clamp-1 flex-1">
-                        {ep.title || ep.title_romanji || ep.title_english || `Episode ${epNum}`}
+                        {episode.title || episode.title_romanji || episode.title_english || `Episode ${epNum}`}
                       </span>
                     )}
                     {isActive && <Play className="w-4 h-4 text-primary fill-current shrink-0" />}

@@ -2,7 +2,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails } from '../api/jikan';
 import { searchNyaa } from '../api/nyaa';
-import { Download, Tv, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo } from 'lucide-react';
+import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo, Link as LinkIcon } from 'lucide-react';
 import { useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
@@ -10,6 +10,13 @@ import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } f
 import type { TorrentSourceFilter } from '../lib/torrentBadges';
 
 type AudioFilter = 'sub' | 'dub';
+
+function sourceHealth(seedCount: number) {
+  if (seedCount >= 100) return 'Fast';
+  if (seedCount >= 50) return 'Healthy';
+  if (seedCount >= 15) return 'Usable';
+  return 'Low seed';
+}
 
 export default function AnimeDownloads() {
   const { id } = useParams<{ id: string }>();
@@ -127,6 +134,9 @@ export default function AnimeDownloads() {
         return b.rawSeeders - a.rawSeeders;
     }
   });
+  const topSource = sortedTorrents[0];
+  const totalSeeders = sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0);
+  const highSeederCount = sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length;
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
@@ -141,7 +151,7 @@ export default function AnimeDownloads() {
         Back to Anime Details
       </Link>
 
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-4 bg-secondary/20 p-6 rounded-2xl border border-border">
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-5 gap-4 bg-[linear-gradient(135deg,rgba(225,29,72,0.12),rgba(14,165,233,0.06)),var(--glass)] p-6 rounded-2xl border border-border">
         <div className="flex items-center gap-4">
           <img src={anime.images.jpg.image_url} alt={anime.title} className="w-16 h-24 object-cover rounded shadow-md" />
           <div>
@@ -211,9 +221,26 @@ export default function AnimeDownloads() {
         </div>
       </div>
 
+      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        {[
+          { label: 'Sources found', value: torrentsLoading ? '...' : sortedTorrents.length, detail: sourceFilter ? 'After selected filter' : 'Matching this title' },
+          { label: 'Total seeders', value: torrentsLoading ? '...' : totalSeeders, detail: 'Across visible sources' },
+          { label: 'Best source', value: torrentsLoading ? '...' : topSource ? sourceHealth(topSource.rawSeeders) : 'None', detail: topSource ? `${topSource.seeders} seeders` : 'Try another filter' },
+        ].map((item) => (
+          <div key={item.label} className="rounded-2xl border border-border bg-[var(--glass)] p-4">
+            <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">{item.label}</p>
+            <p className="mt-1 text-2xl font-black text-foreground">{item.value}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{item.detail}</p>
+          </div>
+        ))}
+      </div>
+
       <div className="mb-6 rounded-2xl border border-border bg-secondary/20 p-4">
-        <div className="mb-3 flex items-center gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Source filters</span>
+          {!torrentsLoading && highSeederCount ? (
+            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-500">{highSeederCount} high-seed sources</span>
+          ) : null}
           {sourceFilter ? (
             <button onClick={() => setSourceFilter('')} className="text-xs font-bold text-primary hover:underline">Clear</button>
           ) : null}
@@ -284,8 +311,22 @@ export default function AnimeDownloads() {
       ) : (
         <div className="space-y-4">
           {sortedTorrents.map((torrent, idx) => (
-            <div key={idx} className="bg-secondary/20 hover:bg-secondary/40 border border-border/50 hover:border-primary/50 transition-all p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group">
+            <div key={idx} className={`transition-all p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group ${
+              idx === 0
+                ? 'bg-emerald-500/5 border border-emerald-500/30 shadow-[0_16px_40px_rgba(16,185,129,0.08)]'
+                : 'bg-secondary/20 hover:bg-secondary/40 border border-border/50 hover:border-primary/50'
+            }`}>
                 <div className="flex-1 min-w-0">
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    {idx === 0 ? (
+                      <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-emerald-500">
+                        Best match
+                      </span>
+                    ) : null}
+                    <span className="rounded-full border border-border bg-background/55 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-muted-foreground">
+                      {sourceHealth(torrent.rawSeeders)}
+                    </span>
+                  </div>
                   <h4 className="font-bold text-foreground break-all leading-tight mb-3 group-hover:text-primary transition-colors text-[15px]">
                     {torrent.title}
                   </h4>
@@ -327,13 +368,14 @@ export default function AnimeDownloads() {
                     <Download className="w-4 h-4" />
                     Open Link
                   </a>
-                  <Link
-                    to={`/torrent?magnet=${encodeURIComponent(torrent.magnet)}`}
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText(torrent.magnet)}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25"
                   >
-                    <Tv className="w-4 h-4" />
-                    Stream
-                  </Link>
+                    <LinkIcon className="w-4 h-4" />
+                    Copy Link
+                  </button>
                 </div>
             </div>
           ))}
