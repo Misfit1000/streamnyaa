@@ -31,6 +31,24 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json({ ok: true, email });
     }
 
+    if (req.method === 'DELETE') {
+      const email = cleanEmail(String(req.query?.email || req.body?.email || ''));
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'Enter a valid email address.' });
+      }
+
+      if (email === cleanEmail(auth.user.email || '')) {
+        return res.status(400).json({ error: 'You cannot remove your own admin access while signed in.' });
+      }
+
+      const removed = await supabaseRest(`admin_users?email=eq.${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: { Prefer: 'return=representation' },
+      });
+
+      return res.status(200).json({ ok: true, email, removed });
+    }
+
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error: any) {
     console.error(error);

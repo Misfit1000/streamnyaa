@@ -9,14 +9,20 @@ import {
   CheckCircle2,
   Clock,
   Crown,
+  Database,
+  ExternalLink,
   FileText,
+  Globe,
   KeyRound,
   Loader2,
   Lock,
+  MailCheck,
   Newspaper,
   RefreshCw,
+  Settings,
   Shield,
   Sparkles,
+  Trash2,
   UserPlus,
   Users,
 } from 'lucide-react';
@@ -48,12 +54,19 @@ function HealthRow({ title, ready, detail }: { title: string; ready: boolean; de
   );
 }
 
+function formatDate(value?: string) {
+  if (!value) return 'Unknown';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown';
+  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
 export default function AdminDashboard() {
   const { session, user, isAdmin, loading } = useAuth();
   const [adminEmail, setAdminEmail] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
-  const [busyAction, setBusyAction] = useState<'generate' | 'generate-both' | 'admin' | ''>('');
+  const [busyAction, setBusyAction] = useState<'generate' | 'generate-both' | 'admin' | 'remove-admin' | ''>('');
 
   const summary = useQuery({
     queryKey: ['admin-summary'],
@@ -75,6 +88,9 @@ export default function AdminDashboard() {
         .filter((email, index, list) => list.indexOf(email) === index)
       : []
   ), [data]);
+  const envAdminEmails = data?.admins?.env || [];
+  const storedAdmins = data?.admins?.stored || [];
+  const recentArticles = data?.recentArticles || [];
 
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">Checking admin access...</div>;
   if (!user) return <Navigate to="/login/admin" replace />;
@@ -152,6 +168,28 @@ export default function AdminDashboard() {
     }
   };
 
+  const removeAdmin = async (email: string) => {
+    if (!session?.access_token) return;
+    setActionError('');
+    setActionMessage('');
+    setBusyAction('remove-admin');
+
+    try {
+      const response = await fetch(`/api/admin/admins?email=${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not remove admin.');
+      setActionMessage(`${email} was removed from stored admin access.`);
+      summary.refetch();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not remove admin.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const archiveReady = Boolean(data?.archive?.supabaseConfigured);
   const backupReady = Boolean(data?.archive?.githubFallbackConfigured);
   const tableReady = Boolean(data?.admins?.tableReady);
@@ -199,7 +237,7 @@ export default function AdminDashboard() {
             <Metric label="Articles" value={articleCount} detail="Generated posts in archive" />
             <Metric label="Admins" value={adminEmails.length} detail="Approved admin accounts" />
             <Metric label="Schedule" value="Daily" detail={data?.cronSchedule || 'Scheduled generation'} />
-            <Metric label="Archive" value={archiveReady ? 'Ready' : 'Check'} detail={backupReady ? 'Backup path configured' : 'Backup path missing'} />
+            <Metric label="Gemini" value={data?.config?.geminiConfigured ? 'Ready' : 'Check'} detail={data?.config?.geminiConfigured ? 'Generation key configured' : 'Generation key missing'} />
           </section>
 
           {actionMessage ? <div className="mt-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm font-semibold text-emerald-300">{actionMessage}</div> : null}
@@ -243,10 +281,46 @@ export default function AdminDashboard() {
               </div>
 
               <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-xl font-black tracking-tight">Recent article archive</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Latest generated posts saved in the article database.</p>
+                  </div>
+                  <Link to="/blog" className="inline-flex w-fit items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-black text-foreground hover:border-primary/45">
+                    Open blog
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+                <div className="overflow-hidden rounded-lg border border-border">
+                  {recentArticles.length ? recentArticles.map((article: any) => (
+                    <div key={article.slug} className="grid gap-3 border-b border-border bg-background/45 p-4 last:border-b-0 md:grid-cols-[1fr_auto] md:items-center">
+                      <div className="min-w-0">
+                        <Link to={`/blog/${article.slug}`} className="line-clamp-1 text-sm font-black text-foreground hover:text-primary">
+                          {article.title || article.slug}
+                        </Link>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                          <span>{formatDate(article.updated_at)}</span>
+                          {article.category ? <span>{article.category}</span> : null}
+                          {article.article_kind ? <span>{article.article_kind}</span> : null}
+                          {article.status ? <span>{article.status}</span> : null}
+                        </div>
+                      </div>
+                      <Link to={`/blog/${article.slug}`} className="inline-flex items-center gap-1.5 text-xs font-black text-primary hover:underline">
+                        View
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+                  )) : (
+                    <div className="bg-background/35 p-5 text-sm text-muted-foreground">No recent articles found in the archive yet.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
                 <div className="mb-5 flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-black tracking-tight">System health</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Archive, backup, and admin-table status.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Archive, backup, auth, and generation configuration.</p>
                   </div>
                   <Activity className="h-5 w-5 text-primary" />
                 </div>
@@ -254,6 +328,8 @@ export default function AdminDashboard() {
                   <HealthRow title="Article archive" ready={archiveReady} detail={archiveReady ? 'Database archive is configured.' : 'Database archive is missing.'} />
                   <HealthRow title="Backup path" ready={backupReady} detail={backupReady ? 'GitHub fallback is configured.' : 'GitHub fallback is not configured.'} />
                   <HealthRow title="Admin table" ready={tableReady} detail={tableReady ? 'Admin access table is ready.' : 'Admin table setup is needed.'} />
+                  <HealthRow title="Gemini generation" ready={Boolean(data?.config?.geminiConfigured)} detail={data?.config?.geminiConfigured ? 'Article generation key is configured.' : 'Article generation key is missing.'} />
+                  <HealthRow title="Production URL" ready={Boolean(data?.config?.productionUrl)} detail={data?.config?.productionUrl || 'Production URL not reported.'} />
                 </div>
                 {!tableReady ? (
                   <p className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-300">{data?.admins?.setupMessage}</p>
@@ -262,6 +338,34 @@ export default function AdminDashboard() {
             </div>
 
             <aside className="space-y-6">
+              <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-black">Admin shortcuts</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Common checks after deploys or auth changes.</p>
+                  </div>
+                  <Settings className="h-5 w-5 text-primary" />
+                </div>
+                <div className="grid gap-2">
+                  <a href="/sitemap.xml" target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg border border-border bg-background/45 px-3 py-2.5 text-sm font-bold hover:border-primary/45">
+                    Sitemap index
+                    <Globe className="h-4 w-4 text-primary" />
+                  </a>
+                  <a href="/api/blog-sitemap" target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg border border-border bg-background/45 px-3 py-2.5 text-sm font-bold hover:border-primary/45">
+                    Dynamic blog sitemap
+                    <Globe className="h-4 w-4 text-primary" />
+                  </a>
+                  <Link to="/login" className="flex items-center justify-between rounded-lg border border-border bg-background/45 px-3 py-2.5 text-sm font-bold hover:border-primary/45">
+                    User login test
+                    <MailCheck className="h-4 w-4 text-primary" />
+                  </Link>
+                  <Link to="/reset-password" className="flex items-center justify-between rounded-lg border border-border bg-background/45 px-3 py-2.5 text-sm font-bold hover:border-primary/45">
+                    Reset page
+                    <KeyRound className="h-4 w-4 text-primary" />
+                  </Link>
+                </div>
+              </div>
+
               <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
@@ -292,17 +396,34 @@ export default function AdminDashboard() {
                   <Users className="h-5 w-5 text-primary" />
                 </div>
                 <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-                  {adminEmails.length ? adminEmails.map((email) => (
+                  {adminEmails.length ? adminEmails.map((email) => {
+                    const isEnvAdmin = envAdminEmails.includes(email);
+                    const storedAdmin = storedAdmins.find((admin: any) => admin.email === email);
+                    const canRemove = !isEnvAdmin && email !== user.email;
+                    return (
                     <div key={email} className="grid grid-cols-[36px_1fr] items-center gap-3 bg-background/45 p-3">
                       <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
                         <Shield className="h-4 w-4" />
                       </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-black text-foreground">{email}</span>
-                        <span className="text-xs text-muted-foreground">Admin access</span>
+                      <span className="grid min-w-0 gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-black text-foreground">{email}</span>
+                          <span className="text-xs text-muted-foreground">{isEnvAdmin ? 'Environment admin' : `Stored admin${storedAdmin?.created_at ? ` · ${formatDate(storedAdmin.created_at)}` : ''}`}</span>
+                        </span>
+                        {canRemove ? (
+                          <button
+                            type="button"
+                            onClick={() => removeAdmin(email)}
+                            disabled={busyAction === 'remove-admin'}
+                            className="inline-flex items-center justify-center rounded-md border border-red-500/20 bg-red-500/10 px-2.5 py-1.5 text-xs font-black text-red-300 hover:bg-red-500/15 disabled:opacity-60"
+                          >
+                            <Trash2 className="mr-1 h-3.5 w-3.5" />
+                            Remove
+                          </button>
+                        ) : null}
                       </span>
                     </div>
-                  )) : (
+                  );}) : (
                     <div className="bg-background/35 p-4 text-sm text-muted-foreground">No admin emails loaded.</div>
                   )}
                 </div>
@@ -318,10 +439,10 @@ export default function AdminDashboard() {
 
               <div className="rounded-lg border border-border bg-secondary/20 p-5">
                 <div className="flex items-center gap-2 text-sm font-black text-foreground">
-                  <Archive className="h-4 w-4 text-primary" />
-                  Archive note
+                  <Database className="h-4 w-4 text-primary" />
+                  Data note
                 </div>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">New generated posts are saved to the configured archive and appear on the blog after refresh.</p>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">Recent posts, admin users, and archive status are loaded from the same production API that powers the live site.</p>
               </div>
             </aside>
           </section>

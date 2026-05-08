@@ -18,6 +18,23 @@ async function fetchBlogArticleCount() {
   return total && total !== '*' ? Number(total) : null;
 }
 
+async function fetchRecentBlogArticles() {
+  if (!supabaseBaseUrl() || !supabaseSecretKey()) return [];
+
+  const params = new URLSearchParams({
+    select: 'slug,title,category,updated_at,article_kind,source,status',
+    order: 'updated_at.desc',
+    limit: '8',
+  });
+
+  try {
+    const rows = await supabaseRest(`blog_articles?${params.toString()}`);
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
 async function adminTableStatus() {
   try {
     await supabaseRest('admin_users?select=email&limit=1');
@@ -37,8 +54,9 @@ export default async function handler(req: any, res: any) {
     const auth = await requireAdmin(req);
     if ('error' in auth) return res.status(auth.status).json({ error: auth.error });
 
-    const [articleCount, storedAdmins, tableStatus] = await Promise.all([
+    const [articleCount, recentArticles, storedAdmins, tableStatus] = await Promise.all([
       fetchBlogArticleCount(),
+      fetchRecentBlogArticles(),
       listStoredAdmins().catch(() => []),
       adminTableStatus(),
     ]);
@@ -46,6 +64,7 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({
       adminEmail: auth.user.email,
       generatedBlogArticles: articleCount,
+      recentArticles,
       cronSchedule: 'Daily between 5:45 AM and 6:44 AM Nepal time',
       admins: {
         env: envAdminEmails(),
@@ -56,6 +75,11 @@ export default async function handler(req: any, res: any) {
       archive: {
         supabaseConfigured: Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)),
         githubFallbackConfigured: Boolean(process.env.GITHUB_ARTICLE_TOKEN || process.env.GH_ARTICLE_TOKEN),
+      },
+      config: {
+        geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
+        smtpExpected: true,
+        productionUrl: 'https://www.streamnyaa.xyz',
       },
     });
   } catch (error) {
