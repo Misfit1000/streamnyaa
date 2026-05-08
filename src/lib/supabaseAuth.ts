@@ -80,6 +80,22 @@ function normalizeSession(data: any): AuthSession {
   };
 }
 
+export function normalizeOAuthSessionFromHash(hash: string): AuthSession | null {
+  const params = new URLSearchParams(hash.replace(/^#/, ''));
+  const accessToken = params.get('access_token');
+  if (!accessToken) return null;
+
+  return {
+    access_token: accessToken,
+    refresh_token: params.get('refresh_token') || undefined,
+    expires_at: params.get('expires_at')
+      ? Number(params.get('expires_at'))
+      : params.get('expires_in')
+        ? Math.floor(Date.now() / 1000) + Number(params.get('expires_in'))
+        : undefined,
+  };
+}
+
 export async function signInWithPassword(email: string, password: string) {
   const data = await authFetch('token?grant_type=password', {
     method: 'POST',
@@ -88,6 +104,16 @@ export async function signInWithPassword(email: string, password: string) {
   const session = normalizeSession(data);
   storeSession(session);
   return session;
+}
+
+export async function signInWithGoogle() {
+  const config = await authConfig();
+  const redirectTo = 'https://www.streamnyaa.xyz/login';
+  const params = new URLSearchParams({
+    provider: 'google',
+    redirect_to: redirectTo,
+  });
+  window.location.href = `${config.supabaseUrl}/auth/v1/authorize?${params.toString()}`;
 }
 
 export async function signUpWithPassword(email: string, password: string) {

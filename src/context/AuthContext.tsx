@@ -4,8 +4,10 @@ import {
   AuthUser,
   fetchAccount,
   loadStoredSession,
+  normalizeOAuthSessionFromHash,
   refreshSession,
   requestPasswordReset,
+  signInWithGoogle,
   signInWithPassword,
   signOutSession,
   signUpWithPassword,
@@ -20,6 +22,7 @@ type AuthContextValue = {
   loading: boolean;
   error: string;
   signIn: (email: string, password: string) => Promise<void>;
+  signInGoogle: () => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   resetPassword: (accessToken: string, password: string) => Promise<void>;
@@ -70,13 +73,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
 
     async function boot() {
-      const stored = loadStoredSession();
+      const oauthSession = normalizeOAuthSessionFromHash(window.location.hash);
+      const stored = oauthSession || loadStoredSession();
       try {
         if (!stored?.access_token) return;
         const now = Math.floor(Date.now() / 1000);
         const usableSession = stored.expires_at && stored.expires_at < now + 60
           ? await refreshSession(stored)
           : stored;
+        if (oauthSession) {
+          storeSession(usableSession);
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
         if (mounted) await applySession(usableSession);
       } catch (authError) {
         storeSession(null);
@@ -107,6 +115,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError('');
       const nextSession = await signInWithPassword(email, password);
       await applySession(nextSession);
+    },
+    signInGoogle: async () => {
+      setError('');
+      await signInWithGoogle();
     },
     signUp: async (email, password) => {
       setError('');

@@ -11,7 +11,7 @@ type LoginProps = {
 export default function Login({ adminOnly = false }: LoginProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, signUp, sendPasswordReset, resetPassword } = useAuth();
+  const { user, signIn, signInGoogle, signUp, sendPasswordReset, resetPassword } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -37,6 +37,24 @@ export default function Login({ adminOnly = false }: LoginProps) {
       setMode('reset');
     }
   }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!adminOnly && user && location.pathname === '/login') {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [adminOnly, user, location.pathname, navigate]);
+
+  const startGoogleLogin = async () => {
+    setError('');
+    setMessage('');
+    setSubmitting(true);
+    try {
+      await signInGoogle();
+    } catch (authError) {
+      setSubmitting(false);
+      setError(authError instanceof Error ? authError.message : 'Google sign-in failed.');
+    }
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -178,6 +196,25 @@ export default function Login({ adminOnly = false }: LoginProps) {
               <div className="mt-7 grid grid-cols-2 rounded-xl border border-border bg-background/70 p-1 shadow-inner">
                 <button type="button" onClick={() => setMode('login')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'login' || mode === 'forgot' || mode === 'reset' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Login</button>
                 <button type="button" onClick={() => setMode('signup')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Sign up</button>
+              </div>
+            ) : null}
+
+            {!adminOnly && mode === 'login' ? (
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={startGoogleLogin}
+                  disabled={submitting}
+                  className="flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-background px-4 py-3.5 text-sm font-black text-foreground transition-colors hover:border-primary/40 hover:bg-secondary/40 disabled:opacity-60"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-[13px] font-black text-zinc-900">G</span>
+                  Continue with Google
+                </button>
+                <div className="my-5 flex items-center gap-3">
+                  <span className="h-px flex-1 bg-border" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">or</span>
+                  <span className="h-px flex-1 bg-border" />
+                </div>
               </div>
             ) : null}
 
