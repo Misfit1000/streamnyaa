@@ -10,7 +10,6 @@ import {
   Clock,
   Crown,
   FileText,
-  Gauge,
   KeyRound,
   Loader2,
   Lock,
@@ -20,39 +19,31 @@ import {
   Sparkles,
   UserPlus,
   Users,
-  WandSparkles,
 } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
 
-function statusTone(ok?: boolean) {
-  return ok
-    ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-    : 'border-amber-500/20 bg-amber-500/10 text-amber-300';
+function Metric({ label, value, detail }: { label: string; value: string | number; detail: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/70 p-4">
+      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-2 text-2xl font-black text-foreground">{value}</p>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</p>
+    </div>
+  );
 }
 
-function MetricCard({ icon: Icon, label, value, detail, tone = 'primary' }: {
-  icon: typeof Activity;
-  label: string;
-  value: string | number;
-  detail: string;
-  tone?: 'primary' | 'green' | 'sky' | 'amber';
-}) {
-  const toneClass = {
-    primary: 'bg-primary/10 text-primary border-primary/20',
-    green: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
-    sky: 'bg-sky-500/10 text-sky-300 border-sky-500/20',
-    amber: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
-  }[tone];
-
+function HealthRow({ title, ready, detail }: { title: string; ready: boolean; detail: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-[var(--glass)] p-5 transition-colors hover:border-primary/35">
-      <div className={`mb-5 flex h-11 w-11 items-center justify-center rounded-xl border ${toneClass}`}>
-        <Icon className="h-5 w-5" />
-      </div>
-      <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="mt-2 text-3xl font-black tracking-tight text-foreground">{value}</p>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
+    <div className="grid grid-cols-[24px_1fr_auto] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
+      {ready ? <CheckCircle2 className="h-5 w-5 text-emerald-300" /> : <AlertTriangle className="h-5 w-5 text-amber-300" />}
+      <span className="min-w-0">
+        <span className="block text-sm font-black text-foreground">{title}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{detail}</span>
+      </span>
+      <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${ready ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' : 'border-amber-500/20 bg-amber-500/10 text-amber-300'}`}>
+        {ready ? 'Ready' : 'Check'}
+      </span>
     </div>
   );
 }
@@ -90,15 +81,15 @@ export default function AdminDashboard() {
 
   if (!isAdmin) {
     return (
-      <div className="container mx-auto px-4 md:px-10 py-12">
+      <div className="container mx-auto px-4 py-12 md:px-10">
         <Seo title="Admin Access Required | StreamNyaa" description="Admin access is required." canonicalPath="/admin" />
-        <div className="mx-auto max-w-xl rounded-2xl border border-border bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(14,165,233,0.08)),var(--glass)] p-6">
-          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <div className="mx-auto max-w-xl rounded-lg border border-border bg-[var(--glass)] p-6">
+          <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Lock className="h-6 w-6" />
           </div>
           <h1 className="text-2xl font-black">Admin access required</h1>
           <p className="mt-3 text-sm leading-7 text-muted-foreground">Your account is signed in, but it is not listed as a StreamNyaa admin.</p>
-          <Link to="/dashboard" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground">
+          <Link to="/dashboard" className="mt-5 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-black text-primary-foreground">
             Back to dashboard
             <ArrowRight className="h-4 w-4" />
           </Link>
@@ -167,167 +158,117 @@ export default function AdminDashboard() {
   const articleCount = data?.generatedBlogArticles ?? 'Unknown';
 
   return (
-    <div className="container mx-auto px-4 md:px-10 py-8 md:py-10">
+    <div className="container mx-auto px-4 py-8 md:px-10">
       <Seo title="Admin Dashboard | StreamNyaa" description="StreamNyaa admin dashboard." canonicalPath="/admin" />
 
-      <section className="overflow-hidden rounded-[28px] border border-primary/20 bg-[linear-gradient(135deg,rgba(225,29,72,0.24),rgba(14,165,233,0.10)_46%,rgba(16,185,129,0.11)),var(--glass)] p-6 md:p-8">
-        <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+      <header className="border-b border-border pb-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-primary/25 bg-background/45 px-3 py-1.5 text-xs font-black uppercase tracking-wider text-primary backdrop-blur">
-              <Crown className="h-3.5 w-3.5" />
-              Admin control room
-            </div>
-            <h1 className="max-w-3xl text-3xl font-black tracking-tight md:text-5xl">StreamNyaa operations</h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-              Signed in as <span className="font-bold text-foreground">{user.email}</span>. Manage article generation, archive health, admin access, and publishing signals from one focused screen.
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Admin console</p>
+            <h1 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">Operations dashboard</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
+              Signed in as <span className="font-bold text-foreground">{user.email}</span>. Manage publishing, admin access, and archive health from one focused screen.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <button onClick={() => triggerGemini('one')} disabled={Boolean(busyAction)} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:opacity-60">
-                {busyAction === 'generate' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                Generate article
-              </button>
-              <button onClick={() => summary.refetch()} className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-4 py-3 text-sm font-black text-foreground backdrop-blur transition-colors hover:border-primary/40">
-                <RefreshCw className={`h-4 w-4 ${summary.isFetching ? 'animate-spin' : ''}`} />
-                Refresh status
-              </button>
-              <Link to="/blog" className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-4 py-3 text-sm font-black text-foreground backdrop-blur transition-colors hover:border-primary/40">
-                <Newspaper className="h-4 w-4" />
-                View blog
-              </Link>
-            </div>
           </div>
-
-          <div className="rounded-2xl border border-border bg-background/45 p-5 backdrop-blur">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">System state</p>
-                <p className="mt-2 text-2xl font-black text-foreground">{summary.isLoading ? 'Checking' : 'Online'}</p>
-              </div>
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-300">
-                <Gauge className="h-6 w-6" />
-              </div>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <div className="rounded-xl border border-border bg-background/50 p-3">
-                <p className="text-xs text-muted-foreground">Archive</p>
-                <p className="mt-1 text-sm font-black text-foreground">{archiveReady ? 'Connected' : 'Missing'}</p>
-              </div>
-              <div className="rounded-xl border border-border bg-background/50 p-3">
-                <p className="text-xs text-muted-foreground">Admins</p>
-                <p className="mt-1 text-sm font-black text-foreground">{adminEmails.length || '-'}</p>
-              </div>
-            </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => triggerGemini('one')} disabled={Boolean(busyAction)} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+              {busyAction === 'generate' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Generate
+            </button>
+            <button onClick={() => summary.refetch()} className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-black text-foreground hover:border-primary/45">
+              <RefreshCw className={`h-4 w-4 ${summary.isFetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            <Link to="/blog" className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-black text-foreground hover:border-primary/45">
+              <Newspaper className="h-4 w-4" />
+              Blog
+            </Link>
           </div>
         </div>
-      </section>
+      </header>
 
       {summary.isLoading ? (
-        <div className="mt-8 rounded-2xl border border-border bg-[var(--glass)] p-6 text-muted-foreground">
+        <div className="mt-8 rounded-lg border border-border bg-[var(--glass)] p-6 text-muted-foreground">
           <div className="flex items-center gap-3"><Loader2 className="h-5 w-5 animate-spin text-primary" />Loading admin summary...</div>
         </div>
       ) : summary.error ? (
-        <div className="mt-8 rounded-2xl border border-red-500/20 bg-red-500/10 p-6 text-red-400">Admin summary could not load.</div>
+        <div className="mt-8 rounded-lg border border-red-500/20 bg-red-500/10 p-6 text-red-400">Admin summary could not load.</div>
       ) : (
         <>
-          <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={Archive} label="Articles" value={articleCount} detail="Generated blog posts in the archive" />
-            <MetricCard icon={Users} label="Admins" value={adminEmails.length} detail="Approved control-room users" tone="sky" />
-            <MetricCard icon={Clock} label="Gemini cron" value="Daily" detail={data?.cronSchedule || 'Scheduled generation'} tone="amber" />
-            <MetricCard icon={Shield} label="Archive" value={archiveReady ? 'Ready' : 'Check'} detail={backupReady ? 'Backup path configured' : 'Backup path not configured'} tone="green" />
+          <section className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric label="Articles" value={articleCount} detail="Generated posts in archive" />
+            <Metric label="Admins" value={adminEmails.length} detail="Approved admin accounts" />
+            <Metric label="Schedule" value="Daily" detail={data?.cronSchedule || 'Scheduled generation'} />
+            <Metric label="Archive" value={archiveReady ? 'Ready' : 'Check'} detail={backupReady ? 'Backup path configured' : 'Backup path missing'} />
           </section>
 
-          {actionMessage ? <div className="mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm font-semibold text-emerald-300">{actionMessage}</div> : null}
-          {actionError ? <div className="mt-6 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm font-semibold text-red-400">{actionError}</div> : null}
+          {actionMessage ? <div className="mt-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm font-semibold text-emerald-300">{actionMessage}</div> : null}
+          {actionError ? <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm font-semibold text-red-400">{actionError}</div> : null}
 
           <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_380px]">
             <div className="space-y-6">
-              <div className="rounded-2xl border border-border bg-[var(--glass)] p-5 md:p-6">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
+                <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
-                      <WandSparkles className="h-5 w-5" />
-                    </div>
-                    <h2 className="text-2xl font-black tracking-tight">Article generator</h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">Create fresh blog articles and save them to the publishing archive.</p>
+                    <h2 className="text-xl font-black tracking-tight">Article publishing</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Generate and archive new editorial posts.</p>
                   </div>
-                  <span className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-black uppercase tracking-wider text-primary">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Gemini
+                  <span className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-black text-primary">
+                    <Crown className="h-3.5 w-3.5" />
+                    Admin only
                   </span>
                 </div>
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  <button onClick={() => triggerGemini('one')} disabled={Boolean(busyAction)} className="group rounded-2xl border border-primary/25 bg-primary/10 p-5 text-left transition-colors hover:bg-primary/15 disabled:opacity-60">
-                    <div className="flex items-center justify-between gap-3">
-                      <Sparkles className="h-6 w-6 text-primary" />
-                      {busyAction === 'generate' ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <ArrowRight className="h-4 w-4 text-primary transition-transform group-hover:translate-x-1" />}
-                    </div>
-                    <h3 className="mt-4 font-black text-foreground">Generate one article</h3>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Best for the daily article queue.</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <button onClick={() => triggerGemini('one')} disabled={Boolean(busyAction)} className="grid grid-cols-[40px_1fr_auto] items-center gap-3 rounded-lg border border-primary/25 bg-primary/10 p-4 text-left transition-colors hover:bg-primary/15 disabled:opacity-60">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/15 text-primary">
+                      {busyAction === 'generate' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
+                    </span>
+                    <span>
+                      <span className="block text-sm font-black text-foreground">Generate one article</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">Use for the normal daily queue.</span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-primary" />
                   </button>
-                  <button onClick={() => triggerGemini('both')} disabled={Boolean(busyAction)} className="group rounded-2xl border border-border bg-background/45 p-5 text-left transition-colors hover:border-primary/40 disabled:opacity-60">
-                    <div className="flex items-center justify-between gap-3">
-                      <FileText className="h-6 w-6 text-sky-300" />
-                      {busyAction === 'generate-both' ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />}
-                    </div>
-                    <h3 className="mt-4 font-black text-foreground">Generate two articles</h3>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Use for a fast second topic.</p>
+                  <button onClick={() => triggerGemini('both')} disabled={Boolean(busyAction)} className="grid grid-cols-[40px_1fr_auto] items-center gap-3 rounded-lg border border-border bg-background/45 p-4 text-left transition-colors hover:border-primary/45 disabled:opacity-60">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-primary">
+                      {busyAction === 'generate-both' ? <Loader2 className="h-5 w-5 animate-spin" /> : <FileText className="h-5 w-5" />}
+                    </span>
+                    <span>
+                      <span className="block text-sm font-black text-foreground">Generate two articles</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">Use when a second topic is needed.</span>
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
                   </button>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border bg-[var(--glass)] p-5 md:p-6">
-                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
+                <div className="mb-5 flex items-center justify-between">
                   <div>
-                    <h2 className="text-2xl font-black tracking-tight">Publishing archive</h2>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Article saving and admin access checks.</p>
+                    <h2 className="text-xl font-black tracking-tight">System health</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Archive, backup, and admin-table status.</p>
                   </div>
-                  <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs font-black ${statusTone(archiveReady && tableReady)}`}>
-                    {archiveReady && tableReady ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-                    {archiveReady && tableReady ? 'Healthy' : 'Needs attention'}
-                  </span>
+                  <Activity className="h-5 w-5 text-primary" />
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-xl border border-border bg-background/45 p-4">
-                    <p className="flex items-center gap-2 text-sm font-black text-foreground">
-                      {archiveReady ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />}
-                      Article archive
-                    </p>
-                    <p className="mt-2 text-sm text-muted-foreground">{archiveReady ? 'Connected' : 'Missing'}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-background/45 p-4">
-                    <p className="flex items-center gap-2 text-sm font-black text-foreground">
-                      {backupReady ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />}
-                      Backup path
-                    </p>
-                    <p className="mt-2 text-sm text-muted-foreground">{backupReady ? 'Connected' : 'Missing'}</p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-background/45 p-4">
-                    <p className="flex items-center gap-2 text-sm font-black text-foreground">
-                      {tableReady ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />}
-                      Admin table
-                    </p>
-                    <p className="mt-2 text-sm text-muted-foreground">{tableReady ? 'Ready' : 'Setup needed'}</p>
-                  </div>
+                <div className="overflow-hidden rounded-lg border border-border bg-background/35">
+                  <HealthRow title="Article archive" ready={archiveReady} detail={archiveReady ? 'Database archive is configured.' : 'Database archive is missing.'} />
+                  <HealthRow title="Backup path" ready={backupReady} detail={backupReady ? 'GitHub fallback is configured.' : 'GitHub fallback is not configured.'} />
+                  <HealthRow title="Admin table" ready={tableReady} detail={tableReady ? 'Admin access table is ready.' : 'Admin table setup is needed.'} />
                 </div>
                 {!tableReady ? (
-                  <p className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-300">{data?.admins?.setupMessage}</p>
+                  <p className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-300">{data?.admins?.setupMessage}</p>
                 ) : null}
               </div>
             </div>
 
             <aside className="space-y-6">
-              <div className="rounded-2xl border border-border bg-[var(--glass)] p-5">
-                <div className="mb-5 flex items-start justify-between gap-4">
+              <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
+                <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
-                    <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl border border-sky-500/20 bg-sky-500/10 text-sky-300">
-                      <UserPlus className="h-5 w-5" />
-                    </div>
                     <h2 className="text-xl font-black">Admin access</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Grant dashboard access by email.</p>
                   </div>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1 text-xs font-black text-muted-foreground">
-                    <KeyRound className="h-3.5 w-3.5" />
-                    {adminEmails.length}
-                  </span>
+                  <KeyRound className="h-5 w-5 text-primary" />
                 </div>
                 <form onSubmit={addAdmin} className="space-y-3">
                   <input
@@ -335,44 +276,52 @@ export default function AdminDashboard() {
                     value={adminEmail}
                     onChange={(event) => setAdminEmail(event.target.value)}
                     placeholder="user@example.com"
-                    className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                    className="w-full rounded-lg border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition-colors focus:border-primary"
                     required
                   />
-                  <button disabled={Boolean(busyAction) || !tableReady} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60">
+                  <button disabled={Boolean(busyAction) || !tableReady} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60">
                     {busyAction === 'admin' ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
                     {busyAction === 'admin' ? 'Adding admin...' : 'Add admin'}
                   </button>
                 </form>
               </div>
 
-              <div className="rounded-2xl border border-border bg-[var(--glass)] p-5">
+              <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-xl font-black">Current admins</h2>
                   <Users className="h-5 w-5 text-primary" />
                 </div>
-                <div className="space-y-2">
+                <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
                   {adminEmails.length ? adminEmails.map((email) => (
-                    <div key={email} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <div key={email} className="grid grid-cols-[36px_1fr] items-center gap-3 bg-background/45 p-3">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
                         <Shield className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-foreground">{email}</p>
-                        <p className="text-xs text-muted-foreground">Admin access</p>
-                      </div>
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-black text-foreground">{email}</span>
+                        <span className="text-xs text-muted-foreground">Admin access</span>
+                      </span>
                     </div>
                   )) : (
-                    <div className="rounded-xl border border-dashed border-border bg-background/35 p-4 text-sm text-muted-foreground">No admin emails loaded.</div>
+                    <div className="bg-background/35 p-4 text-sm text-muted-foreground">No admin emails loaded.</div>
                   )}
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border bg-secondary/20 p-5">
+              <div className="rounded-lg border border-border bg-secondary/20 p-5">
                 <div className="flex items-center gap-2 text-sm font-black text-foreground">
                   <Clock className="h-4 w-4 text-primary" />
                   Scheduled publishing
                 </div>
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">{data?.cronSchedule || 'Daily generation is scheduled.'}</p>
+              </div>
+
+              <div className="rounded-lg border border-border bg-secondary/20 p-5">
+                <div className="flex items-center gap-2 text-sm font-black text-foreground">
+                  <Archive className="h-4 w-4 text-primary" />
+                  Archive note
+                </div>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">New generated posts are saved to the configured archive and appear on the blog after refresh.</p>
               </div>
             </aside>
           </section>
