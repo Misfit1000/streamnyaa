@@ -47,36 +47,36 @@ export function About() {
     <>
       <Seo
         title="About StreamNyaa"
-        description="Learn what StreamNyaa is, how it works, and how it uses public anime metadata and third-party services."
+        description="Learn what StreamNyaa is and how it helps with anime discovery, schedules, and download source search."
         canonicalPath="/about"
       />
       <PageShell
         title="About StreamNyaa"
         eyebrow="About"
         icon={<Info className="w-5 h-5" />}
-        description="StreamNyaa is an anime discovery interface built for browsing titles, checking release schedules, organizing a personal watch list, and searching public torrent metadata from a single place."
+        description="StreamNyaa is an anime download and discovery interface built for browsing titles, checking release schedules, organizing a personal watch list, and searching source results from a single place."
       >
         <InfoBlock title="What StreamNyaa Provides">
           <p>
-            StreamNyaa helps users discover anime, follow airing schedules, view anime and manga metadata, and compare public search results from third-party indexes. The site focuses on clean navigation, searchable information, and useful title pages.
+            StreamNyaa helps users discover anime, follow airing schedules, view anime and manga information, and compare source results from third-party services. The site focuses on clean navigation, searchable information, and useful title pages.
           </p>
           <p>
-            The app does not host anime episodes, video files, torrent files, or copyrighted media on its own servers. External links and embedded players are provided by third-party services.
+            The app does not host, upload, or distribute anime episodes, video files, or copyrighted media. External links and embedded players are provided by third-party services.
           </p>
         </InfoBlock>
 
-        <InfoBlock title="Data Sources and External Services">
+        <InfoBlock title="Information Sources and External Services">
           <p>
-            Anime details, artwork, schedules, relations, and recommendations may come from public metadata services such as AniList and Jikan. Torrent metadata is requested from public RSS results and normalized for display.
+            Anime details, artwork, schedules, relations, and recommendations may come from public anime information services. Download source results are requested from public third-party listings and normalized for display.
           </p>
           <p>
-            Third-party services may have their own terms, privacy practices, and availability limits. StreamNyaa is not affiliated with AniList, Jikan, Nyaa.si, WebTor, or any anime publisher.
+            Third-party services may have their own terms, privacy practices, and availability limits. StreamNyaa is not affiliated with any anime publisher or rights holder.
           </p>
         </InfoBlock>
 
         <InfoBlock title="Editorial and Policy Standards">
           <p>
-            StreamNyaa is designed as a discovery and indexing tool. The site includes a privacy policy, terms of use, and disclaimer so visitors, search engines, and advertising reviewers can understand how the site operates.
+            StreamNyaa is designed as a discovery and source-search tool. The site includes a privacy policy, terms of use, and disclaimer so visitors, search engines, and advertising reviewers can understand how the site operates.
           </p>
         </InfoBlock>
       </PageShell>
@@ -89,24 +89,24 @@ export function PrivacyPolicy() {
     <>
       <Seo
         title="Privacy Policy | StreamNyaa"
-        description="Read how StreamNyaa handles local storage, analytics, advertising partners, third-party embeds, and external services."
+        description="Read how StreamNyaa handles browser preferences, analytics, advertising partners, third-party embeds, and external services."
         canonicalPath="/privacy-policy"
       />
       <PageShell
         title="Privacy Policy"
         eyebrow="Privacy"
         icon={<ShieldCheck className="w-5 h-5" />}
-        description="This policy explains what information StreamNyaa uses, how browser storage works, and how third-party services may process data."
+        description="This policy explains what information StreamNyaa uses, how browser preferences work, and how third-party services may process data."
       >
         <p className="text-sm">Last updated: {UPDATED}</p>
 
-        <InfoBlock title="Information Stored in Your Browser">
+        <InfoBlock title="Information Saved in Your Browser">
           <p>
-            StreamNyaa stores preferences such as theme, list items, likes, and content mode in browser local storage. This data stays on your device unless your browser or extensions sync it elsewhere.
+            StreamNyaa saves preferences such as theme, list items, likes, and content mode in your browser. This data stays on your device unless your browser or extensions sync it elsewhere.
           </p>
         </InfoBlock>
 
-        <InfoBlock title="Server Logs and Technical Data">
+        <InfoBlock title="Technical Logs">
           <p>
             Hosting providers may collect standard technical logs such as IP address, request URL, browser type, device information, and timestamps for security, debugging, analytics, and abuse prevention.
           </p>
@@ -146,13 +146,13 @@ export function Terms() {
 
         <InfoBlock title="Use of the Site">
           <p>
-            StreamNyaa is provided for anime discovery, metadata browsing, schedule tracking, and public index search. You are responsible for how you use any external links, third-party services, or magnet links.
+            StreamNyaa is provided for anime discovery, title browsing, schedule tracking, and source search. You are responsible for how you use any external links, third-party services, or compatible source links.
           </p>
         </InfoBlock>
 
         <InfoBlock title="Third-Party Content">
           <p>
-            StreamNyaa does not control external websites, APIs, embeds, or indexes. Availability, accuracy, and legality of third-party content are the responsibility of those third parties and the user.
+            StreamNyaa does not control external websites, embeds, or third-party listings. Availability, accuracy, and legality of third-party content are the responsibility of those third parties and the user.
           </p>
         </InfoBlock>
 
@@ -184,11 +184,11 @@ export function Disclaimer() {
         title="Disclaimer"
         eyebrow="Important"
         icon={<AlertTriangle className="w-5 h-5" />}
-        description="StreamNyaa is an independent discovery interface and is not an official source for anime publishers, streaming services, or torrent indexes."
+        description="StreamNyaa is an independent discovery interface and is not an official source for anime publishers or streaming services."
       >
         <InfoBlock title="No Hosted Media">
           <p>
-            StreamNyaa does not upload, store, host, or distribute anime episodes, movies, torrent files, or copyrighted video files. Search results, magnet links, metadata, and embedded playback options are provided through third-party services.
+            StreamNyaa does not upload, store, host, or distribute anime episodes, movies, or copyrighted video files. Search results, source links, title information, and embedded playback options are provided through third-party services.
           </p>
         </InfoBlock>
 

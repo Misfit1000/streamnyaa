@@ -97,8 +97,8 @@ export default function Dashboard() {
   const combinedMap = new Map<number, typeof myList[number]>();
   myList.forEach((anime) => combinedMap.set(anime.mal_id, anime));
   (likedAnimes || []).forEach((anime) => combinedMap.set(anime.mal_id, anime));
-  const library = Array.from(combinedMap.values());
-  const recentLibrary = library.slice(-4).reverse();
+  const collection = Array.from(combinedMap.values());
+  const recentCollection = collection.slice(-4).reverse();
   const displayName = shortName(user.email);
 
   return (
@@ -119,7 +119,7 @@ export default function Dashboard() {
             <div className="mt-6 flex flex-wrap gap-3">
               <Link to="/my-list" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90">
                 <BookOpen className="h-4 w-4" />
-                Open library
+                Open collection
               </Link>
               <Link to="/anime/popular" className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-4 py-3 text-sm font-black text-foreground backdrop-blur transition-colors hover:border-primary/40">
                 <Compass className="h-4 w-4" />
@@ -159,9 +159,9 @@ export default function Dashboard() {
       </section>
 
       <section className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={Bookmark} label="Saved" value={myList.length} detail="Bookmarked anime in your library" />
+        <StatCard icon={Bookmark} label="Saved" value={myList.length} detail="Bookmarked anime in your collection" />
         <StatCard icon={Heart} label="Favorites" value={(likedAnimes || []).length} detail="Titles marked as favorites" tone="green" />
-        <StatCard icon={Sparkles} label="Library" value={library.length} detail="Unique titles across saved and liked" tone="sky" />
+        <StatCard icon={Sparkles} label="Collection" value={collection.length} detail="Unique titles across saved and liked" tone="sky" />
         <StatCard icon={Shield} label="Role" value={isAdmin ? 'Admin' : 'User'} detail={isAdmin ? 'Site controls enabled' : 'Standard account access'} tone="amber" />
       </section>
 
@@ -173,10 +173,10 @@ export default function Dashboard() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <ActionCard to="/schedule" icon={CalendarDays} title="Release schedule" text="Check airing days, episode movement, and active shows." tone="sky" />
-            <ActionCard to="/nyaa" icon={Download} title="Source search" text="Open the cleaner torrent metadata search and filters." />
+            <ActionCard to="/nyaa" icon={Download} title="Download search" text="Open the cleaner source search and filters." />
             <ActionCard to="/blog" icon={Newspaper} title="Anime blog" text="Read the latest anime stories, guides, and updates." tone="amber" />
             <ActionCard to="/search" icon={Search} title="Search anime" text="Find title pages by name, genre, status, and score." tone="green" />
-            <ActionCard to="/torrent" icon={PlayCircle} title="Magnet player" text="Open the streaming player for a magnet link." />
+            <ActionCard to="/torrent" icon={PlayCircle} title="Stream player" text="Open the streaming player for a compatible source link." />
             <ActionCard to="/anime/popular" icon={Compass} title="Popular anime" text="Browse landing pages built for discovery." tone="sky" />
           </div>
         </div>
@@ -185,14 +185,14 @@ export default function Dashboard() {
           <div className="rounded-2xl border border-border bg-[var(--glass)] p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Recent library</p>
+                <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Recent collection</p>
                 <h2 className="mt-1 text-xl font-black">Your picks</h2>
               </div>
               <Link to="/my-list" className="text-sm font-black text-primary hover:underline">View all</Link>
             </div>
-            {recentLibrary.length ? (
+            {recentCollection.length ? (
               <div className="space-y-3">
-                {recentLibrary.map((anime) => (
+                {recentCollection.map((anime) => (
                   <Link key={anime.mal_id} to={`/anime/${anime.mal_id}`} className="group grid grid-cols-[52px_1fr] gap-3 rounded-xl border border-border bg-background/45 p-2 transition-colors hover:border-primary/40">
                     {anime.images?.jpg?.image_url || anime.images?.jpg?.large_image_url ? (
                       <img src={anime.images?.jpg?.image_url || anime.images?.jpg?.large_image_url} alt={anime.title} className="h-[72px] w-[52px] rounded-lg object-cover" loading="lazy" referrerPolicy="no-referrer" />

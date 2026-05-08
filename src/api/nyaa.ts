@@ -41,7 +41,7 @@ export async function searchNyaa(query: string, category: string = '1_2', filter
     
     const data = await response.json();
     if (!Array.isArray(data)) {
-        console.error("Nyaa API did not return an array:", data);
+        console.error("Source search did not return an array:", data);
         return [];
     }
 
@@ -86,7 +86,7 @@ export async function searchNyaa(query: string, category: string = '1_2', filter
 
     return results;
   } catch (error) {
-    console.error("Nyaa search error:", error);
+    console.error("Source search error:", error);
     return [];
   }
 }

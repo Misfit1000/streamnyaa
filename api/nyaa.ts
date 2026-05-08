@@ -16,7 +16,7 @@ export default async function handler(req: any, res: any) {
     });
     
     if (!response.ok) {
-      return res.status(response.status).json({ error: 'Failed to fetch from Nyaa' });
+      return res.status(response.status).json({ error: 'Failed to fetch source results' });
     }
 
     const xmlData = await response.text();

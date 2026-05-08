@@ -35,7 +35,7 @@ export default async function handler(req: any, res: any) {
   } catch (error: any) {
     console.error(error);
     const message = error?.status === 404
-      ? 'Create the admin_users table in Supabase before adding admins.'
+      ? 'Create the admin access table before adding admins.'
       : error?.message || 'Admin request failed.';
     return res.status(error?.status === 404 ? 409 : 500).json({ error: message });
   }

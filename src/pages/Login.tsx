@@ -31,7 +31,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
         navigate(adminOnly ? '/admin' : '/dashboard');
       } else {
         await signUp(email.trim(), password);
-        setMessage('Account created. Check your email if Supabase asks you to confirm it, then sign in.');
+        setMessage('Account created. Check your email if confirmation is required, then sign in.');
         setMode('login');
       }
     } catch (authError) {
@@ -87,7 +87,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
             </h1>
             <p className="mt-5 max-w-lg text-base leading-8 text-white/72">
               {adminOnly
-                ? 'Sign in through the private admin entry point to manage blog articles, storage, and trusted admin users.'
+                ? 'Sign in through the private admin entry point to manage blog articles, publishing tools, and trusted admin users.'
                 : 'Keep your saved pages close and use one clean sign-in for the features being added around StreamNyaa.'}
             </p>
           </div>
@@ -101,7 +101,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
               : [
                   ['Saved anime list', 'Keep watch targets easier to reach from your dashboard.'],
                   ['Quick shortcuts', 'Jump into schedules, downloads, blog posts, and discovery pages.'],
-                  ['Secure session', 'Your browser keeps a private Supabase session until you sign out.'],
+                  ['Secure session', 'Your browser keeps a private sign-in session until you sign out.'],
                 ]).map(([title, body]) => (
               <div key={title} className="rounded-xl border border-white/12 bg-black/35 p-4 backdrop-blur">
                 <div className="flex items-start gap-3">

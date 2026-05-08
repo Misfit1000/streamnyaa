@@ -3,8 +3,8 @@ import Seo from './Seo';
 
 const routeMeta: Record<string, { title: string; description: string }> = {
   '/': {
-    title: 'StreamNyaa',
-    description: 'Discover anime, track release schedules, browse seasonal shows, follow episode updates, and search anime metadata with StreamNyaa.',
+    title: 'StreamNyaa - Anime Downloads, Schedules and Episode Updates',
+    description: 'Find anime downloads, track release schedules, browse seasonal shows, follow episode updates, and search anime source options with StreamNyaa.',
   },
   '/search': {
     title: 'Browse Anime by Title, Genre and Status | StreamNyaa',
@@ -15,12 +15,12 @@ const routeMeta: Record<string, { title: string; description: string }> = {
     description: 'Track upcoming and currently airing anime episodes with a simple release schedule view.',
   },
   '/nyaa': {
-    title: 'Anime Torrent Metadata Search | StreamNyaa',
-    description: 'Search public Nyaa RSS metadata, compare seeders and file sizes, and open magnet links with your preferred client.',
+    title: 'Anime Download Source Search | StreamNyaa',
+    description: 'Search anime download source metadata, compare quality badges, seed counts, file sizes, and open compatible source links with your preferred client.',
   },
   '/torrent': {
-    title: 'Magnet Link Player | StreamNyaa',
-    description: 'Paste a magnet URI and try browser-based playback options when compatible sources are available.',
+    title: 'Browser Stream Player | StreamNyaa',
+    description: 'Paste a compatible source link and try browser-based playback options when compatible sources are available.',
   },
   '/my-list': {
     title: 'My Anime List | StreamNyaa',
@@ -32,11 +32,11 @@ const routeMeta: Record<string, { title: string; description: string }> = {
   },
   '/about': {
     title: 'About StreamNyaa',
-    description: 'Learn what StreamNyaa is, how it works, and how it uses public anime metadata and third-party services.',
+    description: 'Learn what StreamNyaa is and how it helps with anime discovery, schedules, and download source search.',
   },
   '/privacy-policy': {
     title: 'Privacy Policy | StreamNyaa',
-    description: 'Read how StreamNyaa handles local storage, analytics, advertising partners, third-party embeds, and external services.',
+    description: 'Read how StreamNyaa handles browser preferences, analytics, advertising partners, third-party embeds, and external services.',
   },
   '/terms': {
     title: 'Terms of Use | StreamNyaa',
@@ -56,7 +56,7 @@ export default function RouteSeo() {
       : pathname.startsWith('/manga/')
         ? 'Manga Details | StreamNyaa'
         : 'StreamNyaa',
-    description: 'StreamNyaa helps users discover anime, track schedules, browse metadata, and search public anime torrent indexes.',
+    description: 'StreamNyaa helps users discover anime, track schedules, browse metadata, and search anime download source options.',
   };
 
   return <Seo title={meta.title} description={meta.description} canonicalPath={pathname} />;

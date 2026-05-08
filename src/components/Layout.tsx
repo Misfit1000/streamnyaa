@@ -33,8 +33,8 @@ export default function Layout() {
             <span className="font-bold text-lg text-foreground tracking-tight">StreamNyaa</span>
           </div>
           <p className="text-sm max-w-2xl mx-auto leading-relaxed">
-            StreamNyaa is an anime discovery interface that connects users with public metadata, release schedules, and third-party search results.
-            We do not host or store anime video files, torrent files, or copyrighted media on our servers.
+            StreamNyaa is an anime download and discovery interface that connects users with title information, release schedules, and third-party source results.
+            We do not host, upload, or distribute anime video files or copyrighted media.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-semibold">
             <Link to="/blog" className="hover:text-primary transition-colors">Blog</Link>
@@ -43,7 +43,7 @@ export default function Layout() {
             <Link to="/terms" className="hover:text-primary transition-colors">Terms</Link>
             <Link to="/disclaimer" className="hover:text-primary transition-colors">Disclaimer</Link>
           </div>
-          <p className="text-xs mt-4 opacity-60">Copyright {new Date().getFullYear()} StreamNyaa. Not affiliated with Nyaa.si.</p>
+          <p className="text-xs mt-4 opacity-60">Copyright {new Date().getFullYear()} StreamNyaa. Independent anime discovery project.</p>
         </div>
       </footer>
     </div>

@@ -131,8 +131,8 @@ export default function AnimeDownloads() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
       <Seo
-        title={`${anime.title} Episode Downloads and Torrent Search | StreamNyaa`}
-        description={`Find ${anime.title} episode search results, torrent metadata, file sizes, seeders, and download options on StreamNyaa.`}
+        title={`${anime.title} Episode Downloads and Source Search | StreamNyaa`}
+        description={`Find ${anime.title} episode search results, source metadata, file sizes, seed counts, and download options on StreamNyaa.`}
         canonicalPath={animePath(anime, '/downloads')}
         image={anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url}
       />
@@ -249,7 +249,7 @@ export default function AnimeDownloads() {
             <div>
               <p className="font-semibold text-primary">Currently airing</p>
               <p className="mt-1">
-                Full batch torrents usually appear after a season finishes, so this section is showing available individual episode releases for now.
+                Full batch releases usually appear after a season finishes, so this section is showing available individual episode releases for now.
               </p>
             </div>
           </div>
@@ -260,9 +260,9 @@ export default function AnimeDownloads() {
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
           <div>
-            <p className="font-semibold text-yellow-500">Mobile torrent warning</p>
+            <p className="font-semibold text-yellow-500">Mobile download note</p>
             <p className="mt-1">
-              Mobile browsers may not stream or download torrents directly. Use Open Magnet with a torrent app, or copy the magnet into a cloud player.
+              Mobile browsers may not open every download source directly. Use Open Link with a compatible app, or copy the source link into a cloud player.
             </p>
           </div>
         </div>
@@ -271,14 +271,14 @@ export default function AnimeDownloads() {
       {torrentsLoading ? (
         <div className="py-20 flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
-            <p className="text-muted-foreground font-medium">Searching Nyaa for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {showAiringEpisodeResults ? 'episode releases' : downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'torrents'}...</p>
+            <p className="text-muted-foreground font-medium">Searching sources for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {showAiringEpisodeResults ? 'episode releases' : downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'releases'}...</p>
         </div>
       ) : sortedTorrents.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-12 rounded-3xl text-center flex flex-col items-center">
           <HardDrive className="w-16 h-16 text-muted-foreground mb-4" />
-          <p className="text-xl font-bold text-foreground mb-2">No Torrents Found</p>
+          <p className="text-xl font-bold text-foreground mb-2">No Sources Found</p>
           <p className="text-muted-foreground">
-            No torrents were found for "{anime.title}" with the selected filters. Try a different filter or search.
+            No source results were found for "{anime.title}" with the selected filters. Try a different filter or search.
           </p>
         </div>
       ) : (
@@ -322,10 +322,10 @@ export default function AnimeDownloads() {
                   <a
                     href={torrent.magnet}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm"
-                    title="Open magnet in torrent app"
+                    title="Open source link"
                   >
                     <Download className="w-4 h-4" />
-                    Open Magnet
+                    Open Link
                   </a>
                   <Link
                     to={`/torrent?magnet=${encodeURIComponent(torrent.magnet)}`}

@@ -73,8 +73,8 @@ export default function Navbar() {
             <Link to="/my-list" className="hover:text-foreground transition-colors">My List</Link>
             <Link to="/schedule" className="hover:text-foreground transition-colors">Schedule</Link>
             <Link to="/blog" className="hover:text-foreground transition-colors">Blog</Link>
-            <Link to="/nyaa" className="hover:text-foreground transition-colors text-primary font-bold">Torrents</Link>
-            <Link to="/torrent" className="hover:text-foreground transition-colors">Player</Link>
+            <Link to="/nyaa" className="hover:text-foreground transition-colors text-primary font-bold">Downloads</Link>
+            <Link to="/torrent" className="hover:text-foreground transition-colors">Stream</Link>
           </div>
         </div>
 
@@ -246,8 +246,8 @@ export default function Navbar() {
               <Link to="/blog" className="hover:text-primary transition-colors py-2 border-b border-border/50">Blog</Link>
               <Link to={user ? '/dashboard' : '/login'} className="hover:text-primary transition-colors py-2 border-b border-border/50">{user ? 'Dashboard' : 'Login'}</Link>
               {isAdmin ? <Link to="/admin" className="hover:text-primary transition-colors py-2 border-b border-border/50">Admin</Link> : null}
-              <Link to="/nyaa" className="hover:text-primary transition-colors py-2 border-b border-border/50 text-primary font-bold">Torrents</Link>
-              <Link to="/torrent" className="hover:text-primary transition-colors py-2 border-b border-border/50">Player</Link>
+              <Link to="/nyaa" className="hover:text-primary transition-colors py-2 border-b border-border/50 text-primary font-bold">Downloads</Link>
+              <Link to="/torrent" className="hover:text-primary transition-colors py-2 border-b border-border/50">Stream</Link>
             </div>
           </div>
         </div>

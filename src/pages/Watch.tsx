@@ -50,8 +50,18 @@ export default function Watch() {
   const changeEp = (epNum: number) => {
     setCurrentEp(epNum);
     setSearchParams({ ep: epNum.toString() });
+    if (fallbackTimer.current) {
+      clearTimeout(fallbackTimer.current);
+      fallbackTimer.current = null;
+    }
+    if (playerRef.current) {
+      playerRef.current.innerHTML = '';
+    }
+    setProvider('webtor');
     setIsPlaying(false);
     setActiveMagnet('');
+    setShowFallback(false);
+    setIframeKey(prev => prev + 1);
   };
 
   // Player state
@@ -72,7 +82,7 @@ export default function Watch() {
 
   const anime = animeData?.data;
 
-  // Search Nyaa when anime loads or episode changes
+  // Search sources when anime loads or episode changes
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
     queryKey: ['nyaa', anime?.title, currentEp, searchParams.get('type')],
     queryFn: async () => {
@@ -85,7 +95,7 @@ export default function Watch() {
 
       const cleanTitle = (t: string) => {
         if (!t) return '';
-        // Remove seasons like "Season 2", "Part 2", "2nd Season" which Nyaa uploaders often omit 
+        // Remove seasons like "Season 2", "Part 2", "2nd Season" which source listings often omit 
         // or format differently, but let's just make it alphanumeric for safer matching.
         // Actually, just removing special characters works best.
         let cleaned = t.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -139,39 +149,48 @@ export default function Watch() {
 
   useEffect(() => {
     if (isPlaying && activeMagnet && provider === 'webtor' && playerRef.current) {
-      playerRef.current.innerHTML = '';
-      const playerId = `webtor-player-${iframeKey}`;
-      playerRef.current.id = playerId;
+      const playerEl = playerRef.current;
+      playerEl.innerHTML = '';
+      const playerId = `webtor-player-${currentEp}-${iframeKey}`;
+      playerEl.id = playerId;
 
-      const webtorConfig = {
-        id: playerId,
-        magnet: activeMagnet,
-        poster: anime?.images?.jpg?.large_image_url || '',
-        width: '100%',
-        height: '100%',
-        theme: 'dark',
-        lang: 'en',
-        features: {
-          p2pProgress: true,
-          download: false,
-          settings: true,
-          fullscreen: true,
-          playpause: true,
-          currentTime: true,
-          timeline: true,
-          duration: true,
-          volume: true,
-          chromecast: true,
-        },
-        on: function(e: any) {
-          if (e.name === (window as any).webtor?.TORRENT_ERROR) {
-            console.error('Torrent error!');
+      const frame = window.requestAnimationFrame(() => {
+        const { height, width } = playerEl.getBoundingClientRect();
+        const webtorConfig = {
+          id: playerId,
+          magnet: activeMagnet,
+          poster: anime?.images?.jpg?.large_image_url || '',
+          width: width ? `${Math.round(width)}px` : '100%',
+          height: `${Math.max(Math.round(height), 320)}px`,
+          theme: 'dark',
+          lang: 'en',
+          features: {
+            p2pProgress: true,
+            download: false,
+            settings: true,
+            fullscreen: true,
+            playpause: true,
+            currentTime: true,
+            timeline: true,
+            duration: true,
+            volume: true,
+            chromecast: true,
+          },
+          on: function(e: any) {
+            if (e.name === (window as any).webtor?.TORRENT_ERROR) {
+              console.error('Source playback error!');
+            }
           }
-        }
-      };
+        };
 
-      (window as any).webtor = (window as any).webtor || [];
-      (window as any).webtor.push(webtorConfig);
+        (window as any).webtor = (window as any).webtor || [];
+        (window as any).webtor.push(webtorConfig);
+      });
+
+      return () => {
+        window.cancelAnimationFrame(frame);
+        playerEl.innerHTML = '';
+      };
     }
     
     // Cleanup URL listeners or other player state if necessary
@@ -266,7 +285,7 @@ export default function Watch() {
     <div className="container mx-auto px-4 py-6">
       <Seo
         title={`Watch ${anime.title} Episode ${currentEp} | StreamNyaa`}
-        description={`Watch ${anime.title} episode ${currentEp}, view torrent metadata, streaming options, and anime episode information on StreamNyaa.`}
+        description={`Watch ${anime.title} episode ${currentEp}, view source metadata, streaming options, and anime episode information on StreamNyaa.`}
         canonicalPath={watchPath(anime)}
       />
       <div className="flex flex-col lg:flex-row gap-6">
@@ -317,10 +336,10 @@ export default function Watch() {
                       'No streams found automatically. Try selecting below.'
                     )}
                   </p>
-                  <p className="text-white/30 text-xs mt-3 bg-black/40 px-3 py-1 rounded-full backdrop-blur-md">Powered by WebTorrent</p>
+                  <p className="text-white/30 text-xs mt-3 bg-black/40 px-3 py-1 rounded-full backdrop-blur-md">Browser stream player</p>
                 </div>
               ) : provider === 'webtor' ? (
-                <div ref={playerRef} className="webtor absolute inset-0 w-full h-full z-10"></div>
+                <div key={`webtor-${currentEp}-${iframeKey}`} ref={playerRef} className="webtor absolute inset-0 w-full h-full z-10"></div>
               ) : (
                 <iframe
                   key={`${provider}-${activeMagnet}-${iframeKey}`}
@@ -339,7 +358,7 @@ export default function Watch() {
                 <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
                 <div>
                   <h4 className="text-sm font-semibold text-yellow-500 mb-1">Taking too long to load?</h4>
-                  <p className="text-xs text-muted-foreground">The torrent might have low seeders, or the cloud provider is busy.</p>
+                  <p className="text-xs text-muted-foreground">The source might have low seed count, or the cloud provider is busy.</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -352,6 +371,7 @@ export default function Watch() {
                 <button 
                   onClick={() => {
                     setProvider('magnetplayer');
+                    setIframeKey(prev => prev + 1);
                   }}
                   className="flex items-center gap-2 px-3 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-medium text-primary-foreground transition-colors"
                 >
@@ -377,7 +397,8 @@ export default function Watch() {
                 <select
                   value={provider}
                   onChange={(e) => {
-                    setProvider(e.target.value);
+                    const nextProvider = e.target.value;
+                    setProvider(nextProvider);
                     if (isPlaying) {
                       setIframeKey(prev => prev + 1);
                       startFallbackTimer();
@@ -393,7 +414,7 @@ export default function Watch() {
             )}
           </div>
 
-          {/* Torrents Section */}
+          {/* Sources Section */}
           <div className="mt-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
               <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
@@ -418,9 +439,9 @@ export default function Watch() {
               <div className="flex items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
                 <div>
-                  <p className="font-semibold text-yellow-500">Mobile torrent warning</p>
+                  <p className="font-semibold text-yellow-500">Mobile playback note</p>
                   <p className="mt-1">
-                    Mobile browsers may not open torrent streams directly. Use Copy Magnet, Open in App, or a cloud player if playback does not start.
+                    Mobile browsers may not open every source directly. Use Copy Link, Open in App, or a cloud player if playback does not start.
                   </p>
                 </div>
               </div>
@@ -466,15 +487,15 @@ export default function Watch() {
                             }
                           }}
                           className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-105 active:scale-95"
-                          title="Copy Magnet Link"
+                          title="Copy source link"
                         >
                           <LinkIcon className="w-4 h-4" />
-                          <span className="hidden sm:inline">Copy Magnet</span>
+                          <span className="hidden sm:inline">Copy Link</span>
                         </button>
                         <a 
                           href={torrent.magnet}
                           className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-secondary text-secondary-foreground hover:bg-secondary/80 px-4 py-2.5 rounded-lg text-sm font-bold transition-all hover:scale-105 active:scale-95"
-                          title="Open Torrent directly or use Magnet Client to Download"
+                          title="Open source link in a compatible app"
                         >
                           <Download className="w-4 h-4" />
                           <span className="hidden sm:inline">Open in App</span>

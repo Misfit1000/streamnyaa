@@ -24,7 +24,7 @@ async function adminTableStatus() {
     return { ready: true, message: '' };
   } catch (error: any) {
     if (error?.status === 404) {
-      return { ready: false, message: 'Create the admin_users table in Supabase to add admins from the dashboard.' };
+      return { ready: false, message: 'Create the admin access table before adding admins from the dashboard.' };
     }
     return { ready: false, message: error?.message || 'Admin table could not be checked.' };
   }
@@ -53,7 +53,7 @@ export default async function handler(req: any, res: any) {
         tableReady: tableStatus.ready,
         setupMessage: tableStatus.message,
       },
-      storage: {
+      archive: {
         supabaseConfigured: Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)),
         githubFallbackConfigured: Boolean(process.env.GITHUB_ARTICLE_TOKEN || process.env.GH_ARTICLE_TOKEN),
       },

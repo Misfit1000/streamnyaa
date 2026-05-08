@@ -68,7 +68,7 @@ export default function TorrentPlayer() {
         },
         on: function(e: any) {
           if (e.name === (window as any).webtor?.TORRENT_ERROR) {
-            console.error('Torrent error!');
+            console.error('Source playback error!');
           }
         }
       };
@@ -143,28 +143,28 @@ export default function TorrentPlayer() {
              <ArrowLeft className="w-4 h-4" /> Back
           </button>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
-            <h1 className="text-3xl font-black text-foreground">Torrent Stream</h1>
+            <h1 className="text-3xl font-black text-foreground">Source Stream Player</h1>
             {isPlaying && (
               <a 
                 href={activeUrl}
                 className="flex items-center gap-2 bg-primary/20 text-primary hover:bg-primary/30 px-4 py-2 rounded-xl font-medium text-sm transition-colors border border-primary/30 w-fit"
               >
                 <Download className="w-4 h-4" />
-                Open in Torrent App
+                Open in App
               </a>
             )}
           </div>
           <p className="text-muted-foreground text-sm max-w-2xl">
-            Stream directly from a Magnet URI in your browser.<br/>
-            <span className="text-yellow-500 font-medium">Note:</span> Connection speed depends entirely on the torrent's seeder count.
+            Stream directly from a compatible source link in your browser.<br/>
+            <span className="text-yellow-500 font-medium">Note:</span> Connection speed depends on source health and seed count.
           </p>
           <div className="mt-4 max-w-2xl rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-muted-foreground md:hidden">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
               <div>
-                <p className="font-semibold text-yellow-500">Mobile torrent warning</p>
+                <p className="font-semibold text-yellow-500">Mobile playback note</p>
                 <p className="mt-1">
-                  Some mobile browsers cannot stream or download torrents directly. Use the magnet link with a torrent app, cloud player, or desktop browser if playback does not start.
+                  Some mobile browsers cannot open every source directly. Use the source link with a compatible app, cloud player, or desktop browser if playback does not start.
                 </p>
               </div>
             </div>
@@ -177,7 +177,7 @@ export default function TorrentPlayer() {
               type="text"
               value={magnetUrl}
               onChange={(e) => setMagnetUrl(e.target.value)}
-              placeholder="Paste your magnet link here..."
+              placeholder="Paste your compatible source link here..."
               className="flex-1 bg-[var(--glass)] border border-[var(--glass-border)] px-4 py-3 rounded-xl text-foreground text-sm focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground"
             />
           </div>
@@ -208,7 +208,7 @@ export default function TorrentPlayer() {
               <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
               <div>
                 <h4 className="text-sm font-semibold text-yellow-500 mb-1">Taking too long to load?</h4>
-                <p className="text-xs text-muted-foreground">The torrent might have low seeders, or the cloud provider is busy.</p>
+                <p className="text-xs text-muted-foreground">The source might have low seed count, or the cloud provider is busy.</p>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">

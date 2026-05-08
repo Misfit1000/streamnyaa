@@ -30,7 +30,7 @@ export default function NyaaSearchPage() {
   const faqItems = [
     {
       question: 'What do the source badges mean?',
-      answer: 'Badges summarize visible torrent metadata such as trusted release groups, high seeder counts, HEVC/x265 encodes, dual audio, batch packs, and individual episodes.',
+      answer: 'Badges summarize visible source details such as trusted release groups, high seed counts, HEVC/x265 encodes, dual audio, batch packs, and individual episodes.',
     },
     {
       question: 'How should I pick a source?',
@@ -38,15 +38,15 @@ export default function NyaaSearchPage() {
     },
     {
       question: 'Does StreamNyaa host these files?',
-      answer: 'No. This page displays public torrent metadata and magnet links from third-party sources; StreamNyaa does not host anime files.',
+      answer: 'No. This page displays source metadata and compatible source links from third-party services; StreamNyaa does not host anime files.',
     },
   ];
 
   return (
     <div className="container mx-auto px-4 py-8">
       <Seo
-        title="Anime Torrent Metadata Search | StreamNyaa"
-        description="Search public anime torrent metadata, compare source quality badges, filter by trusted releases, high seeders, HEVC, dual audio, batch, or episode results."
+        title="Anime Download Source Search | StreamNyaa"
+        description="Search anime download source metadata, compare quality badges, filter by trusted releases, high seed counts, HEVC, dual audio, batch, or episode results."
         canonicalPath="/nyaa"
         jsonLd={{
           '@context': 'https://schema.org',
@@ -57,10 +57,10 @@ export default function NyaaSearchPage() {
       <div className="flex flex-col items-center mb-8">
         <h1 className="text-3xl font-black mb-4 flex items-center gap-2">
             <HardDrive className="w-8 h-8 text-primary" />
-            Anime Torrents Search
+            Anime Download Search
         </h1>
         <p className="text-muted-foreground mb-8 text-center max-w-xl">
-          Search public anime torrent metadata, open magnet links in your preferred client, or try browser-compatible streaming providers.
+          Search anime source metadata, open compatible source links in your preferred client, or try browser-compatible streaming providers.
         </p>
 
         <form onSubmit={handleSearch} className="w-full max-w-3xl flex flex-col md:flex-row gap-4 mb-6">
@@ -78,7 +78,7 @@ export default function NyaaSearchPage() {
             type="submit"
             className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-4 rounded-xl font-bold transition-transform hover:scale-105 shrink-0"
           >
-            Search Nyaa
+            Search Sources
           </button>
         </form>
 
@@ -120,9 +120,9 @@ export default function NyaaSearchPage() {
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
           <div>
-            <p className="font-semibold text-yellow-500">Mobile torrent warning</p>
+            <p className="font-semibold text-yellow-500">Mobile download note</p>
             <p className="mt-1">
-              Mobile browsers may not stream or download torrents directly. Use Open Magnet with a torrent app, or copy the magnet into a cloud player.
+              Mobile browsers may not open every download source directly. Use Open Link with a compatible app, or copy the source link into a cloud player.
             </p>
           </div>
         </div>
@@ -163,7 +163,7 @@ export default function NyaaSearchPage() {
         </div>
       ) : filteredTorrents.length === 0 ? (
         <div className="text-center py-20">
-          <p className="text-muted-foreground text-lg">No torrents found. Try different filters or terms.</p>
+          <p className="text-muted-foreground text-lg">No sources found. Try different filters or terms.</p>
         </div>
       ) : (
         <div className="space-y-4 max-w-5xl mx-auto">
@@ -199,10 +199,10 @@ export default function NyaaSearchPage() {
                   <a
                     href={torrent.magnet}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm"
-                    title="Open magnet in torrent app"
+                    title="Open source link"
                   >
                     <Download className="w-4 h-4" />
-                    Open Magnet
+                    Open Link
                   </a>
                   <button
                     onClick={() => navigate(`/torrent?magnet=${encodeURIComponent(torrent.magnet)}`)}
@@ -218,7 +218,7 @@ export default function NyaaSearchPage() {
       )}
 
       <section className="mx-auto mt-12 max-w-5xl border-t border-border pt-8">
-        <h2 className="text-2xl font-black text-foreground">Anime torrent search FAQ</h2>
+        <h2 className="text-2xl font-black text-foreground">Anime download search FAQ</h2>
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           {faqItems.map((item) => (
             <div key={item.question} className="rounded-2xl border border-border bg-secondary/20 p-4">

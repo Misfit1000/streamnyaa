@@ -5,10 +5,10 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  Archive,
   CheckCircle2,
   Clock,
   Crown,
-  Database,
   FileText,
   Gauge,
   KeyRound,
@@ -161,8 +161,8 @@ export default function AdminDashboard() {
     }
   };
 
-  const supabaseReady = Boolean(data?.storage?.supabaseConfigured);
-  const githubReady = Boolean(data?.storage?.githubFallbackConfigured);
+  const archiveReady = Boolean(data?.archive?.supabaseConfigured);
+  const backupReady = Boolean(data?.archive?.githubFallbackConfigured);
   const tableReady = Boolean(data?.admins?.tableReady);
   const articleCount = data?.generatedBlogArticles ?? 'Unknown';
 
@@ -179,7 +179,7 @@ export default function AdminDashboard() {
             </div>
             <h1 className="max-w-3xl text-3xl font-black tracking-tight md:text-5xl">StreamNyaa operations</h1>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
-              Signed in as <span className="font-bold text-foreground">{user.email}</span>. Manage article generation, storage health, admin access, and publishing signals from one focused screen.
+              Signed in as <span className="font-bold text-foreground">{user.email}</span>. Manage article generation, archive health, admin access, and publishing signals from one focused screen.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <button onClick={() => triggerGemini('one')} disabled={Boolean(busyAction)} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:opacity-60">
@@ -209,8 +209,8 @@ export default function AdminDashboard() {
             </div>
             <div className="mt-5 grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-border bg-background/50 p-3">
-                <p className="text-xs text-muted-foreground">Supabase</p>
-                <p className="mt-1 text-sm font-black text-foreground">{supabaseReady ? 'Connected' : 'Missing'}</p>
+                <p className="text-xs text-muted-foreground">Archive</p>
+                <p className="mt-1 text-sm font-black text-foreground">{archiveReady ? 'Connected' : 'Missing'}</p>
               </div>
               <div className="rounded-xl border border-border bg-background/50 p-3">
                 <p className="text-xs text-muted-foreground">Admins</p>
@@ -230,10 +230,10 @@ export default function AdminDashboard() {
       ) : (
         <>
           <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={Database} label="Articles" value={articleCount} detail="Generated blog posts in storage" />
+            <MetricCard icon={Archive} label="Articles" value={articleCount} detail="Generated blog posts in the archive" />
             <MetricCard icon={Users} label="Admins" value={adminEmails.length} detail="Approved control-room users" tone="sky" />
             <MetricCard icon={Clock} label="Gemini cron" value="Daily" detail={data?.cronSchedule || 'Scheduled generation'} tone="amber" />
-            <MetricCard icon={Shield} label="Storage" value={supabaseReady ? 'Ready' : 'Check'} detail={githubReady ? 'Fallback configured' : 'Fallback not configured'} tone="green" />
+            <MetricCard icon={Shield} label="Archive" value={archiveReady ? 'Ready' : 'Check'} detail={backupReady ? 'Backup path configured' : 'Backup path not configured'} tone="green" />
           </section>
 
           {actionMessage ? <div className="mt-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm font-semibold text-emerald-300">{actionMessage}</div> : null}
@@ -248,7 +248,7 @@ export default function AdminDashboard() {
                       <WandSparkles className="h-5 w-5" />
                     </div>
                     <h2 className="text-2xl font-black tracking-tight">Article generator</h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">Create fresh server-side blog articles and archive them to storage.</p>
+                    <p className="mt-2 max-w-2xl text-sm leading-7 text-muted-foreground">Create fresh blog articles and save them to the publishing archive.</p>
                   </div>
                   <span className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-black uppercase tracking-wider text-primary">
                     <Sparkles className="h-3.5 w-3.5" />
@@ -278,28 +278,28 @@ export default function AdminDashboard() {
               <div className="rounded-2xl border border-border bg-[var(--glass)] p-5 md:p-6">
                 <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h2 className="text-2xl font-black tracking-tight">Storage health</h2>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Article persistence and admin access checks.</p>
+                    <h2 className="text-2xl font-black tracking-tight">Publishing archive</h2>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">Article saving and admin access checks.</p>
                   </div>
-                  <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs font-black ${statusTone(supabaseReady && tableReady)}`}>
-                    {supabaseReady && tableReady ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-                    {supabaseReady && tableReady ? 'Healthy' : 'Needs attention'}
+                  <span className={`inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs font-black ${statusTone(archiveReady && tableReady)}`}>
+                    {archiveReady && tableReady ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                    {archiveReady && tableReady ? 'Healthy' : 'Needs attention'}
                   </span>
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="rounded-xl border border-border bg-background/45 p-4">
                     <p className="flex items-center gap-2 text-sm font-black text-foreground">
-                      {supabaseReady ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />}
-                      Supabase
+                      {archiveReady ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />}
+                      Article archive
                     </p>
-                    <p className="mt-2 text-sm text-muted-foreground">{supabaseReady ? 'Connected' : 'Missing'}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{archiveReady ? 'Connected' : 'Missing'}</p>
                   </div>
                   <div className="rounded-xl border border-border bg-background/45 p-4">
                     <p className="flex items-center gap-2 text-sm font-black text-foreground">
-                      {githubReady ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />}
-                      GitHub fallback
+                      {backupReady ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <AlertTriangle className="h-4 w-4 text-amber-300" />}
+                      Backup path
                     </p>
-                    <p className="mt-2 text-sm text-muted-foreground">{githubReady ? 'Connected' : 'Missing'}</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{backupReady ? 'Connected' : 'Missing'}</p>
                   </div>
                   <div className="rounded-xl border border-border bg-background/45 p-4">
                     <p className="flex items-center gap-2 text-sm font-black text-foreground">

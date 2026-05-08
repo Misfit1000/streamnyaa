@@ -20,7 +20,7 @@ export function envAdminEmails() {
 export async function fetchSupabaseUser(token) {
   const url = supabaseBaseUrl();
   const key = supabasePublicKey();
-  if (!url || !key) throw new Error('Supabase auth is not configured');
+  if (!url || !key) throw new Error('Authentication is not configured');
 
   const response = await fetch(`${url}/auth/v1/user`, {
     headers: {
@@ -37,7 +37,7 @@ export async function fetchSupabaseUser(token) {
 export async function supabaseRest(pathname, options = {}) {
   const url = supabaseBaseUrl();
   const key = supabaseSecretKey();
-  if (!url || !key) throw new Error('Supabase server key is not configured');
+  if (!url || !key) throw new Error('Admin access is not configured');
 
   const response = await fetch(`${url}/rest/v1/${pathname}`, {
     ...options,
@@ -59,7 +59,7 @@ export async function supabaseRest(pathname, options = {}) {
   }
 
   if (!response.ok) {
-    const error = new Error(data?.message || text || 'Supabase request failed');
+    const error = new Error(data?.message || text || 'Admin request failed');
     error.status = response.status;
     throw error;
   }

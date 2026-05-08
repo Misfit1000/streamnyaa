@@ -148,7 +148,7 @@ export default function AnimeDetails() {
           name: `Where can I find ${anime.title} downloads?`,
           acceptedAnswer: {
             '@type': 'Answer',
-            text: `The ${anime.title} downloads page on StreamNyaa helps search public torrent metadata, including episode results, batch results, file sizes, seeders, and sub or dub filters.`,
+            text: `The ${anime.title} downloads page on StreamNyaa helps search source metadata, including episode results, batch results, file sizes, seed counts, and sub or dub filters.`,
           },
         },
       ],
@@ -343,7 +343,7 @@ export default function AnimeDetails() {
               <div>
                 <h3 className="text-lg font-bold mb-2">Watch and download context</h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  StreamNyaa organizes {anime.title} with watch links, episode navigation, related anime, recommendations, and download search tools. The downloads page can search public torrent metadata by episode, batch, quality, subtitle, or dub preference, while this page keeps the anime details and episode order easy to scan.
+                  StreamNyaa organizes {anime.title} with watch links, episode navigation, related anime, recommendations, and download search tools. The downloads page can search source metadata by episode, batch, quality, subtitle, or dub preference, while this page keeps the anime details and episode order easy to scan.
                 </p>
               </div>
             </section>
@@ -557,7 +557,7 @@ export default function AnimeDetails() {
                   },
                   {
                     question: `Can I find ${anime.title} episode downloads?`,
-                    answer: `Yes. Open the downloads page to search public torrent metadata for ${anime.title}, including episode results, batch results, file sizes, seeders, and sub or dub filters.`,
+                    answer: `Yes. Open the downloads page to search source metadata for ${anime.title}, including episode results, batch results, file sizes, seed counts, and sub or dub filters.`,
                   },
                 ].map((item) => (
                   <div key={item.question} className="rounded-xl border border-[var(--glass-border)] bg-secondary/20 p-4">
