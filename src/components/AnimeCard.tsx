@@ -35,7 +35,8 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           src={anime.images.jpg.large_image_url || anime.images.jpg.image_url}
           alt={anime.title}
           className="w-full h-full object-cover origin-center transition-transform duration-300 group-hover:scale-105"
-          style={{ imageRendering: 'high-quality' }}
+          // FIX: Changed 'high-quality' to 'auto' to fix the TypeScript/Vercel build error
+          style={{ imageRendering: 'auto' }} 
           referrerPolicy="no-referrer"
           loading="lazy"
         />
