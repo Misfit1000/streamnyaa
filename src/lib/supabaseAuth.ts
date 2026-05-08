@@ -91,7 +91,8 @@ export async function signInWithPassword(email: string, password: string) {
 }
 
 export async function signUpWithPassword(email: string, password: string) {
-  const data = await authFetch('signup', {
+  const redirectTo = 'https://www.streamnyaa.xyz/login';
+  const data = await authFetch(`signup?redirect_to=${encodeURIComponent(redirectTo)}`, {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
