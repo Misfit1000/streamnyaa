@@ -457,56 +457,56 @@ function trendTopicTitle(item: BlogMediaItem, type: string, avoidPatterns: Set<s
   const seed = `${item.mal_id || item.id || title}-${type}`;
   if (type === 'missed-scheduled-airing') {
     return pickTemplate(seed, [
-      `${title} schedule check: why the next episode may be later`,
-      `${title}'s next episode timing needs a closer look`,
-      `What changed around ${title}'s latest airing window`,
-      `${title} has a schedule gap viewers should know about`,
-      `${title}'s airing calendar looks different this week`,
+      `${title} episode delay: what changed in the airing schedule`,
+      `${title} next episode update: why the release may be later`,
+      `${title} airing schedule change explained for this week`,
+      `${title} episode release gap: what viewers should know`,
+      `${title} did not air as expected: latest schedule details`,
     ], avoidPatterns);
   }
   if (type === 'upcoming-popular-adaptation-confirmed') {
     return pickTemplate(seed, [
-      `${title} anime update: confirmed details to know`,
-      `What ${title}'s anime confirmation tells us so far`,
-      `${title}'s upcoming anime has a clearer picture now`,
-      `${title} adaptation preview: premise, studio, and early signals`,
-      `Why ${title}'s confirmed anime is worth tracking early`,
+      `${title} anime adaptation confirmed: story, studio, and early details`,
+      `${title} anime preview: what we know about the new adaptation`,
+      `${title} anime announcement explained: confirmed details so far`,
+      `${title} adaptation guide: premise, cast notes, and release signals`,
+      `${title} is getting an anime: why the adaptation matters`,
     ], avoidPatterns);
   }
   if (type === 'why-anime-is-doing-poorly') {
     return pickTemplate(seed, [
-      `Why ${title}'s reception looks shaky right now`,
-      `${title}'s weak score raises a fair question`,
-      `Where ${title} may be losing viewers this season`,
-      `The problem signals around ${title}'s current run`,
-      `${title} has visibility, but the response is not matching it`,
+      `Why ${title} is struggling with viewers this season`,
+      `${title} review signals: why the anime is not landing for everyone`,
+      `Why ${title}'s score is lower than expected right now`,
+      `${title} reception explained: what may be holding it back`,
+      `${title} has hype, but viewer response tells a different story`,
     ], avoidPatterns);
   }
   if (type === 'popular-anime-with-mixed-reception') {
     return pickTemplate(seed, [
-      `${title} is popular, but its score points to split reactions`,
-      `The split reaction around ${title} is the real story`,
-      `${title} has viewers watching, but the reception looks divided`,
-      `Why ${title}'s popularity and score are telling different stories`,
-      `${title} is visible, but not everyone is sold yet`,
+      `${title} is popular, but reactions are more divided than expected`,
+      `${title} mixed reception explained: popularity vs viewer score`,
+      `Why ${title}'s popularity and rating tell different stories`,
+      `${title} viewer response: why the anime is splitting opinions`,
+      `${title} has attention, but the reception is not simple`,
     ], avoidPatterns);
   }
   if (type === 'why-this-anime-is-doing-well') {
     return pickTemplate(seed, [
-      `What ${title} is getting right this season`,
-      `${title} is building momentum with a stronger score signal`,
-      `Why ${title}'s current run is landing with viewers`,
-      `${title}'s score and genre mix explain its strong week`,
-      `How ${title} is turning a good setup into steady interest`,
+      `Why ${title} is working so well for viewers right now`,
+      `${title} explained: what makes this season's run click`,
+      `Why ${title}'s score and story are connecting with fans`,
+      `${title} is having a strong week: the reasons behind it`,
+      `${title} viewer response explained: why the anime is gaining trust`,
     ], avoidPatterns);
   }
   return pickTemplate(seed, [
-    `${title}'s trend jump deserves a closer look`,
-    `What is pushing ${title} up the anime charts right now`,
-    `${title} is turning seasonal curiosity into real traction`,
-    `${title} has the numbers of a sleeper topic this week`,
-    `How ${title} is pulling more attention mid-season`,
-    `${title}'s latest episode window is changing its outlook`,
+    `${title} trend update: why more anime fans are checking it now`,
+    `Why ${title} is rising in current anime rankings`,
+    `${title} is picking up attention: what changed this week`,
+    `${title} anime trend explained: score, episodes, and viewer interest`,
+    `${title} is becoming a bigger seasonal topic: here's why`,
+    `${title} episode buzz: why the conversation is growing now`,
   ], avoidPatterns);
 }
 
@@ -1191,6 +1191,7 @@ Rules:
 - Use the selected anime facts as the main body source. Other current anime context may be used only for one short comparison sentence, not as the subject.
 - If selectedTopic.confidence is "headline", the headline must be fresh: selectedTopic.publishedAt must be within the last 48 hours. Do not use old headlines as current news.
 - Set "headline" exactly to selectedTopic.title. Do not rewrite it, shorten it, translate it, or make a different headline.
+- Treat the headline as the user's promise: it must be clear, specific, and easy to understand at a glance. The article must answer the headline directly.
 - The heroCallout, excerpt, paragraphs, sections, takeaways, and FAQ must clearly match selectedTopic.animeTitle.
 - Make this article clearly different from StreamNyaa's guide blogs: it should read like a focused current news/editorial story, not a schedule guide, ranking page, or generic recommendation list.
 - Ignore broad industry release roundups if they are not directly about the selected anime. Do not write an article from generic headlines like North American releases, DVD/Blu-ray lists, manga release calendars, or weekly retail roundups.
@@ -1225,6 +1226,7 @@ Rules:
 - Do not write a soft filler article. If the strongest support is only ordinary popularity or a small trend signal, make the article tighter and more cautious instead of hyped.
 - Avoid piracy language and avoid telling users where to watch copyrighted content.
 - Make the writing useful for Google search: clear headings, direct wording, helpful context, and natural keywords around the selected anime/topic.
+- Keep title wording engaging but honest. Avoid vague headline energy; prefer titles that explain the exact hook, such as delay, mixed reception, adaptation confirmation, viewer score, episode buzz, or schedule change.
 - Keep every sentence fact-safe. If a fact is missing, skip it.
 - The headline, excerpt, heroCallout, paragraphs, sections, takeaways, and FAQ must all stay on the same selected topic.
 - The article should feel satisfying to read even if the user already knows the headline.
