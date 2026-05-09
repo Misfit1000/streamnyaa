@@ -1,89 +1,45 @@
-export interface StreamSource {
-  url?: string;
-  file?: string;
-  src?: string;
-  quality?: string;
-  isM3U8?: boolean;
-  type?: string;
-}
-
-export interface EpisodeStreamResult {
-  hlsUrl?: string;
-  embedUrl?: string;
-  provider?: string;
-  sources: StreamSource[];
-}
-
-function formatEpisodeId(rawTitle: string, episodeNumber: number | string) {
-  const parts = String(rawTitle || '').split('-');
-  const titleWithoutId = Number.isNaN(Number(parts[0])) ? String(rawTitle || '') : parts.slice(1).join('-');
-  const cleanTitle = titleWithoutId
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/(^-|-$)/g, '');
-
-  return `${cleanTitle}-episode-${episodeNumber}`;
-}
-
-function isHlsSource(source: StreamSource) {
-  const url = source.url || source.file || source.src || '';
-  return Boolean(url && (source.isM3U8 || source.type === 'hls' || source.type === 'm3u8' || url.includes('.m3u8')));
-}
-
-function normalizeSources(payload: any): StreamSource[] {
-  const candidates = [
-    payload?.sources,
-    payload?.source,
-    payload?.streams,
-    payload?.stream,
-    payload?.data?.sources,
-    payload?.data?.source,
-    payload?.data?.streams,
-    payload?.data?.stream,
+export async function fetchEpisodeStream(gogoId: string) {
+  // We use an array of public Consumet instances. 
+  // If one is down or blocked by CORS, it automatically tries the next one.
+  const CONSUMET_INSTANCES = [
+    `https://api.consumet.org/anime/gogoanime/watch/${gogoId}`,
+    `https://consumet-api-clone.vercel.app/anime/gogoanime/watch/${gogoId}`,
+    `https://corsproxy.io/?https://api.consumet.org/anime/gogoanime/watch/${gogoId}`
   ];
 
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) return candidate;
-    if (typeof candidate === 'string') return [{ url: candidate }];
-    if (candidate?.url || candidate?.file || candidate?.src) return [candidate];
+  for (const apiUrl of CONSUMET_INSTANCES) {
+    try {
+      console.log(`Trying Consumet instance: ${apiUrl}`);
+      
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        // Some Consumet instances require this header
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Instance returned ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Consumet returns an array of 'sources'. We want the highest quality or the 'auto' m3u8.
+      if (data && data.sources && data.sources.length > 0) {
+        
+        // Find the 'auto' quality stream, or default to the first available source
+        const bestSource = data.sources.find((s: any) => s.quality === 'auto' || s.quality === 'default') || data.sources[0];
+        
+        return {
+          sources: [{ url: bestSource.url, isM3U8: bestSource.url.includes('.m3u8') }],
+          // Consumet often provides a download/referral header if needed by your player
+          headers: data.headers 
+        };
+      }
+    } catch (error) {
+      console.warn(`Failed fetching from ${apiUrl}, trying next...`, error);
+      continue; // Move to the next instance in the array
+    }
   }
 
-  if (typeof payload === 'string') return [{ url: payload }];
-  return [];
-}
-
-export async function fetchEpisodeStream(rawTitle: string, episodeNumber: number | string): Promise<EpisodeStreamResult> {
-  const streamApiBase = (import.meta as any).env?.VITE_STREAM_API_BASE_URL;
-  if (!streamApiBase) {
-    throw new Error('Licensed stream API is not configured.');
-  }
-
-  const episodeId = formatEpisodeId(rawTitle, episodeNumber);
-  const endpoint = `${String(streamApiBase).replace(/\/+$/, '')}/${encodeURIComponent(episodeId)}`;
-  const response = await fetch(endpoint, {
-    headers: { Accept: 'application/json' },
-  });
-
-  if (!response.ok) {
-    throw new Error('Licensed stream source could not load.');
-  }
-
-  const contentType = response.headers.get('content-type') || '';
-  const payload = contentType.includes('application/json') ? await response.json() : await response.text();
-  const sources = normalizeSources(payload);
-  const hlsSource = sources.find(isHlsSource);
-  const hlsUrl = hlsSource?.url || hlsSource?.file || hlsSource?.src;
-  const embedUrl = typeof payload === 'object'
-    ? payload?.embedUrl || payload?.iframe || payload?.embed || payload?.data?.embedUrl || payload?.data?.iframe || payload?.data?.embed
-    : undefined;
-
-  return {
-    hlsUrl,
-    embedUrl,
-    provider: typeof payload === 'object' ? payload?.provider || payload?.data?.provider : undefined,
-    sources,
-  };
+  throw new Error("All Consumet instances failed or were blocked by CORS.");
 }
