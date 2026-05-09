@@ -54,10 +54,6 @@
   ],
   "rewrites": [
     {
-      "source": "/api/stream-sources",
-      "destination": "/api/stream-sources.ts"
-    },
-    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

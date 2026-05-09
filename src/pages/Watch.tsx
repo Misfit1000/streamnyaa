@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import ReactPlayer from 'react-player'; // <-- NEW IMPORT
+import ReactPlayer from 'react-player';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { searchNyaa, NyaaItem } from '../api/nyaa';
-import { fetchEpisodeStream } from '../api/stream'; // <-- NEW IMPORT
+import { fetchEpisodeStream } from '../api/stream';
 import { Play, Download, List, HardDrive, Users, CloudRain, Loader2, Link as LinkIcon, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { animePath, watchPath } from '../lib/slug';
 import Seo from '../components/Seo';
@@ -28,9 +28,10 @@ export default function Watch() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
 
-  // --- NEW: DIRECT STREAM STATES ---
   const [streamMethod, setStreamMethod] = useState<'direct' | 'torrent'>('direct');
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [streamEmbedUrl, setStreamEmbedUrl] = useState<string | null>(null);
+  const [streamProvider, setStreamProvider] = useState<string>('');
   const [streamLoading, setStreamLoading] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
 
@@ -50,31 +51,32 @@ export default function Watch() {
 
   const anime = animeData?.data;
 
-  // --- NEW: DIRECT STREAM FETCHER ---
   useEffect(() => {
     if (streamMethod !== 'direct' || !anime) return;
 
-    // Use English title if available, otherwise Romaji
-    const titleToUse = anime.title_english || anime.title_romaji || anime.title;
+    const titleToUse = id || anime.title_english || anime.title_romaji || anime.title;
     if (!titleToUse) return;
 
     let isMounted = true;
     const getStream = async () => {
       setStreamLoading(true);
       setStreamError(null);
+      setStreamUrl(null);
+      setStreamEmbedUrl(null);
+      setStreamProvider('');
       try {
-        const sources = await fetchEpisodeStream(titleToUse, currentEp);
-        if (isMounted && sources && sources.length > 0) {
-          // Grab highest quality link
-          const bestLink = sources.find((s: any) => s.quality === '1080p')?.url 
-                        || sources.find((s: any) => s.quality === 'auto')?.url 
-                        || sources[0].url;
-          setStreamUrl(bestLink);
+        const stream = await fetchEpisodeStream(titleToUse, currentEp);
+        if (isMounted && stream.hlsUrl) {
+          setStreamUrl(stream.hlsUrl);
+          setStreamProvider(stream.provider || '');
+        } else if (isMounted && stream.embedUrl) {
+          setStreamEmbedUrl(stream.embedUrl);
+          setStreamProvider(stream.provider || '');
         } else if (isMounted) {
-          setStreamError("No video sources found for this episode.");
+          setStreamError('No authorized stream is available for this episode.');
         }
       } catch (err: any) {
-        if (isMounted) setStreamError(err.message);
+        if (isMounted) setStreamError(err.message || 'No authorized stream is available for this episode.');
       } finally {
         if (isMounted) setStreamLoading(false);
       }
@@ -140,7 +142,9 @@ export default function Watch() {
     setSearchParams({ ep: epNum.toString() });
     setIsPlaying(false);
     setActiveMagnet('');
-    setStreamUrl(null); // Reset direct stream
+    setStreamUrl(null);
+    setStreamEmbedUrl(null);
+    setStreamProvider('');
   };
 
   const episodes = episodesData?.data || [];
@@ -205,47 +209,78 @@ export default function Watch() {
             <span className="text-foreground">Episode {currentEp}</span>
           </div>
 
-          {/* --- NEW: THE METHOD TOGGLE BUTTONS --- */}
           <div className="flex gap-3 mb-4">
             <button
               onClick={() => setStreamMethod('direct')}
               className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${streamMethod === 'direct' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'bg-[var(--glass)] text-muted-foreground border border-[var(--glass-border)] hover:text-foreground'}`}
             >
-              Direct Stream (Fast)
+              Video Player
             </button>
             <button
               onClick={() => setStreamMethod('torrent')}
               className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${streamMethod === 'torrent' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'bg-[var(--glass)] text-muted-foreground border border-[var(--glass-border)] hover:text-foreground'}`}
             >
-              Torrent / Magnet
+              Sources
             </button>
           </div>
 
           <div className="aspect-video bg-[#050507] rounded-[24px] overflow-hidden relative group border border-[var(--glass-border)] shadow-2xl">
             {streamMethod === 'direct' ? (
-              // --- NEW DIRECT HLS PLAYER ---
               streamLoading ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-primary gap-4">
                   <Loader2 className="w-10 h-10 animate-spin" />
-                  <p className="font-bold text-sm">Decrypting Secure Stream...</p>
+                  <p className="font-bold text-sm">Loading authorized stream...</p>
                 </div>
               ) : streamError ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-red-500 gap-4">
-                  <AlertTriangle className="w-10 h-10" />
-                  <p className="font-bold text-sm">{streamError}</p>
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center text-muted-foreground">
+                  <AlertTriangle className="w-10 h-10 text-primary" />
+                  <div>
+                    <p className="font-black text-foreground">Video unavailable</p>
+                    <p className="mt-2 max-w-md text-sm leading-6">{streamError}</p>
+                  </div>
                 </div>
               ) : streamUrl ? (
-                <ReactPlayer 
-                  url={streamUrl}
-                  controls={true}
-                  width="100%"
-                  height="100%"
-                  playing={true}
-                  config={{ file: { forceHLS: true } }}
-                />
-              ) : null
+                <>
+                  {streamProvider ? (
+                    <span className="pointer-events-none absolute left-4 top-4 z-20 rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-white/80 backdrop-blur">
+                      {streamProvider}
+                    </span>
+                  ) : null}
+                  <ReactPlayer
+                    url={streamUrl}
+                    controls
+                    width="100%"
+                    height="100%"
+                    playing
+                    config={{ file: { forceHLS: true } }}
+                  />
+                </>
+              ) : streamEmbedUrl ? (
+                <>
+                  {streamProvider ? (
+                    <span className="pointer-events-none absolute left-4 top-4 z-20 rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-white/80 backdrop-blur">
+                      {streamProvider}
+                    </span>
+                  ) : null}
+                  <iframe
+                    src={streamEmbedUrl}
+                    title={`${anime.title} episode ${currentEp} video player`}
+                    className="absolute inset-0 h-full w-full border-0"
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    allowFullScreen
+                    referrerPolicy="no-referrer"
+                  />
+                </>
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6 text-center text-muted-foreground">
+                  <Play className="h-12 w-12 text-primary" />
+                  <div>
+                    <p className="font-black text-foreground">Video player ready</p>
+                    <p className="mt-2 max-w-md text-sm leading-6">No authorized stream has been selected for this episode yet.</p>
+                  </div>
+                </div>
+              )
             ) : (
-              // --- YOUR EXISTING TORRENT / MAGNET UI ---
               <>
                 <div className="pointer-events-none absolute left-4 top-4 z-30 flex flex-wrap gap-2">
                   <span className="rounded-full border border-primary/25 bg-black/55 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary backdrop-blur">
@@ -352,7 +387,6 @@ export default function Watch() {
             </div>
           </div>
 
-          {/* ... The rest of your Torrents Table remains exactly the same below this point! ... */}
           <div className="mt-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
               <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
