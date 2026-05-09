@@ -34,18 +34,22 @@
     --foreground: #FFFFFF;
     --primary: #E11D48;
     --primary-foreground: #ffffff;
-    --secondary: #101014;
+    --secondary: rgba(16, 16, 20, 0.78);
     --secondary-foreground: #FFFFFF;
     --muted: rgba(255, 255, 255, 0.03);
     --muted-foreground: #94A3B8;
     --border: rgba(255, 255, 255, 0.08);
-    --glass: rgba(255, 255, 255, 0.03);
-    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass: rgba(255, 255, 255, 0.055);
+    --glass-border: rgba(255, 255, 255, 0.105);
   }
 }
 
 body {
   background-color: var(--background);
+  background-image:
+    linear-gradient(135deg, rgba(225, 29, 72, 0.055) 0, transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 38%);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }

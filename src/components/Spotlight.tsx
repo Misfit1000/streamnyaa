@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Download, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ChevronLeft, ChevronRight, Download, Info, Star, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { animePath } from '../lib/slug';
 
@@ -12,128 +12,159 @@ interface Anime {
   color?: string;
   images: {
     jpg: {
+      image_url?: string;
       large_image_url: string;
     };
   };
   genres: { name: string }[];
   score: number;
   type: string;
+  episodes?: number;
+  status?: string;
+  year?: number;
 }
+
+const imageFor = (anime?: Anime) => anime?.images?.jpg?.large_image_url || anime?.images?.jpg?.image_url || anime?.banner_image || '';
 
 export default function Spotlight({ animeList }: { animeList: Anime[] }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
-    if (!animeList || animeList.length === 0) return;
-    const timer = setInterval(() => {
+    if (!animeList?.length) return undefined;
+    const timer = window.setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % animeList.length);
-    }, 5000);
-    return () => clearInterval(timer);
+    }, 5200);
+    return () => window.clearInterval(timer);
   }, [animeList]);
 
-  if (!animeList || animeList.length === 0) return <div className="h-[60vh] md:h-[80vh] bg-secondary animate-pulse" />;
+  if (!animeList?.length) {
+    return <div className="mx-auto mt-4 h-[520px] w-full max-w-[calc(100%-24px)] animate-pulse rounded-[28px] bg-secondary md:max-w-[calc(100%-80px)]" />;
+  }
 
-  const currentAnime = animeList[currentIndex];
+  const currentAnime = animeList[currentIndex] || animeList[0];
+  const heroImage = currentAnime.banner_image || imageFor(currentAnime);
+  const posterImage = imageFor(currentAnime);
+  const genres = currentAnime.genres?.slice(0, 3).map((genre) => genre.name).filter(Boolean) || [];
+  const score = currentAnime.score ? currentAnime.score.toFixed(1).replace(/\.0$/, '') : 'N/A';
 
   const nextSlide = () => setCurrentIndex((prev) => (prev + 1) % animeList.length);
   const prevSlide = () => setCurrentIndex((prev) => (prev - 1 + animeList.length) % animeList.length);
 
   return (
-    <div className="relative w-full h-[380px] md:h-[480px] mx-auto max-w-[calc(100%-32px)] md:max-w-[calc(100%-80px)] mt-4 rounded-[24px] overflow-hidden group shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
+    <section className="relative mx-auto mt-4 w-full max-w-[calc(100%-24px)] overflow-hidden rounded-[28px] border border-[var(--glass-border)] bg-[#050507] shadow-[0_24px_60px_rgba(0,0,0,0.42)] md:max-w-[calc(100%-80px)]">
       <AnimatePresence mode="wait">
         <motion.div
           key={currentIndex}
-          initial={{ opacity: 0, scale: 1.05 }}
+          initial={{ opacity: 0, scale: 1.03 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.8, ease: "easeInOut" }}
+          transition={{ duration: 0.72, ease: 'easeInOut' }}
           className="absolute inset-0"
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-[#050507e6] via-[#05050766] to-transparent z-10" />
-          <img
-            src={currentAnime.banner_image || currentAnime.images.jpg.large_image_url}
-            alt={currentAnime.title}
-            className="w-full h-full object-cover"
-            style={{ 
-              objectPosition: currentAnime.banner_image ? 'center center' : 'center 20%',
-              backgroundColor: currentAnime.color || 'transparent'
-            }}
-            referrerPolicy="no-referrer"
-          />
+          <div className="absolute inset-0 z-10 bg-[linear-gradient(90deg,rgba(5,5,7,0.97),rgba(5,5,7,0.82)_38%,rgba(5,5,7,0.38)_70%,rgba(5,5,7,0.78)),linear-gradient(180deg,rgba(5,5,7,0.12),rgba(5,5,7,0.95))]" />
+          {heroImage ? (
+            <img
+              src={heroImage}
+              alt={currentAnime.title}
+              className="h-full w-full object-cover"
+              style={{
+                objectPosition: currentAnime.banner_image ? 'center center' : 'center 18%',
+                backgroundColor: currentAnime.color || 'transparent',
+              }}
+              referrerPolicy="no-referrer"
+            />
+          ) : null}
         </motion.div>
       </AnimatePresence>
 
-      <div className="absolute inset-0 z-20 flex flex-col justify-end px-6 md:px-12 pb-8 md:pb-12">
-        <div className="max-w-[500px]">
-          <div className="flex items-center flex-wrap gap-2 md:gap-3 mb-3 text-primary font-bold text-[10px] md:text-xs uppercase tracking-wider">
-            <span>#{currentIndex + 1} Trending Season</span>
-            <span>•</span>
-            <span>{currentAnime.genres.slice(0, 2).map(g => g.name).join(', ')}</span>
+      <div className="relative z-20 grid min-h-[500px] gap-8 px-5 py-6 sm:px-7 md:min-h-[560px] md:px-10 md:py-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-center xl:grid-cols-[minmax(0,1fr)_330px]">
+        <div className="flex max-w-3xl flex-col justify-end self-stretch pb-4 pt-10 lg:justify-center lg:py-8">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/15 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Trending this season
+            </span>
+            {currentAnime.type ? <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-bold uppercase text-white/80">{currentAnime.type}</span> : null}
           </div>
 
-          <motion.h1 
+          <motion.h1
             key={`title-${currentIndex}`}
-            initial={{ y: 20, opacity: 0 }}
+            initial={{ y: 18, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="text-3xl md:text-[48px] leading-[1.1] font-extrabold text-white mb-3 md:mb-4 line-clamp-2"
+            transition={{ delay: 0.16 }}
+            className="max-w-2xl text-4xl font-black leading-[1.04] tracking-tight text-white md:text-5xl lg:text-6xl"
           >
             {currentAnime.title}
           </motion.h1>
 
-          <div className="h-auto opacity-100 md:h-0 overflow-hidden md:group-hover:h-auto md:opacity-0 md:group-hover:opacity-100 transition-all duration-300 ease-in-out">
-            <motion.div
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: 0.1 }}
-            >
-              <p className="text-muted-foreground text-[12px] md:text-[13px] line-clamp-2 md:line-clamp-3 mb-4 md:mb-5">
-                {currentAnime.synopsis}
-              </p>
-            </motion.div>
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm font-bold text-white/78">
+            <span className="inline-flex items-center gap-1.5 text-yellow-400">
+              <Star className="h-4 w-4 fill-current" />
+              {score}
+            </span>
+            {genres.length ? <span>{genres.join(' / ')}</span> : null}
+            {currentAnime.episodes ? <span>{currentAnime.episodes} episodes</span> : null}
           </div>
 
-          <motion.div 
-            key={`btns-${currentIndex}`}
-            initial={{ y: 20, opacity: 0 }}
+          <p className="mt-5 max-w-2xl line-clamp-2 text-sm leading-7 text-white/70 md:text-base">
+            {currentAnime.synopsis || 'Explore the current seasonal highlight with anime details, release context, and download discovery tools on StreamNyaa.'}
+          </p>
+
+          <motion.div
+            key={`buttons-${currentIndex}`}
+            initial={{ y: 16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.4 }}
-            className="flex flex-row flex-wrap md:flex-row gap-2 md:gap-3 mt-4"
+            transition={{ delay: 0.3 }}
+            className="mt-6 flex flex-col gap-3 sm:flex-row"
           >
             <Link
               to={animePath(currentAnime, '/downloads')}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-primary text-white px-5 py-2.5 rounded-lg font-semibold text-sm transition-all hover:bg-primary/90 md:min-w-[160px]"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-black text-white shadow-lg shadow-primary/25 transition-all hover:bg-primary/90 sm:min-w-[170px]"
             >
-              <Download className="w-4 h-4" />
+              <Download className="h-4 w-4" />
               Download Now
             </Link>
             <Link
               to={animePath(currentAnime)}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white/10 backdrop-blur-md text-white px-5 py-2.5 rounded-lg font-semibold text-sm transition-all hover:bg-white/20 md:min-w-[160px]"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-white/15 bg-white/10 px-6 py-3 text-sm font-black text-white backdrop-blur-md transition-all hover:bg-white/20 sm:min-w-[150px]"
             >
-              <Info className="w-4 h-4" />
+              <Info className="h-4 w-4" />
               Details
             </Link>
           </motion.div>
         </div>
+
+        <aside className="hidden lg:block">
+          <div className="overflow-hidden rounded-[26px] border border-white/12 bg-black/38 p-2 shadow-2xl shadow-black/35 backdrop-blur-md">
+            <div className="aspect-[2/3] overflow-hidden rounded-[20px] bg-white/5">
+              {posterImage ? <img src={posterImage} alt={`${currentAnime.title} poster`} className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : null}
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-2xl border border-white/10 bg-black/36 px-3 py-2 text-center backdrop-blur-md">
+              <p className="text-[10px] font-bold uppercase text-white/42">Rank</p>
+              <p className="text-sm font-black text-white">#{currentIndex + 1}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/36 px-3 py-2 text-center backdrop-blur-md">
+              <p className="text-[10px] font-bold uppercase text-white/42">Score</p>
+              <p className="text-sm font-black text-white">{score}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/36 px-3 py-2 text-center backdrop-blur-md">
+              <p className="text-[10px] font-bold uppercase text-white/42">Type</p>
+              <p className="truncate text-sm font-black text-white">{currentAnime.type || 'TV'}</p>
+            </div>
+          </div>
+        </aside>
       </div>
 
-      <div className="absolute bottom-4 md:bottom-8 right-4 md:right-8 z-30 flex items-center gap-2 md:gap-4">
-        <div className="flex gap-1.5 md:gap-2 mr-2 md:mr-4">
-          {animeList.map((_, idx) => (
-            <div 
-              key={idx} 
-              className={`h-1.5 rounded-full transition-all duration-500 ${idx === currentIndex ? 'w-6 bg-primary' : 'w-2 bg-white/30'}`}
-            />
-          ))}
-        </div>
-        <button onClick={prevSlide} className="p-1.5 md:p-2 rounded-full bg-background/50 hover:bg-background text-foreground backdrop-blur transition-colors">
-          <ChevronLeft className="w-5 h-5 md:w-6 md:h-6" />
+      <div className="absolute bottom-5 right-5 z-30 flex items-center gap-2">
+        <button onClick={prevSlide} className="rounded-full border border-white/12 bg-black/42 p-2 text-white shadow-lg shadow-black/25 backdrop-blur-md transition-colors hover:bg-white/15" aria-label="Previous spotlight anime">
+          <ChevronLeft className="h-5 w-5" />
         </button>
-        <button onClick={nextSlide} className="p-1.5 md:p-2 rounded-full bg-background/50 hover:bg-background text-foreground backdrop-blur transition-colors">
-          <ChevronRight className="w-5 h-5 md:w-6 md:h-6" />
+        <button onClick={nextSlide} className="rounded-full border border-white/12 bg-black/42 p-2 text-white shadow-lg shadow-black/25 backdrop-blur-md transition-colors hover:bg-white/15" aria-label="Next spotlight anime">
+          <ChevronRight className="h-5 w-5" />
         </button>
       </div>
-    </div>
+    </section>
   );
 }
