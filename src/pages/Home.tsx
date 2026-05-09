@@ -8,6 +8,7 @@ import { useStore } from '../store/useStore';
 import { useMemo, useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
+import AdSenseAd from '../components/AdSenseAd';
 
 export default function Home() {
   const { myList } = useStore();
@@ -105,6 +106,8 @@ export default function Home() {
               ))}
             </div>
           </section>
+
+          <AdSenseAd />
 
           {/* Trending Now */}
           <section>

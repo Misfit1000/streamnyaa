@@ -6,6 +6,7 @@ import { Download, Plus, Check, Heart, Star, Calendar, Clock, Tv, Play, Monitor,
 import { useStore } from '../store/useStore';
 import { animePath, mangaPath, watchPath } from '../lib/slug';
 import Seo from '../components/Seo';
+import RelatedBlogArticles from '../components/RelatedBlogArticles';
 
 function formatStatus(value?: string) {
   return value ? value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unknown';
@@ -362,6 +363,14 @@ export default function AnimeDetails() {
                 ))}
               </div>
             </section>
+
+            <RelatedBlogArticles
+              title={`Articles related to ${anime.title}`}
+              animeTitle={anime.title}
+              malId={anime.mal_id}
+              genres={genres}
+              className="mt-8 pt-6 border-t border-[var(--glass-border)]"
+            />
 
             {anime.relations && anime.relations.length > 0 && (
               <div className="relative group/carousel">

@@ -4,6 +4,7 @@ import { fetchSchedule } from '../api/jikan';
 import AnimeCard from '../components/AnimeCard';
 import { Loader2, Calendar } from 'lucide-react';
 import Seo from '../components/Seo';
+import AdSenseAd from '../components/AdSenseAd';
 
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0); // 0 = today, 1 = tomorrow, etc.
@@ -70,6 +71,8 @@ export default function Schedule() {
           </button>
         ))}
       </div>
+
+      <AdSenseAd />
 
       {isLoading ? (
         <div className="flex justify-center items-center py-32">

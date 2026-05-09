@@ -5,6 +5,7 @@ import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Loader2, Newspaper
 import Seo from '../components/Seo';
 import { articlePath, BLOG_POSTS, fetchArchivedBlogPostPage } from '../api/blog';
 import type { BlogPostData } from '../api/blog';
+import AdSenseAd from '../components/AdSenseAd';
 
 const sortedPosts = [...BLOG_POSTS].sort((a, b) => b.sortRank - a.sortRank);
 const guidePosts = sortedPosts.filter((post) => post.articleKind !== 'gemini');
@@ -124,6 +125,8 @@ export default function Blog() {
           <div className="flex items-center gap-3 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin text-primary" />Loading latest blog articles...</div>
         </section>
       ) : null}
+
+      <AdSenseAd />
 
       <section className="mt-8 grid gap-8 xl:grid-cols-[1fr_390px]">
         <main>

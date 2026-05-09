@@ -10,6 +10,7 @@ const FALLBACK_STALE_TTL_MS = 1000 * 60 * 60;
 const EDGE_CACHE_HEADER = 'public, s-maxage=86400, stale-while-revalidate=86400';
 const MAX_HEADLINE_AGE_MS = 1000 * 60 * 60 * 48;
 const TOPIC_TYPES = [
+  'missed-scheduled-airing',
   'delayed-or-paused-airing',
   'upcoming-popular-adaptation-confirmed',
   'why-anime-is-doing-poorly',
@@ -365,6 +366,7 @@ async function fetchAnimeCast(malId: number) {
 
 function classifyHeadline(news: BlogNewsItem) {
   const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
+  if (/no episode|not air|won't air|will not air|missed|skip|break week|recap episode|special program|schedule change/.test(text)) return 'missed-scheduled-airing';
   if (/delay|delayed|postpone|postponed|hiatus|halt|suspend|production|broadcast/.test(text)) return 'delayed-or-paused-airing';
   if (/episode|viral|record|ranking|tops|trend|buzz|reaction/.test(text)) return 'viral-episode-or-ranking';
   if (/season|sequel|trailer|visual|cast|staff|premiere|release/.test(text)) return 'new-season-trailer-cast-update';
@@ -411,6 +413,7 @@ function headlineScore(news: BlogNewsItem) {
   const text = `${news.title} ${news.excerpt || ''}`.toLowerCase();
   let score = 1;
   if (isGenericReleaseDigest(news)) score -= 10;
+  if (/no episode|not air|won't air|will not air|missed|skip|break week|recap episode|special program|schedule change/.test(text)) score += 14;
   if (/delay|delayed|postpone|postponed|hiatus|halt|suspend|production|broadcast/.test(text)) score += 8;
   if (/episode|viral|record|ranking|tops|trend|buzz|reaction/.test(text)) score += 5;
   if (/season|sequel|trailer|visual|cast|staff|premiere|release|adaptation|anime adaptation|studio/.test(text)) score += 4;
@@ -452,6 +455,15 @@ function pickTemplate(seed: string | number | undefined, templates: string[], av
 function trendTopicTitle(item: BlogMediaItem, type: string, avoidPatterns: Set<string> = new Set()) {
   const title = item.title;
   const seed = `${item.mal_id || item.id || title}-${type}`;
+  if (type === 'missed-scheduled-airing') {
+    return pickTemplate(seed, [
+      `${title} schedule check: why the next episode may be later`,
+      `${title}'s next episode timing needs a closer look`,
+      `What changed around ${title}'s latest airing window`,
+      `${title} has a schedule gap viewers should know about`,
+      `${title}'s airing calendar looks different this week`,
+    ], avoidPatterns);
+  }
   if (type === 'upcoming-popular-adaptation-confirmed') {
     return pickTemplate(seed, [
       `${title} anime update: confirmed details to know`,
@@ -511,6 +523,47 @@ type TopicSelectionOptions = {
   avoidTitlePatterns?: Set<string>;
   preferFastMoving?: boolean;
 };
+
+function isPriorityTopicType(type?: string) {
+  return Boolean(type && [
+    'missed-scheduled-airing',
+    'delayed-or-paused-airing',
+    'upcoming-popular-adaptation-confirmed',
+    'why-anime-is-doing-poorly',
+    'viral-episode-or-ranking',
+    'new-season-trailer-cast-update',
+    'popular-anime-with-mixed-reception',
+  ].includes(type));
+}
+
+function topicQualityScore(topic?: BlogTopic) {
+  if (!topic) return 0;
+  let score = 0;
+  if (topic.confidence === 'headline') score += 7;
+  if (topic.publishedAt && topic.ageHours !== undefined && topic.ageHours <= 48) score += 5;
+  if (isPriorityTopicType(topic.type)) score += 5;
+  if (topic.type === 'missed-scheduled-airing') score += 8;
+  if (topic.type === 'delayed-or-paused-airing') score += 7;
+  if (topic.type === 'why-anime-is-doing-poorly') score += 4;
+  if (topic.type === 'upcoming-popular-adaptation-confirmed') score += 4;
+  if ((topic.evidence || []).length >= 3) score += 3;
+  if (topic.animeTitle && topic.image) score += 2;
+  return score;
+}
+
+function shouldPublishGeminiTopic(topic?: BlogTopic) {
+  if (!topic) return false;
+  if (topic.type === 'current-anime-topic') return false;
+  if (topic.confidence === 'headline') {
+    return Boolean(topic.publishedAt && topic.ageHours !== undefined && topic.ageHours <= 48 && isPriorityTopicType(topic.type) && topicQualityScore(topic) >= 17);
+  }
+  return topicQualityScore(topic) >= 12 && ['missed-scheduled-airing', 'why-anime-is-doing-poorly', 'popular-anime-with-mixed-reception'].includes(topic.type);
+}
+
+function nextAiringGapDays(item: BlogMediaItem) {
+  if (!item.nextAiringAt) return null;
+  return (item.nextAiringAt * 1000 - Date.now()) / (1000 * 60 * 60 * 24);
+}
 
 function titleKey(value?: string) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -578,9 +631,11 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
       if (options.preferFastMoving && !['viral-episode-or-ranking', 'delayed-or-paused-airing', 'new-season-trailer-cast-update', 'upcoming-popular-adaptation-confirmed', 'why-anime-is-doing-poorly'].includes(type)) continue;
       const ageHours = newsAgeHours(news);
       const freshnessBoost = ageHours === null ? 0 : Math.max(0, 48 - ageHours);
+      const missedAiringBoost = type === 'missed-scheduled-airing' ? 28 : 0;
+      const delayBoost = type === 'delayed-or-paused-airing' ? 18 : 0;
       const fastMovingBoost = options.preferFastMoving && type === 'viral-episode-or-ranking' ? 8 : 0;
       const upcomingBoost = type === 'upcoming-popular-adaptation-confirmed' ? 7 : 0;
-      const priority = adjustedTopicPriority(type, headlineScore(news) + freshnessBoost + fastMovingBoost + upcomingBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000), options);
+      const priority = adjustedTopicPriority(type, headlineScore(news) + freshnessBoost + missedAiringBoost + delayBoost + fastMovingBoost + upcomingBoost + Math.floor((item.trending || 0) / 750) + Math.floor((item.popularity || 0) / 100000), options);
       candidates.push({
         type,
         title: type === 'upcoming-popular-adaptation-confirmed' ? trendTopicTitle(item, type, options.avoidTitlePatterns) : news.title,
@@ -590,7 +645,9 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
         image: item.image,
         summary: news.excerpt || `${item.title} has a current anime headline worth following.`,
         confidence: 'headline',
-        reason: type === 'delayed-or-paused-airing'
+        reason: type === 'missed-scheduled-airing'
+          ? 'A fresh headline points to a missed, skipped, changed, or unusual airing window, which should be prioritized over ordinary trend posts.'
+          : type === 'delayed-or-paused-airing'
           ? 'A real headline points to an airing, broadcast, delay, or production-related update.'
           : type === 'upcoming-popular-adaptation-confirmed'
           ? 'A fresh title-specific headline points to confirmed upcoming anime details such as adaptation, cast, staff, trailer, visual, premiere, or broadcast context.'
@@ -606,11 +663,40 @@ function selectNewsTopic(items: BlogMediaItem[], options: TopicSelectionOptions 
           item.popularity ? `Popularity: ${item.popularity}` : '',
         ].filter(Boolean),
         publishedAt: news.date ? new Date(newsDateMs(news) || news.date).toISOString() : undefined,
-        ageHours: ageHours || undefined,
+        ageHours: ageHours ?? undefined,
         headlines: [news, ...(item.news || []).filter((other) => other.title !== news.title && isFreshHeadline(other)).slice(0, 2)],
         priority,
       });
     }
+  }
+
+  const missedScheduleCandidate = sorted.find((item) => {
+    if (item.status !== 'RELEASING') return false;
+    if ((item.popularity || 0) < 25000 && (item.trending || 0) < 35) return false;
+    const gapDays = nextAiringGapDays(item);
+    return gapDays !== null && gapDays > 8.5;
+  });
+  if (missedScheduleCandidate) {
+    const gapDays = nextAiringGapDays(missedScheduleCandidate);
+    candidates.push({
+      type: 'missed-scheduled-airing',
+      title: trendTopicTitle(missedScheduleCandidate, 'missed-scheduled-airing', options.avoidTitlePatterns),
+      animeTitle: missedScheduleCandidate.title,
+      animeId: missedScheduleCandidate.id,
+      malId: missedScheduleCandidate.mal_id,
+      image: missedScheduleCandidate.image,
+      summary: `${missedScheduleCandidate.title} is listed as currently airing, but its next episode appears farther out than a normal weekly gap. That makes the schedule change more important than a routine trend update.`,
+      confidence: 'trend',
+      reason: 'The title is currently airing and the next listed episode appears to be more than a week away, suggesting a possible break, skipped week, or unusual schedule gap.',
+      evidence: [
+        missedScheduleCandidate.nextEpisode ? `Next episode listed: ${missedScheduleCandidate.nextEpisode}` : '',
+        missedScheduleCandidate.nextAiringAt ? `Next airing time: ${formatTime(missedScheduleCandidate.nextAiringAt)}` : '',
+        gapDays !== null ? `Approximate gap from now: ${Math.round(gapDays * 10) / 10} days` : '',
+        missedScheduleCandidate.popularity ? `Popularity: ${missedScheduleCandidate.popularity}` : '',
+        missedScheduleCandidate.trending ? `Current trend score: ${missedScheduleCandidate.trending}` : '',
+      ].filter(Boolean),
+      priority: adjustedTopicPriority('missed-scheduled-airing', 32 + Math.floor((missedScheduleCandidate.popularity || 0) / 100000) + Math.floor((missedScheduleCandidate.trending || 0) / 150), options),
+    });
   }
 
   const poorButWatched = sorted.find((item) => item.status !== 'NOT_YET_RELEASED' && (item.popularity || 0) > 35000 && (item.score || 100) < 68);
@@ -1030,6 +1116,7 @@ function fallbackArticle(definition: BlogPostDefinition, items: BlogMediaItem[],
 function topicWritingBrief(topic?: BlogTopic) {
   if (!topic) return 'Write a helpful guide-style article using the supplied facts.';
   const briefs: Record<string, string> = {
+    'missed-scheduled-airing': 'Schedule-priority explainer: lead with the airing gap, explain what is verified, avoid guessing the cause, tell viewers what the next listed episode/time says, and make this feel more urgent than a normal trend post.',
     'delayed-or-paused-airing': 'News explainer: lead with the confirmed change, explain what viewers can safely know, separate unknown causes from verified facts, and close with what to watch next.',
     'upcoming-popular-adaptation-confirmed': 'Upcoming adaptation report: make it feel like a preview article. Cover the premise, confirmed anime status, studio, cast if supplied, audience interest, why the adaptation could matter, and what remains unknown. Do not invent missing cast or staff.',
     'why-anime-is-doing-poorly': 'Critical reception analysis: make it fair but sharp. Explain the gap between visibility and weak response, possible viewer friction points supported by premise/genre/status/score facts, and what could still improve. Avoid dunking or unsupported claims.',
@@ -1085,6 +1172,7 @@ ${JSON.stringify({
     requiredWritingBrief: topicWritingBrief(topic),
     currentTimeIso: new Date().toISOString(),
     headlineFreshnessRule: 'Use headline-based news only when selectedTopic.publishedAt is within the last 48 hours. Older headlines are not allowed.',
+    publishingRule: 'Quality over quantity: this article should exist only when the selected topic is important enough. Make every sentence justify why this topic matters now.',
     selectedTopic: topic || null,
   }, null, 2)}
 
@@ -1109,6 +1197,7 @@ Rules:
 - If selectedTopic.confidence is "headline", write one focused news article about that selected topic and explain only what the headline/facts support.
 - If selectedTopic.confidence is "trend", write one focused trend-analysis article and do not present it as confirmed news.
 - Match the selected topic type:
+  - missed-scheduled-airing: prioritize this above normal trend topics. Explain the next episode timing or schedule gap using only supplied facts. Do not invent a delay reason.
   - delayed-or-paused-airing: explain the verified airing/update context without adding unlisted causes.
   - upcoming-popular-adaptation-confirmed: explain the confirmed upcoming anime/adaptation angle. Include studio and cast only when supplied in selected anime facts or newsHeadlines.
   - why-anime-is-doing-poorly: give a fair critical analysis of weak reception using score/popularity/status/genre facts. Do not insult fans, creators, or studios.
@@ -1117,7 +1206,7 @@ Rules:
   - popular-anime-with-mixed-reception: explain the gap between popularity and weaker score/reception signals.
   - anime-trending-up-now or why-this-anime-is-doing-well: explain current momentum, score, genre, studio, and episode context.
 - Follow requiredWritingBrief closely so each article type has a different structure and angle.
-- Only mention delays, halted airing, production issues, viral episodes, trailers, sequels, or announcements when the selected topic or newsHeadlines explicitly support that claim.
+- Only mention missed airing, schedule gaps, delays, halted airing, production issues, viral episodes, trailers, sequels, or announcements when the selected topic or newsHeadlines explicitly support that claim.
 - Do not mention APIs, AI, automation, AniList, Jikan, sources, scraping, or generated content.
 - Keep it natural and editorial.
 - Write like a careful anime editor: explain what happened or what the trend signal shows, why it matters, why a fan should care, what viewers should watch for next, and what remains uncertain.
@@ -1133,6 +1222,7 @@ Rules:
 - Do not repeat the same sentence pattern across paragraphs. Avoid filler such as "worth paying attention to", "current signals", "quick factual look", "stands out", "momentum", or "on viewers' radar" more than once.
 - Avoid bland phrases like "must-watch", "making waves", "only time will tell", "fans are excited", "solid entry", "worth checking out", unless the surrounding facts make the phrase meaningful.
 - Do not pad with generic anime commentary. Specific facts, clear reasoning, and useful caveats are more important than length.
+- Do not write a soft filler article. If the strongest support is only ordinary popularity or a small trend signal, make the article tighter and more cautious instead of hyped.
 - Avoid piracy language and avoid telling users where to watch copyrighted content.
 - Make the writing useful for Google search: clear headings, direct wording, helpful context, and natural keywords around the selected anime/topic.
 - Keep every sentence fact-safe. If a fact is missing, skip it.
@@ -1357,9 +1447,23 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
     return { ...definition, updatedAt: generatedAt, generatedAt, articleSlug: definition.slug, items, article: fallbackArticle(definition, items), articleSource: 'fallback', articleStatus: 'guide_article' };
   }
 
+  if (!shouldPublishGeminiTopic(topic)) {
+    return {
+      ...definition,
+      updatedAt: generatedAt,
+      generatedAt,
+      articleSlug: topic ? slugifyArticleTitle(topic.title) : definition.slug,
+      items,
+      topic,
+      article: fallbackArticle(definition, items, topic),
+      articleSource: 'fallback',
+      articleStatus: 'not_crucial_topic_skipped',
+    };
+  }
+
   const generated = await generateArticle(definition, items, topic);
   const post = { ...definition, updatedAt: generatedAt, generatedAt, articleSlug: slugifyArticleTitle(generated.article.headline || topic?.title || definition.title), items, topic, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
-  await archiveBlogPost(post);
+  if (generated.source === 'gemini' && generated.status === 'ok') await archiveBlogPost(post);
   return post;
 }
 

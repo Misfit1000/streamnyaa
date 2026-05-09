@@ -23,7 +23,9 @@ export default async function handler(req: any, res: any) {
         slug,
         status: 200,
         ok: true,
+        skipped: post.articleStatus === 'not_crucial_topic_skipped',
         articleSlug: post.articleSlug,
+        articleStatus: post.articleStatus,
         generatedAt: post.generatedAt,
       });
     } catch (error: any) {

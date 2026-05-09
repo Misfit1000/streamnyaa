@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, BarChart3, CalendarClock, CheckCircle2, ExternalLink, HelpCircle, Loader2, Newspaper, Star } from 'lucide-react';
 import Seo from '../components/Seo';
+import AdSenseAd from '../components/AdSenseAd';
 import { articlePath, BLOG_POSTS, fetchBlogPost, fetchBlogPostByArticleSlug, getBlogPost } from '../api/blog';
 import type { BlogMediaItem } from '../api/blog';
 import { animePath } from '../lib/slug';
@@ -246,6 +247,8 @@ export default function BlogPost() {
                     {bodyParagraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
                   </div>
                 </section>
+
+                <AdSenseAd />
 
                 {article?.sections?.length ? <section className="space-y-4">
                   {article.sections.map((section, index) => <div key={section.heading} className="border border-border bg-secondary/30 rounded-2xl p-5 md:p-6">
