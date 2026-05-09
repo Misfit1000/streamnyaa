@@ -1,23 +1,20 @@
-import { useQuery } from '@tanstack/react-query';
-import { fetchPopularAnime, fetchSeasonalAnime, fetchRecentEpisodes, fetchUpcomingAnime, fetchSchedule } from '../api/jikan';
-import Spotlight from '../components/Spotlight';
-import AnimeCard from '../components/AnimeCard';
-import { ChevronRight, PlayCircle, TrendingUp, Calendar, ChevronDown, ChevronUp, Clock } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { useStore } from '../store/useStore';
 import { useMemo, useState } from 'react';
-import { animePath } from '../lib/slug';
-import Seo from '../components/Seo';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { Calendar, ChevronDown, ChevronRight, ChevronUp, Clock, PlayCircle, TrendingUp } from 'lucide-react';
+import { fetchPopularAnime, fetchRecentEpisodes, fetchSchedule, fetchSeasonalAnime, fetchUpcomingAnime } from '../api/jikan';
 import AdSenseAd from '../components/AdSenseAd';
+import AnimeCard from '../components/AnimeCard';
+import Seo from '../components/Seo';
+import Spotlight from '../components/Spotlight';
+import { animePath } from '../lib/slug';
+import { useStore } from '../store/useStore';
 
 export default function Home() {
   const { myList } = useStore();
   const [routineExpanded, setRoutineExpanded] = useState(false);
-  const localTimezone = useMemo(() => {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time';
-  }, []);
+  const localTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time', []);
 
-  // Spotlight could still use seasonal/trending releasing
   const { data: seasonalData, isLoading: seasonalLoading } = useQuery({
     queryKey: ['seasonalAnime'],
     queryFn: fetchSeasonalAnime,
@@ -37,19 +34,18 @@ export default function Home() {
     queryKey: ['upcomingAnime'],
     queryFn: fetchUpcomingAnime,
   });
-  
+
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date();
   todayEnd.setHours(23, 59, 59, 999);
   const todayStartSeconds = Math.floor(todayStart.getTime() / 1000);
   const todayEndSeconds = Math.floor(todayEnd.getTime() / 1000);
-  
+
   const { data: scheduleData, isLoading: scheduleLoading } = useQuery({
     queryKey: ['todaySchedule', todayStartSeconds, todayEndSeconds],
     queryFn: () => fetchSchedule(1, todayStartSeconds, todayEndSeconds),
   });
-
 
   const homeJsonLd = {
     '@context': 'https://schema.org',
@@ -71,9 +67,11 @@ export default function Home() {
   };
 
   if (seasonalLoading || popularLoading || recentLoading || upcomingLoading || scheduleLoading) {
-    return <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-    </div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
   }
 
   return (
@@ -84,23 +82,22 @@ export default function Home() {
         canonicalPath="/"
         jsonLd={homeJsonLd}
       />
+
       <Spotlight animeList={seasonalData?.data || []} />
-      
-      <main className="container mx-auto px-4 md:px-10 mt-8 grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
-        {/* Main Content Area */}
+
+      <main className="container mx-auto mt-8 grid grid-cols-1 gap-8 px-4 md:px-10 lg:grid-cols-[1fr_320px]">
         <div className="space-y-12">
-          {/* Recently Updated */}
-          <section>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                <PlayCircle className="w-6 h-6 text-primary" /> 
+          <section className="rounded-3xl border border-[var(--glass-border)] bg-background/50 p-4 shadow-xl shadow-black/10 backdrop-blur-xl md:p-5">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xl font-black text-foreground">
+                <PlayCircle className="h-6 w-6 text-primary" />
                 Recently Updated
               </h2>
-              <Link to="/search?sort=recent" className="text-sm font-semibold text-muted-foreground hover:text-primary transition-colors flex items-center gap-1">
-                View All <ChevronRight className="w-4 h-4" />
+              <Link to="/search?sort=recent" className="flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary">
+                View All <ChevronRight className="h-4 w-4" />
               </Link>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 md:gap-5 xl:grid-cols-5">
               {recentData?.data?.slice(0, 10).map((anime: any, idx: number) => (
                 <AnimeCard key={`recent-${anime.mal_id}-${idx}`} anime={anime} />
               ))}
@@ -109,36 +106,34 @@ export default function Home() {
 
           <AdSenseAd />
 
-          {/* Trending Now */}
-          <section>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                <TrendingUp className="w-6 h-6 text-primary" /> 
+          <section className="rounded-3xl border border-[var(--glass-border)] bg-secondary/35 p-4 shadow-xl shadow-black/10 backdrop-blur-xl md:p-5">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xl font-black text-foreground">
+                <TrendingUp className="h-6 w-6 text-primary" />
                 Trending Now
               </h2>
-              <Link to="/search?sort=trending" className="text-sm font-semibold text-muted-foreground hover:text-primary transition-colors flex items-center gap-1">
-                View All <ChevronRight className="w-4 h-4" />
+              <Link to="/search?sort=trending" className="flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary">
+                View All <ChevronRight className="h-4 w-4" />
               </Link>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 md:gap-5 xl:grid-cols-5">
               {seasonalData?.data?.slice(0, 10).map((anime: any, idx: number) => (
                 <AnimeCard key={`trending-${anime.mal_id}-${idx}`} anime={anime} />
               ))}
             </div>
           </section>
 
-          {/* Upcoming Anime */}
-          <section>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-black text-foreground flex items-center gap-2">
-                <Calendar className="w-6 h-6 text-primary" /> 
+          <section className="rounded-3xl border border-[var(--glass-border)] bg-background/50 p-4 shadow-xl shadow-black/10 backdrop-blur-xl md:p-5">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xl font-black text-foreground">
+                <Calendar className="h-6 w-6 text-primary" />
                 Upcoming Anime
               </h2>
-              <Link to="/search?sort=upcoming" className="text-sm font-semibold text-muted-foreground hover:text-primary transition-colors flex items-center gap-1">
-                View All <ChevronRight className="w-4 h-4" />
+              <Link to="/search?sort=upcoming" className="flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary">
+                View All <ChevronRight className="h-4 w-4" />
               </Link>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 md:gap-5 xl:grid-cols-5">
               {upcomingData?.data?.slice(0, 5).map((anime: any, idx: number) => (
                 <AnimeCard key={`upcoming-${anime.mal_id}-${idx}`} anime={anime} />
               ))}
@@ -146,49 +141,46 @@ export default function Home() {
           </section>
         </div>
 
-        {/* Sidebar Area */}
-        <div className="space-y-8">
-          
-          <div className="bg-secondary/50 rounded-3xl p-6 border border-border h-fit flex flex-col transition-all duration-300">
-            <div 
-              className="flex justify-between items-center mb-6 cursor-pointer group"
-              onClick={() => setRoutineExpanded(!routineExpanded)}
-            >
+        <aside className="space-y-8">
+          <div className="flex h-fit flex-col rounded-3xl border border-[var(--glass-border)] bg-secondary/45 p-6 shadow-xl shadow-black/10 backdrop-blur-xl transition-all duration-300">
+            <div className="group mb-6 flex cursor-pointer items-center justify-between" onClick={() => setRoutineExpanded(!routineExpanded)}>
               <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-primary" />
+                <Clock className="h-5 w-5 text-primary" />
                 <div>
-                  <h2 className="text-[16px] font-bold group-hover:text-primary transition-colors leading-none">Today's Schedule</h2>
+                  <h2 className="text-[16px] font-bold leading-none transition-colors group-hover:text-primary">Today's Schedule</h2>
                   <p className="mt-1 text-[11px] text-muted-foreground">Local time: {localTimezone}</p>
                 </div>
               </div>
-              <button className="text-muted-foreground group-hover:text-primary transition-colors p-1">
-                {routineExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+              <button className="p-1 text-muted-foreground transition-colors group-hover:text-primary" aria-label="Toggle schedule">
+                {routineExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
               </button>
             </div>
-            
-            <div className={`space-y-3 overflow-hidden transition-all duration-300 ${routineExpanded ? "max-h-[800px] overflow-y-auto custom-scrollbar pr-2" : "max-h-[300px]"}`}>
+
+            <div className={`space-y-3 overflow-hidden transition-all duration-300 ${routineExpanded ? 'max-h-[800px] overflow-y-auto pr-2 custom-scrollbar' : 'max-h-[300px]'}`}>
               {scheduleData?.data?.length === 0 ? (
-                <div className="text-sm text-center text-muted-foreground py-4">No episodes scheduled for today.</div>
+                <div className="py-4 text-center text-sm text-muted-foreground">No episodes scheduled for today.</div>
               ) : (
                 scheduleData?.data?.slice(0, routineExpanded ? scheduleData.data.length : 4).map((anime: any) => {
                   const airingTime = new Date(anime.airingAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
                   return (
-                    <Link to={animePath(anime)} key={`sched-${anime.mal_id}`} className="flex gap-4 group p-2 rounded-xl hover:bg-secondary border border-transparent hover:border-border transition-all">
-                      <div className="flex-shrink-0 w-12 h-16 rounded-md overflow-hidden relative">
-                        <img 
-                          src={anime.images.webp?.large_image_url || anime.images.jpg.large_image_url || anime.images.jpg.image_url} 
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
-                          alt={anime.title} 
+                    <Link to={animePath(anime)} key={`sched-${anime.scheduleId || anime.mal_id}`} className="group flex gap-4 rounded-xl border border-transparent p-2 transition-all hover:border-border hover:bg-background/45">
+                      <div className="relative h-16 w-12 flex-shrink-0 overflow-hidden rounded-md">
+                        <img
+                          src={anime.images.webp?.large_image_url || anime.images.jpg.large_image_url || anime.images.jpg.image_url}
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                          alt={anime.title}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
                         />
                       </div>
-                      <div className="flex flex-col justify-center min-w-0 flex-1">
-                        <div className="text-[13px] font-bold line-clamp-1 group-hover:text-primary transition-colors">{anime.title}</div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[11px] font-semibold text-muted-foreground bg-background px-1.5 py-0.5 rounded border border-border">
+                      <div className="flex min-w-0 flex-1 flex-col justify-center">
+                        <div className="line-clamp-1 text-[13px] font-bold transition-colors group-hover:text-primary">{anime.title}</div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="rounded border border-border bg-background/80 px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
                             Ep {anime.airingEpisode}
                           </span>
-                          <span className="text-[11px] font-bold text-primary flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
+                          <span className="flex items-center gap-1 text-[11px] font-bold text-primary">
+                            <Clock className="h-3 w-3" />
                             {airingTime}
                           </span>
                         </div>
@@ -198,31 +190,31 @@ export default function Home() {
                 })
               )}
             </div>
-            
-            {!routineExpanded && scheduleData?.data?.length > 4 && (
-              <button 
+
+            {!routineExpanded && scheduleData?.data?.length > 4 ? (
+              <button
                 onClick={() => setRoutineExpanded(true)}
-                className="mt-4 w-full bg-background border border-border hover:border-primary/50 text-center text-[13px] font-bold text-foreground hover:text-primary py-2 rounded-xl transition-colors"
+                className="mt-4 w-full rounded-xl border border-border bg-background/60 py-2 text-center text-[13px] font-bold text-foreground transition-colors hover:border-primary/50 hover:text-primary"
               >
                 View all ({scheduleData.data.length})
               </button>
-            )}
+            ) : null}
 
-            <div className="mt-8 pt-6 border-t border-border">
-              <div className="flex items-center justify-between mb-4">
+            <div className="mt-8 border-t border-border pt-6">
+              <div className="mb-4 flex items-center justify-between">
                 <div className="text-[12px] font-bold text-muted-foreground">MY LIST ({myList.length})</div>
-                <Link to="/my-list" className="text-[12px] text-primary hover:underline font-medium">View all</Link>
+                <Link to="/my-list" className="text-[12px] font-medium text-primary hover:underline">View all</Link>
               </div>
-              
+
               <div className="flex flex-wrap gap-2.5">
                 {myList.slice(0, 7).map((anime) => (
                   <Link to={animePath(anime)} key={`mylist-${anime.mal_id}`} title={anime.title}>
-                    <img src={anime.images?.jpg?.image_url} className="w-9 h-9 rounded-full object-cover border-2 border-transparent hover:border-primary transition-colors bg-secondary" alt={anime.title} />
+                    <img src={anime.images?.jpg?.image_url} className="h-9 w-9 rounded-full border-2 border-transparent bg-secondary object-cover transition-colors hover:border-primary" alt={anime.title} loading="lazy" referrerPolicy="no-referrer" />
                   </Link>
                 ))}
                 {myList.length > 7 ? (
-                  <Link to="/my-list" className="w-9 h-9 rounded-full border border-dashed border-muted-foreground flex items-center justify-center text-sm hover:border-primary hover:text-primary transition-colors text-muted-foreground bg-secondary/50">
-                    <ChevronRight className="w-4 h-4" />
+                  <Link to="/my-list" className="flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-muted-foreground bg-secondary/50 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-primary">
+                    <ChevronRight className="h-4 w-4" />
                   </Link>
                 ) : myList.length === 0 ? (
                   <div className="text-xs text-muted-foreground">Your list is empty.</div>
@@ -230,14 +222,14 @@ export default function Home() {
               </div>
             </div>
           </div>
-
-        </div>
+        </aside>
       </main>
-      <section className="container mx-auto px-4 md:px-10 mt-12" aria-labelledby="anime-discovery-heading">
-        <div className="max-w-5xl border-t border-border pt-8">
-          <div className="grid gap-6 md:grid-cols-[1.1fr_0.9fr] text-sm md:text-base text-muted-foreground leading-relaxed">
+
+      <section className="container mx-auto mt-12 px-4 md:px-10" aria-labelledby="anime-discovery-heading">
+        <div className="max-w-5xl rounded-3xl border border-[var(--glass-border)] bg-secondary/30 p-6 shadow-xl shadow-black/10 backdrop-blur-xl md:p-8">
+          <div className="grid gap-6 text-sm leading-relaxed text-muted-foreground md:grid-cols-[1.1fr_0.9fr] md:text-base">
             <div>
-              <h2 id="anime-discovery-heading" className="text-2xl md:text-3xl font-black text-foreground mb-4">Anime Downloads, Release Schedules, and Episode Updates</h2>
+              <h2 id="anime-discovery-heading" className="mb-4 text-2xl font-black text-foreground md:text-3xl">Anime Downloads, Release Schedules, and Episode Updates</h2>
               <p>
                 StreamNyaa helps anime fans find download options, trending anime, seasonal releases, upcoming episodes, and detailed anime information in one fast browsing experience. Use the homepage to follow recently updated anime, check today's anime release schedule, browse popular titles, and jump into dedicated anime detail pages with genres, synopsis, recommendations, episode lists, and related media.
               </p>
@@ -247,15 +239,15 @@ export default function Home() {
             </div>
             <div className="space-y-4">
               <div>
-                <h3 className="font-black text-foreground mb-2">Browse Seasonal Anime</h3>
+                <h3 className="mb-2 font-black text-foreground">Browse Seasonal Anime</h3>
                 <p>Find currently airing anime, upcoming series, popular shows, and recent episode updates with poster cards and quick links to anime pages.</p>
               </div>
               <div>
-                <h3 className="font-black text-foreground mb-2">Track Anime Schedules</h3>
+                <h3 className="mb-2 font-black text-foreground">Track Anime Schedules</h3>
                 <p>Use the anime schedule view to see release timing, episode numbers, and local-time updates for new anime episodes.</p>
               </div>
               <div>
-                <h3 className="font-black text-foreground mb-2">Find Download Sources</h3>
+                <h3 className="mb-2 font-black text-foreground">Find Download Sources</h3>
                 <p>Search by title, episode, quality, audio type, and batch or single-episode format to compare available source results.</p>
               </div>
             </div>

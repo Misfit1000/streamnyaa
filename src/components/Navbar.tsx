@@ -59,7 +59,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 w-full bg-gradient-to-b from-background to-transparent">
+    <nav className="sticky top-0 z-50 w-full border-b border-[var(--glass-border)] bg-background/78 shadow-lg shadow-black/5 backdrop-blur-2xl">
       <div className="container mx-auto px-4 md:px-10 h-16 flex items-center justify-between gap-4 md:gap-8">
         <div className="flex items-center gap-4 md:gap-8">
           <Link to="/" className="text-xl sm:text-2xl font-black text-primary flex items-center gap-2 tracking-tighter shrink-0">
@@ -97,7 +97,7 @@ export default function Navbar() {
           </form>
           
           {showFilters && (
-            <div className="absolute top-full mt-2 w-full bg-background border border-[var(--glass-border)] rounded-xl shadow-xl overflow-hidden p-4 flex flex-col gap-4 z-50">
+            <div className="absolute top-full z-50 mt-2 flex w-full flex-col gap-4 overflow-hidden rounded-xl border border-[var(--glass-border)] bg-background/88 p-4 shadow-xl shadow-black/20 backdrop-blur-2xl">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold uppercase text-muted-foreground mb-1.5">Type</label>
@@ -186,7 +186,7 @@ export default function Navbar() {
 
       {/* Mobile Menu */}
       {isMenuOpen && (
-        <div className="lg:hidden absolute top-full left-0 w-full bg-background border-b border-[var(--glass-border)] shadow-xl z-50">
+        <div className="absolute left-0 top-full z-50 w-full border-b border-[var(--glass-border)] bg-background/90 shadow-xl shadow-black/20 backdrop-blur-2xl lg:hidden">
           <div className="container mx-auto px-6 py-4 flex flex-col gap-4">
             <form onSubmit={handleSearch} className="md:hidden relative flex items-center mb-2">
               <input
