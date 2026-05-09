@@ -1,11 +1,20 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, KeyRound, Lock, LogIn, Mail, ShieldCheck, Sparkles, Star, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, Lock, LogIn, Mail, ShieldCheck, Sparkles, UserPlus } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
 
 type LoginProps = {
   adminOnly?: boolean;
+};
+
+const LOGIN_VISUALS = {
+  main: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx147105-rwOX8qyUy8gV.jpg',
+  side: [
+    'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-ELSYx3yMPcKM.jpg',
+    'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx189046-yaHWtS5FII46.jpg',
+    'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx182300-IYkq5KrkQq1V.jpg',
+  ],
 };
 
 export default function Login({ adminOnly = false }: LoginProps) {
@@ -120,82 +129,77 @@ export default function Login({ adminOnly = false }: LoginProps) {
       };
 
   return (
-    <div className="container mx-auto px-4 md:px-10 py-10 md:py-14">
+    <div className="relative min-h-[calc(100vh-80px)] overflow-hidden px-4 py-8 md:px-10 md:py-12">
       <Seo
         title={adminOnly ? 'Admin Sign In | StreamNyaa' : 'Sign in to StreamNyaa | StreamNyaa'}
         description={adminOnly ? 'Private StreamNyaa admin sign in.' : 'Sign in to StreamNyaa to manage your account and watchlist.'}
         canonicalPath={adminOnly ? '/login/admin' : '/login'}
         robots={adminOnly ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}
       />
-      <div className="mx-auto grid max-w-6xl overflow-hidden rounded-2xl border border-border bg-background shadow-2xl shadow-black/20 lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="relative hidden min-h-[620px] overflow-hidden bg-zinc-950 p-8 text-white lg:flex lg:flex-col lg:justify-between">
-          <div className="absolute inset-0 opacity-70">
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_16%,rgba(225,29,72,0.16),transparent_34%),radial-gradient(circle_at_86%_76%,rgba(255,255,255,0.08),transparent_30%)]" />
+      <div className="mx-auto grid max-w-6xl overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-2xl shadow-black/40 lg:grid-cols-[1.02fr_0.98fr]">
+        <section className="relative min-h-[260px] overflow-hidden bg-zinc-950 p-3 text-white md:min-h-[360px] lg:min-h-[650px]">
+          <div className="relative h-full overflow-hidden rounded-[22px] border border-white/10 bg-secondary">
             <img
-              src="https://s4.anilist.co/file/anilistcdn/media/anime/banner/21-YCDoj1EkAxFn.jpg"
-              alt=""
-              className="h-full w-full object-cover"
+              src={LOGIN_VISUALS.main}
+              alt="Featured anime artwork"
+              className="h-full w-full object-cover object-center brightness-[0.92] saturate-110"
+              loading="eager"
+              referrerPolicy="no-referrer"
             />
-            <div className="absolute inset-0 bg-[linear-gradient(110deg,rgba(5,5,7,0.96),rgba(5,5,7,0.78),rgba(225,29,72,0.34))]" />
-          </div>
-          <div className="relative">
-            <Link to="/" className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur">
-              <Sparkles className="h-4 w-4 text-primary" />
-              StreamNyaa
-            </Link>
-            <h1 className="mt-12 max-w-xl text-5xl font-black leading-tight tracking-tight">
-              {adminOnly ? 'Private control access for StreamNyaa.' : 'Your anime hub, now with an account layer.'}
-            </h1>
-            <p className="mt-5 max-w-lg text-base leading-8 text-white/72">
-              {adminOnly
-                ? 'Sign in through the private admin entry point to manage blog articles, publishing tools, and trusted admin users.'
-                : 'Keep your saved pages close and use one clean sign-in for the features being added around StreamNyaa.'}
-            </p>
-          </div>
-          <div className="relative grid gap-3">
-            {(adminOnly
-              ? [
-                  ['Private URL', 'Admin sign-in is separated from the public user login screen.'],
-                  ['Approved emails only', 'Only emails listed as admins can open the control dashboard.'],
-                  ['Site controls', 'Generate articles and manage admin access after signing in.'],
-                ]
-              : [
-                  ['Saved anime list', 'Keep watch targets easier to reach from your dashboard.'],
-                  ['Quick shortcuts', 'Jump into schedules, downloads, blog posts, and discovery pages.'],
-                  ['Secure session', 'Your browser keeps a private sign-in session until you sign out.'],
-                ]).map(([title, body]) => (
-              <div key={title} className="rounded-xl border border-white/12 bg-black/35 p-4 backdrop-blur">
-                <div className="flex items-start gap-3">
-                  <Star className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <div>
-                    <p className="text-sm font-black">{title}</p>
-                    <p className="mt-1 text-sm leading-6 text-white/65">{body}</p>
-                  </div>
-                </div>
+            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.04),rgba(0,0,0,0.62))]" />
+            <div className="absolute left-4 right-4 top-4 flex items-center justify-between gap-3">
+              <Link to="/" className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/45 px-4 py-2 text-sm font-black text-white backdrop-blur">
+                <Sparkles className="h-4 w-4 text-primary" />
+                StreamNyaa
+              </Link>
+              <span className="rounded-full border border-white/20 bg-black/45 px-3 py-1.5 text-xs font-black uppercase tracking-wider text-white/85 backdrop-blur">
+                {adminOnly ? 'Admin' : 'Account'}
+              </span>
+            </div>
+            <div className="absolute bottom-4 left-4 right-4">
+              <div className="max-w-md rounded-2xl border border-white/14 bg-black/42 p-4 backdrop-blur-md">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-primary">{adminOnly ? 'Private access' : 'Anime dashboard'}</p>
+                <h2 className="mt-2 text-2xl font-black leading-tight md:text-3xl">
+                  {adminOnly ? 'Manage StreamNyaa from a focused control space.' : 'Sign in and keep your anime space close.'}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-white/70">
+                  {adminOnly
+                    ? 'Article tools, admin access, and publishing controls stay behind the private admin route.'
+                    : 'Saved anime, schedules, blog reads, and discovery shortcuts feel cleaner when they start from one account.'}
+                </p>
               </div>
-            ))}
+              <div className="mt-3 hidden grid-cols-3 gap-2 sm:grid">
+                {LOGIN_VISUALS.side.map((imageUrl, index) => (
+                  <div key={imageUrl} className="aspect-[16/9] overflow-hidden rounded-xl border border-white/12 bg-black/40">
+                    <img src={imageUrl} alt={`Anime preview ${index + 1}`} className="h-full w-full object-cover brightness-90" loading="lazy" referrerPolicy="no-referrer" />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
 
-        <section className="bg-[radial-gradient(circle_at_top_right,rgba(225,29,72,0.12),transparent_34%),var(--background)] p-5 sm:p-8 md:p-10">
-          <div className="mx-auto max-w-md">
-            <div className="mb-8 flex items-center justify-between gap-4">
-              <Link to="/" className="text-sm font-black text-foreground">StreamNyaa</Link>
-              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-[var(--glass)] px-3 py-1.5 text-xs font-bold text-muted-foreground">
+        <section className="flex items-center bg-black p-5 text-white sm:p-8 md:p-10">
+          <div className="mx-auto w-full max-w-md">
+            <div className="mb-10 flex items-center justify-between gap-4 lg:justify-end">
+              <Link to="/" className="text-sm font-black text-white lg:hidden">StreamNyaa</Link>
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/65">
                 <ShieldCheck className="h-3.5 w-3.5 text-primary" />
                 {adminOnly ? 'Admin access' : 'User login'}
               </div>
             </div>
 
-            <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <div className="mx-auto mb-7 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-primary">
               <Lock className="h-6 w-6" />
             </div>
-            <h1 className="text-3xl font-black tracking-tight md:text-4xl">{modeCopy.title}</h1>
-            <p className="mt-3 text-sm leading-7 text-muted-foreground">{modeCopy.description}</p>
+            <h1 className="text-center text-3xl font-black tracking-tight md:text-4xl">{modeCopy.title}</h1>
+            <p className="mx-auto mt-3 max-w-sm text-center text-sm leading-7 text-white/58">{modeCopy.description}</p>
 
             {!adminOnly ? (
-              <div className="mt-7 grid grid-cols-2 rounded-xl border border-border bg-background/70 p-1 shadow-inner">
+              <div className="mt-8 grid grid-cols-2 rounded-full border border-white/10 bg-white/5 p-1 shadow-inner">
                 <button type="button" onClick={() => setMode('login')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'login' || mode === 'forgot' || mode === 'reset' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Login</button>
-                <button type="button" onClick={() => setMode('signup')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-muted-foreground hover:text-foreground'}`}>Sign up</button>
+                <button type="button" onClick={() => setMode('signup')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-white/56 hover:text-white'}`}>Sign up</button>
               </div>
             ) : null}
 
@@ -205,15 +209,15 @@ export default function Login({ adminOnly = false }: LoginProps) {
                   type="button"
                   onClick={startGoogleLogin}
                   disabled={submitting}
-                  className="flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-background px-4 py-3.5 text-sm font-black text-foreground transition-colors hover:border-primary/40 hover:bg-secondary/40 disabled:opacity-60"
+                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white px-4 py-3.5 text-sm font-black text-black transition-colors hover:bg-white/90 disabled:opacity-60"
                 >
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-[13px] font-black text-zinc-900">G</span>
                   Continue with Google
                 </button>
                 <div className="my-5 flex items-center gap-3">
-                  <span className="h-px flex-1 bg-border" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">or</span>
-                  <span className="h-px flex-1 bg-border" />
+                  <span className="h-px flex-1 bg-white/10" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-white/45">or</span>
+                  <span className="h-px flex-1 bg-white/10" />
                 </div>
               </div>
             ) : null}
@@ -221,15 +225,15 @@ export default function Login({ adminOnly = false }: LoginProps) {
             <form onSubmit={submit} className="mt-6 space-y-4">
               {mode !== 'reset' ? (
               <div>
-                <label className="mb-1.5 block text-xs font-black uppercase tracking-wider text-muted-foreground">Email</label>
+                <label className="mb-2 block text-sm font-black text-white">Email</label>
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/45" />
                   <input
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     required
-                    className="w-full rounded-xl border border-border bg-background py-3.5 pl-11 pr-4 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                    className="w-full rounded-2xl border border-white/10 bg-white/10 py-3.5 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-white/30"
                     placeholder="you@example.com"
                   />
                 </div>
@@ -238,7 +242,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
 
               {mode !== 'forgot' ? (
               <div>
-                <label className="mb-1.5 block text-xs font-black uppercase tracking-wider text-muted-foreground">Password</label>
+                <label className="mb-2 block text-sm font-black text-white">Password</label>
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -246,13 +250,13 @@ export default function Login({ adminOnly = false }: LoginProps) {
                     onChange={(event) => setPassword(event.target.value)}
                     required
                     minLength={6}
-                    className="w-full rounded-xl border border-border bg-background py-3.5 pl-4 pr-12 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                    className="w-full rounded-2xl border border-white/10 bg-white/10 py-3.5 pl-4 pr-12 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-white/30"
                     placeholder="At least 6 characters"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -263,16 +267,16 @@ export default function Login({ adminOnly = false }: LoginProps) {
 
               {mode === 'reset' ? (
                 <div>
-                  <label className="mb-1.5 block text-xs font-black uppercase tracking-wider text-muted-foreground">Confirm password</label>
+                  <label className="mb-2 block text-sm font-black text-white">Confirm password</label>
                   <div className="relative">
-                    <KeyRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <KeyRound className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/45" />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={confirmPassword}
                       onChange={(event) => setConfirmPassword(event.target.value)}
                       required
                       minLength={6}
-                      className="w-full rounded-xl border border-border bg-background py-3.5 pl-11 pr-4 text-sm text-foreground outline-none transition-colors focus:border-primary"
+                      className="w-full rounded-2xl border border-white/10 bg-white/10 py-3.5 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-white/30"
                       placeholder="Repeat new password"
                     />
                   </div>
@@ -282,7 +286,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
               {error ? <p className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm font-semibold text-red-400">{error}</p> : null}
               {message ? <p className="rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm font-semibold text-green-400">{message}</p> : null}
 
-              <button disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:opacity-60">
+              <button disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3.5 text-sm font-black text-black shadow-lg shadow-white/10 transition-colors hover:bg-white/90 disabled:opacity-60">
                 {mode === 'forgot' || mode === 'reset' ? <KeyRound className="h-4 w-4" /> : adminOnly || mode === 'login' ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                 {submitting ? 'Please wait...' : modeCopy.action}
               </button>
@@ -296,7 +300,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
                   setMessage('');
                   setMode('forgot');
                 }}
-                className="mt-4 w-full text-center text-sm font-bold text-primary hover:underline"
+                className="mt-4 w-full text-center text-sm font-bold text-white/72 hover:text-white hover:underline"
               >
                 Forgot your password?
               </button>
@@ -308,21 +312,21 @@ export default function Login({ adminOnly = false }: LoginProps) {
                   setMessage('');
                   setMode('login');
                 }}
-                className="mt-4 w-full text-center text-sm font-bold text-primary hover:underline"
+                className="mt-4 w-full text-center text-sm font-bold text-white/72 hover:text-white hover:underline"
               >
                 Back to sign in
               </button>
             ) : null}
 
             {adminOnly ? (
-              <div className="mt-6 rounded-xl border border-border bg-[var(--glass)] p-4">
-                <p className="text-sm font-black text-foreground">Admin-only entry</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">If this email is not on the admin list, the dashboard will stay locked after sign-in.</p>
+              <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-sm font-black text-white">Admin-only entry</p>
+                <p className="mt-1 text-sm leading-6 text-white/55">If this email is not on the admin list, the dashboard will stay locked after sign-in.</p>
               </div>
             ) : null}
 
-            <p className="mt-6 text-center text-sm text-muted-foreground">
-              <Link to="/" className="font-bold text-primary hover:underline">Back to StreamNyaa</Link>
+            <p className="mt-6 text-center text-sm text-white/50">
+              <Link to="/" className="font-bold text-white/78 hover:text-white hover:underline">Back to StreamNyaa</Link>
             </p>
           </div>
         </section>

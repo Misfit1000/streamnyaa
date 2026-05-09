@@ -18,6 +18,13 @@ import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
 import { useStore } from '../store/useStore';
 
+const DASHBOARD_FALLBACK_IMAGES = [
+  'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx147105-rwOX8qyUy8gV.jpg',
+  'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-ELSYx3yMPcKM.jpg',
+  'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx189046-yaHWtS5FII46.jpg',
+  'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx182300-IYkq5KrkQq1V.jpg',
+];
+
 function shortName(email?: string) {
   const name = String(email || 'there').split('@')[0].replace(/[._-]+/g, ' ').trim();
   return name ? name.replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'there';
@@ -72,35 +79,57 @@ export default function Dashboard() {
   const collection = Array.from(combinedMap.values());
   const recentCollection = collection.slice(-5).reverse();
   const displayName = shortName(user.email);
+  const heroImages = [
+    ...recentCollection
+      .map((anime) => anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url)
+      .filter(Boolean),
+    ...DASHBOARD_FALLBACK_IMAGES,
+  ].slice(0, 4);
 
   return (
     <div className="container mx-auto px-4 py-8 md:px-10">
       <Seo title="Dashboard | StreamNyaa" description="Manage your StreamNyaa account dashboard." canonicalPath="/dashboard" />
 
-      <header className="border-b border-border pb-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">{isAdmin ? 'Admin account' : 'User account'}</p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">Dashboard</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-              Welcome back, <span className="font-bold text-foreground">{displayName}</span>. Your account tools, saved titles, and discovery shortcuts are here.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link to="/my-list" className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90">
-              <BookOpen className="h-4 w-4" />
-              My list
-            </Link>
-            <Link to="/anime/popular" className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-black text-foreground hover:border-primary/45">
-              <Compass className="h-4 w-4" />
-              Discover
-            </Link>
-            {isAdmin ? (
-              <Link to="/admin" className="inline-flex items-center gap-2 rounded-lg border border-primary/35 bg-primary/10 px-4 py-2.5 text-sm font-black text-primary hover:bg-primary/15">
-                <Shield className="h-4 w-4" />
-                Admin
+      <header className="overflow-hidden rounded-2xl border border-border bg-[var(--glass)]">
+        <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
+          <div className="p-5 md:p-7">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">{isAdmin ? 'Admin account' : 'User account'}</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">Dashboard</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
+                Welcome back, <span className="font-bold text-foreground">{displayName}</span>. Your account tools, saved titles, and discovery shortcuts are here.
+              </p>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Link to="/my-list" className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90">
+                <BookOpen className="h-4 w-4" />
+                My list
               </Link>
-            ) : null}
+              <Link to="/anime/popular" className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-black text-foreground hover:border-primary/45">
+                <Compass className="h-4 w-4" />
+                Discover
+              </Link>
+              {isAdmin ? (
+                <Link to="/admin" className="inline-flex items-center gap-2 rounded-lg border border-primary/35 bg-primary/10 px-4 py-2.5 text-sm font-black text-primary hover:bg-primary/15">
+                  <Shield className="h-4 w-4" />
+                  Admin
+                </Link>
+              ) : null}
+            </div>
+          </div>
+          <div className="relative min-h-[220px] overflow-hidden border-t border-border bg-secondary lg:border-l lg:border-t-0">
+            <div className="absolute inset-0 grid grid-cols-4 gap-1 p-2">
+              {heroImages.map((image, index) => (
+                <div key={`${image}-${index}`} className="overflow-hidden rounded-xl bg-background">
+                  <img src={image} alt="" className="h-full w-full object-cover brightness-[0.82]" loading="lazy" referrerPolicy="no-referrer" />
+                </div>
+              ))}
+            </div>
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.55),rgba(0,0,0,0.05)),linear-gradient(180deg,transparent,rgba(0,0,0,0.5))]" />
+            <div className="absolute bottom-4 left-4 right-4">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Your anime shelf</p>
+              <p className="mt-1 text-lg font-black text-white">{collection.length ? `${collection.length} titles saved or liked` : 'Start building your list'}</p>
+            </div>
           </div>
         </div>
       </header>
