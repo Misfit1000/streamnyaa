@@ -176,102 +176,80 @@ export default function Login({ adminOnly = false }: LoginProps) {
       };
 
   return (
-    <div className="relative flex min-h-[calc(100vh-72px)] items-center justify-center overflow-hidden px-3 py-4 md:px-6">
+    <div className="relative flex min-h-[calc(100vh-72px)] items-center justify-center overflow-hidden bg-background px-3 py-4 text-white md:px-6">
       <Seo
         title={adminOnly ? 'Admin Sign In | StreamNyaa' : 'Sign in to StreamNyaa | StreamNyaa'}
         description={adminOnly ? 'Private StreamNyaa admin sign in.' : 'Sign in to StreamNyaa to manage your account and watchlist.'}
         canonicalPath={adminOnly ? '/login/admin' : '/login'}
         robots={adminOnly ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}
       />
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_16%,rgba(225,29,72,0.16),transparent_34%),radial-gradient(circle_at_86%_76%,rgba(255,255,255,0.08),transparent_30%)]" />
-      <div className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[24px] border border-white/10 bg-black shadow-2xl shadow-black/40 lg:h-[min(590px,calc(100vh-96px))] lg:grid-cols-[1fr_0.86fr]">
-        <section className="relative min-h-[220px] overflow-hidden bg-zinc-950 p-2.5 text-white md:min-h-[300px] lg:min-h-0">
-          <div className="relative h-full overflow-hidden rounded-[22px] border border-white/10 bg-secondary">
-            <img
-              key={activeVisual.hero}
-              src={activeVisual.hero}
-              alt={`${activeVisual.title} seasonal anime artwork`}
-              className="h-full w-full object-cover object-center brightness-[0.92] saturate-110 transition-opacity duration-500"
-              loading="eager"
-              referrerPolicy="no-referrer"
-            />
-            <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.02),rgba(0,0,0,0.7))]" />
-            <div className="absolute left-4 right-4 top-4 flex items-center justify-between gap-3">
-              <Link to="/" className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-black/45 px-4 py-2 text-sm font-black text-white backdrop-blur">
-                <Sparkles className="h-4 w-4 text-primary" />
+      <img
+        key={`login-bg-${activeVisual.hero}`}
+        src={activeVisual.hero}
+        alt=""
+        className="absolute inset-0 -z-30 h-full w-full scale-110 object-cover opacity-45 blur-2xl"
+        aria-hidden="true"
+        referrerPolicy="no-referrer"
+      />
+      <div className="absolute inset-0 -z-20 bg-[linear-gradient(115deg,rgba(5,5,7,0.96),rgba(5,5,7,0.72)_45%,rgba(225,29,72,0.22)),linear-gradient(180deg,rgba(5,5,7,0.72),#050507)]" />
+      <div className="absolute inset-0 -z-10 opacity-30 [background-image:linear-gradient(115deg,rgba(225,29,72,0.18)_1px,transparent_1px),linear-gradient(25deg,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:48px_48px,64px_64px]" />
+
+      <div className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[30px] border border-white/12 bg-[#08080a]/92 shadow-2xl shadow-black/45 backdrop-blur-xl md:min-h-[520px] md:grid-cols-[0.95fr_1.05fr] lg:min-h-[560px]">
+        <section className="flex min-h-0 items-center bg-[#08080a]/95 px-5 py-6 sm:px-8 md:px-10">
+          <div className="mx-auto w-full max-w-[360px]">
+            <div className="mb-7 flex items-center justify-between gap-4">
+              <Link to="/" className="inline-flex items-center gap-2 text-sm font-black text-white">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-white shadow-lg shadow-primary/25">
+                  <Sparkles className="h-4 w-4" />
+                </span>
                 StreamNyaa
               </Link>
-              <span className="rounded-full border border-white/20 bg-black/45 px-3 py-1.5 text-xs font-black uppercase tracking-wider text-white/85 backdrop-blur">
-                {adminOnly ? 'Admin' : 'Account'}
-              </span>
-            </div>
-            <div className="absolute bottom-3 left-3 right-3 md:bottom-4 md:left-4 md:right-4">
-              <div className="max-w-md rounded-2xl border border-white/14 bg-black/42 p-3.5 backdrop-blur-md">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-primary">{adminOnly ? 'Private access' : 'Anime dashboard'}</p>
-                <h2 className="mt-1.5 text-xl font-black leading-tight md:text-2xl">
-                  {adminOnly ? 'Manage StreamNyaa from a focused control space.' : 'Sign in and keep your anime space close.'}
-                </h2>
-                <p className="mt-2 line-clamp-2 text-sm leading-6 text-white/70">
-                  {adminOnly
-                    ? 'Article tools, admin access, and publishing controls stay behind the private admin route.'
-                    : 'Saved anime, schedules, blog reads, and discovery shortcuts feel cleaner when they start from one account.'}
-                </p>
-                <p className="mt-2 text-xs font-black text-white/60">Now showing: <span className="text-white">{activeVisual.title}</span></p>
-              </div>
-              <div className="mt-2 hidden grid-cols-3 gap-2 sm:grid">
-                {previewVisuals.map((visual, index) => (
-                  <div key={`${visual.cover}-${index}`} className="aspect-[16/10] overflow-hidden rounded-xl border border-white/12 bg-black/40">
-                    <img src={visual.cover} alt={`${visual.title} anime cover`} className="h-full w-full object-cover brightness-90" loading="lazy" referrerPolicy="no-referrer" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="flex min-h-0 items-center bg-black p-5 text-white sm:p-7 md:p-8">
-          <div className="mx-auto w-full max-w-md">
-            <div className="mb-5 flex items-center justify-between gap-4 lg:justify-end">
-              <Link to="/" className="text-sm font-black text-white lg:hidden">StreamNyaa</Link>
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/65">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/64">
                 <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                {adminOnly ? 'Admin access' : 'User login'}
+                {adminOnly ? 'Admin' : 'Account'}
               </div>
             </div>
 
-            <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-primary">
-              <Lock className="h-5 w-5" />
+            <div className="mb-6 text-center">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/25 bg-primary/12 text-primary">
+                <Lock className="h-5 w-5" />
+              </div>
+              <h1 className="text-2xl font-black tracking-tight md:text-3xl">{modeCopy.title}</h1>
+              <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-white/58">{modeCopy.description}</p>
             </div>
-            <h1 className="text-center text-2xl font-black tracking-tight md:text-3xl">{modeCopy.title}</h1>
-            <p className="mx-auto mt-2 max-w-sm text-center text-sm leading-6 text-white/58">{modeCopy.description}</p>
 
             {!adminOnly ? (
-              <div className="mt-5 grid grid-cols-2 rounded-full border border-white/10 bg-white/5 p-1 shadow-inner">
-                <button type="button" onClick={() => setMode('login')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'login' || mode === 'forgot' || mode === 'reset' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-white/56 hover:text-white'}`}>Login</button>
-                <button type="button" onClick={() => setMode('signup')} className={`rounded-lg px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/20' : 'text-white/56 hover:text-white'}`}>Sign up</button>
+              <div className="mb-4 grid grid-cols-2 rounded-full border border-white/10 bg-white/5 p-1 shadow-inner">
+                <button type="button" onClick={() => setMode('login')} className={`rounded-full px-3 py-2.5 text-sm font-black transition-colors ${mode === 'login' || mode === 'forgot' || mode === 'reset' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-white/56 hover:text-white'}`}>Login</button>
+                <button type="button" onClick={() => setMode('signup')} className={`rounded-full px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-white/56 hover:text-white'}`}>Sign up</button>
               </div>
             ) : null}
 
             {!adminOnly && mode === 'login' ? (
-              <div className="mt-4">
+              <div className="mb-4">
                 <button
                   type="button"
                   onClick={startGoogleLogin}
                   disabled={submitting}
-                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white px-4 py-3 text-sm font-black text-black transition-colors hover:bg-white/90 disabled:opacity-60"
+                  className="flex w-full items-center justify-center gap-3 rounded-full border border-white/10 bg-white px-4 py-3 text-sm font-black text-black transition-colors hover:bg-white/90 disabled:opacity-60"
                 >
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-[13px] font-black text-zinc-900">G</span>
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.24 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06L5.84 9.9C6.71 7.31 9.14 5.38 12 5.38z" />
+                  </svg>
                   Continue with Google
                 </button>
                 <div className="my-4 flex items-center gap-3">
                   <span className="h-px flex-1 bg-white/10" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-white/45">or</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-white/42">or</span>
                   <span className="h-px flex-1 bg-white/10" />
                 </div>
               </div>
             ) : null}
 
-            <form onSubmit={submit} className="mt-4 space-y-3">
+            <form onSubmit={submit} className="space-y-3">
               {mode !== 'reset' ? (
               <div>
                 <label className="mb-2 block text-sm font-black text-white">Email</label>
@@ -282,7 +260,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     required
-                    className="w-full rounded-2xl border border-white/10 bg-white/10 py-3 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-white/30"
+                    className="w-full rounded-full border border-white/15 bg-white/[0.07] py-3 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-primary/70"
                     placeholder="you@example.com"
                   />
                 </div>
@@ -299,13 +277,13 @@ export default function Login({ adminOnly = false }: LoginProps) {
                     onChange={(event) => setPassword(event.target.value)}
                     required
                     minLength={6}
-                    className="w-full rounded-2xl border border-white/10 bg-white/10 py-3 pl-4 pr-12 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-white/30"
+                    className="w-full rounded-full border border-white/15 bg-white/[0.07] py-3 pl-4 pr-12 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-primary/70"
                     placeholder="At least 6 characters"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((value) => !value)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -325,7 +303,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
                       onChange={(event) => setConfirmPassword(event.target.value)}
                       required
                       minLength={6}
-                      className="w-full rounded-2xl border border-white/10 bg-white/10 py-3 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-white/30"
+                      className="w-full rounded-full border border-white/15 bg-white/[0.07] py-3 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-primary/70"
                       placeholder="Repeat new password"
                     />
                   </div>
@@ -335,7 +313,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
               {error ? <p className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm font-semibold text-red-400">{error}</p> : null}
               {message ? <p className="rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm font-semibold text-green-400">{message}</p> : null}
 
-              <button disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-black shadow-lg shadow-white/10 transition-colors hover:bg-white/90 disabled:opacity-60">
+              <button disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-black text-white shadow-lg shadow-primary/25 transition-colors hover:bg-primary/90 disabled:opacity-60">
                 {mode === 'forgot' || mode === 'reset' ? <KeyRound className="h-4 w-4" /> : adminOnly || mode === 'login' ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                 {submitting ? 'Please wait...' : modeCopy.action}
               </button>
@@ -376,6 +354,40 @@ export default function Login({ adminOnly = false }: LoginProps) {
 
             <p className="mt-4 text-center text-sm text-white/50">
               <Link to="/" className="font-bold text-white/78 hover:text-white hover:underline">Back to StreamNyaa</Link>
+            </p>
+          </div>
+        </section>
+
+        <section className="relative hidden items-center justify-center bg-[#0d0d10]/90 p-5 md:flex lg:p-7">
+          <div className="absolute bottom-10 left-0 h-px w-20 bg-primary/50" />
+          <div className="w-full max-w-[330px]">
+            <div className="overflow-hidden rounded-[30px] border border-primary/20 bg-zinc-950 p-2 shadow-2xl shadow-black/45">
+              <div className="aspect-[3/4] overflow-hidden rounded-[24px] bg-zinc-900">
+                <img
+                  key={activeVisual.cover}
+                  src={activeVisual.cover}
+                  alt={`${activeVisual.title} seasonal anime cover`}
+                  className="h-full w-full object-cover object-center transition-opacity duration-500"
+                  loading="eager"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {previewVisuals.map((visual, index) => (
+                <button
+                  key={`${visual.cover}-${index}`}
+                  type="button"
+                  onClick={() => setActiveVisualIndex((activeVisualIndex + index + 1) % seasonalVisuals.length)}
+                  className="aspect-[3/4] overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition-transform hover:-translate-y-0.5"
+                  aria-label={`Show ${visual.title} artwork`}
+                >
+                  <img src={visual.cover} alt={`${visual.title} anime cover`} className="h-full w-full object-cover object-center" loading="lazy" referrerPolicy="no-referrer" />
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 truncate text-center text-xs font-bold text-white/46">
+              Seasonal cover: <span className="text-white/72">{activeVisual.title}</span>
             </p>
           </div>
         </section>
