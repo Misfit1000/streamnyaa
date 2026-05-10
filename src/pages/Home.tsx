@@ -18,6 +18,12 @@ export default function Home() {
     queryKey: ['seasonalAnime'],
     queryFn: fetchSeasonalAnime,
   });
+  const topSeasonScores = useMemo(() => {
+    return [...(seasonalData?.data || [])]
+      .filter((anime: any) => Number(anime.score) > 0)
+      .sort((a: any, b: any) => Number(b.score || 0) - Number(a.score || 0))
+      .slice(0, 6);
+  }, [seasonalData]);
 
   const { data: recentData, isLoading: recentLoading } = useQuery({
     queryKey: ['recentEpisodes'],
@@ -137,7 +143,7 @@ export default function Home() {
               </Link>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-              {upcomingData?.data?.slice(0, 5).map((anime: any, idx: number) => (
+              {upcomingData?.data?.slice(0, 10).map((anime: any, idx: number) => (
                 <AnimeCard key={`upcoming-${anime.mal_id}-${idx}`} anime={anime} />
               ))}
             </div>
@@ -148,15 +154,15 @@ export default function Home() {
           <div className="overflow-hidden rounded-3xl bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(255,255,255,0.04)_42%,rgba(14,165,233,0.08)),rgba(255,255,255,0.035)] p-5 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Quick downloads</p>
-                <h2 className="mt-1 text-lg font-black text-foreground">Start from recent episodes</h2>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Top trending</p>
+                <h2 className="mt-1 text-lg font-black text-foreground">Highest scored this season</h2>
               </div>
-              <Link to="/nyaa" className="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground">
-                Search
+              <Link to="/search?sort=score&status=airing" className="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground">
+                View
               </Link>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {(recentData?.data || []).slice(0, 6).map((anime: any, index: number) => (
+              {topSeasonScores.map((anime: any, index: number) => (
                 <Link
                   to={animePath(anime, '/downloads')}
                   key={`download-shortcut-${anime.mal_id}-${index}`}
@@ -172,9 +178,20 @@ export default function Home() {
                   />
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
                     <p className="line-clamp-1 text-[10px] font-black text-white">{anime.title}</p>
+                    <p className="mt-0.5 text-[10px] font-black text-yellow-300">Score {anime.score ? anime.score.toFixed(1) : 'N/A'}</p>
                   </div>
                 </Link>
               ))}
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+              <Link to="/search?sort=trending&status=airing" className="rounded-2xl bg-white/[0.05] p-3 font-bold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary">
+                Current season
+                <span className="mt-1 block text-[11px] font-medium text-muted-foreground/80">Trending now</span>
+              </Link>
+              <Link to="/schedule" className="rounded-2xl bg-white/[0.05] p-3 font-bold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary">
+                Airing today
+                <span className="mt-1 block text-[11px] font-medium text-muted-foreground/80">Release times</span>
+              </Link>
             </div>
           </div>
 
