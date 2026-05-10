@@ -23,13 +23,12 @@ export default async function handler(req: any, res: any) {
     const origin = requestOrigin(req);
 
     for (const slug of slugs) {
-      const generationUrl = secret
-        ? `${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1`
-        : `${origin}/api/blog?slug=${encodeURIComponent(slug)}`;
-      const response = await fetch(generationUrl, {
+      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1`, {
         headers: {
           Accept: 'application/json',
-          ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+          ...(secret ? { Authorization: `Bearer ${secret}` } : { Authorization: req.headers.authorization }),
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
           'User-Agent': 'StreamNyaa-Admin',
         },
       });

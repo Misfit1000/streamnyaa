@@ -1494,7 +1494,17 @@ export default async function handler(req: any, res: any) {
   const slug = Array.isArray(req.query.slug) ? req.query.slug[0] : req.query.slug;
   const preview = req.query.preview === '1' || req.query.preview === 'true';
   const secret = process.env.CRON_SECRET;
-  const canForceRefresh = Boolean(secret && req.headers.authorization === `Bearer ${secret}`);
+  const wantsPrivilegedGeneration = req.query.force === '1' || req.query.force === 'true' || req.query.debug === '1' || req.query.debug === 'true';
+  let canForceRefresh = Boolean(secret && req.headers.authorization === `Bearer ${secret}`);
+  if (!canForceRefresh && wantsPrivilegedGeneration && req.headers.authorization) {
+    try {
+      const { requireAdmin } = await import('./_shared/adminAuth.js');
+      const auth = await requireAdmin(req);
+      canForceRefresh = !('error' in auth);
+    } catch {
+      canForceRefresh = false;
+    }
+  }
   const forceRefresh = canForceRefresh && (req.query.force === '1' || req.query.force === 'true');
   const debug = canForceRefresh && (req.query.debug === '1' || req.query.debug === 'true');
   if (!slug || !getBlogPost(slug)) {
