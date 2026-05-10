@@ -18,16 +18,17 @@ export default async function handler(req: any, res: any) {
     const mode = String(req.body?.mode || 'one');
     const slugs = mode === 'both' ? BLOG_SLUGS : [BLOG_SLUGS[0]];
     const secret = process.env.CRON_SECRET;
-    if (!secret) return res.status(500).json({ error: 'Blog generation secret is missing.' });
 
     const generated = [];
     const origin = requestOrigin(req);
 
     for (const slug of slugs) {
-      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1`, {
+      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1&manual=1`, {
         headers: {
           Accept: 'application/json',
-          Authorization: `Bearer ${secret}`,
+          ...(secret ? { Authorization: `Bearer ${secret}` } : { Authorization: req.headers.authorization }),
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
           'User-Agent': 'StreamNyaa-Admin',
         },
       });
