@@ -51,7 +51,7 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
   const prevSlide = () => setCurrentIndex((prev) => (prev - 1 + animeList.length) % animeList.length);
 
   return (
-    <section className="relative mx-auto mt-4 w-full max-w-[calc(100%-24px)] overflow-hidden rounded-[28px] border border-[var(--glass-border)] bg-[#050507] shadow-[0_24px_60px_rgba(0,0,0,0.42)] md:max-w-[calc(100%-80px)]">
+    <section className="group/spotlight relative mx-auto mt-4 w-full max-w-[calc(100%-24px)] overflow-hidden rounded-[28px] border border-[var(--glass-border)] bg-[#050507] shadow-[0_24px_60px_rgba(0,0,0,0.42)] md:max-w-[calc(100%-80px)]">
       <AnimatePresence mode="wait">
         <motion.div
           key={currentIndex}
@@ -105,7 +105,7 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
             {currentAnime.episodes ? <span>{currentAnime.episodes} episodes</span> : null}
           </div>
 
-          <p className="mt-4 hidden max-w-2xl line-clamp-2 text-sm leading-7 text-white/70 sm:block md:mt-5 md:text-base">
+          <p className="mt-0 hidden max-h-0 max-w-2xl overflow-hidden text-sm leading-7 text-white/70 opacity-0 transition-all duration-300 group-hover/spotlight:mt-4 group-hover/spotlight:max-h-20 group-hover/spotlight:opacity-100 group-focus-within/spotlight:mt-4 group-focus-within/spotlight:max-h-20 group-focus-within/spotlight:opacity-100 sm:block md:group-hover/spotlight:mt-5 md:group-focus-within/spotlight:mt-5 md:text-base">
             {currentAnime.synopsis || 'Explore the current seasonal highlight with anime details, release context, and download discovery tools on StreamNyaa.'}
           </p>
 
