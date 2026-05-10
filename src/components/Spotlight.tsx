@@ -61,14 +61,13 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
           transition={{ duration: 0.72, ease: 'easeInOut' }}
           className="absolute inset-0"
         >
-          <div className="absolute inset-0 z-10 bg-[linear-gradient(90deg,rgba(5,5,7,0.97),rgba(5,5,7,0.82)_38%,rgba(5,5,7,0.38)_70%,rgba(5,5,7,0.78)),linear-gradient(180deg,rgba(5,5,7,0.12),rgba(5,5,7,0.95))]" />
+          <div className="absolute inset-0 z-10 bg-[linear-gradient(180deg,rgba(5,5,7,0.03),rgba(5,5,7,0.1)_34%,rgba(5,5,7,0.84)_78%,rgba(5,5,7,0.98)),linear-gradient(90deg,rgba(5,5,7,0.18),rgba(5,5,7,0.04)_58%,rgba(5,5,7,0.14))] md:bg-[linear-gradient(90deg,rgba(5,5,7,0.97),rgba(5,5,7,0.82)_38%,rgba(5,5,7,0.38)_70%,rgba(5,5,7,0.78)),linear-gradient(180deg,rgba(5,5,7,0.12),rgba(5,5,7,0.95))]" />
           {heroImage ? (
             <img
               src={heroImage}
               alt={currentAnime.title}
-              className="h-full w-full object-cover"
+              className={`h-full w-full object-cover ${currentAnime.banner_image ? 'object-top md:object-center' : 'object-[center_10%] md:object-[center_18%]'}`}
               style={{
-                objectPosition: currentAnime.banner_image ? 'center center' : 'center 18%',
                 backgroundColor: currentAnime.color || 'transparent',
               }}
               referrerPolicy="no-referrer"
@@ -77,9 +76,9 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
         </motion.div>
       </AnimatePresence>
 
-      <div className="relative z-20 grid min-h-[500px] gap-8 px-5 py-6 sm:px-7 md:min-h-[560px] md:px-10 md:py-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-center xl:grid-cols-[minmax(0,1fr)_330px]">
-        <div className="flex max-w-3xl flex-col justify-end self-stretch pb-4 pt-10 lg:justify-center lg:py-8">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="relative z-20 grid min-h-[460px] gap-8 px-5 py-5 sm:px-7 md:min-h-[560px] md:px-10 md:py-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-center xl:grid-cols-[minmax(0,1fr)_330px]">
+        <div className="flex max-w-3xl flex-col justify-end self-stretch pb-16 pt-44 md:pb-4 md:pt-10 lg:justify-center lg:py-8">
+          <div className="mb-3 flex flex-wrap items-center gap-2 md:mb-4">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/15 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary">
               <TrendingUp className="h-3.5 w-3.5" />
               Trending this season
@@ -92,12 +91,12 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
             initial={{ y: 18, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.16 }}
-            className="max-w-2xl text-4xl font-black leading-[1.04] tracking-tight text-white md:text-5xl lg:text-6xl"
+            className="max-w-2xl text-3xl font-black leading-[1.04] tracking-tight text-white sm:text-4xl md:text-5xl lg:text-6xl"
           >
             {currentAnime.title}
           </motion.h1>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm font-bold text-white/78">
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-bold text-white/78 md:mt-4 md:text-sm">
             <span className="inline-flex items-center gap-1.5 text-yellow-400">
               <Star className="h-4 w-4 fill-current" />
               {score}
@@ -106,7 +105,7 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
             {currentAnime.episodes ? <span>{currentAnime.episodes} episodes</span> : null}
           </div>
 
-          <p className="mt-5 max-w-2xl line-clamp-2 text-sm leading-7 text-white/70 md:text-base">
+          <p className="mt-4 hidden max-w-2xl line-clamp-2 text-sm leading-7 text-white/70 sm:block md:mt-5 md:text-base">
             {currentAnime.synopsis || 'Explore the current seasonal highlight with anime details, release context, and download discovery tools on StreamNyaa.'}
           </p>
 
@@ -115,7 +114,7 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
             initial={{ y: 16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.3 }}
-            className="mt-6 flex flex-col gap-3 sm:flex-row"
+            className="mt-5 flex flex-col gap-3 sm:flex-row md:mt-6"
           >
             <Link
               to={animePath(currentAnime, '/downloads')}
