@@ -77,18 +77,22 @@ export default async function handler(req: any, res: any) {
 
     if (cached && age < SOURCE_FRESH_MS) {
       res.setHeader("X-Source-Cache", "HIT");
+      res.setHeader("X-Source-Fetched-At", String(cached.fetchedAt));
       return res.json(cached.data);
     }
 
     if (cached && age < SOURCE_STALE_MS) {
       refreshCachedSource(cacheKey, cacheKey, cached);
       res.setHeader("X-Source-Cache", "STALE");
+      res.setHeader("X-Source-Fetched-At", String(cached.fetchedAt));
       return res.json(cached.data);
     }
 
     const formattedItems = await fetchSourceResults(cacheKey);
-    sourceCache.set(cacheKey, { data: formattedItems, fetchedAt: Date.now() });
+    const fetchedAt = Date.now();
+    sourceCache.set(cacheKey, { data: formattedItems, fetchedAt });
     res.setHeader("X-Source-Cache", "MISS");
+    res.setHeader("X-Source-Fetched-At", String(fetchedAt));
     res.json(formattedItems);
   } catch (e) {
     console.error(e);

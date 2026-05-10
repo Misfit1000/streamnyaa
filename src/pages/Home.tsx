@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Calendar, ChevronRight, Clock, PlayCircle, TrendingUp } from 'lucide-react';
@@ -7,6 +7,7 @@ import AdSenseAd from '../components/AdSenseAd';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
 import Spotlight from '../components/Spotlight';
+import { getRecentAnime, type RecentAnime } from '../lib/activity';
 import { animePath } from '../lib/slug';
 import { useStore } from '../store/useStore';
 
@@ -22,7 +23,12 @@ function AnimeGridSkeleton({ count = 10 }: { count?: number }) {
 
 export default function Home() {
   const { myList } = useStore();
+  const [recentlyViewed, setRecentlyViewed] = useState<RecentAnime[]>([]);
   const localTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time', []);
+
+  useEffect(() => {
+    setRecentlyViewed(getRecentAnime(6));
+  }, []);
 
   const { data: seasonalData, isLoading: seasonalLoading } = useQuery({
     queryKey: ['seasonalAnime'],
@@ -212,6 +218,38 @@ export default function Home() {
               </Link>
             </div>
           </div>
+
+          {recentlyViewed.length ? (
+            <div className="rounded-3xl bg-white/[0.035] p-5 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Continue browsing</p>
+                  <h2 className="mt-1 text-lg font-black text-foreground">Recently viewed anime</h2>
+                </div>
+                <Link to="/dashboard" className="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground">
+                  History
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {recentlyViewed.map((anime) => (
+                  <Link key={anime.mal_id} to={animePath(anime)} className="group grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-2xl bg-white/[0.045] p-2 transition-colors hover:bg-primary/10">
+                    <img
+                      src={anime.images?.jpg?.image_url || anime.images?.jpg?.large_image_url}
+                      alt={anime.title}
+                      className="h-14 w-11 rounded-xl object-cover"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
+                    <span className="min-w-0">
+                      <span className="block line-clamp-1 text-sm font-black text-foreground group-hover:text-primary">{anime.title}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">{anime.score ? `${anime.score}/10` : anime.type || 'Anime'}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <div className="flex h-fit flex-col rounded-3xl bg-white/[0.045] p-6 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl transition-all duration-300">
             <div className="mb-6 flex items-center justify-between">

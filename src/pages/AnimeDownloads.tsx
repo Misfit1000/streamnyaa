@@ -8,6 +8,9 @@ import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
 import type { TorrentSourceFilter } from '../lib/torrentBadges';
+import { useAuth } from '../context/AuthContext';
+import { saveDownloadHistory } from '../lib/activity';
+import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQualityScore } from '../lib/sourceQuality';
 
 type AudioFilter = 'sub' | 'dub';
 
@@ -18,7 +21,19 @@ function sourceHealth(seedCount: number) {
   return 'Low seed';
 }
 
+function releaseTrackerText(anime: any, selectedEpisodeNumber?: number | null) {
+  const nextEpisode = anime?.nextAiringEpisode?.episode;
+  const nextAiringAt = anime?.nextAiringEpisode?.airingAt;
+  if (selectedEpisodeNumber) return `Episode ${selectedEpisodeNumber} selected`;
+  if (!nextEpisode || !nextAiringAt) return anime?.status === 'RELEASING' ? 'Currently airing' : 'Release timing unavailable';
+  const diffMs = nextAiringAt * 1000 - Date.now();
+  const hours = Math.round(Math.abs(diffMs) / 36e5);
+  if (diffMs >= 0) return `Episode ${nextEpisode} expected ${hours <= 24 ? 'today' : `in ${Math.ceil(hours / 24)} days`}`;
+  return `Episode ${nextEpisode} aired ${hours || 1} hours ago`;
+}
+
 export default function AnimeDownloads() {
+  const { session, user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const epParam = searchParams.get('ep');
@@ -160,6 +175,28 @@ export default function AnimeDownloads() {
     nextParams.set('type', audioFilter);
     setSearchParams(nextParams);
   };
+  const applyPreset = (preset: typeof SOURCE_PRESETS[number]) => {
+    setShowAllSources(false);
+    setDownloadFilter(preset.query);
+    setAudioFilter(preset.type);
+    setSourceFilter((preset.sourceFilter || '') as TorrentSourceFilter);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('type', preset.type);
+    if (preset.sourceFilter === 'batch') nextParams.delete('ep');
+    setSearchParams(nextParams);
+  };
+  const recordDownloadAction = (torrent: any, action: 'copy' | 'open') => {
+    saveDownloadHistory({
+      title: torrent.title,
+      magnet: torrent.magnet,
+      animeTitle: anime.title,
+      animeId: anime.mal_id,
+      episode: selectedEpisodeNumber || (downloadFilter === '[Batch]' ? 'batch' : null),
+      action,
+      size: torrent.size,
+      seeders: torrent.seeders,
+    }, session);
+  };
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
@@ -185,6 +222,9 @@ export default function AnimeDownloads() {
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Last updated {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+            </p>
+            <p className="mt-1 inline-flex rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
+              {releaseTrackerText(anime, selectedEpisodeNumber)}
             </p>
           </div>
         </div>
@@ -227,6 +267,18 @@ export default function AnimeDownloads() {
                   }`}
                 >
                   {filter === '[Batch]' ? 'Batch' : filter}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {SOURCE_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => applyPreset(preset)}
+                  className="rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                >
+                  {preset.label}
                 </button>
               ))}
             </div>
@@ -407,6 +459,17 @@ export default function AnimeDownloads() {
                     <span className="rounded-full border border-border bg-background/55 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-muted-foreground">
                       {sourceHealth(torrent.rawSeeders)}
                     </span>
+                    {(() => {
+                      const score = sourceQualityScore(torrent);
+                      return (
+                        <span className="rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-primary">
+                          Source score {score} - {sourceQualityLabel(score)}
+                        </span>
+                      );
+                    })()}
+                    <span className="rounded-full border border-border bg-background/55 px-2 py-0.5 text-[11px] font-black uppercase tracking-wide text-muted-foreground">
+                      {sourceFreshnessLabel(torrent)}
+                    </span>
                   </div>
                   <h4 className="font-bold text-foreground break-all leading-tight mb-3 group-hover:text-primary transition-colors text-[15px]">
                     {torrent.title}
@@ -443,6 +506,7 @@ export default function AnimeDownloads() {
                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto shrink-0 mt-2 md:mt-0">
                   <a
                     href={torrent.magnet}
+                    onClick={() => recordDownloadAction(torrent, 'open')}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm"
                     title="Open source link"
                   >
@@ -451,7 +515,10 @@ export default function AnimeDownloads() {
                   </a>
                   <button
                     type="button"
-                    onClick={() => navigator.clipboard?.writeText(torrent.magnet)}
+                    onClick={() => {
+                      navigator.clipboard?.writeText(torrent.magnet);
+                      recordDownloadAction(torrent, 'copy');
+                    }}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25"
                   >
                     <LinkIcon className="w-4 h-4" />
@@ -460,6 +527,11 @@ export default function AnimeDownloads() {
                 </div>
             </div>
           ))}
+          {!user ? (
+            <p className="rounded-2xl border border-border bg-background/45 p-4 text-sm text-muted-foreground">
+              Download actions are saved locally in this browser. Sign in to sync future history to your account when database storage is available.
+            </p>
+          ) : null}
         </div>
       )}
     </div>

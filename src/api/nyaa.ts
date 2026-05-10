@@ -11,6 +11,8 @@ export interface NyaaItem {
   category: string;
   categoryId: string;
   pubDate: string;
+  sourceFetchedAt?: number;
+  sourceCacheStatus?: string;
 }
 
 function parseSize(sizeStr: string): number {
@@ -39,6 +41,9 @@ export async function searchNyaa(query: string, category: string = '1_2', filter
     const response = await fetch(url.toString());
     if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
     
+    const sourceCacheStatus = response.headers.get('X-Source-Cache') || '';
+    const fetchedAtHeader = response.headers.get('X-Source-Fetched-At');
+    const sourceFetchedAt = fetchedAtHeader ? Number(fetchedAtHeader) : Date.now();
     const data = await response.json();
     if (!Array.isArray(data)) {
         console.error("Source search did not return an array:", data);
@@ -76,7 +81,9 @@ export async function searchNyaa(query: string, category: string = '1_2', filter
             magnet: magnet,
             category: item.category,
             categoryId: item.categoryId,
-            pubDate: item.pubDate
+            pubDate: item.pubDate,
+            sourceFetchedAt,
+            sourceCacheStatus
         });
     }
 

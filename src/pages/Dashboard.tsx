@@ -1,4 +1,5 @@
 import { Link, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import {
   Activity,
   ArrowRight,
@@ -16,6 +17,7 @@ import {
 } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
+import { getDownloadHistory, type DownloadHistoryEntry } from '../lib/activity';
 import { useStore } from '../store/useStore';
 
 const DASHBOARD_FALLBACK_IMAGES = [
@@ -63,6 +65,11 @@ function ToolRow({ to, icon: Icon, title, text }: {
 export default function Dashboard() {
   const { user, isAdmin, loading, signOut } = useAuth();
   const { myList, likedAnimes, nsfwMode, toggleNsfwMode } = useStore();
+  const [downloadHistory, setDownloadHistory] = useState<DownloadHistoryEntry[]>([]);
+
+  useEffect(() => {
+    setDownloadHistory(getDownloadHistory(6));
+  }, []);
 
   if (loading) {
     return <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">Loading dashboard...</div>;
@@ -156,6 +163,38 @@ export default function Dashboard() {
               <ToolRow to="/search" icon={Search} title="Browse anime" text="Find titles by name, status, genre, and rating." />
               <ToolRow to="/blog" icon={Newspaper} title="Anime blog" text="Read news, guides, and current anime stories." />
             </div>
+          </div>
+
+          <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black tracking-tight">Download history</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Copied and opened source links from this browser.</p>
+              </div>
+              <Link to="/nyaa" className="text-sm font-black text-primary hover:underline">Find sources</Link>
+            </div>
+            {downloadHistory.length ? (
+              <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                {downloadHistory.map((entry) => (
+                  <div key={entry.id} className="grid gap-2 bg-background/45 p-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                    <span className="min-w-0">
+                      <span className="line-clamp-1 text-sm font-black text-foreground">{entry.title}</span>
+                      <span className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                        {entry.animeTitle ? <span>{entry.animeTitle}</span> : null}
+                        {entry.episode ? <span>Ep {entry.episode}</span> : null}
+                        {entry.size ? <span>{entry.size}</span> : null}
+                        {entry.seeders ? <span>{entry.seeders} seeders</span> : null}
+                      </span>
+                    </span>
+                    <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-black uppercase text-primary">{entry.action}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border bg-background/35 p-5 text-sm leading-6 text-muted-foreground">
+                Copy or open a source link from a download page and it will appear here. Signed-in actions also try to sync with the database when the download history table is configured.
+              </div>
+            )}
           </div>
 
           <div className="rounded-lg border border-border bg-[var(--glass)] p-5">

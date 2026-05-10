@@ -71,6 +71,7 @@ export default function App() {
                 <Route path="anime/popular" element={<AnimeLanding />} />
                 <Route path="anime/genre/:genre" element={<AnimeLanding />} />
                 <Route path="anime/season/:seasonSlug" element={<AnimeLanding />} />
+                <Route path="season/:seasonSlug" element={<AnimeLanding />} />
                 <Route path="anime/:id" element={<AnimeDetails />} />
                 <Route path="manga/:id" element={<MangaDetails />} />
                 <Route path="anime/:id/downloads" element={<AnimeDownloads />} />

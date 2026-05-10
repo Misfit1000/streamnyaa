@@ -52,6 +52,12 @@ export default function AnimeLanding() {
   const items = (data?.pages.flatMap((page) => page.data) || []).filter((anime, index, list) =>
     index === list.findIndex((item) => item.mal_id === anime.mal_id)
   );
+  const seasonHighlights = {
+    airing: items.filter((anime: any) => anime.status === 'RELEASING').slice(0, 4),
+    highestScore: [...items].filter((anime: any) => Number(anime.score) > 0).sort((a: any, b: any) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4),
+    upcoming: items.filter((anime: any) => anime.status === 'NOT_YET_AIRED').slice(0, 4),
+    hiddenGems: [...items].filter((anime: any) => Number(anime.score) > 0 && Number(anime.popularity || 0) > 1500).sort((a: any, b: any) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4),
+  };
 
   const Icon = isGenrePage ? Filter : isSeasonPage ? CalendarDays : Flame;
   const jsonLd = {
@@ -101,6 +107,35 @@ export default function AnimeLanding() {
           <Link to="/anime/season/spring-2026" className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Spring 2026</Link>
         </div>
       </header>
+
+      {isSeasonPage && items.length ? (
+        <section className="mb-10 grid gap-4 lg:grid-cols-4">
+          {[
+            { title: 'Airing now', text: 'Currently releasing titles', items: seasonHighlights.airing },
+            { title: 'Highest score', text: 'Best rated season picks', items: seasonHighlights.highestScore },
+            { title: 'Upcoming', text: 'Not yet aired entries', items: seasonHighlights.upcoming },
+            { title: 'Hidden gems', text: 'Strong score, less obvious picks', items: seasonHighlights.hiddenGems },
+          ].map((group) => (
+            <div key={group.title} className="rounded-2xl border border-border bg-[var(--glass)] p-4">
+              <p className="text-[11px] font-black uppercase tracking-wider text-primary">{group.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{group.text}</p>
+              <div className="mt-4 space-y-2">
+                {group.items.length ? group.items.map((anime: any) => (
+                  <Link key={`${group.title}-${anime.mal_id}`} to={animePath(anime)} className="group grid grid-cols-[42px_1fr] gap-3 rounded-xl bg-background/45 p-2 transition-colors hover:bg-primary/10">
+                    <img src={anime.images?.jpg?.image_url || anime.images?.jpg?.large_image_url} alt={anime.title} className="h-14 w-10 rounded-lg object-cover" loading="lazy" referrerPolicy="no-referrer" />
+                    <span className="min-w-0">
+                      <span className="block line-clamp-1 text-sm font-black text-foreground group-hover:text-primary">{anime.title}</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">{anime.score ? `${anime.score}/10` : anime.status || 'Anime'}</span>
+                    </span>
+                  </Link>
+                )) : (
+                  <p className="rounded-xl border border-dashed border-border p-3 text-xs text-muted-foreground">No titles listed yet.</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </section>
+      ) : null}
 
       {isLoading ? (
         <div className="flex justify-center py-24">
