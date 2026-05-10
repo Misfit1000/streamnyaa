@@ -23,7 +23,7 @@ export default async function handler(req: any, res: any) {
     const origin = requestOrigin(req);
 
     for (const slug of slugs) {
-      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1`, {
+      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1&manual=1`, {
         headers: {
           Accept: 'application/json',
           ...(secret ? { Authorization: `Bearer ${secret}` } : { Authorization: req.headers.authorization }),

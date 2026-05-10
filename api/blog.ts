@@ -1421,7 +1421,11 @@ async function generateArticle(definition: BlogPostDefinition, items: BlogMediaI
   }
 }
 
-async function buildBlogPost(slug: string, preview = false): Promise<BlogPostData> {
+type BlogBuildOptions = {
+  manualPublish?: boolean;
+};
+
+async function buildBlogPost(slug: string, preview = false, options: BlogBuildOptions = {}): Promise<BlogPostData> {
   const definition = getBlogPost(slug);
   if (!definition) throw new Error('Blog post not found');
 
@@ -1449,7 +1453,7 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
     return { ...definition, updatedAt: generatedAt, generatedAt, articleSlug: definition.slug, items, article: fallbackArticle(definition, items), articleSource: 'fallback', articleStatus: 'guide_article' };
   }
 
-  if (!shouldPublishGeminiTopic(topic)) {
+  if (!options.manualPublish && !shouldPublishGeminiTopic(topic)) {
     return {
       ...definition,
       updatedAt: generatedAt,
@@ -1464,19 +1468,29 @@ async function buildBlogPost(slug: string, preview = false): Promise<BlogPostDat
   }
 
   const generated = await generateArticle(definition, items, topic);
-  const post = { ...definition, updatedAt: generatedAt, generatedAt, articleSlug: slugifyArticleTitle(generated.article.headline || topic?.title || definition.title), items, topic, article: generated.article, articleSource: generated.source, articleStatus: generated.status };
+  const post = {
+    ...definition,
+    updatedAt: generatedAt,
+    generatedAt,
+    articleSlug: slugifyArticleTitle(generated.article.headline || topic?.title || definition.title),
+    items,
+    topic,
+    article: generated.article,
+    articleSource: generated.source,
+    articleStatus: options.manualPublish && generated.status === 'ok' ? 'ok_manual' : generated.status,
+  };
   if (generated.source === 'gemini' && generated.status === 'ok') await archiveBlogPost(post);
   return post;
 }
 
-export async function getCachedBlogPost(slug: string, preview = false, forceRefresh = false) {
+export async function getCachedBlogPost(slug: string, preview = false, forceRefresh = false, options: BlogBuildOptions = {}) {
   const now = Date.now();
-  const cacheKey = preview ? slug + ':preview' : slug + ':article';
+  const cacheKey = preview ? slug + ':preview' : slug + ':article' + (options.manualPublish ? ':manual' : '');
   const cached = memoryCache.get(cacheKey);
   if (!forceRefresh && cached && cached.expiresAt > now) return cached.data;
 
   try {
-    const data = await buildBlogPost(slug, preview);
+    const data = await buildBlogPost(slug, preview, options);
     const isGeminiArticle = data.articleSource === 'gemini';
     memoryCache.set(cacheKey, {
       data,
@@ -1507,12 +1521,13 @@ export default async function handler(req: any, res: any) {
   }
   const forceRefresh = canForceRefresh && (req.query.force === '1' || req.query.force === 'true');
   const debug = canForceRefresh && (req.query.debug === '1' || req.query.debug === 'true');
+  const manualPublish = canForceRefresh && (req.query.manual === '1' || req.query.manual === 'true');
   if (!slug || !getBlogPost(slug)) {
     return res.status(404).json({ error: 'Blog post not found' });
   }
 
   try {
-    const data = await getCachedBlogPost(slug, preview, forceRefresh);
+    const data = await getCachedBlogPost(slug, preview, forceRefresh, { manualPublish });
     const publicData = debug ? data : (({ articleSource: _articleSource, articleStatus: _articleStatus, ...rest }) => rest)(data);
     res.setHeader('Cache-Control', debug || forceRefresh ? 'no-store' : EDGE_CACHE_HEADER);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
