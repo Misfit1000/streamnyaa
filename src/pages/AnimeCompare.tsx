@@ -42,14 +42,12 @@ function SearchBox({
   label,
   selected,
   onSelect,
-  fallback,
 }: {
   label: string;
   selected: any;
   onSelect: (anime: any) => void;
-  fallback: string;
 }) {
-  const [term, setTerm] = useState(fallback);
+  const [term, setTerm] = useState('');
   const activeTerm = term.trim();
   const { data, isFetching } = useQuery({
     queryKey: ['compare-search', label, activeTerm],
@@ -82,6 +80,11 @@ function SearchBox({
       </div>
 
       <div className="mt-4 grid gap-2">
+        {activeTerm.length < 2 ? (
+          <div className="rounded-2xl border border-dashed border-border bg-background/35 p-4 text-sm text-muted-foreground">
+            Type at least two letters to search.
+          </div>
+        ) : null}
         {(data?.data || []).slice(0, 5).map((anime: any) => (
           <button
             key={`${label}-${anime.mal_id}`}
@@ -244,8 +247,8 @@ export default function AnimeCompare() {
       </header>
 
       <section className="grid gap-5 lg:grid-cols-2">
-        <SearchBox label="First title" selected={leftPick} onSelect={setLeftPick} fallback="One Piece" />
-        <SearchBox label="Second title" selected={rightPick} onSelect={setRightPick} fallback="Naruto" />
+        <SearchBox label="First title" selected={leftPick} onSelect={setLeftPick} />
+        <SearchBox label="Second title" selected={rightPick} onSelect={setRightPick} />
       </section>
 
       {(leftLoading || rightLoading) && isReady ? (
