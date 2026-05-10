@@ -12,6 +12,8 @@ const staticRoutes = [
   { path: '/anime/genre/romance', changefreq: 'weekly', priority: '0.7' },
   { path: '/anime/genre/comedy', changefreq: 'weekly', priority: '0.7' },
   { path: '/anime/season/spring-2026', changefreq: 'weekly', priority: '0.7' },
+  { path: '/season/spring-2026', changefreq: 'weekly', priority: '0.7' },
+  { path: '/compare', changefreq: 'weekly', priority: '0.7' },
   { path: '/nyaa', changefreq: 'daily', priority: '0.7' },
   { path: '/torrent', changefreq: 'weekly', priority: '0.6' },
   { path: '/about', changefreq: 'monthly', priority: '0.6' },
