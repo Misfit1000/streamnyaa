@@ -179,7 +179,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
     <div className="relative flex min-h-[calc(100vh-72px)] items-center justify-center overflow-hidden bg-background px-3 py-4 text-white md:px-6">
       <Seo
         title={adminOnly ? 'Admin Sign In | StreamNyaa' : 'Sign in to StreamNyaa | StreamNyaa'}
-        description={adminOnly ? 'Private StreamNyaa admin sign in.' : 'Sign in to StreamNyaa to manage your account and watchlist.'}
+        description={adminOnly ? 'Private StreamNyaa admin sign in.' : 'Sign in to StreamNyaa to manage your account and saved anime.'}
         canonicalPath={adminOnly ? '/login/admin' : '/login'}
         robots={adminOnly ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'}
       />

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Play, Plus, Check, Heart } from 'lucide-react';
+import { Plus, Check, Heart } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { animePath } from '../lib/slug';
 import { fetchAnimeDetails } from '../api/jikan';
@@ -79,13 +79,6 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           </button>
         </div>
         
-        {/* Play Icon - center overlay hover only */}
-        <div className="absolute inset-0 bg-black/40 opacity-0 md:group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center z-20 pointer-events-none hidden md:flex">
-          <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center text-white shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
-            <Play className="w-5 h-5 fill-current ml-0.5" />
-          </div>
-        </div>
-
         {/* Gradient Overlay & Info */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-3 z-10 pointer-events-none">
           <div className="text-[13px] font-semibold text-white mb-1 whitespace-nowrap overflow-hidden text-ellipsis">

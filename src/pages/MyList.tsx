@@ -143,7 +143,7 @@ export default function MyList() {
         <div className="text-center py-20 bg-secondary/30 rounded-2xl border border-border border-dashed">
           <Bookmark className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
           <h3 className="text-xl font-medium text-foreground mb-2">Your list is empty</h3>
-          <p className="text-muted-foreground">Add anime to your list or favorite them to keep track of what you want to watch.</p>
+          <p className="text-muted-foreground">Add anime to your list or favorite them to keep track of titles you want to follow.</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5">

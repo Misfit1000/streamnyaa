@@ -70,7 +70,7 @@ export default function Blog() {
     '@type': 'Blog',
     name: 'StreamNyaa Blog',
     url: 'https://www.streamnyaa.xyz/blog',
-    description: 'Anime discovery articles covering current trends, release schedules, upcoming titles, and recent episode updates.',
+    description: 'Anime articles covering current releases, notable seasonal movement, upcoming titles, and episode timing.',
     publisher: { '@type': 'Organization', name: 'StreamNyaa', url: 'https://www.streamnyaa.xyz/' },
   };
 
@@ -84,12 +84,12 @@ export default function Blog() {
             <Newspaper className="h-3.5 w-3.5" />
             StreamNyaa Blog
           </div>
-          <h1 className="text-3xl md:text-5xl font-black tracking-tight">Anime articles without the clutter</h1>
-          <p className="mt-3 max-w-2xl text-sm md:text-base leading-7 text-muted-foreground">Focused anime news, trend reads, release guides, and episode updates. Latest stories appear first, with quick guide links below.</p>
+          <h1 className="text-3xl md:text-5xl font-black tracking-tight">Anime notes worth opening</h1>
+          <p className="mt-3 max-w-2xl text-sm md:text-base leading-7 text-muted-foreground">Short reads on airing shows, release timing, upcoming titles, and the occasional seasonal surprise. Newer pieces stay up top.</p>
         </div>
         <div className="flex items-center gap-2 rounded-xl border border-border bg-[var(--glass)] px-4 py-3 text-sm font-semibold text-muted-foreground">
           {archive.isLoading ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <Sparkles className="h-4 w-4 text-primary" />}
-          {archive.isLoading ? 'Loading latest stories' : `${pagination.total} saved stories`}
+          {archive.isLoading ? 'Loading latest stories' : `${pagination.total} articles`}
         </div>
       </section>
 
@@ -114,7 +114,7 @@ export default function Blog() {
               <h2 className="text-2xl md:text-4xl font-black leading-tight tracking-tight group-hover:text-primary transition-colors">{postHeadline(featured)}</h2>
               <p className="mt-4 text-sm md:text-base leading-7 text-muted-foreground">{postExcerpt(featured)}</p>
               <div className="mt-6 inline-flex items-center gap-2 text-sm font-black text-primary">
-                Read latest story
+                Read article
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </div>
             </div>
@@ -131,7 +131,7 @@ export default function Blog() {
       <section className="mt-8 grid gap-8 xl:grid-cols-[1fr_390px]">
         <main>
           <div className="mb-4 flex items-center justify-between gap-4">
-            <h2 className="text-2xl font-black tracking-tight">{page === 1 ? 'Latest stories' : `More stories - page ${page}`}</h2>
+            <h2 className="text-2xl font-black tracking-tight">{page === 1 ? 'Latest articles' : `Archive page ${page}`}</h2>
             <span className="text-xs font-bold text-muted-foreground">Newest first</span>
           </div>
 
@@ -191,8 +191,8 @@ export default function Blog() {
         <aside>
           <div className="sticky top-24 rounded-2xl border border-border bg-[var(--glass)] p-4">
             <div className="px-1 pb-4">
-              <h2 className="text-xl font-black tracking-tight">Guide articles</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">Evergreen anime guides with quick context and direct discovery links.</p>
+              <h2 className="text-xl font-black tracking-tight">Reference shelf</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">Reusable guides for schedules, trending lists, and seasonal browsing.</p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               {guidePosts.map((post, index) => {

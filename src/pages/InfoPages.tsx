@@ -54,7 +54,7 @@ export function About() {
         title="About StreamNyaa"
         eyebrow="About"
         icon={<Info className="w-5 h-5" />}
-        description="StreamNyaa is an anime download and discovery interface built for browsing titles, checking release schedules, organizing a personal watch list, and searching source results from a single place."
+        description="StreamNyaa is an anime download and discovery interface built for browsing titles, checking release schedules, organizing saved anime, and searching source results from a single place."
       >
         <InfoBlock title="What StreamNyaa Provides">
           <p>
@@ -158,7 +158,7 @@ export function Terms() {
 
         <InfoBlock title="No Warranty">
           <p>
-            The site is provided as-is. StreamNyaa does not guarantee uninterrupted access, error-free data, complete metadata, or playback availability.
+            The site is provided as-is. StreamNyaa does not guarantee uninterrupted access, error-free data, complete metadata, or third-party source availability.
           </p>
         </InfoBlock>
 
@@ -184,7 +184,7 @@ export function Disclaimer() {
         title="Disclaimer"
         eyebrow="Important"
         icon={<AlertTriangle className="w-5 h-5" />}
-        description="StreamNyaa is an independent discovery interface and is not an official source for anime publishers or streaming services."
+        description="StreamNyaa is an independent discovery interface and is not an official source for anime publishers or distributors."
       >
         <InfoBlock title="No Hosted Media">
           <p>

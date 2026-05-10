@@ -81,7 +81,7 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
           <div className="mb-3 flex flex-wrap items-center gap-2 md:mb-4">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/15 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary">
               <TrendingUp className="h-3.5 w-3.5" />
-              Trending this season
+              Airing now
             </span>
             {currentAnime.type ? <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] font-bold uppercase text-white/80">{currentAnime.type}</span> : null}
           </div>
@@ -106,7 +106,7 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
           </div>
 
           <p className="mt-0 hidden max-h-0 max-w-2xl overflow-hidden text-sm leading-7 text-white/70 opacity-0 transition-all duration-300 group-hover/spotlight:mt-4 group-hover/spotlight:max-h-20 group-hover/spotlight:opacity-100 group-focus-within/spotlight:mt-4 group-focus-within/spotlight:max-h-20 group-focus-within/spotlight:opacity-100 sm:block md:group-hover/spotlight:mt-5 md:group-focus-within/spotlight:mt-5 md:text-base">
-            {currentAnime.synopsis || 'Explore the current seasonal highlight with anime details, release context, and download discovery tools on StreamNyaa.'}
+            {currentAnime.synopsis || 'Open the title page for details, release timing, and available source options.'}
           </p>
 
           <motion.div

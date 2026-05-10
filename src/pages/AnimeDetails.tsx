@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
-import { Download, Plus, Check, Heart, Star, Calendar, Clock, Tv, Play, Monitor, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, Plus, Check, Heart, Star, Calendar, Clock, Tv, Play, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { animePath, mangaPath, watchPath } from '../lib/slug';
+import { animePath, mangaPath } from '../lib/slug';
 import Seo from '../components/Seo';
 import RelatedBlogArticles from '../components/RelatedBlogArticles';
 import { saveRecentAnime } from '../lib/activity';
@@ -97,7 +97,7 @@ export default function AnimeDetails() {
   const episodeCountText = anime.episodes ? `${anime.episodes} episodes` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} episodes aired so far` : 'episode count not confirmed';
   const malScoreText = anime.score ? `MAL Score ${anime.score}` : 'MAL Score N/A';
   const malPopularityText = anime.popularity ? `#${anime.popularity.toLocaleString()}` : 'N/A';
-  const seoDescription = `${anime.title} anime details with synopsis, genres, ${episodeCountText}, status, related anime, recommendations, watch links, and download search options.`;
+  const seoDescription = `${anime.title} anime details with synopsis, genres, ${episodeCountText}, status, related anime, recommendations, and download source search options.`;
   const mainStudio = studios[0];
   const animeImage = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
   const updatedLabel = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
@@ -169,7 +169,7 @@ export default function AnimeDetails() {
   return (
     <div className="pb-20">
       <Seo
-        title={`${anime.title} Anime Details, Episodes and Streaming Info | StreamNyaa`}
+        title={`${anime.title} Anime Details, Episodes and Downloads | StreamNyaa`}
         description={seoDescription}
         canonicalPath={animePath(anime)}
         image={animeImage}
@@ -232,15 +232,8 @@ export default function AnimeDetails() {
 
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 mb-8">
             <Link
-              to={watchPath(anime)}
-              className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
-            >
-              <Play className="w-5 h-5 fill-current" />
-              Watch
-            </Link>
-            <Link
               to={animePath(anime, '/downloads')}
-              className="flex items-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
+              className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
             >
               <Download className="w-5 h-5" />
               Downloads
@@ -342,14 +335,14 @@ export default function AnimeDetails() {
                   {anime.status === 'RELEASING'
                     ? `${anime.title} is currently airing. ${nextEpisodeNumber ? `Episode ${nextEpisodeNumber} is the next listed episode${nextAiringTime ? ` and is scheduled around ${nextAiringTime}` : ''}.` : 'New episode timing is updated when schedule data is available.'} The episode list below focuses on episodes that are already available or listed by public metadata.`
                     : anime.status === 'FINISHED'
-                      ? `${anime.title} is listed as finished, so the episode list is useful for browsing the full release order, checking episode pages, and opening watch or download searches.`
+                      ? `${anime.title} is listed as finished, so the episode list is useful for browsing the full release order, checking episode pages, and opening download searches.`
                       : `${anime.title} has release information listed as ${statusLabel}. Episode details may update as more official metadata becomes available.`}
                 </p>
               </div>
               <div>
-                <h3 className="text-lg font-bold mb-2">Watch and download context</h3>
+                <h3 className="text-lg font-bold mb-2">Download context</h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  StreamNyaa organizes {anime.title} with watch links, episode navigation, related anime, recommendations, and download search tools. The downloads page can search source metadata by episode, batch, quality, subtitle, or dub preference, while this page keeps the anime details and episode order easy to scan.
+                  StreamNyaa organizes {anime.title} with episode navigation, related anime, recommendations, and download search tools. The downloads page can search source metadata by episode, batch, quality, subtitle, or dub preference, while this page keeps the anime details and episode order easy to scan.
                 </p>
               </div>
             </section>
@@ -357,8 +350,7 @@ export default function AnimeDetails() {
             <section className="mt-8 pt-6 border-t border-[var(--glass-border)]">
               <h3 className="text-lg font-bold mb-3">Explore {anime.title}</h3>
               <div className="flex flex-wrap gap-2">
-                <Link to={watchPath(anime)} className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary hover:bg-primary/20 transition-colors">Watch episodes</Link>
-                <Link to={animePath(anime, '/downloads')} className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Download sources</Link>
+                <Link to={animePath(anime, '/downloads')} className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary hover:bg-primary/20 transition-colors">Download sources</Link>
                 <Link to="/schedule" className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Airing schedule</Link>
                 <Link to="/anime/popular" className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Popular anime</Link>
                 {genres.slice(0, 3).map((genre: string) => (
@@ -521,22 +513,8 @@ export default function AnimeDetails() {
                           
                           <div className="flex flex-wrap items-center gap-2 shrink-0">
                             <Link 
-                              to={`${watchPath(anime)}?ep=${epNum}&type=sub`}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-sm font-semibold transition-colors shrink-0"
-                            >
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                              Watch Sub
-                            </Link>
-                            <Link 
-                              to={`${watchPath(anime)}?ep=${epNum}&type=dub`}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground rounded-lg text-sm font-semibold transition-colors shrink-0"
-                            >
-                              <Monitor className="w-3.5 h-3.5" />
-                              Watch Dub
-                            </Link>
-                            <Link 
                               to={`${animePath(anime, '/downloads')}?ep=${epNum}&type=sub`}
-                              className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground rounded-lg text-sm font-semibold transition-colors shrink-0"
+                              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-sm font-semibold transition-colors shrink-0"
                             >
                               <Download className="w-3.5 h-3.5" />
                               DL Sub

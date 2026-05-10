@@ -33,10 +33,10 @@ export default function AnimeLanding() {
       ? `${titleCase(season!.season)} ${season!.year} Anime`
       : 'Popular Anime';
   const description = isGenrePage
-    ? `Browse ${genreName} anime on StreamNyaa with title pages, watch links, schedules, related anime, and download search options.`
+    ? `Browse ${genreName} anime on StreamNyaa with title pages, schedules, related anime, and download search options.`
     : isSeasonPage
-      ? `Browse popular ${titleCase(season!.season)} ${season!.year} anime with StreamNyaa title pages, episode context, watch links, and download search.`
-      : 'Browse popular anime on StreamNyaa with title pages, episode context, watch links, related anime, and download search options.';
+      ? `Browse popular ${titleCase(season!.season)} ${season!.year} anime with StreamNyaa title pages, episode context, and download search.`
+      : 'Browse popular anime on StreamNyaa with title pages, episode context, related anime, and download search options.';
 
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = useInfiniteQuery({
     queryKey: ['anime-landing', location.pathname, genreName, season?.season, season?.year],
@@ -98,7 +98,7 @@ export default function AnimeLanding() {
           </div>
         </div>
         <p className="text-sm md:text-base leading-relaxed text-muted-foreground">
-          {description} Use this page as a cleaner entry point than random anime ID pages, then open a title for synopsis, genres, related anime, watch options, and source search.
+          {description} Use this page as a cleaner entry point than random anime ID pages, then open a title for synopsis, genres, related anime, episode context, and source search.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           <Link to="/anime/popular" className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Popular</Link>

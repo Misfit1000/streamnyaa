@@ -205,7 +205,7 @@ export default function NyaaSearchPage() {
           <div>
             <p className="font-semibold text-yellow-500">Mobile download note</p>
             <p className="mt-1">
-              Mobile browsers may not open every download source directly. Use Open Link with a compatible app, or copy the source link into a cloud player.
+              Mobile browsers may not open every download source directly. Use Open Link with a compatible app, or copy the source link for later.
             </p>
           </div>
         </div>

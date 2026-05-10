@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Layout from './components/Layout';
 import Home from './pages/Home';
@@ -10,7 +10,6 @@ const Schedule = lazy(() => import('./pages/Schedule'));
 const AnimeDetails = lazy(() => import('./pages/AnimeDetails'));
 const AnimeLanding = lazy(() => import('./pages/AnimeLanding'));
 const MangaDetails = lazy(() => import('./pages/MangaDetails'));
-const Watch = lazy(() => import('./pages/Watch'));
 const MyList = lazy(() => import('./pages/MyList'));
 const NyaaSearchPage = lazy(() => import('./pages/NyaaSearchPage'));
 const AnimeDownloads = lazy(() => import('./pages/AnimeDownloads'));
@@ -76,7 +75,7 @@ export default function App() {
                 <Route path="anime/:id" element={<AnimeDetails />} />
                 <Route path="manga/:id" element={<MangaDetails />} />
                 <Route path="anime/:id/downloads" element={<AnimeDownloads />} />
-                <Route path="watch/:id" element={<Watch />} />
+                <Route path="watch/:id" element={<Navigate to="/nyaa" replace />} />
                 <Route path="my-list" element={<MyList />} />
                 <Route path="nyaa" element={<NyaaSearchPage />} />
                 <Route path="compare" element={<AnimeCompare />} />

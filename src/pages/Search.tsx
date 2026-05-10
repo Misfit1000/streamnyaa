@@ -48,9 +48,9 @@ export default function Search() {
       ? 'Popular Anime | StreamNyaa'
       : 'Search Anime | StreamNyaa';
   const seoDescription = hasSimpleGenreFilter
-    ? `Browse ${genre} anime on StreamNyaa with title pages, watch links, related anime, schedules, and download search options.`
+    ? `Browse ${genre} anime on StreamNyaa with title pages, related anime, schedules, and download search options.`
     : hasPopularFilter
-      ? 'Browse popular anime on StreamNyaa with title pages, watch links, related anime, schedules, and download search options.'
+      ? 'Browse popular anime on StreamNyaa with title pages, related anime, schedules, and download search options.'
       : 'Search anime on StreamNyaa by title, genre, type, status, and rating with clean anime pages and source search options.';
 
   useEffect(() => {
