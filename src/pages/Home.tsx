@@ -145,6 +145,39 @@ export default function Home() {
         </div>
 
         <aside className="space-y-8">
+          <div className="overflow-hidden rounded-3xl bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(255,255,255,0.04)_42%,rgba(14,165,233,0.08)),rgba(255,255,255,0.035)] p-5 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Quick downloads</p>
+                <h2 className="mt-1 text-lg font-black text-foreground">Start from recent episodes</h2>
+              </div>
+              <Link to="/nyaa" className="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground">
+                Search
+              </Link>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {(recentData?.data || []).slice(0, 6).map((anime: any, index: number) => (
+                <Link
+                  to={animePath(anime, '/downloads')}
+                  key={`download-shortcut-${anime.mal_id}-${index}`}
+                  className="group relative aspect-[2/3] overflow-hidden rounded-2xl bg-secondary shadow-lg shadow-black/20"
+                  title={`${anime.title} downloads`}
+                >
+                  <img
+                    src={anime.images?.webp?.large_image_url || anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url}
+                    alt={anime.title}
+                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                    <p className="line-clamp-1 text-[10px] font-black text-white">{anime.title}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+
           <div className="flex h-fit flex-col rounded-3xl bg-white/[0.045] p-6 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl transition-all duration-300">
             <div className="mb-6 flex items-center justify-between">
               <div className="flex items-center gap-2">

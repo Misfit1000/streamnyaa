@@ -1,6 +1,6 @@
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { fetchAnimeDetails } from '../api/jikan';
+import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { searchNyaa } from '../api/nyaa';
 import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo, Link as LinkIcon } from 'lucide-react';
 import { useState } from 'react';
@@ -20,9 +20,11 @@ function sourceHealth(seedCount: number) {
 
 export default function AnimeDownloads() {
   const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const epParam = searchParams.get('ep');
   const typeParam = searchParams.get('type');
+  const selectedEpisodeNumber = epParam && /^\d+$/.test(epParam) ? parseInt(epParam, 10) : null;
+  const episodePage = selectedEpisodeNumber ? Math.max(1, Math.ceil(selectedEpisodeNumber / 100)) : 1;
   
   // If epParam is present, default filter to empty or "1080p" instead of "[Batch]"
   const [downloadFilter, setDownloadFilter] = useState(epParam ? '1080p' : '[Batch]');
@@ -41,6 +43,12 @@ export default function AnimeDownloads() {
   const isBatchView = !epParam && downloadFilter === '[Batch]';
   const isCurrentlyAiring = anime?.status === 'RELEASING';
   const showAiringEpisodeResults = Boolean(isCurrentlyAiring && isBatchView);
+
+  const { data: episodeData } = useQuery({
+    queryKey: ['anime-download-episodes', id, episodePage],
+    queryFn: () => fetchAnimeEpisodes(id!, episodePage),
+    enabled: !!id && !!anime,
+  });
 
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
     queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults],
@@ -140,6 +148,23 @@ export default function AnimeDownloads() {
   const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
   const totalSeeders = sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0);
   const highSeederCount = sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length;
+  const airedEpisodeCount = anime.nextAiringEpisode?.episode
+    ? Math.max(anime.nextAiringEpisode.episode - 1, 0)
+    : (anime.episodes || 0);
+  const currentEpisodePageItems = episodeData?.data || [];
+  const updateEpisodeSelection = (value: string) => {
+    setShowAllSources(false);
+    const nextParams = new URLSearchParams(searchParams);
+    if (value === 'batch') {
+      nextParams.delete('ep');
+      setDownloadFilter('[Batch]');
+    } else {
+      nextParams.set('ep', value);
+      setDownloadFilter('1080p');
+    }
+    nextParams.set('type', audioFilter);
+    setSearchParams(nextParams);
+  };
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
@@ -170,6 +195,28 @@ export default function AnimeDownloads() {
         </div>
         <div className="flex flex-col items-stretch md:items-end gap-3 w-full md:w-auto">
           <div className="grid gap-3 sm:grid-cols-[1fr_auto] md:grid-cols-1">
+            <label className="flex flex-col gap-1.5 text-left">
+              <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">Episode</span>
+              <select
+                value={selectedEpisodeNumber ? String(selectedEpisodeNumber) : 'batch'}
+                onChange={(event) => updateEpisodeSelection(event.target.value)}
+                className="min-w-[220px] rounded-xl border border-border bg-background/70 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary [&>option]:bg-background"
+              >
+                <option value="batch">Batch / all available episodes</option>
+                {airedEpisodeCount > 0
+                  ? Array.from({ length: airedEpisodeCount }, (_, index) => {
+                    const episodeNumber = index + 1;
+                    const episodeInfo = currentEpisodePageItems.find((episode: any) => episode.mal_id === episodeNumber);
+                    const label = episodeInfo?.title ? `Episode ${episodeNumber} - ${episodeInfo.title}` : `Episode ${episodeNumber}`;
+                    return (
+                      <option key={episodeNumber} value={episodeNumber}>
+                        {label}
+                      </option>
+                    );
+                  })
+                  : null}
+              </select>
+            </label>
             <div className="flex flex-wrap gap-2">
               {['[Batch]', '1080p', '720p', 'RAW'].map(filter => (
                 <button
