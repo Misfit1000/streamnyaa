@@ -76,14 +76,9 @@ export default function AnimeDownloads() {
       };
 
       const trySearches = async (epNumStr: string) => {
-        let res = await performSearch(romaji, epNumStr);
-        if (res.length === 0 && english && english !== romaji) {
-          res = await performSearch(english, epNumStr);
-        }
-        if (res.length === 0 && native && native !== english && native !== romaji) {
-          res = await performSearch(native, epNumStr);
-        }
-        return res;
+        const titles = [romaji, english, native].filter((title, index, list): title is string => Boolean(title) && list.indexOf(title) === index);
+        const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr)));
+        return searches.find((items) => items.length > 0) || [];
       };
 
       const prefersDub = (title = '') => /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title);
