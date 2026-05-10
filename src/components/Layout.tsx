@@ -24,7 +24,7 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      <footer className="border-t border-[var(--glass-border)] mt-20 py-12 bg-secondary/20">
+      <footer className="mt-20 border-t border-[var(--glass-border)] bg-secondary/25 py-12 shadow-inner shadow-black/10 backdrop-blur-2xl">
         <div className="container mx-auto px-4 text-center text-muted-foreground">
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">

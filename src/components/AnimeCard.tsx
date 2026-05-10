@@ -30,7 +30,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
 
   return (
     <Link to={animePath(anime)} className="group relative block w-full">
-      <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-secondary border border-[var(--glass-border)]">
+      <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-secondary shadow-lg shadow-black/16 ring-1 ring-white/[0.03]">
         <img
           src={anime.images.jpg.large_image_url || anime.images.jpg.image_url}
           alt={anime.title}
