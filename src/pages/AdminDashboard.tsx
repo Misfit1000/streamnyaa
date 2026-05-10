@@ -203,9 +203,9 @@ export default function AdminDashboard() {
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Admin console</p>
-            <h1 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">Operations dashboard</h1>
+            <h1 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">Control room</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground">
-              Signed in as <span className="font-bold text-foreground">{user.email}</span>. Manage publishing, admin access, and archive health from one focused screen.
+              Signed in as <span className="font-bold text-foreground">{user.email}</span>. Publishing, access, and site health live here.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -234,10 +234,10 @@ export default function AdminDashboard() {
       ) : (
         <>
           <section className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Metric label="Articles" value={articleCount} detail="Generated posts in archive" />
-            <Metric label="Admins" value={adminEmails.length} detail="Approved admin accounts" />
-            <Metric label="Schedule" value="Daily" detail={data?.cronSchedule || 'Scheduled generation'} />
-            <Metric label="Gemini" value={data?.config?.geminiConfigured ? 'Ready' : 'Check'} detail={data?.config?.geminiConfigured ? 'Generation key configured' : 'Generation key missing'} />
+            <Metric label="Articles" value={articleCount} detail="Posts stored in the archive" />
+            <Metric label="Admins" value={adminEmails.length} detail="People with console access" />
+            <Metric label="Schedule" value="Daily" detail={data?.cronSchedule || 'Daily article check'} />
+            <Metric label="Writer" value={data?.config?.geminiConfigured ? 'Ready' : 'Check'} detail={data?.config?.geminiConfigured ? 'Article key is configured' : 'Article key is missing'} />
           </section>
 
           {actionMessage ? <div className="mt-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm font-semibold text-emerald-300">{actionMessage}</div> : null}
@@ -262,8 +262,8 @@ export default function AdminDashboard() {
                       {busyAction === 'generate' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
                     </span>
                     <span>
-                      <span className="block text-sm font-black text-foreground">Generate one article</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">Use for the normal daily queue.</span>
+                      <span className="block text-sm font-black text-foreground">Write one article</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">Use for today’s main story.</span>
                     </span>
                     <ArrowRight className="h-4 w-4 text-primary" />
                   </button>
@@ -272,8 +272,8 @@ export default function AdminDashboard() {
                       {busyAction === 'generate-both' ? <Loader2 className="h-5 w-5 animate-spin" /> : <FileText className="h-5 w-5" />}
                     </span>
                     <span>
-                      <span className="block text-sm font-black text-foreground">Generate two articles</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">Use when a second topic is needed.</span>
+                      <span className="block text-sm font-black text-foreground">Write two articles</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">Use when a topic is moving fast.</span>
                     </span>
                     <ArrowRight className="h-4 w-4 text-muted-foreground" />
                   </button>
@@ -283,8 +283,8 @@ export default function AdminDashboard() {
               <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
                 <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h2 className="text-xl font-black tracking-tight">Recent article archive</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Latest generated posts saved in the article database.</p>
+                    <h2 className="text-xl font-black tracking-tight">Recent articles</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Newest posts currently available on the blog.</p>
                   </div>
                   <Link to="/blog" className="inline-flex w-fit items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-black text-foreground hover:border-primary/45">
                     Open blog

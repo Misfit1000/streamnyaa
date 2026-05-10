@@ -98,10 +98,10 @@ export default function Home() {
           <section>
             <div className="mb-7 flex items-end justify-between gap-4">
               <div>
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">Latest activity</p>
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">New drops</p>
               <h2 className="flex items-center gap-2 text-xl font-black text-foreground">
                 <PlayCircle className="h-6 w-6 text-primary" />
-                Recently Updated
+                Recently updated
               </h2>
               </div>
               <Link to="/search?sort=recent" className="flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary">
@@ -124,10 +124,10 @@ export default function Home() {
           <section>
             <div className="mb-7 flex items-end justify-between gap-4">
               <div>
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">Season picks</p>
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">This season</p>
               <h2 className="flex items-center gap-2 text-xl font-black text-foreground">
                 <TrendingUp className="h-6 w-6 text-primary" />
-                Trending Now
+                Trending now
               </h2>
               </div>
               <Link to="/search?sort=trending" className="flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary">
@@ -148,10 +148,10 @@ export default function Home() {
           <section>
             <div className="mb-7 flex items-end justify-between gap-4">
               <div>
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">Watchlist ahead</p>
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">Next up</p>
               <h2 className="flex items-center gap-2 text-xl font-black text-foreground">
                 <Calendar className="h-6 w-6 text-primary" />
-                Upcoming Anime
+                Upcoming anime
               </h2>
               </div>
               <Link to="/search?sort=upcoming" className="flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary">
@@ -171,11 +171,11 @@ export default function Home() {
         </div>
 
         <aside className="space-y-8">
-          <div className="overflow-hidden rounded-3xl bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(255,255,255,0.04)_42%,rgba(14,165,233,0.08)),rgba(255,255,255,0.035)] p-5 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl">
+          <div className="overflow-hidden rounded-3xl bg-[linear-gradient(145deg,rgba(225,29,72,0.13),rgba(255,255,255,0.045)_48%,rgba(255,255,255,0.02)),rgba(255,255,255,0.035)] p-5 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Top trending</p>
-                <h2 className="mt-1 text-lg font-black text-foreground">Highest scored this season</h2>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Score board</p>
+                <h2 className="mt-1 text-lg font-black text-foreground">Strongest airing picks</h2>
               </div>
               <Link to="/search?sort=score&status=airing" className="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground">
                 View
@@ -209,12 +209,12 @@ export default function Home() {
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
               <Link to="/search?sort=trending&status=airing" className="rounded-2xl bg-white/[0.05] p-3 font-bold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary">
-                Current season
-                <span className="mt-1 block text-[11px] font-medium text-muted-foreground/80">Trending now</span>
+                Season feed
+                <span className="mt-1 block text-[11px] font-medium text-muted-foreground/80">Airing titles</span>
               </Link>
               <Link to="/schedule" className="rounded-2xl bg-white/[0.05] p-3 font-bold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary">
-                Airing today
-                <span className="mt-1 block text-[11px] font-medium text-muted-foreground/80">Release times</span>
+                Today
+                <span className="mt-1 block text-[11px] font-medium text-muted-foreground/80">Episode times</span>
               </Link>
             </div>
           </div>
@@ -223,8 +223,8 @@ export default function Home() {
             <div className="rounded-3xl bg-white/[0.035] p-5 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Continue browsing</p>
-                  <h2 className="mt-1 text-lg font-black text-foreground">Recently viewed anime</h2>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Continue</p>
+                  <h2 className="mt-1 text-lg font-black text-foreground">Recently opened</h2>
                 </div>
                 <Link to="/dashboard" className="shrink-0 rounded-full border border-primary/25 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground">
                   History
@@ -352,15 +352,15 @@ export default function Home() {
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Browse faster</p>
-                <h2 className="mt-1 text-lg font-black text-foreground">Useful anime shortcuts</h2>
+              <h2 className="mt-1 text-lg font-black text-foreground">Jump back in</h2>
               </div>
             </div>
             <div className="grid gap-2">
               {[
-                { label: 'Popular anime', text: 'High-traffic title pages', to: '/anime/popular' },
-                { label: 'Action anime', text: 'Fast picks by genre', to: '/anime/genre/action' },
-                { label: 'Romance anime', text: 'Seasonal comfort picks', to: '/anime/genre/romance' },
-                { label: 'Latest downloads', text: 'Search source metadata', to: '/nyaa' },
+                { label: 'Popular anime', text: 'Titles people keep opening', to: '/anime/popular' },
+                { label: 'Action anime', text: 'Fight-heavy seasonal picks', to: '/anime/genre/action' },
+                { label: 'Romance anime', text: 'New and returning favorites', to: '/anime/genre/romance' },
+                { label: 'Source search', text: 'Find episode and batch options', to: '/nyaa' },
               ].map((item) => (
                 <Link key={item.to} to={item.to} className="group flex items-center justify-between gap-3 rounded-2xl bg-white/[0.045] p-3 transition-colors hover:bg-primary/10">
                   <span>
@@ -376,30 +376,29 @@ export default function Home() {
       </main>
 
       <section className="container mx-auto mt-12 px-4 md:px-10" aria-labelledby="anime-discovery-heading">
-        <div className="max-w-5xl rounded-3xl border border-[var(--glass-border)] bg-secondary/30 p-6 shadow-xl shadow-black/10 backdrop-blur-xl md:p-8">
-          <div className="grid gap-6 text-sm leading-relaxed text-muted-foreground md:grid-cols-[1.1fr_0.9fr] md:text-base">
+        <div className="max-w-6xl rounded-3xl bg-white/[0.035] p-6 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl md:p-8">
+          <div className="grid gap-8 text-sm leading-relaxed text-muted-foreground md:grid-cols-[1fr_1fr] md:text-base">
             <div>
-              <h2 id="anime-discovery-heading" className="mb-4 text-2xl font-black text-foreground md:text-3xl">Anime Downloads, Release Schedules, and Episode Updates</h2>
+              <h2 id="anime-discovery-heading" className="mb-4 text-2xl font-black text-foreground md:text-3xl">Built around the way anime fans actually look things up</h2>
               <p>
-                StreamNyaa helps anime fans find download options, trending anime, seasonal releases, upcoming episodes, and detailed anime information in one fast browsing experience. Use the homepage to follow recently updated anime, check today's anime release schedule, browse popular titles, and jump into dedicated anime detail pages with genres, synopsis, recommendations, episode lists, and related media.
+                StreamNyaa keeps the useful pieces close together: title pages, airing times, recent episode movement, manga links, and source search. The homepage stays media-first so you can recognize a show quickly instead of reading through feature copy.
               </p>
               <p className="mt-4">
-                Each anime page is organized around title-specific information so search engines and visitors can understand the series, episode availability, schedule context, and download options. StreamNyaa focuses on searchable anime information, clean navigation, anime details, manga details, watch pages, and source search.
+                Detail pages carry the heavier context: synopsis, status, genres, score, schedule notes, related titles, and download links. That keeps browsing fast while still giving search engines enough structured information to understand each title.
               </p>
             </div>
-            <div className="space-y-4">
-              <div>
-                <h3 className="mb-2 font-black text-foreground">Browse Seasonal Anime</h3>
-                <p>Find currently airing anime, upcoming series, popular shows, and recent episode updates with poster cards and quick links to anime pages.</p>
-              </div>
-              <div>
-                <h3 className="mb-2 font-black text-foreground">Track Anime Schedules</h3>
-                <p>Use the anime schedule view to see release timing, episode numbers, and local-time updates for new anime episodes.</p>
-              </div>
-              <div>
-                <h3 className="mb-2 font-black text-foreground">Find Download Sources</h3>
-                <p>Search by title, episode, quality, audio type, and batch or single-episode format to compare available source results.</p>
-              </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                ['Airing now', 'Seasonal titles, scores, and episode timing.'],
+                ['Episode search', 'Source results by episode, batch, quality, and audio.'],
+                ['Watchlist flow', 'Recent views and saved titles stay within reach.'],
+                ['Anime pages', 'Synopsis, relations, FAQ, score, and schedule context.'],
+              ].map(([title, text]) => (
+                <div key={title} className="rounded-2xl bg-white/[0.045] p-4">
+                  <h3 className="text-sm font-black text-foreground">{title}</h3>
+                  <p className="mt-2 text-sm leading-6">{text}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
