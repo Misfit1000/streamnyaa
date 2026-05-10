@@ -79,22 +79,6 @@ export default function Home() {
 
       <Spotlight animeList={seasonalData?.data || []} />
 
-      <section className="container mx-auto mt-10 px-4 md:px-10">
-        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary">Anime download discovery</p>
-            <h2 className="mt-2 max-w-2xl text-2xl font-black tracking-tight text-foreground md:text-3xl">
-              Fresh episode updates, release timing, and source search in one clean flow.
-            </h2>
-          </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">
-            <span>Recently updated</span>
-            <span>Today schedule</span>
-            <span>Download search</span>
-          </div>
-        </div>
-      </section>
-
       <main className="container mx-auto mt-14 grid grid-cols-1 gap-12 px-4 md:px-10 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-16">
           <section>

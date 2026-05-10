@@ -29,6 +29,7 @@ export default function AnimeDownloads() {
   const [audioFilter, setAudioFilter] = useState<AudioFilter>(typeParam === 'dub' ? 'dub' : 'sub');
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
+  const [showAllSources, setShowAllSources] = useState(false);
 
   const { data, isLoading: animeLoading } = useQuery({
     queryKey: ['anime', id],
@@ -135,6 +136,8 @@ export default function AnimeDownloads() {
     }
   });
   const topSource = sortedTorrents[0];
+  const visibleTorrents = showAllSources ? sortedTorrents : sortedTorrents.slice(0, 5);
+  const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
   const totalSeeders = sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0);
   const highSeederCount = sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length;
 
@@ -310,7 +313,31 @@ export default function AnimeDownloads() {
         </div>
       ) : (
         <div className="space-y-4">
-          {sortedTorrents.map((torrent, idx) => (
+          <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-secondary/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-black text-foreground">
+                {showAllSources ? 'All source files are visible' : 'Showing the best source files first'}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {showAllSources
+                  ? `${sortedTorrents.length} matching files are listed below.`
+                  : hiddenSourceCount
+                    ? `${hiddenSourceCount} more matching files are hidden to keep the page clean.`
+                    : 'These are all the matching files found for this filter.'}
+              </p>
+            </div>
+            {sortedTorrents.length > 5 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllSources((value) => !value)}
+                className="inline-flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+              >
+                {showAllSources ? 'Show fewer files' : `Show all source files (${sortedTorrents.length})`}
+              </button>
+            ) : null}
+          </div>
+
+          {visibleTorrents.map((torrent, idx) => (
             <div key={idx} className={`transition-all p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group ${
               idx === 0
                 ? 'bg-emerald-500/5 border border-emerald-500/30 shadow-[0_16px_40px_rgba(16,185,129,0.08)]'
