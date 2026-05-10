@@ -309,6 +309,31 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          <div className="rounded-3xl bg-white/[0.035] p-5 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Browse faster</p>
+                <h2 className="mt-1 text-lg font-black text-foreground">Useful anime shortcuts</h2>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              {[
+                { label: 'Popular anime', text: 'High-traffic title pages', to: '/anime/popular' },
+                { label: 'Action anime', text: 'Fast picks by genre', to: '/anime/genre/action' },
+                { label: 'Romance anime', text: 'Seasonal comfort picks', to: '/anime/genre/romance' },
+                { label: 'Latest downloads', text: 'Search source metadata', to: '/nyaa' },
+              ].map((item) => (
+                <Link key={item.to} to={item.to} className="group flex items-center justify-between gap-3 rounded-2xl bg-white/[0.045] p-3 transition-colors hover:bg-primary/10">
+                  <span>
+                    <span className="block text-sm font-black text-foreground group-hover:text-primary">{item.label}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{item.text}</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                </Link>
+              ))}
+            </div>
+          </div>
         </aside>
       </main>
 

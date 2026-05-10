@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { searchNyaa } from '../api/nyaa';
+import { fetchAnimeDetails, fetchAnimeEpisodes, searchAnime } from '../api/jikan';
 import { Search, Loader2, Download, HardDrive, AlertTriangle, Link as LinkIcon } from 'lucide-react';
 import Seo from '../components/Seo';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
@@ -13,6 +14,8 @@ export default function NyaaSearchPage() {
   const [filter, setFilter] = useState('0');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
   const [showAllSources, setShowAllSources] = useState(false);
+  const [animeLookupQuery, setAnimeLookupQuery] = useState('');
+  const [selectedEpisode, setSelectedEpisode] = useState('batch');
 
   const { data: torrents, isLoading } = useQuery({
     queryKey: ['nyaaSearch', query, category, filter],
@@ -20,10 +23,42 @@ export default function NyaaSearchPage() {
     enabled: true, // we fetch default category even without query
   });
 
+  const { data: animeMatchData } = useQuery({
+    queryKey: ['downloadSearchAnimeMatch', animeLookupQuery],
+    queryFn: () => searchAnime(animeLookupQuery, 1),
+    enabled: animeLookupQuery.trim().length >= 2 && category.startsWith('1_'),
+  });
+  const matchedAnime = animeMatchData?.data?.[0];
+  const { data: matchedAnimeDetails } = useQuery({
+    queryKey: ['anime', matchedAnime?.mal_id ? String(matchedAnime.mal_id) : ''],
+    queryFn: () => fetchAnimeDetails(String(matchedAnime!.mal_id)),
+    enabled: Boolean(matchedAnime?.mal_id),
+  });
+  const matchedAnimeFull = matchedAnimeDetails?.data || matchedAnime;
+  const availableEpisodeCount = matchedAnimeFull?.nextAiringEpisode?.episode
+    ? Math.max(matchedAnimeFull.nextAiringEpisode.episode - 1, 0)
+    : (matchedAnimeFull?.episodes || 0);
+  const selectedEpisodeNumber = selectedEpisode !== 'batch' ? parseInt(selectedEpisode, 10) : null;
+  const episodePage = selectedEpisodeNumber ? Math.max(1, Math.ceil(selectedEpisodeNumber / 100)) : 1;
+  const { data: matchedEpisodeData } = useQuery({
+    queryKey: ['download-search-episodes', matchedAnimeFull?.mal_id, episodePage],
+    queryFn: () => fetchAnimeEpisodes(String(matchedAnimeFull!.mal_id), episodePage),
+    enabled: Boolean(matchedAnimeFull?.mal_id && selectedEpisodeNumber),
+  });
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setShowAllSources(false);
+    setSelectedEpisode('batch');
+    setAnimeLookupQuery(searchInput.trim());
     setQuery(searchInput);
+  };
+
+  const handleEpisodeChange = (value: string) => {
+    setShowAllSources(false);
+    setSelectedEpisode(value);
+    const baseTitle = matchedAnimeFull?.title_english || matchedAnimeFull?.title_romaji || matchedAnimeFull?.title || animeLookupQuery || searchInput;
+    setQuery(value === 'batch' ? baseTitle : `${baseTitle} ${value.padStart(2, '0')}`);
   };
 
   const filteredTorrents = (torrents || []).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter));
@@ -85,6 +120,28 @@ export default function NyaaSearchPage() {
         </form>
 
         <div className="flex flex-wrap items-center justify-center gap-4 w-full max-w-3xl">
+          {matchedAnimeFull && availableEpisodeCount > 0 ? (
+            <div className="flex min-w-[260px] items-center gap-2 bg-secondary/30 p-1 rounded-lg">
+              <select
+                value={selectedEpisode}
+                onChange={(e) => handleEpisodeChange(e.target.value)}
+                className="w-full bg-transparent text-sm text-foreground focus:outline-none p-2 rounded-md font-medium [&>option]:bg-background"
+              >
+                <option value="batch">Batch / all available episodes</option>
+                {Array.from({ length: availableEpisodeCount }, (_, index) => {
+                  const episodeNumber = index + 1;
+                  const episodeInfo = matchedEpisodeData?.data?.find((episode: any) => episode.mal_id === episodeNumber);
+                  const label = episodeInfo?.title ? `Episode ${episodeNumber} - ${episodeInfo.title}` : `Episode ${episodeNumber}`;
+                  return (
+                    <option key={episodeNumber} value={episodeNumber}>
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          ) : null}
+
           <div className="flex items-center gap-2 bg-secondary/30 p-1 rounded-lg">
             <select
               value={category}
