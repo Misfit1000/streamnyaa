@@ -10,6 +10,16 @@ import Spotlight from '../components/Spotlight';
 import { animePath } from '../lib/slug';
 import { useStore } from '../store/useStore';
 
+function AnimeGridSkeleton({ count = 10 }: { count?: number }) {
+  return (
+    <>
+      {Array.from({ length: count }, (_, index) => (
+        <div key={`anime-grid-skeleton-${index}`} className="aspect-[2/3] animate-pulse rounded-xl bg-secondary/60" />
+      ))}
+    </>
+  );
+}
+
 export default function Home() {
   const { myList } = useStore();
   const localTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time', []);
@@ -66,14 +76,6 @@ export default function Home() {
     },
   };
 
-  if (seasonalLoading || recentLoading || upcomingLoading || scheduleLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
   return (
     <div className="pb-20">
       <Seo
@@ -101,9 +103,13 @@ export default function Home() {
               </Link>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-              {recentData?.data?.slice(0, 10).map((anime: any, idx: number) => (
-                <AnimeCard key={`recent-${anime.mal_id}-${idx}`} anime={anime} />
-              ))}
+              {recentLoading ? (
+                <AnimeGridSkeleton />
+              ) : (
+                recentData?.data?.slice(0, 10).map((anime: any, idx: number) => (
+                  <AnimeCard key={`recent-${anime.mal_id}-${idx}`} anime={anime} />
+                ))
+              )}
             </div>
           </section>
 
@@ -123,9 +129,13 @@ export default function Home() {
               </Link>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-              {seasonalData?.data?.slice(0, 10).map((anime: any, idx: number) => (
-                <AnimeCard key={`trending-${anime.mal_id}-${idx}`} anime={anime} />
-              ))}
+              {seasonalLoading ? (
+                <AnimeGridSkeleton />
+              ) : (
+                seasonalData?.data?.slice(0, 10).map((anime: any, idx: number) => (
+                  <AnimeCard key={`trending-${anime.mal_id}-${idx}`} anime={anime} />
+                ))
+              )}
             </div>
           </section>
 
@@ -143,9 +153,13 @@ export default function Home() {
               </Link>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-              {upcomingData?.data?.slice(0, 10).map((anime: any, idx: number) => (
-                <AnimeCard key={`upcoming-${anime.mal_id}-${idx}`} anime={anime} />
-              ))}
+              {upcomingLoading ? (
+                <AnimeGridSkeleton />
+              ) : (
+                upcomingData?.data?.slice(0, 10).map((anime: any, idx: number) => (
+                  <AnimeCard key={`upcoming-${anime.mal_id}-${idx}`} anime={anime} />
+                ))
+              )}
             </div>
           </section>
         </div>
@@ -162,7 +176,11 @@ export default function Home() {
               </Link>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {topSeasonScores.map((anime: any, index: number) => (
+              {seasonalLoading ? (
+                Array.from({ length: 6 }, (_, index) => (
+                  <div key={`top-score-skeleton-${index}`} className="aspect-[2/3] animate-pulse rounded-2xl bg-secondary/60" />
+                ))
+              ) : topSeasonScores.map((anime: any, index: number) => (
                 <Link
                   to={animePath(anime, '/downloads')}
                   key={`download-shortcut-${anime.mal_id}-${index}`}
@@ -209,6 +227,16 @@ export default function Home() {
             <div className="max-h-[680px] space-y-3 overflow-y-auto pr-2 custom-scrollbar">
               {scheduleData?.data?.length === 0 ? (
                 <div className="py-4 text-center text-sm text-muted-foreground">No episodes scheduled for today.</div>
+              ) : scheduleLoading ? (
+                Array.from({ length: 8 }, (_, index) => (
+                  <div key={`schedule-skeleton-${index}`} className="flex gap-4 rounded-xl p-2">
+                    <div className="h-16 w-12 shrink-0 animate-pulse rounded-md bg-secondary/70" />
+                    <div className="flex flex-1 flex-col justify-center gap-2">
+                      <div className="h-3 w-4/5 animate-pulse rounded bg-secondary/70" />
+                      <div className="h-3 w-1/2 animate-pulse rounded bg-secondary/50" />
+                    </div>
+                  </div>
+                ))
               ) : (
                 scheduleData?.data?.map((anime: any) => {
                   const airingTime = new Date(anime.airingAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });

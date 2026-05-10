@@ -1,8 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Play, Plus, Check, Heart } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { animePath } from '../lib/slug';
+import { fetchAnimeDetails } from '../api/jikan';
 
 interface AnimeCardProps {
   anime: any;
@@ -10,9 +12,12 @@ interface AnimeCardProps {
 }
 
 export default function AnimeCard({ anime }: AnimeCardProps) {
+  const queryClient = useQueryClient();
   const { isInMyList, addToMyList, removeFromMyList, isLiked, toggleLike } = useStore();
   const inList = isInMyList(anime.mal_id);
   const liked = isLiked(anime.mal_id);
+  const detailPath = animePath(anime);
+  const routeId = detailPath.split('/').pop() || String(anime.mal_id);
 
   const handleListToggle = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -29,7 +34,24 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   };
 
   return (
-    <Link to={animePath(anime)} className="group relative block w-full">
+    <Link
+      to={detailPath}
+      onMouseEnter={() => {
+        queryClient.prefetchQuery({
+          queryKey: ['anime', routeId],
+          queryFn: () => fetchAnimeDetails(routeId),
+          staleTime: 1000 * 60 * 30,
+        });
+      }}
+      onFocus={() => {
+        queryClient.prefetchQuery({
+          queryKey: ['anime', routeId],
+          queryFn: () => fetchAnimeDetails(routeId),
+          staleTime: 1000 * 60 * 30,
+        });
+      }}
+      className="group relative block w-full"
+    >
       <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-secondary shadow-lg shadow-black/16 ring-1 ring-white/[0.03]">
         <img
           src={anime.images.jpg.large_image_url || anime.images.jpg.image_url}
