@@ -27,6 +27,7 @@ export default function Watch() {
   const [activeMagnet, setActiveMagnet] = useState<string>('');
   const [isPlaying, setIsPlaying] = useState(false);
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
+  const [showAllSources, setShowAllSources] = useState(false);
 
   const [streamMethod, setStreamMethod] = useState<'direct' | 'torrent'>('direct');
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
@@ -145,6 +146,7 @@ export default function Watch() {
     setStreamUrl(null);
     setStreamEmbedUrl(null);
     setStreamProvider('');
+    setShowAllSources(false);
   };
 
   const episodes = episodesData?.data || [];
@@ -179,6 +181,8 @@ export default function Watch() {
   });
 
   const primarySource = sortedTorrents[0];
+  const visibleTorrents = showAllSources ? sortedTorrents : sortedTorrents.slice(0, 5);
+  const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
   const activeSource = sortedTorrents.find((torrent) => torrent.magnet === activeMagnet) || primarySource;
   const highSeederCount = sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length;
 
@@ -397,7 +401,10 @@ export default function Watch() {
                 <select
                   className="bg-transparent border border-border text-sm text-foreground rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary transition-colors cursor-pointer [&>option]:bg-background"
                   value={sortBy}
-                  onChange={(event) => setSortBy(event.target.value as 'best' | 'seeders' | 'size')}
+                  onChange={(event) => {
+                    setShowAllSources(false);
+                    setSortBy(event.target.value as 'best' | 'seeders' | 'size');
+                  }}
                 >
                   <option value="best">Best</option>
                   <option value="seeders">Seeders</option>
@@ -429,7 +436,31 @@ export default function Watch() {
               </div>
             ) : (
               <div className="space-y-3">
-                {sortedTorrents.map((torrent, index) => {
+                <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-secondary/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-foreground">
+                      {showAllSources ? 'All source files are visible' : 'Showing the best source files first'}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {showAllSources
+                        ? `${sortedTorrents.length} matching files are listed below.`
+                        : hiddenSourceCount
+                          ? `${hiddenSourceCount} more matching files are hidden to keep the page clean.`
+                          : 'These are all the matching files found for this episode.'}
+                    </p>
+                  </div>
+                  {sortedTorrents.length > 5 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllSources((value) => !value)}
+                      className="inline-flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                    >
+                      {showAllSources ? 'Show fewer files' : `Show all source files (${sortedTorrents.length})`}
+                    </button>
+                  ) : null}
+                </div>
+
+                {visibleTorrents.map((torrent, index) => {
                   const isCurrentSource = activeMagnet === torrent.magnet;
                   const badges = getTorrentBadges(torrent);
                   return (

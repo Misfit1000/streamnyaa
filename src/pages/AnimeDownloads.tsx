@@ -174,7 +174,10 @@ export default function AnimeDownloads() {
               {['[Batch]', '1080p', '720p', 'RAW'].map(filter => (
                 <button
                   key={filter}
-                  onClick={() => setDownloadFilter(filter === downloadFilter ? '' : filter)}
+                  onClick={() => {
+                    setShowAllSources(false);
+                    setDownloadFilter(filter === downloadFilter ? '' : filter);
+                  }}
                   className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
                     downloadFilter === filter
                       ? 'bg-primary text-primary-foreground shadow-sm'
@@ -192,7 +195,10 @@ export default function AnimeDownloads() {
               ].map(({ value, label, icon: Icon }) => (
                 <button
                   key={value}
-                  onClick={() => setAudioFilter(value)}
+                  onClick={() => {
+                    setShowAllSources(false);
+                    setAudioFilter(value);
+                  }}
                   className={`inline-flex items-center justify-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-black transition-all ${
                     audioFilter === value
                       ? 'bg-primary text-primary-foreground shadow-sm'
@@ -211,7 +217,10 @@ export default function AnimeDownloads() {
             <select 
               className="bg-transparent border border-border text-sm text-foreground rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary transition-colors cursor-pointer [&>option]:bg-background"
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'best' | 'seeders' | 'size')}
+              onChange={(e) => {
+                setShowAllSources(false);
+                setSortBy(e.target.value as 'best' | 'seeders' | 'size');
+              }}
             >
               <option value="best">Best</option>
               <option value="seeders">Seeders</option>
@@ -245,7 +254,7 @@ export default function AnimeDownloads() {
             <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-500">{highSeederCount} high-seed sources</span>
           ) : null}
           {sourceFilter ? (
-            <button onClick={() => setSourceFilter('')} className="text-xs font-bold text-primary hover:underline">Clear</button>
+            <button onClick={() => { setShowAllSources(false); setSourceFilter(''); }} className="text-xs font-bold text-primary hover:underline">Clear</button>
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -259,7 +268,10 @@ export default function AnimeDownloads() {
           ].map((item) => (
             <button
               key={item.value}
-              onClick={() => setSourceFilter(sourceFilter === item.value ? '' : item.value as TorrentSourceFilter)}
+              onClick={() => {
+                setShowAllSources(false);
+                setSourceFilter(sourceFilter === item.value ? '' : item.value as TorrentSourceFilter);
+              }}
               className={`rounded-full border px-3 py-1.5 text-sm font-bold transition-colors ${
                 sourceFilter === item.value
                   ? 'border-primary bg-primary text-primary-foreground'

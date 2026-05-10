@@ -12,6 +12,7 @@ export default function NyaaSearchPage() {
   const [category, setCategory] = useState('1_0');
   const [filter, setFilter] = useState('0');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
+  const [showAllSources, setShowAllSources] = useState(false);
 
   const { data: torrents, isLoading } = useQuery({
     queryKey: ['nyaaSearch', query, category, filter],
@@ -21,10 +22,13 @@ export default function NyaaSearchPage() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    setShowAllSources(false);
     setQuery(searchInput);
   };
 
   const filteredTorrents = (torrents || []).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter));
+  const visibleTorrents = showAllSources ? filteredTorrents : filteredTorrents.slice(0, 5);
+  const hiddenSourceCount = Math.max(filteredTorrents.length - visibleTorrents.length, 0);
   const faqItems = [
     {
       question: 'What do the source badges mean?',
@@ -84,7 +88,10 @@ export default function NyaaSearchPage() {
           <div className="flex items-center gap-2 bg-secondary/30 p-1 rounded-lg">
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(e) => {
+                setShowAllSources(false);
+                setCategory(e.target.value);
+              }}
               className="bg-transparent text-sm text-foreground focus:outline-none p-2 rounded-md font-medium [&>option]:bg-background"
             >
               <option value="0_0">All Categories</option>
@@ -103,7 +110,10 @@ export default function NyaaSearchPage() {
           <div className="flex items-center gap-2 bg-secondary/30 p-1 rounded-lg">
             <select
               value={filter}
-              onChange={(e) => setFilter(e.target.value)}
+              onChange={(e) => {
+                setShowAllSources(false);
+                setFilter(e.target.value);
+              }}
               className="bg-transparent text-sm text-foreground focus:outline-none p-2 rounded-md font-medium [&>option]:bg-background"
             >
               <option value="0">No Filter</option>
@@ -129,7 +139,7 @@ export default function NyaaSearchPage() {
       <div className="mx-auto mb-6 max-w-5xl rounded-2xl border border-border bg-secondary/20 p-4">
         <div className="mb-3 flex items-center gap-2">
           <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Source filters</span>
-          {sourceFilter ? <button onClick={() => setSourceFilter('')} className="text-xs font-bold text-primary hover:underline">Clear</button> : null}
+          {sourceFilter ? <button onClick={() => { setShowAllSources(false); setSourceFilter(''); }} className="text-xs font-bold text-primary hover:underline">Clear</button> : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {[
@@ -142,7 +152,10 @@ export default function NyaaSearchPage() {
           ].map((item) => (
             <button
               key={item.value}
-              onClick={() => setSourceFilter(sourceFilter === item.value ? '' : item.value as TorrentSourceFilter)}
+              onClick={() => {
+                setShowAllSources(false);
+                setSourceFilter(sourceFilter === item.value ? '' : item.value as TorrentSourceFilter);
+              }}
               className={`rounded-full border px-3 py-1.5 text-sm font-bold transition-colors ${
                 sourceFilter === item.value
                   ? 'border-primary bg-primary text-primary-foreground'
@@ -165,7 +178,31 @@ export default function NyaaSearchPage() {
         </div>
       ) : (
         <div className="space-y-4 max-w-5xl mx-auto">
-          {filteredTorrents.map((torrent, idx) => (
+          <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-secondary/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-black text-foreground">
+                {showAllSources ? 'All source files are visible' : 'Showing the best source files first'}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {showAllSources
+                  ? `${filteredTorrents.length} matching files are listed below.`
+                  : hiddenSourceCount
+                    ? `${hiddenSourceCount} more matching files are hidden to keep the page clean.`
+                    : 'These are all the matching files found for this search.'}
+              </p>
+            </div>
+            {filteredTorrents.length > 5 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllSources((value) => !value)}
+                className="inline-flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+              >
+                {showAllSources ? 'Show fewer files' : `Show all source files (${filteredTorrents.length})`}
+              </button>
+            ) : null}
+          </div>
+
+          {visibleTorrents.map((torrent, idx) => (
             <div key={idx} className="bg-secondary/20 hover:bg-secondary/40 border border-border/50 hover:border-primary/50 transition-all p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group">
                 <div className="flex-1 min-w-0">
                   <h4 className="text-[15px] font-bold text-foreground break-all leading-tight mb-3 group-hover:text-primary transition-colors">
