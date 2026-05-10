@@ -7,6 +7,7 @@ import { useStore } from '../store/useStore';
 import { animePath, mangaPath, watchPath } from '../lib/slug';
 import Seo from '../components/Seo';
 import RelatedBlogArticles from '../components/RelatedBlogArticles';
+import { saveRecentAnime } from '../lib/activity';
 
 function formatStatus(value?: string) {
   return value ? value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unknown';
@@ -62,6 +63,10 @@ export default function AnimeDetails() {
       navigate(cleanPath, { replace: true });
     }
   }, [anime, id, navigate]);
+
+  useEffect(() => {
+    if (anime) saveRecentAnime(anime);
+  }, [anime]);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center">
