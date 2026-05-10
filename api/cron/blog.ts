@@ -1,6 +1,10 @@
-import { getCachedBlogPost } from '../blog';
-
 const BLOG_SLUGS = ['anime-trending-news-today', 'anime-viral-topic-today'];
+
+function requestOrigin(req: any) {
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return `${proto}://${host}`;
+}
 
 export default async function handler(req: any, res: any) {
   const secret = process.env.CRON_SECRET;
@@ -15,13 +19,22 @@ export default async function handler(req: any, res: any) {
   }
 
   const warmed = [];
+  const origin = requestOrigin(req);
 
   for (const slug of BLOG_SLUGS) {
     try {
-      const post = await getCachedBlogPost(slug, false, true);
+      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1`, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${secret}`,
+          'User-Agent': 'StreamNyaa-Cron',
+        },
+      });
+      const post = await response.json();
+      if (!response.ok) throw new Error(post?.error || `Blog generation failed with ${response.status}`);
       warmed.push({
         slug,
-        status: 200,
+        status: response.status,
         ok: true,
         skipped: post.articleStatus === 'not_crucial_topic_skipped',
         articleSlug: post.articleSlug,
