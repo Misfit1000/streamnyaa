@@ -14,6 +14,7 @@ const Watch = lazy(() => import('./pages/Watch'));
 const MyList = lazy(() => import('./pages/MyList'));
 const NyaaSearchPage = lazy(() => import('./pages/NyaaSearchPage'));
 const AnimeDownloads = lazy(() => import('./pages/AnimeDownloads'));
+const AnimeCompare = lazy(() => import('./pages/AnimeCompare'));
 const Blog = lazy(() => import('./pages/Blog'));
 const BlogPost = lazy(() => import('./pages/BlogPost'));
 const Login = lazy(() => import('./pages/Login'));
@@ -78,6 +79,7 @@ export default function App() {
                 <Route path="watch/:id" element={<Watch />} />
                 <Route path="my-list" element={<MyList />} />
                 <Route path="nyaa" element={<NyaaSearchPage />} />
+                <Route path="compare" element={<AnimeCompare />} />
                 <Route path="blog" element={<Blog />} />
                 <Route path="blog/:slug" element={<BlogPost />} />
                 <Route path="login" element={<Login />} />
