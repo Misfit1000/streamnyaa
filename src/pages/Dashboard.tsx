@@ -17,7 +17,12 @@ import {
 } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
-import { getDownloadHistory, type DownloadHistoryEntry } from '../lib/activity';
+import {
+  fetchAccountDownloadHistory,
+  getDownloadHistory,
+  mergeDownloadHistory,
+  type DownloadHistoryEntry,
+} from '../lib/activity';
 import { useStore } from '../store/useStore';
 
 const DASHBOARD_FALLBACK_IMAGES = [
@@ -63,13 +68,34 @@ function ToolRow({ to, icon: Icon, title, text }: {
 }
 
 export default function Dashboard() {
-  const { user, isAdmin, loading, signOut } = useAuth();
+  const { user, session, isAdmin, loading, signOut } = useAuth();
   const { myList, likedAnimes, nsfwMode, toggleNsfwMode } = useStore();
   const [downloadHistory, setDownloadHistory] = useState<DownloadHistoryEntry[]>([]);
+  const [historyState, setHistoryState] = useState<'local' | 'loading' | 'synced' | 'unavailable'>('local');
 
   useEffect(() => {
-    setDownloadHistory(getDownloadHistory(6));
-  }, []);
+    let cancelled = false;
+    const localHistory = getDownloadHistory(8);
+    setDownloadHistory(localHistory.slice(0, 6));
+    setHistoryState(session?.access_token ? 'loading' : 'local');
+
+    async function loadAccountHistory() {
+      if (!session?.access_token) return;
+      try {
+        const accountHistory = await fetchAccountDownloadHistory(session, 20);
+        if (cancelled) return;
+        setDownloadHistory(mergeDownloadHistory(accountHistory, localHistory).slice(0, 6));
+        setHistoryState('synced');
+      } catch {
+        if (!cancelled) setHistoryState('unavailable');
+      }
+    }
+
+    loadAccountHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token]);
 
   if (loading) {
     return <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">Loading dashboard...</div>;
@@ -169,7 +195,13 @@ export default function Dashboard() {
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-black tracking-tight">Download history</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Copied and opened source links from this browser.</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {historyState === 'synced'
+                    ? 'Copied and opened source links saved to your account.'
+                    : historyState === 'loading'
+                      ? 'Loading saved source history from your account...'
+                      : 'Copied and opened source links saved in this browser.'}
+                </p>
               </div>
               <Link to="/nyaa" className="text-sm font-black text-primary hover:underline">Find sources</Link>
             </div>
@@ -192,9 +224,14 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-border bg-background/35 p-5 text-sm leading-6 text-muted-foreground">
-                Copy or open a source link from a download page and it will appear here. Signed-in activity can stay connected to your account when history sync is enabled.
+                Copy or open a source link from a download page and it will appear here. When you are signed in, new activity can follow your account across devices.
               </div>
             )}
+            {historyState === 'unavailable' ? (
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                Account history is not available right now, so this browser's saved history is shown.
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-lg border border-border bg-[var(--glass)] p-5">

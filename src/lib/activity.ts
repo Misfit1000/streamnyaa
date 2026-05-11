@@ -69,6 +69,48 @@ export function getDownloadHistory(limit = 8) {
   return readList<DownloadHistoryEntry>(DOWNLOAD_HISTORY_KEY).slice(0, limit);
 }
 
+function normalizeRemoteHistory(row: any): DownloadHistoryEntry | null {
+  if (!row?.title || !row?.magnet) return null;
+  return {
+    id: String(row.id || `${row.created_at || Date.now()}-${row.magnet}`),
+    title: String(row.title),
+    magnet: String(row.magnet),
+    animeTitle: row.anime_title || row.animeTitle || undefined,
+    animeId: row.anime_id || row.animeId || undefined,
+    episode: row.episode || null,
+    action: row.action === 'open' ? 'open' : 'copy',
+    size: row.size || undefined,
+    seeders: row.seeders || undefined,
+    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
+  };
+}
+
+export function mergeDownloadHistory(...lists: DownloadHistoryEntry[][]) {
+  const seen = new Set<string>();
+  return lists
+    .flat()
+    .filter((entry) => {
+      const key = `${entry.magnet}-${entry.action}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export async function fetchAccountDownloadHistory(session?: AuthSession | null, limit = 20) {
+  if (!session?.access_token) return [];
+
+  const response = await fetch(`/api/download-history?limit=${encodeURIComponent(String(limit))}`, {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  if (!response.ok) throw new Error('Saved source history could not be loaded.');
+
+  const rows = await response.json();
+  if (!Array.isArray(rows)) return [];
+  return rows.map(normalizeRemoteHistory).filter(Boolean) as DownloadHistoryEntry[];
+}
+
 export async function saveDownloadHistory(entry: Omit<DownloadHistoryEntry, 'id' | 'createdAt'>, session?: AuthSession | null) {
   const nextItem: DownloadHistoryEntry = {
     ...entry,

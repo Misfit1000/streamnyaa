@@ -10,7 +10,9 @@ export default async function handler(req: any, res: any) {
 
   try {
     if (req.method === 'GET') {
-      const rows = await supabaseRest(`download_history?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=created_at.desc&limit=20`);
+      const requestedLimit = Number(req.query?.limit || 20);
+      const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 50) : 20;
+      const rows = await supabaseRest(`download_history?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=created_at.desc&limit=${limit}`);
       return res.status(200).json(Array.isArray(rows) ? rows : []);
     }
 
