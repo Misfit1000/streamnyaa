@@ -317,6 +317,8 @@ export default function NyaaSearchPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {[
+            { value: 'quality-1080p', label: '1080p' },
+            { value: 'quality-720p', label: '720p' },
             { value: 'trusted', label: 'Trusted' },
             { value: 'high-seeders', label: 'High seeders' },
             { value: 'hevc', label: 'HEVC' },
@@ -442,7 +444,7 @@ export default function NyaaSearchPage() {
           ))}
           {!user ? (
             <p className="rounded-2xl border border-border bg-background/45 p-4 text-sm text-muted-foreground">
-              Download actions are saved locally in this browser. Sign in to sync future history to your account when database storage is available.
+              Your download history is saved on this device. Sign in to keep future activity connected to your account.
             </p>
           ) : null}
         </div>

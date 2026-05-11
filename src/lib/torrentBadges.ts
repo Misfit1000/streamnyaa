@@ -29,6 +29,10 @@ const isEpisode = (title: string) => (
   /\b(?:e(?:p(?:isode)?)?[\s._-]?\d{1,4}|\b\d{1,4}\b)\b/i.test(title) && !isBatch(title)
 );
 
+const hasQuality = (title: string, quality: '1080p' | '720p') => (
+  new RegExp(`\\b${quality}\\b`, 'i').test(title)
+);
+
 export function getTorrentBadges(torrent: NyaaItem): TorrentBadge[] {
   const badges: TorrentBadge[] = [];
   const title = torrent.title || '';
@@ -42,7 +46,7 @@ export function getTorrentBadges(torrent: NyaaItem): TorrentBadge[] {
   return badges;
 }
 
-export type TorrentSourceFilter = '' | 'trusted' | 'high-seeders' | 'hevc' | 'dual-audio' | 'batch' | 'episode';
+export type TorrentSourceFilter = '' | 'trusted' | 'high-seeders' | 'hevc' | 'dual-audio' | 'batch' | 'episode' | 'quality-1080p' | 'quality-720p';
 
 export function torrentMatchesSourceFilter(torrent: NyaaItem, filter: TorrentSourceFilter) {
   if (!filter) return true;
@@ -53,6 +57,8 @@ export function torrentMatchesSourceFilter(torrent: NyaaItem, filter: TorrentSou
   if (filter === 'dual-audio') return isDualAudio(title);
   if (filter === 'batch') return isBatch(title);
   if (filter === 'episode') return isEpisode(title);
+  if (filter === 'quality-1080p') return hasQuality(title, '1080p');
+  if (filter === 'quality-720p') return hasQuality(title, '720p');
   return true;
 }
 

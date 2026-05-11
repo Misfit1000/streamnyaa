@@ -268,7 +268,12 @@ export default function AnimeDownloads() {
                   key={filter}
                   onClick={() => {
                     setShowAllSources(false);
-                    setDownloadFilter(filter === downloadFilter ? '' : filter);
+                    const nextFilter = filter === downloadFilter ? '' : filter;
+                    setDownloadFilter(nextFilter);
+                    if (nextFilter === '1080p') setSourceFilter('quality-1080p');
+                    else if (nextFilter === '720p') setSourceFilter('quality-720p');
+                    else if (nextFilter === '[Batch]') setSourceFilter('batch');
+                    else if (sourceFilter === 'quality-1080p' || sourceFilter === 'quality-720p' || sourceFilter === 'batch') setSourceFilter('');
                   }}
                   className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
                     downloadFilter === filter
@@ -372,6 +377,8 @@ export default function AnimeDownloads() {
         </div>
         <div className="flex flex-wrap gap-2">
           {[
+            { value: 'quality-1080p', label: '1080p' },
+            { value: 'quality-720p', label: '720p' },
             { value: 'trusted', label: 'Trusted' },
             { value: 'high-seeders', label: 'High seeders' },
             { value: 'hevc', label: 'HEVC' },
@@ -548,7 +555,7 @@ export default function AnimeDownloads() {
           ))}
           {!user ? (
             <p className="rounded-2xl border border-border bg-background/45 p-4 text-sm text-muted-foreground">
-              Download actions are saved locally in this browser. Sign in to sync future history to your account when database storage is available.
+              Your download history is saved on this device. Sign in to keep future activity connected to your account.
             </p>
           ) : null}
         </div>
