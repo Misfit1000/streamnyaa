@@ -105,11 +105,11 @@ function parseEpisodeIntent(query: string) {
   let episodeNumber: number | null = null;
   for (let index = parts.length - 1; index >= 0; index -= 1) {
     const raw = parts[index].replace(/[^\d]/g, "");
-    if (!raw || raw.length > 3) continue;
+    if (!raw || raw.length > 4) continue;
     const num = Number(raw);
     const lower = parts[index].toLowerCase();
     if ([480, 720, 1080].includes(num) || lower.includes("bit")) continue;
-    if (num > 0 && num < 200) {
+    if (num > 0 && num < 3000 && !(num >= 1900 && num <= 2099)) {
       episodeIndex = index;
       episodeNumber = num;
       break;
@@ -232,10 +232,10 @@ function extractLikelyEpisode(title: string): number | null {
   if (sxe) return Number(sxe[1]);
   const explicit = title.match(/\b(?:ep|episode)\.?\s*(\d{1,3})\b/i);
   if (explicit) return Number(explicit[1]);
-  const delimited = title.match(/(?:^|[\s._\-[({])(\d{1,3})(?:v\d+)?(?:[\s._\]))}-]|$)(?!\s*(?:bit|kb|mb|gb|p))/i);
+  const delimited = title.match(/(?:^|[\s._\-[({])(\d{1,4})(?:v\d+)?(?:[\s._\]))}-]|$)(?!\s*(?:bit|kb|mb|gb|p))/i);
   if (!delimited) return null;
   const num = Number(delimited[1]);
-  if ([480, 720, 1080].includes(num) || num <= 0 || num >= 200) return null;
+  if ([480, 720, 1080, 2160].includes(num) || (num >= 1900 && num <= 2099) || num <= 0 || num >= 3000) return null;
   return num;
 }
 
