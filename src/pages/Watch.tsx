@@ -27,6 +27,7 @@ export default function Watch() {
   const [activeMagnet, setActiveMagnet] = useState<string>('');
   const [isPlaying, setIsPlaying] = useState(false);
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
+  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
   const [showAllSources, setShowAllSources] = useState(false);
 
   const [streamMethod, setStreamMethod] = useState<'direct' | 'torrent'>('direct');
@@ -88,7 +89,7 @@ export default function Watch() {
   }, [anime, currentEp, streamMethod]);
 
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
-    queryKey: ['nyaa', anime?.title, currentEp, searchParams.get('type')],
+    queryKey: ['nyaa', anime?.title, currentEp, searchParams.get('type'), showAllSources],
     queryFn: async () => {
       const romaji = anime?.title_romaji;
       const english = anime?.title_english;
@@ -104,13 +105,21 @@ export default function Watch() {
         if (!title) return [];
         let query = `${cleanTitle(title)} ${ep}`;
         if (audioType === 'dub') query += ' dub';
-        return await searchNyaa(query, '1_2', '0', '1', { pages: 2 });
+        return await searchNyaa(query, '1_2', '0', '1', { pages: showAllSources ? 2 : 1, wide: showAllSources });
       };
 
       const trySearches = async (epNumStr: string) => {
         const titles = [romaji, english, native].filter((title, index, list): title is string => Boolean(title) && list.indexOf(title) === index);
-        const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr)));
-        return dedupeNyaaItems(searches.flat());
+        if (showAllSources) {
+          const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr)));
+          return dedupeNyaaItems(searches.flat());
+        }
+
+        for (const title of titles) {
+          const items = await performSearch(title, epNumStr);
+          if (items.length > 0) return items;
+        }
+        return [];
       };
 
       let results = await trySearches(epStr);
@@ -173,11 +182,11 @@ export default function Watch() {
       return b.rawSize - a.rawSize;
     }
     if (sortBy === 'seeders') {
-      if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
-      return b.rawSize - a.rawSize;
+      if (b.rawSeeders !== a.rawSeeders) return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
+      return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
     }
-    if (b.rawSize !== a.rawSize) return b.rawSize - a.rawSize;
-    return b.rawSeeders - a.rawSeeders;
+    if (b.rawSize !== a.rawSize) return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
+    return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
   });
 
   const primarySource = sortedTorrents[0];
@@ -410,6 +419,15 @@ export default function Watch() {
                   <option value="seeders">Seeders</option>
                   <option value="size">File Size</option>
                 </select>
+                {sortBy !== 'best' ? (
+                  <button
+                    type="button"
+                    onClick={() => setSortDirection((value) => value === 'desc' ? 'asc' : 'desc')}
+                    className="rounded-lg border border-border bg-background/60 px-3 py-1.5 text-sm font-bold text-foreground transition-colors hover:border-primary/50 hover:text-primary"
+                  >
+                    {sortDirection === 'desc' ? 'High to low' : 'Low to high'}
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -449,13 +467,13 @@ export default function Watch() {
                           : 'These are all the matching files found for this episode.'}
                     </p>
                   </div>
-                  {sortedTorrents.length > 5 ? (
+                  {sortedTorrents.length > 0 ? (
                     <button
                       type="button"
                       onClick={() => setShowAllSources((value) => !value)}
                       className="inline-flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
                     >
-                      {showAllSources ? 'Show fewer files' : `Show all source files (${sortedTorrents.length})`}
+                      {showAllSources ? 'Show fewer files' : 'Show all source files'}
                     </button>
                   ) : null}
                 </div>

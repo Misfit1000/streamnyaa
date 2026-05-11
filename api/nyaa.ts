@@ -164,9 +164,10 @@ function buildQueryVariants(query: string, intent: SearchIntent): string[] {
   return unique(variants.map((variant) => variant.replace(/\s+/g, " ").trim())).slice(0, MAX_QUERY_VARIANTS);
 }
 
-function buildCategoryList(category: string): string[] {
+function buildCategoryList(category: string, wide: boolean): string[] {
   if (!category || category === "1_0") return DEFAULT_ANIME_CATEGORIES;
   if (!category.startsWith("1_")) return [category];
+  if (!wide) return [category];
   return unique([category, ...DEFAULT_ANIME_CATEGORIES]);
 }
 
@@ -341,10 +342,10 @@ async function fetchInChunks(urls: { url: URL; query: string; category: string; 
   return results;
 }
 
-async function fetchEnhancedResults(options: { query: string; category: string; filter: string; page: number; pages: number; deep: boolean }) {
+async function fetchEnhancedResults(options: { query: string; category: string; filter: string; page: number; pages: number; deep: boolean; wide: boolean }) {
   const intent = buildIntent(options.query);
   const queries = options.deep ? buildQueryVariants(options.query, intent) : [options.query];
-  const categories = options.deep ? buildCategoryList(options.category) : [options.category || "1_2"];
+  const categories = options.deep ? buildCategoryList(options.category, options.wide) : [options.category || "1_2"];
   const pageList = options.deep
     ? Array.from({ length: Math.max(1, Math.min(options.pages, MAX_DEEP_PAGES)) }, (_, index) => index + 1)
     : [Math.max(1, options.page || 1)];
@@ -384,8 +385,9 @@ export default async function handler(req: any, res: any) {
     const p = firstValue(req.query.p) || "1";
     const pages = Math.max(1, Math.min(Number(firstValue(req.query.pages) || 3) || 3, MAX_DEEP_PAGES));
     const deep = q ? firstValue(req.query.deep) !== "0" : false;
-    const loader = () => fetchEnhancedResults({ query: q, category: c, filter: f, page: Number(p) || 1, pages, deep });
-    const cacheKey = JSON.stringify({ q, c, f, p, pages, deep, version: 2 });
+    const wide = firstValue(req.query.wide) === "1";
+    const loader = () => fetchEnhancedResults({ query: q, category: c, filter: f, page: Number(p) || 1, pages, deep, wide });
+    const cacheKey = JSON.stringify({ q, c, f, p, pages, deep, wide, version: 3 });
     const cached = sourceCache.get(cacheKey);
     const age = cached ? Date.now() - cached.fetchedAt : Number.POSITIVE_INFINITY;
     res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=480");

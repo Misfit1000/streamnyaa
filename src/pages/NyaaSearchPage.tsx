@@ -28,13 +28,15 @@ export default function NyaaSearchPage() {
   const [category, setCategory] = useState('1_0');
   const [filter, setFilter] = useState('0');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
+  const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size' | 'date'>('best');
+  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
   const [showAllSources, setShowAllSources] = useState(false);
   const [animeLookupQuery, setAnimeLookupQuery] = useState('');
   const [selectedEpisode, setSelectedEpisode] = useState('batch');
 
   const { data: torrents, isLoading } = useQuery({
-    queryKey: ['nyaaSearch', query, category, filter],
-    queryFn: () => searchNyaa(query, category, filter),
+    queryKey: ['nyaaSearch', query, category, filter, showAllSources],
+    queryFn: () => searchNyaa(query, category, filter, '1', { pages: showAllSources ? 3 : 1, wide: showAllSources }),
     enabled: true, // we fetch default category even without query
   });
 
@@ -101,7 +103,24 @@ export default function NyaaSearchPage() {
     }, session);
   };
 
-  const filteredTorrents = (torrents || []).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter));
+  const filteredTorrents = [...(torrents || [])].filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
+    if (sortBy === 'best') {
+      if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
+      if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
+      return b.rawSize - a.rawSize;
+    }
+    if (sortBy === 'seeders') {
+      if (b.rawSeeders !== a.rawSeeders) return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
+      return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
+    }
+    if (sortBy === 'size') {
+      if (b.rawSize !== a.rawSize) return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
+      return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
+    }
+    const aTime = Date.parse(a.pubDate || '0') || 0;
+    const bTime = Date.parse(b.pubDate || '0') || 0;
+    return sortDirection === 'asc' ? aTime - bTime : bTime - aTime;
+  });
   const visibleTorrents = showAllSources ? filteredTorrents : filteredTorrents.slice(0, 5);
   const hiddenSourceCount = Math.max(filteredTorrents.length - visibleTorrents.length, 0);
   const faqItems = [
@@ -268,9 +287,33 @@ export default function NyaaSearchPage() {
             </div>
           </div>
         ) : null}
-        <div className="mb-3 flex items-center gap-2">
-          <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Source filters</span>
-          {sourceFilter ? <button onClick={() => { setShowAllSources(false); setSourceFilter(''); }} className="text-xs font-bold text-primary hover:underline">Clear</button> : null}
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Source filters</span>
+            {sourceFilter ? <button onClick={() => { setShowAllSources(false); setSourceFilter(''); }} className="text-xs font-bold text-primary hover:underline">Clear</button> : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Sort</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'best' | 'seeders' | 'size' | 'date')}
+              className="rounded-lg border border-border bg-background/70 px-3 py-1.5 text-sm font-bold text-foreground outline-none focus:border-primary [&>option]:bg-background"
+            >
+              <option value="best">Best</option>
+              <option value="seeders">Seeders</option>
+              <option value="size">File Size</option>
+              <option value="date">Date</option>
+            </select>
+            {sortBy !== 'best' ? (
+              <button
+                type="button"
+                onClick={() => setSortDirection((value) => value === 'desc' ? 'asc' : 'desc')}
+                className="rounded-lg border border-border bg-background/60 px-3 py-1.5 text-sm font-bold text-foreground transition-colors hover:border-primary/50 hover:text-primary"
+              >
+                {sortDirection === 'desc' ? 'High to low' : 'Low to high'}
+              </button>
+            ) : null}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {[
@@ -322,13 +365,13 @@ export default function NyaaSearchPage() {
                     : 'These are all the matching files found for this search.'}
               </p>
             </div>
-            {filteredTorrents.length > 5 ? (
+            {filteredTorrents.length > 0 ? (
               <button
                 type="button"
                 onClick={() => setShowAllSources((value) => !value)}
                 className="inline-flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
               >
-                {showAllSources ? 'Show fewer files' : `Show all source files (${filteredTorrents.length})`}
+                {showAllSources ? 'Show fewer files' : 'Show all source files'}
               </button>
             ) : null}
           </div>
