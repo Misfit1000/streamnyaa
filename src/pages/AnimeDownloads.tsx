@@ -356,7 +356,7 @@ export default function AnimeDownloads() {
         {[
           { label: 'Sources found', value: torrentsLoading ? '...' : sortedTorrents.length, detail: sourceFilter ? 'After selected filter' : 'Matching this title' },
           { label: 'Total seeders', value: torrentsLoading ? '...' : totalSeeders, detail: 'Across visible sources' },
-          { label: 'Best source', value: torrentsLoading ? '...' : topSource ? sourceHealth(topSource.rawSeeders) : 'None', detail: topSource ? `${topSource.seeders} seeders` : 'Try another filter' },
+          { label: 'Best source score', value: torrentsLoading ? '...' : topSource ? sourceQualityScore(topSource) : 'None', detail: topSource ? `${sourceQualityLabel(sourceQualityScore(topSource))} - ${sourceHealth(topSource.rawSeeders)}` : 'Try another filter' },
         ].map((item) => (
           <div key={item.label} className="rounded-2xl border border-border bg-[var(--glass)] p-4">
             <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">{item.label}</p>
@@ -438,12 +438,54 @@ export default function AnimeDownloads() {
             <p className="text-muted-foreground font-medium">Searching sources for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {showAiringEpisodeResults ? 'episode releases' : downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'releases'}...</p>
         </div>
       ) : sortedTorrents.length === 0 ? (
-        <div className="bg-secondary/30 border border-border p-12 rounded-3xl text-center flex flex-col items-center">
+        <div className="bg-secondary/30 border border-border p-8 md:p-12 rounded-3xl text-center flex flex-col items-center">
           <HardDrive className="w-16 h-16 text-muted-foreground mb-4" />
           <p className="text-xl font-bold text-foreground mb-2">No Sources Found</p>
-          <p className="text-muted-foreground">
+          <p className="max-w-2xl text-muted-foreground">
             No source results were found for "{anime.title}" with the selected filters. Try a different filter or search.
           </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {(anime.title_english || anime.title_romaji) ? (
+              <span className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-bold text-muted-foreground">
+                Try alternate title: {anime.title_english || anime.title_romaji}
+              </span>
+            ) : null}
+            {selectedEpisodeNumber ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAllSources(false);
+                  setSearchParams(new URLSearchParams({ ep: String(selectedEpisodeNumber), type: audioFilter }));
+                  setDownloadFilter('');
+                  setSourceFilter('');
+                }}
+                className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary hover:bg-primary hover:text-primary-foreground"
+              >
+                Search episode without quality
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                setShowAllSources(true);
+                setSourceFilter('');
+              }}
+              className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+            >
+              Try wider source search
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowAllSources(false);
+                setDownloadFilter('[Batch]');
+                setSourceFilter('batch');
+              }}
+              className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+            >
+              Try batch search
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

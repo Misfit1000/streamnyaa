@@ -192,7 +192,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-border bg-background/35 p-5 text-sm leading-6 text-muted-foreground">
-                Copy or open a source link from a download page and it will appear here. Signed-in actions also try to sync with the database when the download history table is configured.
+                Copy or open a source link from a download page and it will appear here. Signed-in activity can stay connected to your account when history sync is enabled.
               </div>
             )}
           </div>

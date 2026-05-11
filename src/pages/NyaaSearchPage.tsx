@@ -350,8 +350,39 @@ export default function NyaaSearchPage() {
           <Loader2 className="w-10 h-10 text-primary animate-spin" />
         </div>
       ) : filteredTorrents.length === 0 ? (
-        <div className="text-center py-20">
-          <p className="text-muted-foreground text-lg">No sources found. Try different filters or terms.</p>
+        <div className="mx-auto max-w-3xl rounded-3xl border border-border bg-secondary/25 px-6 py-14 text-center">
+          <HardDrive className="mx-auto mb-4 h-14 w-14 text-muted-foreground" />
+          <p className="text-xl font-black text-foreground">No matching sources found</p>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+            Try the romanized or English title, remove strict quality filters, search the episode number without a leading zero, or switch to batch search if you are looking for a full-season result.
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {sourceFilter ? (
+              <button
+                type="button"
+                onClick={() => setSourceFilter('')}
+                className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary hover:bg-primary hover:text-primary-foreground"
+              >
+                Clear source filter
+              </button>
+            ) : null}
+            {selectedEpisode !== 'batch' ? (
+              <button
+                type="button"
+                onClick={() => handleEpisodeChange(String(parseInt(selectedEpisode, 10)))}
+                className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+              >
+                Try episode without leading zero
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setShowAllSources(true)}
+              className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+            >
+              Try wider source search
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4 max-w-5xl mx-auto">

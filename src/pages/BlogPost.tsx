@@ -19,6 +19,13 @@ function formatNumber(value?: number) {
   return typeof value === 'number' ? value.toLocaleString() : null;
 }
 
+function editorialLabel(value: string) {
+  return value
+    .replace(/trend signal/gi, 'current interest')
+    .replace(/score signal/gi, 'score')
+    .replace(/reception signal/gi, 'reception');
+}
+
 function formatStatus(value?: string) {
   return value ? value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : null;
 }
@@ -189,6 +196,11 @@ export default function BlogPost() {
         </div>
         <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight mb-5">{headline}</h1>
         <p className="text-base md:text-lg text-muted-foreground leading-relaxed max-w-3xl">{intro}</p>
+        <div className="mt-5 flex flex-wrap items-center gap-3 text-xs font-bold text-muted-foreground">
+          <span className="rounded-full border border-border bg-secondary/35 px-3 py-1">By StreamNyaa Editorial</span>
+          <span>{formatDate(post.generatedAt || post.updatedAt)}</span>
+          {heroAnime?.title ? <span>Updated for {heroAnime.title}</span> : null}
+        </div>
         {isGeminiArticle && post.topic ? (
           <div className="mt-6 border border-primary/20 bg-primary/5 rounded-2xl p-4 max-w-3xl">
             <p className="text-[11px] uppercase font-black tracking-wider text-primary mb-2">Story focus</p>
@@ -262,14 +274,35 @@ export default function BlogPost() {
 
                 {takeaways.length ? <section className="grid gap-3 sm:grid-cols-2">
                   {takeaways.map((item) => <div key={item.label} className="border border-border bg-secondary/30 rounded-2xl p-4">
-                    <div className="flex items-center gap-2 text-xs font-black uppercase text-primary mb-2"><CheckCircle2 className="w-4 h-4" />{item.label}</div>
-                    <div className="text-lg font-black text-foreground">{item.value}</div>
-                    <p className="text-sm text-muted-foreground mt-1">{item.detail}</p>
+                    <div className="flex items-center gap-2 text-xs font-black uppercase text-primary mb-2"><CheckCircle2 className="w-4 h-4" />{editorialLabel(item.label)}</div>
+                    <div className="text-lg font-black text-foreground">{editorialLabel(item.value)}</div>
+                    <p className="text-sm text-muted-foreground mt-1">{editorialLabel(item.detail)}</p>
                   </div>)}
                 </section> : null}
 
                 {isGeminiArticle ? (
                   <section className="space-y-4">
+                    <div>
+                      <h2 className="text-2xl md:text-3xl font-black tracking-tight">Related anime</h2>
+                      <p className="mt-2 text-sm text-muted-foreground">Open the title pages connected to this story for details, episodes, recommendations, and source search shortcuts.</p>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {post.items.slice(0, 4).map((anime) => (
+                        <Link key={`related-${anime.mal_id}`} to={animePath(anime)} className="group grid grid-cols-[72px_1fr] gap-3 rounded-2xl border border-border bg-[var(--glass)] p-3 transition-colors hover:border-primary/40">
+                          <div className="aspect-[2/3] overflow-hidden rounded-xl bg-secondary">
+                            {anime.image ? <img src={anime.image} alt={anime.title} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" referrerPolicy="no-referrer" /> : null}
+                          </div>
+                          <div className="min-w-0 py-1">
+                            <h3 className="line-clamp-2 text-sm font-black text-foreground group-hover:text-primary">{anime.title}</h3>
+                            <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-muted-foreground">
+                              {anime.score ? <span>{anime.score}/100</span> : null}
+                              {anime.format ? <span>{anime.format}</span> : null}
+                              {anime.status ? <span>{formatStatus(anime.status)}</span> : null}
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
                     <div>
                       <h2 className="text-2xl md:text-3xl font-black tracking-tight">Related articles</h2>
                       <p className="mt-2 text-sm text-muted-foreground">Keep reading with StreamNyaa guides that help compare momentum, popularity, schedules, and recent episode activity.</p>
@@ -338,7 +371,7 @@ export default function BlogPost() {
           </main>
           <aside className="space-y-5">
             <div className="border border-border rounded-2xl p-5 bg-secondary/30">
-              <div className="flex items-center gap-2 font-black text-foreground mb-2"><BarChart3 className="w-5 h-5 text-primary" />{isGeminiArticle ? 'Topic signals' : 'Article stats'}</div>
+              <div className="flex items-center gap-2 font-black text-foreground mb-2"><BarChart3 className="w-5 h-5 text-primary" />{isGeminiArticle ? 'Story notes' : 'Article stats'}</div>
               <div className="space-y-2 text-sm text-muted-foreground">
                 {isGeminiArticle && post.topic?.animeTitle ? <p>Main topic: {post.topic.animeTitle}</p> : null}
                 {isGeminiArticle && post.topic?.type ? <p>Angle: {post.topic.type.replace(/-/g, ' ')}</p> : null}

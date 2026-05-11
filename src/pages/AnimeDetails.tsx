@@ -280,6 +280,36 @@ export default function AnimeDetails() {
           </div>
 
           <div className="space-y-6">
+            <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 md:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-wider text-primary">Best download options</p>
+                  <h3 className="mt-1 text-xl font-black text-foreground">{anime.title} source search</h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                    Search source metadata by latest listed episode, batch results, subtitles, or dual-audio releases without leaving this title page.
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[420px]">
+                  <Link to={animePath(anime, nextEpisodeNumber ? `/downloads?ep=${Math.max(nextEpisodeNumber - 1, 1)}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                    Latest episode
+                    <span className="mt-1 block text-xs font-semibold text-muted-foreground">{nextEpisodeNumber ? `Episode ${Math.max(nextEpisodeNumber - 1, 1)} sub` : 'Episode source search'}</span>
+                  </Link>
+                  <Link to={animePath(anime, '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                    Batch download
+                    <span className="mt-1 block text-xs font-semibold text-muted-foreground">Full-season source metadata</span>
+                  </Link>
+                  <Link to={animePath(anime, nextEpisodeNumber ? `/downloads?ep=${Math.max(nextEpisodeNumber - 1, 1)}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                    Sub quick link
+                    <span className="mt-1 block text-xs font-semibold text-muted-foreground">Subtitle-focused results</span>
+                  </Link>
+                  <Link to={animePath(anime, nextEpisodeNumber ? `/downloads?ep=${Math.max(nextEpisodeNumber - 1, 1)}&type=dub` : '/downloads?type=dub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                    Dub quick link
+                    <span className="mt-1 block text-xs font-semibold text-muted-foreground">Dual-audio and dub results</span>
+                  </Link>
+                </div>
+              </div>
+            </section>
+
             <div>
               <h3 className="text-lg font-bold mb-2">Synopsis</h3>
               <p className="text-muted-foreground leading-relaxed">
