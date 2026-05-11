@@ -104,7 +104,7 @@ export default function Watch() {
         if (!title) return [];
         let query = `${cleanTitle(title)} ${ep}`;
         if (audioType === 'dub') query += ' dub';
-        return await searchNyaa(query);
+        return await searchNyaa(query, '1_2', '0', '1', { pages: 2 });
       };
 
       const trySearches = async (epNumStr: string) => {
