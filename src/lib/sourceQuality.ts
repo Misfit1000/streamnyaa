@@ -45,8 +45,8 @@ export function sourceFreshnessLabel(source?: Pick<NyaaItem, 'sourceFetchedAt' |
 }
 
 export const SOURCE_PRESETS = [
-  { label: 'Best 1080p Sub', query: '1080p', type: 'sub', sourceFilter: '' },
-  { label: 'Best 720p Sub', query: '720p', type: 'sub', sourceFilter: '' },
+  { label: 'Best 1080p Sub', query: '1080p', type: 'sub', sourceFilter: 'quality-1080p' },
+  { label: 'Best 720p Sub', query: '720p', type: 'sub', sourceFilter: 'quality-720p' },
   { label: 'Dual Audio', query: '1080p', type: 'dub', sourceFilter: 'dual-audio' },
   { label: 'Batch Only', query: '[Batch]', type: 'sub', sourceFilter: 'batch' },
 ] as const;

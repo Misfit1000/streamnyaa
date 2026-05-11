@@ -67,7 +67,7 @@ export async function searchNyaa(
   category: string = '1_2',
   filter: string = '0',
   page: string = '1',
-  options: { deep?: boolean; pages?: number } = {}
+  options: { deep?: boolean; pages?: number; wide?: boolean } = {}
 ): Promise<NyaaItem[]> {
   try {
     const url = new URL('/api/nyaa', window.location.origin);
@@ -77,6 +77,7 @@ export async function searchNyaa(
     if (page) url.searchParams.append('p', page);
     if (query && options.deep !== false) url.searchParams.append('deep', '1');
     if (query) url.searchParams.append('pages', String(options.pages || 3));
+    if (query && options.wide) url.searchParams.append('wide', '1');
     
     const response = await fetch(url.toString());
     if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');

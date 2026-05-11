@@ -45,6 +45,7 @@ export default function AnimeDownloads() {
   const [downloadFilter, setDownloadFilter] = useState(epParam ? '1080p' : '[Batch]');
   const [audioFilter, setAudioFilter] = useState<AudioFilter>(typeParam === 'dub' ? 'dub' : 'sub');
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
+  const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
   const [showAllSources, setShowAllSources] = useState(false);
 
@@ -66,7 +67,7 @@ export default function AnimeDownloads() {
   });
 
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
-    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults],
+    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults, showAllSources],
     queryFn: async () => {
       const romaji = anime?.title_romaji;
       const english = anime?.title_english;
@@ -85,15 +86,23 @@ export default function AnimeDownloads() {
         if (!t) return [];
         let query = `${cleanTitle(t)}`;
         if (ep) query += ` ${ep}`;
-        if (effectiveDownloadFilter) query += ` ${effectiveDownloadFilter}`;
+        if (effectiveDownloadFilter && effectiveDownloadFilter !== 'RAW') query += ` ${effectiveDownloadFilter}`;
         if (isDub) query += ' dub';
-        return await searchNyaa(query, '1_2', '0', '1', { pages: 2 });
+        return await searchNyaa(query, effectiveDownloadFilter === 'RAW' ? '1_4' : '1_2', '0', '1', { pages: showAllSources ? 2 : 1, wide: showAllSources });
       };
 
       const trySearches = async (epNumStr: string) => {
         const titles = [romaji, english, native].filter((title, index, list): title is string => Boolean(title) && list.indexOf(title) === index);
-        const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr)));
-        return dedupeNyaaItems(searches.flat());
+        if (showAllSources) {
+          const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr)));
+          return dedupeNyaaItems(searches.flat());
+        }
+
+        for (const title of titles) {
+          const items = await performSearch(title, epNumStr);
+          if (items.length > 0) return items;
+        }
+        return [];
       };
 
       const prefersDub = (title = '') => /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title);
@@ -147,11 +156,11 @@ export default function AnimeDownloads() {
         if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
         return b.rawSize - a.rawSize;
     } else if (sortBy === 'seeders') {
-        if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
-        return b.rawSize - a.rawSize;
+        if (b.rawSeeders !== a.rawSeeders) return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
+        return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
     } else {
-        if (b.rawSize !== a.rawSize) return b.rawSize - a.rawSize;
-        return b.rawSeeders - a.rawSeeders;
+        if (b.rawSize !== a.rawSize) return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
+        return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
     }
   });
   const topSource = sortedTorrents[0];
@@ -259,7 +268,13 @@ export default function AnimeDownloads() {
                   key={filter}
                   onClick={() => {
                     setShowAllSources(false);
-                    setDownloadFilter(filter === downloadFilter ? '' : filter);
+                    const nextFilter = filter === downloadFilter ? '' : filter;
+                    setDownloadFilter(nextFilter);
+                    if (nextFilter === '1080p') setSourceFilter('quality-1080p');
+                    else if (nextFilter === '720p') setSourceFilter('quality-720p');
+                    else if (nextFilter === '[Batch]') setSourceFilter('batch');
+                    else if (nextFilter === 'RAW') setSourceFilter('raw');
+                    else if (sourceFilter === 'quality-1080p' || sourceFilter === 'quality-720p' || sourceFilter === 'batch' || sourceFilter === 'raw') setSourceFilter('');
                   }}
                   className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
                     downloadFilter === filter
@@ -321,6 +336,15 @@ export default function AnimeDownloads() {
               <option value="seeders">Seeders</option>
               <option value="size">File Size</option>
             </select>
+            {sortBy !== 'best' ? (
+              <button
+                type="button"
+                onClick={() => setSortDirection((value) => value === 'desc' ? 'asc' : 'desc')}
+                className="rounded-lg border border-border bg-background/60 px-3 py-1.5 text-sm font-bold text-foreground transition-colors hover:border-primary/50 hover:text-primary"
+              >
+                {sortDirection === 'desc' ? 'High to low' : 'Low to high'}
+              </button>
+            ) : null}
           </div>
           <p className="text-xs text-muted-foreground text-left md:text-right">
             {showAiringEpisodeResults ? 'Airing episode' : downloadFilter === '[Batch]' ? 'Batch' : 'Episode'} results are filtered for {audioFilter === 'dub' ? 'dubbed or dual-audio releases' : 'subbed releases'}.
@@ -354,6 +378,9 @@ export default function AnimeDownloads() {
         </div>
         <div className="flex flex-wrap gap-2">
           {[
+            { value: 'quality-1080p', label: '1080p' },
+            { value: 'quality-720p', label: '720p' },
+            { value: 'raw', label: 'Raw' },
             { value: 'trusted', label: 'Trusted' },
             { value: 'high-seeders', label: 'High seeders' },
             { value: 'hevc', label: 'HEVC' },
@@ -433,13 +460,13 @@ export default function AnimeDownloads() {
                     : 'These are all the matching files found for this filter.'}
               </p>
             </div>
-            {sortedTorrents.length > 5 ? (
+            {sortedTorrents.length > 0 ? (
               <button
                 type="button"
                 onClick={() => setShowAllSources((value) => !value)}
                 className="inline-flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
               >
-                {showAllSources ? 'Show fewer files' : `Show all source files (${sortedTorrents.length})`}
+                {showAllSources ? 'Show fewer files' : 'Show all source files'}
               </button>
             ) : null}
           </div>
@@ -530,7 +557,7 @@ export default function AnimeDownloads() {
           ))}
           {!user ? (
             <p className="rounded-2xl border border-border bg-background/45 p-4 text-sm text-muted-foreground">
-              Download actions are saved locally in this browser. Sign in to sync future history to your account when database storage is available.
+              Your download history is saved on this device. Sign in to keep future activity connected to your account.
             </p>
           ) : null}
         </div>
