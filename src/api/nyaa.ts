@@ -11,6 +11,16 @@ export interface NyaaItem {
   category: string;
   categoryId: string;
   pubDate: string;
+  trusted?: string;
+  remake?: string;
+  downloads?: string;
+  comments?: string;
+  matchedQuery?: string;
+  matchedCategory?: string;
+  matchedPage?: number;
+  sourceScore?: number;
+  matchScore?: number;
+  sourceQueryCount?: number;
   sourceFetchedAt?: number;
   sourceCacheStatus?: string;
 }
@@ -30,18 +40,49 @@ function parseSize(sizeStr: string): number {
   }
 }
 
-export async function searchNyaa(query: string, category: string = '1_2', filter: string = '0', page: string = '1'): Promise<NyaaItem[]> {
+export function dedupeNyaaItems(items: NyaaItem[]): NyaaItem[] {
+  const byKey = new Map<string, NyaaItem>();
+  for (const item of items) {
+    const key = item.infoHash
+      ? `hash:${item.infoHash.toLowerCase()}`
+      : item.link
+        ? `link:${item.link.toLowerCase()}`
+        : `fallback:${item.title.toLowerCase()}-${item.size.toLowerCase()}`;
+    const existing = byKey.get(key);
+    const itemScore = Number(item.sourceScore || 0);
+    const existingScore = Number(existing?.sourceScore || 0);
+    if (!existing || itemScore > existingScore || (itemScore === existingScore && item.rawSeeders > existing.rawSeeders)) {
+      byKey.set(key, item);
+    }
+  }
+  return [...byKey.values()].sort((a, b) => {
+    if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
+    if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
+    return b.rawSize - a.rawSize;
+  });
+}
+
+export async function searchNyaa(
+  query: string,
+  category: string = '1_2',
+  filter: string = '0',
+  page: string = '1',
+  options: { deep?: boolean; pages?: number } = {}
+): Promise<NyaaItem[]> {
   try {
     const url = new URL('/api/nyaa', window.location.origin);
     if (query) url.searchParams.append('q', query);
     if (category) url.searchParams.append('c', category);
     if (filter) url.searchParams.append('f', filter);
     if (page) url.searchParams.append('p', page);
+    if (query && options.deep !== false) url.searchParams.append('deep', '1');
+    if (query) url.searchParams.append('pages', String(options.pages || 3));
     
     const response = await fetch(url.toString());
     if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
     
     const sourceCacheStatus = response.headers.get('X-Source-Cache') || '';
+    const sourceQueryCount = Number(response.headers.get('X-Source-Query-Count') || 1);
     const fetchedAtHeader = response.headers.get('X-Source-Fetched-At');
     const sourceFetchedAt = fetchedAtHeader ? Number(fetchedAtHeader) : Date.now();
     const data = await response.json();
@@ -82,6 +123,16 @@ export async function searchNyaa(query: string, category: string = '1_2', filter
             category: item.category,
             categoryId: item.categoryId,
             pubDate: item.pubDate,
+            trusted: item.trusted || '',
+            remake: item.remake || '',
+            downloads: (item.downloads || 0).toString(),
+            comments: (item.comments || 0).toString(),
+            matchedQuery: item.matchedQuery || '',
+            matchedCategory: item.matchedCategory || '',
+            matchedPage: Number(item.matchedPage || 1),
+            sourceScore: Number(item.sourceScore || 0),
+            matchScore: Number(item.matchScore || 0),
+            sourceQueryCount: Number(item.sourceQueryCount || sourceQueryCount),
             sourceFetchedAt,
             sourceCacheStatus
         });

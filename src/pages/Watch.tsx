@@ -3,7 +3,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import ReactPlayer from 'react-player';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
-import { searchNyaa, NyaaItem } from '../api/nyaa';
+import { dedupeNyaaItems, searchNyaa, NyaaItem } from '../api/nyaa';
 import { fetchEpisodeStream } from '../api/stream';
 import { Play, Download, List, HardDrive, Users, CloudRain, Loader2, Link as LinkIcon, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { animePath, watchPath } from '../lib/slug';
@@ -110,7 +110,7 @@ export default function Watch() {
       const trySearches = async (epNumStr: string) => {
         const titles = [romaji, english, native].filter((title, index, list): title is string => Boolean(title) && list.indexOf(title) === index);
         const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr)));
-        return searches.find((items) => items.length > 0) || [];
+        return dedupeNyaaItems(searches.flat());
       };
 
       let results = await trySearches(epStr);
@@ -164,6 +164,7 @@ export default function Watch() {
 
   const sortedTorrents = [...(torrents || [])].sort((a, b) => {
     if (sortBy === 'best') {
+      if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
       const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
       const trustedA = trustedGroups.some((group) => a.title.includes(group)) ? 1 : 0;
       const trustedB = trustedGroups.some((group) => b.title.includes(group)) ? 1 : 0;

@@ -1,7 +1,7 @@
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
-import { searchNyaa } from '../api/nyaa';
+import { dedupeNyaaItems, searchNyaa } from '../api/nyaa';
 import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo, Link as LinkIcon } from 'lucide-react';
 import { useState } from 'react';
 import { animePath } from '../lib/slug';
@@ -93,7 +93,7 @@ export default function AnimeDownloads() {
       const trySearches = async (epNumStr: string) => {
         const titles = [romaji, english, native].filter((title, index, list): title is string => Boolean(title) && list.indexOf(title) === index);
         const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr)));
-        return searches.find((items) => items.length > 0) || [];
+        return dedupeNyaaItems(searches.flat());
       };
 
       const prefersDub = (title = '') => /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title);
@@ -139,6 +139,7 @@ export default function AnimeDownloads() {
 
   const sortedTorrents = [...(torrents || [])].filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
     if (sortBy === 'best') {
+        if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
         const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
         const trustedA = trustedGroups.some(g => a.title.includes(g)) ? 1 : 0;
         const trustedB = trustedGroups.some(g => b.title.includes(g)) ? 1 : 0;

@@ -5,6 +5,10 @@ function has(pattern: RegExp, value = '') {
 }
 
 export function sourceQualityScore(source: NyaaItem) {
+  if (typeof source.sourceScore === 'number' && source.sourceScore > 0) {
+    return Math.max(0, Math.min(100, Math.round(source.sourceScore)));
+  }
+
   const title = source.title || '';
   let score = 35;
   if (source.rawSeeders >= 100) score += 25;
