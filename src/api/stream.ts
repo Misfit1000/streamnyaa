@@ -1,4 +1,12 @@
-export async function fetchEpisodeStream(gogoId: string) {
+export type EpisodeStreamResult = {
+  hlsUrl?: string;
+  embedUrl?: string;
+  provider?: string;
+  sources: { url: string; isM3U8: boolean }[];
+  headers?: Record<string, string>;
+};
+
+export async function fetchEpisodeStream(gogoId: string, _episodeNumber?: number): Promise<EpisodeStreamResult> {
   // We use an array of public Consumet instances. 
   // If one is down or blocked by CORS, it automatically tries the next one.
   const CONSUMET_INSTANCES = [
@@ -30,6 +38,8 @@ export async function fetchEpisodeStream(gogoId: string) {
         const bestSource = data.sources.find((s: any) => s.quality === 'auto' || s.quality === 'default') || data.sources[0];
         
         return {
+          hlsUrl: bestSource.url,
+          provider: 'Consumet',
           sources: [{ url: bestSource.url, isM3U8: bestSource.url.includes('.m3u8') }],
           // Consumet often provides a download/referral header if needed by your player
           headers: data.headers 

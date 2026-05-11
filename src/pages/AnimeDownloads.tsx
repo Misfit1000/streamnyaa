@@ -32,6 +32,22 @@ function releaseTrackerText(anime: any, selectedEpisodeNumber?: number | null) {
   return `Episode ${nextEpisode} aired ${hours || 1} hours ago`;
 }
 
+function isNotYetAired(anime: any) {
+  const status = String(anime?.status || '').toUpperCase();
+  return status === 'NOT_YET_RELEASED' || status === 'NOT_YET_AIRED' || status.includes('NOT_YET');
+}
+
+function knownAiredEpisodeCount(anime: any) {
+  if (anime?.nextAiringEpisode?.episode) return Math.max(anime.nextAiringEpisode.episode - 1, 0);
+  if (String(anime?.status || '').toUpperCase() === 'FINISHED') return anime?.episodes || 1;
+  return 0;
+}
+
+function canSearchDownloads(anime: any) {
+  if (!anime || isNotYetAired(anime)) return false;
+  return true;
+}
+
 export default function AnimeDownloads() {
   const { session, user } = useAuth();
   const { id } = useParams<{ id: string }>();
@@ -56,6 +72,7 @@ export default function AnimeDownloads() {
   });
 
   const anime = data?.data;
+  const downloadSearchAvailable = canSearchDownloads(anime);
   const isBatchView = !epParam && downloadFilter === '[Batch]';
   const isCurrentlyAiring = anime?.status === 'RELEASING';
   const showAiringEpisodeResults = Boolean(isCurrentlyAiring && isBatchView);
@@ -133,7 +150,7 @@ export default function AnimeDownloads() {
       const filteredResults = removeBatchResults(applyAudioFilter(results));
       return filteredResults.length ? filteredResults : applyAudioFilter(results);
     },
-    enabled: !!anime?.title,
+    enabled: !!anime?.title && downloadSearchAvailable,
   });
 
   if (animeLoading) {
@@ -145,6 +162,56 @@ export default function AnimeDownloads() {
   }
 
   if (!anime) return <div className="text-center py-20">Anime not found</div>;
+
+  if (!downloadSearchAvailable) {
+    return (
+      <div className="container mx-auto max-w-4xl px-4 py-8">
+        <Seo
+          title={`${anime.title} Source Search Not Available Yet | StreamNyaa`}
+          description={`${anime.title} has not aired yet, so StreamNyaa does not show download source search results for this title.`}
+          canonicalPath={animePath(anime, '/downloads')}
+          image={anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url}
+        />
+        <Link to={data?.data ? animePath(data.data) : `/anime/${id}`} className="mb-6 flex w-fit items-center gap-2 text-muted-foreground transition-colors hover:text-foreground">
+          <ArrowLeft className="h-5 w-5" />
+          Back to Anime Details
+        </Link>
+        <div className="overflow-hidden rounded-3xl border border-border bg-[var(--glass)]">
+          <div className="grid gap-0 md:grid-cols-[180px_1fr]">
+            <img
+              src={anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url}
+              alt={anime.title}
+              className="h-64 w-full object-cover md:h-full"
+              referrerPolicy="no-referrer"
+            />
+            <div className="p-6 md:p-8">
+              <p className="text-[11px] font-black uppercase tracking-wider text-primary">Source search unavailable</p>
+              <h1 className="mt-2 text-3xl font-black text-foreground">{anime.title}</h1>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-muted-foreground">
+                This title has not aired yet, so download source search is disabled to avoid showing unrelated or similarly named results. Source metadata will be useful after an episode has aired or the title is listed as released.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2 text-xs font-bold text-muted-foreground">
+                <span className="rounded-full bg-secondary px-3 py-1.5">{anime.status?.replace(/_/g, ' ') || 'Upcoming'}</span>
+                {anime.nextAiringEpisode?.airingAt ? (
+                  <span className="rounded-full bg-primary/10 px-3 py-1.5 text-primary">
+                    Airs {new Date(anime.nextAiringEpisode.airingAt * 1000).toLocaleString()}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link to="/schedule" className="rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-black text-primary hover:bg-primary hover:text-primary-foreground">
+                  Check schedule
+                </Link>
+                <Link to="/search" className="rounded-xl border border-border bg-background/60 px-4 py-2.5 text-sm font-black text-foreground hover:border-primary/40 hover:text-primary">
+                  Browse anime
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const sortedTorrents = [...(torrents || [])].filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
     if (sortBy === 'best') {
@@ -356,7 +423,7 @@ export default function AnimeDownloads() {
         {[
           { label: 'Sources found', value: torrentsLoading ? '...' : sortedTorrents.length, detail: sourceFilter ? 'After selected filter' : 'Matching this title' },
           { label: 'Total seeders', value: torrentsLoading ? '...' : totalSeeders, detail: 'Across visible sources' },
-          { label: 'Best source', value: torrentsLoading ? '...' : topSource ? sourceHealth(topSource.rawSeeders) : 'None', detail: topSource ? `${topSource.seeders} seeders` : 'Try another filter' },
+          { label: 'Best source score', value: torrentsLoading ? '...' : topSource ? sourceQualityScore(topSource) : 'None', detail: topSource ? `${sourceQualityLabel(sourceQualityScore(topSource))} - ${sourceHealth(topSource.rawSeeders)}` : 'Try another filter' },
         ].map((item) => (
           <div key={item.label} className="rounded-2xl border border-border bg-[var(--glass)] p-4">
             <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">{item.label}</p>
@@ -438,12 +505,54 @@ export default function AnimeDownloads() {
             <p className="text-muted-foreground font-medium">Searching sources for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {showAiringEpisodeResults ? 'episode releases' : downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'releases'}...</p>
         </div>
       ) : sortedTorrents.length === 0 ? (
-        <div className="bg-secondary/30 border border-border p-12 rounded-3xl text-center flex flex-col items-center">
+        <div className="bg-secondary/30 border border-border p-8 md:p-12 rounded-3xl text-center flex flex-col items-center">
           <HardDrive className="w-16 h-16 text-muted-foreground mb-4" />
           <p className="text-xl font-bold text-foreground mb-2">No Sources Found</p>
-          <p className="text-muted-foreground">
+          <p className="max-w-2xl text-muted-foreground">
             No source results were found for "{anime.title}" with the selected filters. Try a different filter or search.
           </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {(anime.title_english || anime.title_romaji) ? (
+              <span className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-bold text-muted-foreground">
+                Try alternate title: {anime.title_english || anime.title_romaji}
+              </span>
+            ) : null}
+            {selectedEpisodeNumber ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAllSources(false);
+                  setSearchParams(new URLSearchParams({ ep: String(selectedEpisodeNumber), type: audioFilter }));
+                  setDownloadFilter('');
+                  setSourceFilter('');
+                }}
+                className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary hover:bg-primary hover:text-primary-foreground"
+              >
+                Search episode without quality
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => {
+                setShowAllSources(true);
+                setSourceFilter('');
+              }}
+              className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+            >
+              Try wider source search
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowAllSources(false);
+                setDownloadFilter('[Batch]');
+                setSourceFilter('batch');
+              }}
+              className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+            >
+              Try batch search
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

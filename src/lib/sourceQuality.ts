@@ -23,6 +23,10 @@ export function sourceQualityScore(source: NyaaItem) {
   if (has(/\b(batch|complete|season pack|complete season)\b/i, title)) score += 4;
   if (source.rawSeeders === 0) score -= 12;
   if (source.leechers && Number(source.leechers) > source.rawSeeders * 3) score -= 5;
+  const sizeMiB = source.rawSize / (1024 * 1024);
+  if (sizeMiB >= 250 && sizeMiB <= 2500) score += 4;
+  else if (sizeMiB > 0 && sizeMiB < 120) score -= 6;
+  else if (sizeMiB > 6000 && !has(/\b(batch|complete|season pack|complete season)\b/i, title)) score -= 4;
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
