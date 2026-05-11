@@ -25,6 +25,25 @@ function formatNextAiring(seconds?: number) {
   });
 }
 
+function isNotYetAired(anime: any) {
+  const status = String(anime?.status || '').toUpperCase();
+  return status === 'NOT_YET_RELEASED' || status === 'NOT_YET_AIRED' || status.includes('NOT_YET');
+}
+
+function knownAiredEpisodeCount(anime: any, episodeItems: any[] = []) {
+  if (anime?.nextAiringEpisode?.episode) return Math.max(anime.nextAiringEpisode.episode - 1, 0);
+  if (String(anime?.status || '').toUpperCase() === 'FINISHED') return anime?.episodes || Math.max(episodeItems.length, 1);
+  if (String(anime?.status || '').toUpperCase() === 'RELEASING' && episodeItems.length) {
+    return Math.max(...episodeItems.map((episode: any) => Number(episode.mal_id) || 0));
+  }
+  return 0;
+}
+
+function canShowDownloadOptions(anime: any, episodeItems: any[] = []) {
+  if (!anime || isNotYetAired(anime)) return false;
+  return true;
+}
+
 export default function AnimeDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -94,6 +113,9 @@ export default function AnimeDetails() {
   const statusLabel = formatStatus(anime.status);
   const nextEpisodeNumber = anime.nextAiringEpisode?.episode;
   const nextAiringTime = formatNextAiring(anime.nextAiringEpisode?.airingAt);
+  const detailEpisodes = episodesData?.data || [];
+  const downloadOptionsAvailable = canShowDownloadOptions(anime, detailEpisodes);
+  const latestAiredEpisode = knownAiredEpisodeCount(anime, detailEpisodes);
   const episodeCountText = anime.episodes ? `${anime.episodes} episodes` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} episodes aired so far` : 'episode count not confirmed';
   const malScoreText = anime.score ? `MAL Score ${anime.score}` : 'MAL Score N/A';
   const malPopularityText = anime.popularity ? `#${anime.popularity.toLocaleString()}` : 'N/A';
@@ -231,13 +253,20 @@ export default function AnimeDetails() {
           </div>
 
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 mb-8">
-            <Link
-              to={animePath(anime, '/downloads')}
-              className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
-            >
-              <Download className="w-5 h-5" />
-              Downloads
-            </Link>
+            {downloadOptionsAvailable ? (
+              <Link
+                to={animePath(anime, '/downloads')}
+                className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
+              >
+                <Download className="w-5 h-5" />
+                Downloads
+              </Link>
+            ) : (
+              <span className="flex items-center gap-2 rounded-full border border-border bg-secondary/70 px-6 py-3 font-bold text-muted-foreground">
+                <Calendar className="h-5 w-5" />
+                Downloads after airing
+              </span>
+            )}
             <button
               onClick={handleListToggle}
               className={`flex items-center gap-2 px-6 py-3 rounded-full font-medium transition-all shadow-sm active:scale-95 ${
@@ -280,35 +309,45 @@ export default function AnimeDetails() {
           </div>
 
           <div className="space-y-6">
-            <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 md:p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-wider text-primary">Best download options</p>
-                  <h3 className="mt-1 text-xl font-black text-foreground">{anime.title} source search</h3>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                    Search source metadata by latest listed episode, batch results, subtitles, or dual-audio releases without leaving this title page.
-                  </p>
+            {downloadOptionsAvailable ? (
+              <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 md:p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-wider text-primary">Best download options</p>
+                    <h3 className="mt-1 text-xl font-black text-foreground">{anime.title} source search</h3>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                      Search source metadata by latest listed episode, batch results, subtitles, or dual-audio releases without leaving this title page.
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[420px]">
+                    <Link to={animePath(anime, latestAiredEpisode ? `/downloads?ep=${latestAiredEpisode}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                      Latest episode
+                      <span className="mt-1 block text-xs font-semibold text-muted-foreground">{latestAiredEpisode ? `Episode ${latestAiredEpisode} sub` : 'Episode source search'}</span>
+                    </Link>
+                    <Link to={animePath(anime, '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                      Batch download
+                      <span className="mt-1 block text-xs font-semibold text-muted-foreground">Full-season source metadata</span>
+                    </Link>
+                    <Link to={animePath(anime, latestAiredEpisode ? `/downloads?ep=${latestAiredEpisode}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                      Sub quick link
+                      <span className="mt-1 block text-xs font-semibold text-muted-foreground">Subtitle-focused results</span>
+                    </Link>
+                    <Link to={animePath(anime, latestAiredEpisode ? `/downloads?ep=${latestAiredEpisode}&type=dub` : '/downloads?type=dub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                      Dub quick link
+                      <span className="mt-1 block text-xs font-semibold text-muted-foreground">Dual-audio and dub results</span>
+                    </Link>
+                  </div>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[420px]">
-                  <Link to={animePath(anime, nextEpisodeNumber ? `/downloads?ep=${Math.max(nextEpisodeNumber - 1, 1)}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
-                    Latest episode
-                    <span className="mt-1 block text-xs font-semibold text-muted-foreground">{nextEpisodeNumber ? `Episode ${Math.max(nextEpisodeNumber - 1, 1)} sub` : 'Episode source search'}</span>
-                  </Link>
-                  <Link to={animePath(anime, '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
-                    Batch download
-                    <span className="mt-1 block text-xs font-semibold text-muted-foreground">Full-season source metadata</span>
-                  </Link>
-                  <Link to={animePath(anime, nextEpisodeNumber ? `/downloads?ep=${Math.max(nextEpisodeNumber - 1, 1)}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
-                    Sub quick link
-                    <span className="mt-1 block text-xs font-semibold text-muted-foreground">Subtitle-focused results</span>
-                  </Link>
-                  <Link to={animePath(anime, nextEpisodeNumber ? `/downloads?ep=${Math.max(nextEpisodeNumber - 1, 1)}&type=dub` : '/downloads?type=dub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
-                    Dub quick link
-                    <span className="mt-1 block text-xs font-semibold text-muted-foreground">Dual-audio and dub results</span>
-                  </Link>
-                </div>
-              </div>
-            </section>
+              </section>
+            ) : (
+              <section className="rounded-2xl border border-border bg-secondary/25 p-4 md:p-5">
+                <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">Downloads unavailable</p>
+                <h3 className="mt-1 text-xl font-black text-foreground">Source search opens after airing</h3>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  {anime.title} has not aired yet, so StreamNyaa does not show download source searches for this title. This prevents unrelated or similarly named source results from appearing before release.
+                </p>
+              </section>
+            )}
 
             <div>
               <h3 className="text-lg font-bold mb-2">Synopsis</h3>
@@ -380,7 +419,9 @@ export default function AnimeDetails() {
             <section className="mt-8 pt-6 border-t border-[var(--glass-border)]">
               <h3 className="text-lg font-bold mb-3">Explore {anime.title}</h3>
               <div className="flex flex-wrap gap-2">
-                <Link to={animePath(anime, '/downloads')} className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary hover:bg-primary/20 transition-colors">Download sources</Link>
+                {downloadOptionsAvailable ? (
+                  <Link to={animePath(anime, '/downloads')} className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary hover:bg-primary/20 transition-colors">Download sources</Link>
+                ) : null}
                 <Link to="/schedule" className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Airing schedule</Link>
                 <Link to="/anime/popular" className="rounded-full border border-border bg-secondary/40 px-3 py-1.5 text-sm font-bold hover:border-primary/40 hover:text-primary transition-colors">Popular anime</Link>
                 {genres.slice(0, 3).map((genre: string) => (
