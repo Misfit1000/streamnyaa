@@ -86,9 +86,9 @@ export default function AnimeDownloads() {
         if (!t) return [];
         let query = `${cleanTitle(t)}`;
         if (ep) query += ` ${ep}`;
-        if (effectiveDownloadFilter) query += ` ${effectiveDownloadFilter}`;
+        if (effectiveDownloadFilter && effectiveDownloadFilter !== 'RAW') query += ` ${effectiveDownloadFilter}`;
         if (isDub) query += ' dub';
-        return await searchNyaa(query, '1_2', '0', '1', { pages: showAllSources ? 2 : 1, wide: showAllSources });
+        return await searchNyaa(query, effectiveDownloadFilter === 'RAW' ? '1_4' : '1_2', '0', '1', { pages: showAllSources ? 2 : 1, wide: showAllSources });
       };
 
       const trySearches = async (epNumStr: string) => {
@@ -273,7 +273,8 @@ export default function AnimeDownloads() {
                     if (nextFilter === '1080p') setSourceFilter('quality-1080p');
                     else if (nextFilter === '720p') setSourceFilter('quality-720p');
                     else if (nextFilter === '[Batch]') setSourceFilter('batch');
-                    else if (sourceFilter === 'quality-1080p' || sourceFilter === 'quality-720p' || sourceFilter === 'batch') setSourceFilter('');
+                    else if (nextFilter === 'RAW') setSourceFilter('raw');
+                    else if (sourceFilter === 'quality-1080p' || sourceFilter === 'quality-720p' || sourceFilter === 'batch' || sourceFilter === 'raw') setSourceFilter('');
                   }}
                   className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
                     downloadFilter === filter
@@ -379,6 +380,7 @@ export default function AnimeDownloads() {
           {[
             { value: 'quality-1080p', label: '1080p' },
             { value: 'quality-720p', label: '720p' },
+            { value: 'raw', label: 'Raw' },
             { value: 'trusted', label: 'Trusted' },
             { value: 'high-seeders', label: 'High seeders' },
             { value: 'hevc', label: 'HEVC' },

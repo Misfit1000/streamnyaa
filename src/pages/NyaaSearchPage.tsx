@@ -319,6 +319,7 @@ export default function NyaaSearchPage() {
           {[
             { value: 'quality-1080p', label: '1080p' },
             { value: 'quality-720p', label: '720p' },
+            { value: 'raw', label: 'Raw' },
             { value: 'trusted', label: 'Trusted' },
             { value: 'high-seeders', label: 'High seeders' },
             { value: 'hevc', label: 'HEVC' },

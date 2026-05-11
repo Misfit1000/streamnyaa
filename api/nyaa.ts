@@ -259,9 +259,10 @@ function isLikelyWrongSource(item: SourceItem, intent: SearchIntent): boolean {
   if (intent.titleTokens.length === 1 && titleRatio < 1) return true;
 
   if (intent.episodeNumber && !intent.batchSearch) {
+    if (isBatchTitle(title)) return true;
     const explicitEpisode = extractLikelyEpisode(title);
-    if (explicitEpisode && explicitEpisode !== intent.episodeNumber && !isBatchTitle(title)) return true;
-    if (!matchesEpisode(title, intent.episodeNumber) && !isBatchTitle(title)) return true;
+    if (explicitEpisode && explicitEpisode !== intent.episodeNumber) return true;
+    if (!matchesEpisode(title, intent.episodeNumber)) return true;
   }
 
   if (intent.dubSearch && !/\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title)) {
