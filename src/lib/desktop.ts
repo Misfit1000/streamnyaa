@@ -8,6 +8,22 @@ export type LocalPlaybackSource = {
   seeders?: string | number;
 };
 
+export type DesktopRuntimeStatus = {
+  ready: boolean;
+  torrent_engine_configured: boolean;
+  player_configured: boolean;
+  torrent_engine_path?: string | null;
+  player_path?: string | null;
+  message: string;
+};
+
+export type DesktopPlaybackStatus = {
+  ok: boolean;
+  state: string;
+  message: string;
+  title: string;
+};
+
 const LOCAL_PLAYBACK_KEY = 'streamnyaa.localPlayback';
 
 export const DESKTOP_RELEASES_URL = 'https://github.com/Misfit1000/streamnyaa/releases';
@@ -61,10 +77,21 @@ export async function startLocalPlayback(source: LocalPlaybackSource) {
     throw new Error('Local playback is only available inside the StreamNyaa desktop app.');
   }
 
-  return invoke('play_local_torrent', {
-    magnet: source.magnet,
-    title: source.title,
-    animeTitle: source.animeTitle || '',
-    episode: source.episode ? String(source.episode) : '',
+  return invoke<DesktopPlaybackStatus>('play_local_torrent', {
+    request: {
+      magnet: source.magnet,
+      title: source.title,
+      anime_title: source.animeTitle || '',
+      episode: source.episode ? String(source.episode) : '',
+    },
   });
+}
+
+export async function getDesktopRuntimeStatus() {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    return null;
+  }
+
+  return invoke<DesktopRuntimeStatus>('get_desktop_runtime_status');
 }

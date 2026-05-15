@@ -1,14 +1,45 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Download, HardDrive, Loader2, MonitorPlay, Play, RotateCcw } from 'lucide-react';
 import Seo from '../components/Seo';
-import { isDesktopApp, loadLocalPlaybackSource, startLocalPlayback } from '../lib/desktop';
+import {
+  getDesktopRuntimeStatus,
+  isDesktopApp,
+  loadLocalPlaybackSource,
+  startLocalPlayback,
+  type DesktopRuntimeStatus,
+} from '../lib/desktop';
 
 export default function LocalPlayer() {
   const desktop = isDesktopApp();
   const source = useMemo(() => loadLocalPlaybackSource(), []);
   const [status, setStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!desktop) return undefined;
+
+    getDesktopRuntimeStatus()
+      .then((nextRuntime) => {
+        if (!cancelled && nextRuntime) setRuntime(nextRuntime);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRuntime({
+            ready: false,
+            torrent_engine_configured: false,
+            player_configured: false,
+            message: 'Desktop runtime status could not be read yet.',
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [desktop]);
 
   const start = async () => {
     if (!source) {
@@ -19,9 +50,9 @@ export default function LocalPlayer() {
     setStatus('starting');
     setMessage('Starting local torrent engine...');
     try {
-      await startLocalPlayback(source);
-      setStatus('ready');
-      setMessage('Local playback request sent to the desktop engine.');
+      const result = await startLocalPlayback(source);
+      setStatus(result.ok ? 'ready' : 'error');
+      setMessage(result.message || 'Local playback request sent to the desktop engine.');
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Desktop playback could not start.');
@@ -91,7 +122,9 @@ export default function LocalPlayer() {
                   </button>
                   <h1 className="mt-5 text-2xl font-black text-white">{source ? 'Play locally' : 'No source selected'}</h1>
                   <p className="mt-2 max-w-lg text-sm leading-6 text-white/65">
-                    {source
+                    {runtime && !runtime.ready
+                      ? runtime.message
+                      : source
                       ? 'The desktop app will pass this source to the local torrent engine and open it in the local video player.'
                       : 'Open a source from the desktop download page first.'}
                   </p>
@@ -157,11 +190,25 @@ export default function LocalPlayer() {
           <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-5">
             <div className="flex items-center gap-2 font-black text-foreground">
               <HardDrive className="h-4 w-4 text-primary" />
-              Desktop engine plan
+              Desktop runtime
             </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              This screen is ready for Tauri to connect a local torrent engine and MPV playback. Web users still get download/source search only.
-            </p>
+            {runtime ? (
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <span className={`rounded-xl border px-3 py-2 text-xs font-black ${runtime.torrent_engine_configured ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-border bg-background/45 text-muted-foreground'}`}>
+                    Engine {runtime.torrent_engine_configured ? 'ready' : 'missing'}
+                  </span>
+                  <span className={`rounded-xl border px-3 py-2 text-xs font-black ${runtime.player_configured ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-border bg-background/45 text-muted-foreground'}`}>
+                    MPV {runtime.player_configured ? 'ready' : 'missing'}
+                  </span>
+                </div>
+                <p className="text-sm leading-6 text-muted-foreground">{runtime.message}</p>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                This screen is ready for Tauri to connect a local torrent engine and MPV playback. Web users still get download/source search only.
+              </p>
+            )}
           </div>
         </aside>
       </section>
