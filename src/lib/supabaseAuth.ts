@@ -80,6 +80,13 @@ function normalizeSession(data: any): AuthSession {
   };
 }
 
+function siteRedirectUrl(path = '/login') {
+  const origin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'https://www.streamnyaa.xyz';
+  return `${origin}${path}`;
+}
+
 export function normalizeOAuthSessionFromHash(hash: string): AuthSession | null {
   const params = new URLSearchParams(hash.replace(/^#/, ''));
   const accessToken = params.get('access_token');
@@ -108,7 +115,7 @@ export async function signInWithPassword(email: string, password: string) {
 
 export async function signInWithGoogle() {
   const config = await authConfig();
-  const redirectTo = 'https://www.streamnyaa.xyz/login';
+  const redirectTo = siteRedirectUrl('/login');
   const params = new URLSearchParams({
     provider: 'google',
     redirect_to: redirectTo,
@@ -117,7 +124,7 @@ export async function signInWithGoogle() {
 }
 
 export async function signUpWithPassword(email: string, password: string) {
-  const redirectTo = 'https://www.streamnyaa.xyz/login';
+  const redirectTo = siteRedirectUrl('/login');
   const data = await authFetch(`signup?redirect_to=${encodeURIComponent(redirectTo)}`, {
     method: 'POST',
     body: JSON.stringify({ email, password }),
@@ -133,7 +140,7 @@ export async function signUpWithPassword(email: string, password: string) {
 }
 
 export async function requestPasswordReset(email: string) {
-  const redirectTo = 'https://www.streamnyaa.xyz/reset-password';
+  const redirectTo = siteRedirectUrl('/reset-password');
   await authFetch(`recover?redirect_to=${encodeURIComponent(redirectTo)}`, {
     method: 'POST',
     body: JSON.stringify({ email }),
