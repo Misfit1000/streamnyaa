@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "xyz.streamnyaa.desktop",
   "build": {
-    "beforeDevCommand": "cd ../.. && npm run dev:desktop",
+    "beforeDevCommand": "npm.cmd --prefix ../.. run dev:desktop",
     "devUrl": "http://localhost:5173?desktop=1",
-    "beforeBuildCommand": "cd ../.. && npm run build",
+    "beforeBuildCommand": "npm.cmd --prefix ../.. run build",
     "frontendDist": "../../dist"
   },
   "app": {
