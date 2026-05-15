@@ -10,6 +10,7 @@ This desktop build shares the same React UI as the web app and adds desktop-only
 - `/local-player` uses the old dark player layout, without Webtor or third-party web embeds.
 - The Tauri scaffold lives in `desktop/src-tauri` and has a `play_local_torrent` command target ready for the local engine.
 - The desktop app reports local runtime readiness before trying playback.
+- Local playback starts WebTorrent CLI in MPV mode when `webtorrent` and `mpv` are configured.
 
 ## Local desktop commands
 
@@ -19,11 +20,11 @@ This desktop build shares the same React UI as the web app and adds desktop-only
 
 ## Next implementation step
 
-Bundle a local playback sidecar:
+Bundle the local playback sidecar:
 
-1. Local torrent engine receives the magnet link.
-2. It starts downloading/streaming pieces to a local cache.
-3. MPV opens the local stream/file path.
-4. Tauri reports status back to the React player screen.
+1. Package WebTorrent CLI or replace it with a Rust torrent engine.
+2. Bundle MPV or guide users to install it.
+3. Add a signed app installer.
+4. Add progress events from the engine back to the React player screen.
 
 The web app should not run torrent playback code.

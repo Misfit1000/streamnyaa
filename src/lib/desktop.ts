@@ -14,6 +14,7 @@ export type DesktopRuntimeStatus = {
   player_configured: boolean;
   torrent_engine_path?: string | null;
   player_path?: string | null;
+  cache_dir: string;
   message: string;
 };
 
@@ -24,9 +25,23 @@ export type DesktopPlaybackStatus = {
   title: string;
 };
 
+export type DesktopPlaybackSettings = {
+  torrent_engine_path: string;
+  mpv_path: string;
+  cache_dir: string;
+  player_mode: 'mpv';
+};
+
 const LOCAL_PLAYBACK_KEY = 'streamnyaa.localPlayback';
+const DESKTOP_SETTINGS_KEY = 'streamnyaa.desktopSettings';
 
 export const DESKTOP_RELEASES_URL = 'https://github.com/Misfit1000/streamnyaa/releases';
+export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
+  torrent_engine_path: 'webtorrent',
+  mpv_path: 'mpv',
+  cache_dir: '',
+  player_mode: 'mpv',
+};
 
 type TauriGlobal = {
   core?: {
@@ -72,6 +87,24 @@ export function loadLocalPlaybackSource(): LocalPlaybackSource | null {
 }
 
 export async function startLocalPlayback(source: LocalPlaybackSource) {
+  return startLocalPlaybackWithSettings(source, loadDesktopPlaybackSettings());
+}
+
+export function loadDesktopPlaybackSettings(): DesktopPlaybackSettings {
+  try {
+    const raw = localStorage.getItem(DESKTOP_SETTINGS_KEY);
+    if (!raw) return DEFAULT_DESKTOP_SETTINGS;
+    return { ...DEFAULT_DESKTOP_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_DESKTOP_SETTINGS;
+  }
+}
+
+export function saveDesktopPlaybackSettings(settings: DesktopPlaybackSettings) {
+  localStorage.setItem(DESKTOP_SETTINGS_KEY, JSON.stringify(settings));
+}
+
+export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource, settings: DesktopPlaybackSettings) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
     throw new Error('Local playback is only available inside the StreamNyaa desktop app.');
@@ -83,15 +116,16 @@ export async function startLocalPlayback(source: LocalPlaybackSource) {
       title: source.title,
       anime_title: source.animeTitle || '',
       episode: source.episode ? String(source.episode) : '',
+      settings,
     },
   });
 }
 
-export async function getDesktopRuntimeStatus() {
+export async function getDesktopRuntimeStatus(settings = loadDesktopPlaybackSettings()) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
     return null;
   }
 
-  return invoke<DesktopRuntimeStatus>('get_desktop_runtime_status');
+  return invoke<DesktopRuntimeStatus>('get_desktop_runtime_status', { settings });
 }

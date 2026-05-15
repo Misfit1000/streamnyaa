@@ -5,8 +5,11 @@ import Seo from '../components/Seo';
 import {
   getDesktopRuntimeStatus,
   isDesktopApp,
+  loadDesktopPlaybackSettings,
   loadLocalPlaybackSource,
-  startLocalPlayback,
+  saveDesktopPlaybackSettings,
+  startLocalPlaybackWithSettings,
+  type DesktopPlaybackSettings,
   type DesktopRuntimeStatus,
 } from '../lib/desktop';
 
@@ -16,12 +19,18 @@ export default function LocalPlayer() {
   const [status, setStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
+  const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
+
+  const refreshRuntime = async (nextSettings = settings) => {
+    const nextRuntime = await getDesktopRuntimeStatus(nextSettings);
+    if (nextRuntime) setRuntime(nextRuntime);
+  };
 
   useEffect(() => {
     let cancelled = false;
     if (!desktop) return undefined;
 
-    getDesktopRuntimeStatus()
+    getDesktopRuntimeStatus(settings)
       .then((nextRuntime) => {
         if (!cancelled && nextRuntime) setRuntime(nextRuntime);
       })
@@ -31,6 +40,7 @@ export default function LocalPlayer() {
             ready: false,
             torrent_engine_configured: false,
             player_configured: false,
+            cache_dir: '',
             message: 'Desktop runtime status could not be read yet.',
           });
         }
@@ -50,13 +60,20 @@ export default function LocalPlayer() {
     setStatus('starting');
     setMessage('Starting local torrent engine...');
     try {
-      const result = await startLocalPlayback(source);
+      const result = await startLocalPlaybackWithSettings(source, settings);
       setStatus(result.ok ? 'ready' : 'error');
       setMessage(result.message || 'Local playback request sent to the desktop engine.');
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Desktop playback could not start.');
     }
+  };
+
+  const saveSettings = async () => {
+    saveDesktopPlaybackSettings(settings);
+    setStatus('idle');
+    setMessage('Desktop playback settings saved.');
+    await refreshRuntime(settings);
   };
 
   return (
@@ -209,6 +226,49 @@ export default function LocalPlayer() {
                 This screen is ready for Tauri to connect a local torrent engine and MPV playback. Web users still get download/source search only.
               </p>
             )}
+          </div>
+
+          <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-5">
+            <h2 className="font-black text-foreground">Local playback settings</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Use `webtorrent` and `mpv` when both commands are available in PATH, or paste the full executable paths.
+            </p>
+            <div className="mt-4 space-y-3">
+              <label className="block">
+                <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">WebTorrent command/path</span>
+                <input
+                  value={settings.torrent_engine_path}
+                  onChange={(event) => setSettings((current) => ({ ...current, torrent_engine_path: event.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
+                  placeholder="webtorrent"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">MPV command/path</span>
+                <input
+                  value={settings.mpv_path}
+                  onChange={(event) => setSettings((current) => ({ ...current, mpv_path: event.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
+                  placeholder="mpv"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Cache folder</span>
+                <input
+                  value={settings.cache_dir}
+                  onChange={(event) => setSettings((current) => ({ ...current, cache_dir: event.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
+                  placeholder="Leave blank for system temp"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={saveSettings}
+                className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Save desktop settings
+              </button>
+            </div>
           </div>
         </aside>
       </section>
