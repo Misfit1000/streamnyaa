@@ -10,6 +10,8 @@ export type LocalPlaybackSource = {
 
 const LOCAL_PLAYBACK_KEY = 'streamnyaa.localPlayback';
 
+export const DESKTOP_RELEASES_URL = 'https://github.com/Misfit1000/streamnyaa/releases';
+
 type TauriGlobal = {
   core?: {
     invoke?: <T = unknown>(command: string, args?: Record<string, unknown>) => Promise<T>;

@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Menu, X, Moon, Sun, Bookmark, Cat, UserCircle } from 'lucide-react';
+import { Search, Menu, X, Moon, Sun, Download, Cat, UserCircle } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
+import { DESKTOP_RELEASES_URL } from '../lib/desktop';
 
 export default function Navbar() {
   const { theme, toggleTheme, nsfwMode, toggleNsfwMode } = useStore();
@@ -170,9 +171,16 @@ export default function Navbar() {
           <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground">
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
-          <Link to="/my-list" className="p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground hidden sm:block">
-            <Bookmark className="w-5 h-5" />
-          </Link>
+          <a
+            href={DESKTOP_RELEASES_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="hidden items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-2 text-xs font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground sm:inline-flex"
+            title="Download desktop app"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden xl:inline">Desktop app</span>
+          </a>
           <Link to={user ? '/dashboard' : '/login'} className="p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground" title={user ? 'Dashboard' : 'Login'}>
             <UserCircle className="w-5 h-5" />
           </Link>
