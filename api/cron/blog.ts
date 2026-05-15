@@ -23,7 +23,7 @@ export default async function handler(req: any, res: any) {
 
   for (const slug of BLOG_SLUGS) {
     try {
-      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1`, {
+      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1&manual=1`, {
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${secret}`,
@@ -39,6 +39,7 @@ export default async function handler(req: any, res: any) {
         skipped: post.articleStatus === 'not_crucial_topic_skipped',
         articleSlug: post.articleSlug,
         articleStatus: post.articleStatus,
+        articleSource: post.articleSource,
         generatedAt: post.generatedAt,
       });
     } catch (error: any) {

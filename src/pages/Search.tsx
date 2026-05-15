@@ -4,7 +4,6 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { searchAnime, fetchGenres } from '../api/jikan';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
-import RelatedBlogArticles from '../components/RelatedBlogArticles';
 import { slugifyTitle } from '../lib/slug';
 import { Filter, Search as SearchIcon } from 'lucide-react';
 
@@ -174,13 +173,6 @@ export default function Search() {
               Search
             </button>
           </form>
-
-          <RelatedBlogArticles
-            title="Related articles for this search"
-            query={query}
-            genres={genre ? [genre] : []}
-            className="mb-8"
-          />
 
           {isLoading ? (
             <div className="flex justify-center py-20">
