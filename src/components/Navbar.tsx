@@ -175,11 +175,11 @@ export default function Navbar() {
             href={DESKTOP_RELEASES_URL}
             target="_blank"
             rel="noreferrer"
-            className="hidden items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-2 text-xs font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground sm:inline-flex"
+            className="hidden h-9 w-9 items-center justify-center rounded-full border border-primary/25 bg-primary/10 text-primary transition-colors hover:bg-primary hover:text-primary-foreground sm:inline-flex"
             title="Download desktop app"
+            aria-label="Download desktop app"
           >
             <Download className="h-4 w-4" />
-            <span className="hidden xl:inline">Desktop app</span>
           </a>
           <Link to={user ? '/dashboard' : '/login'} className="p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground" title={user ? 'Dashboard' : 'Login'}>
             <UserCircle className="w-5 h-5" />
