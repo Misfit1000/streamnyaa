@@ -12,9 +12,11 @@ const AnimeDetails = lazy(() => import('./pages/AnimeDetails'));
 const AnimeLanding = lazy(() => import('./pages/AnimeLanding'));
 const MangaDetails = lazy(() => import('./pages/MangaDetails'));
 const MyList = lazy(() => import('./pages/MyList'));
+const Tracker = lazy(() => import('./pages/Tracker'));
 const NyaaSearchPage = lazy(() => import('./pages/NyaaSearchPage'));
 const AnimeDownloads = lazy(() => import('./pages/AnimeDownloads'));
 const AnimeCompare = lazy(() => import('./pages/AnimeCompare'));
+const LocalPlayer = lazy(() => import('./pages/LocalPlayer'));
 const Blog = lazy(() => import('./pages/Blog'));
 const BlogPost = lazy(() => import('./pages/BlogPost'));
 const Login = lazy(() => import('./pages/Login'));
@@ -79,7 +81,9 @@ export default function App() {
                 <Route path="anime/:id/downloads" element={<AnimeDownloads />} />
                 <Route path="watch/:id" element={<Navigate to="/nyaa" replace />} />
                 <Route path="my-list" element={<MyList />} />
+                <Route path="tracker" element={<Tracker />} />
                 <Route path="nyaa" element={<NyaaSearchPage />} />
+                <Route path="local-player" element={<LocalPlayer />} />
                 <Route path="compare" element={<AnimeCompare />} />
                 <Route path="blog" element={<Blog />} />
                 <Route path="blog/:slug" element={<BlogPost />} />

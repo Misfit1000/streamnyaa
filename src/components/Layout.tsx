@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { useEffect } from 'react';
 import { Cat } from 'lucide-react';
 import RouteSeo from './RouteSeo';
+import DesktopAppPrompt from './DesktopAppPrompt';
 
 export default function Layout() {
   const theme = useStore((state) => state.theme);
@@ -23,6 +24,7 @@ export default function Layout() {
       <main>
         <Outlet />
       </main>
+      <DesktopAppPrompt />
 
       <footer className="mt-20 border-t border-[var(--glass-border)] bg-secondary/25 py-12 shadow-inner shadow-black/10 backdrop-blur-2xl">
         <div className="container mx-auto px-4 text-center text-muted-foreground">

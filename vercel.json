@@ -102,6 +102,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/local-player",
+      "destination": "/index.html"
+    },
+    {
       "source": "/blog",
       "destination": "/index.html"
     },

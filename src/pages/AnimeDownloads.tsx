@@ -2,7 +2,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa } from '../api/nyaa';
-import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo, Link as LinkIcon } from 'lucide-react';
+import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo, Link as LinkIcon, Play } from 'lucide-react';
 import { useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
@@ -11,6 +11,7 @@ import type { TorrentSourceFilter } from '../lib/torrentBadges';
 import { useAuth } from '../context/AuthContext';
 import { saveDownloadHistory } from '../lib/activity';
 import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQualityScore } from '../lib/sourceQuality';
+import { isDesktopApp, saveLocalPlaybackSource } from '../lib/desktop';
 
 type AudioFilter = 'sub' | 'dub';
 
@@ -50,6 +51,7 @@ function canSearchDownloads(anime: any) {
 
 export default function AnimeDownloads() {
   const { session, user } = useAuth();
+  const desktopApp = isDesktopApp();
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const epParam = searchParams.get('ep');
@@ -273,6 +275,20 @@ export default function AnimeDownloads() {
       size: torrent.size,
       seeders: torrent.seeders,
     }, session);
+  };
+
+  const openLocalPlayer = (torrent: any) => {
+    saveLocalPlaybackSource({
+      title: torrent.title,
+      magnet: torrent.magnet,
+      animeTitle: anime?.title,
+      animeId: anime?.mal_id || id,
+      episode: selectedEpisodeNumber || (isBatchView ? 'batch' : null),
+      size: torrent.size,
+      seeders: torrent.seeders,
+    });
+    recordDownloadAction(torrent, 'open');
+    window.location.href = window.location.search.includes('desktop=1') ? '/local-player?desktop=1' : '/local-player';
   };
 
   return (
@@ -641,6 +657,16 @@ export default function AnimeDownloads() {
                 </div>
                 
                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto shrink-0 mt-2 md:mt-0">
+                  {desktopApp ? (
+                    <button
+                      type="button"
+                      onClick={() => openLocalPlayer(torrent)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      Play locally
+                    </button>
+                  ) : null}
                   <a
                     href={torrent.magnet}
                     onClick={() => recordDownloadAction(torrent, 'open')}

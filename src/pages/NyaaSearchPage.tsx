@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { searchNyaa } from '../api/nyaa';
 import { fetchAnimeDetails, fetchAnimeEpisodes, searchAnime } from '../api/jikan';
-import { Search, Loader2, Download, HardDrive, AlertTriangle, Link as LinkIcon } from 'lucide-react';
+import { Search, Loader2, Download, HardDrive, AlertTriangle, Link as LinkIcon, Play } from 'lucide-react';
 import Seo from '../components/Seo';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
 import type { TorrentSourceFilter } from '../lib/torrentBadges';
 import { useAuth } from '../context/AuthContext';
 import { saveDownloadHistory } from '../lib/activity';
 import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQualityScore } from '../lib/sourceQuality';
+import { isDesktopApp, saveLocalPlaybackSource } from '../lib/desktop';
 
 function releaseTrackerText(anime: any, selectedEpisode?: string) {
   const nextEpisode = anime?.nextAiringEpisode?.episode;
@@ -23,6 +24,7 @@ function releaseTrackerText(anime: any, selectedEpisode?: string) {
 
 export default function NyaaSearchPage() {
   const { session, user } = useAuth();
+  const desktopApp = isDesktopApp();
   const [query, setQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [category, setCategory] = useState('1_0');
@@ -101,6 +103,20 @@ export default function NyaaSearchPage() {
       size: torrent.size,
       seeders: torrent.seeders,
     }, session);
+  };
+
+  const openLocalPlayer = (torrent: any) => {
+    saveLocalPlaybackSource({
+      title: torrent.title,
+      magnet: torrent.magnet,
+      animeTitle: matchedAnimeFull?.title || animeLookupQuery || searchInput || undefined,
+      animeId: matchedAnimeFull?.mal_id,
+      episode: selectedEpisode === 'batch' ? 'batch' : selectedEpisode,
+      size: torrent.size,
+      seeders: torrent.seeders,
+    });
+    recordDownloadAction(torrent, 'open');
+    window.location.href = window.location.search.includes('desktop=1') ? '/local-player?desktop=1' : '/local-player';
   };
 
   const filteredTorrents = [...(torrents || [])].filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
@@ -452,6 +468,16 @@ export default function NyaaSearchPage() {
                 </div>
                 
                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto shrink-0 mt-4 md:mt-0">
+                  {desktopApp ? (
+                    <button
+                      type="button"
+                      onClick={() => openLocalPlayer(torrent)}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      Play locally
+                    </button>
+                  ) : null}
                   <a
                     href={torrent.magnet}
                     onClick={() => recordDownloadAction(torrent, 'open')}
@@ -466,7 +492,7 @@ export default function NyaaSearchPage() {
                       navigator.clipboard?.writeText(torrent.magnet);
                       recordDownloadAction(torrent, 'copy');
                     }}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25"
+                    className={`${desktopApp ? 'flex-1 sm:flex-none' : 'flex-1 sm:flex-none'} flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25`}
                   >
                     <LinkIcon className="w-4 h-4" />
                     Copy Link
