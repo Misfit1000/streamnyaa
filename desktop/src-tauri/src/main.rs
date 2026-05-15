@@ -60,10 +60,27 @@ fn looks_like_path(value: &str) -> bool {
   value.contains('/') || value.contains('\\')
 }
 
-fn command_configured(path_value: &Option<String>) -> bool {
+fn command_name(value: &str) -> String {
+  Path::new(value)
+    .file_name()
+    .and_then(|name| name.to_str())
+    .unwrap_or(value)
+    .to_ascii_lowercase()
+}
+
+fn allowed_command(value: &str, allowed_names: &[&str]) -> bool {
+  let name = command_name(value);
+  allowed_names.iter().any(|allowed| name == *allowed)
+}
+
+fn command_configured(path_value: &Option<String>, allowed_names: &[&str]) -> bool {
   let Some(value) = path_value.as_ref() else {
     return false;
   };
+
+  if !allowed_command(value, allowed_names) {
+    return false;
+  }
 
   if looks_like_path(value) && !Path::new(value).exists() {
     return false;
@@ -128,8 +145,8 @@ fn get_desktop_runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatu
     None
   };
   let cache_dir = resolved_cache_dir(settings.cache_dir);
-  let torrent_engine_configured = command_configured(&torrent_engine_path);
-  let player_configured = player_mode != "mpv" || command_configured(&player_path);
+  let torrent_engine_configured = command_configured(&torrent_engine_path, &["webtorrent", "webtorrent.cmd", "webtorrent.exe"]);
+  let player_configured = player_mode != "mpv" || command_configured(&player_path, &["mpv", "mpv.exe"]);
   let ready = torrent_engine_configured && player_configured;
   let message = if ready {
     "Local torrent engine and player command are configured.".to_string()
@@ -156,6 +173,9 @@ fn get_desktop_runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatu
 fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
   if request.magnet.trim().is_empty() {
     return Err("No source link was provided.".to_string());
+  }
+  if !request.magnet.trim_start().starts_with("magnet:?xt=urn:btih:") {
+    return Err("Only magnet source links are supported for local playback.".to_string());
   }
 
   let label = if request.anime_title.trim().is_empty() {
