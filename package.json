@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:desktop": "vite --host 127.0.0.1",
     "start": "node dist/server.cjs",
     "build": "npm run generate:sitemap && vite build --config vite.config.mjs --configLoader native",
     "build:server": "esbuild server.ts --bundle --platform=node --target=node20 --outfile=dist/server.cjs --format=cjs",

@@ -8,7 +8,7 @@ This desktop build shares the same React UI as the web app and adds desktop-only
 - Desktop mode is detected with Tauri globals or `?desktop=1`.
 - Desktop-only `Play locally` actions appear on source result cards.
 - `/local-player` uses the old dark player layout, without Webtor or third-party web embeds.
-- Tauri has a `play_local_torrent` command target ready for the local engine.
+- The Tauri scaffold lives in `desktop/src-tauri` and has a `play_local_torrent` command target ready for the local engine.
 
 ## Next implementation step
 
