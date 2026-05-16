@@ -87,7 +87,7 @@ export default function AnimeDownloads() {
     enabled: !!id && !!anime,
   });
 
-  const { data: torrents, isLoading: torrentsLoading } = useQuery({
+  const { data: torrents, isLoading: torrentsLoading, isError: torrentsErrorState, error: torrentsError, refetch: refetchTorrents } = useQuery({
     queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults, showAllSources, wideIntent],
     queryFn: async () => {
       const romaji = anime?.title_romaji;
@@ -579,6 +579,21 @@ export default function AnimeDownloads() {
         <div className="py-20 flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
             <p className="text-muted-foreground font-medium">Searching sources for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {showAiringEpisodeResults ? 'episode releases' : downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'releases'}...</p>
+        </div>
+      ) : torrentsErrorState ? (
+        <div className="bg-red-500/10 border border-red-500/25 p-8 md:p-12 rounded-3xl text-center flex flex-col items-center">
+          <AlertTriangle className="w-14 h-14 text-red-300 mb-4" />
+          <p className="text-xl font-bold text-foreground mb-2">Source search could not connect</p>
+          <p className="max-w-2xl text-muted-foreground">
+            {torrentsError instanceof Error ? torrentsError.message : 'The desktop source bridge did not return results.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => refetchTorrents()}
+            className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90"
+          >
+            Retry source search
+          </button>
         </div>
       ) : sortedTorrents.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-8 md:p-12 rounded-3xl text-center flex flex-col items-center">

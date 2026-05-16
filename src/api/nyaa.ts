@@ -157,6 +157,9 @@ export async function searchNyaa(
     return results;
   } catch (error) {
     console.error("Source search error:", error);
+    if (isDesktopApp()) {
+      throw error instanceof Error ? error : new Error('Desktop source search failed.');
+    }
     return [];
   }
 }

@@ -48,7 +48,7 @@ export default function NyaaSearchPage() {
     setSelectedEpisode('batch');
   }, [urlSearchParams]);
 
-  const { data: torrents, isLoading } = useQuery({
+  const { data: torrents, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['nyaaSearch', query, category, filter, showAllSources],
     queryFn: () => searchNyaa(query, category, filter, '1', { pages: showAllSources ? 3 : 1, wide: showAllSources }),
     enabled: true, // we fetch default category even without query
@@ -376,6 +376,21 @@ export default function NyaaSearchPage() {
       {isLoading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="w-10 h-10 text-primary animate-spin" />
+        </div>
+      ) : isError ? (
+        <div className="mx-auto max-w-3xl rounded-3xl border border-red-500/25 bg-red-500/10 px-6 py-12 text-center">
+          <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-red-300" />
+          <p className="text-xl font-black text-foreground">Source search could not connect</p>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+            {error instanceof Error ? error.message : 'The desktop source bridge did not return results.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="mt-5 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90"
+          >
+            Retry source search
+          </button>
         </div>
       ) : filteredTorrents.length === 0 ? (
         <div className="mx-auto max-w-3xl rounded-3xl border border-border bg-secondary/25 px-6 py-14 text-center">

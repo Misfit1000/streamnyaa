@@ -683,7 +683,7 @@ fn fetch_desktop_source_api(url: String) -> Result<SourceApiResponse, String> {
     }
 
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(18))
+        .timeout(Duration::from_secs(35))
         .user_agent("StreamNyaa Desktop/0.1")
         .build()
         .map_err(|error| format!("Could not prepare desktop source search: {}", error))?;
