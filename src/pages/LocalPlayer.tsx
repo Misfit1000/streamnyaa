@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Download, HardDrive, Loader2, MonitorPlay, Play, RotateCcw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clipboard, Download, HardDrive, Loader2, MonitorPlay, Play, RefreshCw, RotateCcw, Terminal } from 'lucide-react';
 import Seo from '../components/Seo';
 import {
   getDesktopRuntimeStatus,
@@ -20,10 +20,22 @@ export default function LocalPlayer() {
   const [message, setMessage] = useState('');
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
+  const [copiedCommand, setCopiedCommand] = useState('');
 
   const refreshRuntime = async (nextSettings = settings) => {
     const nextRuntime = await getDesktopRuntimeStatus(nextSettings);
     if (nextRuntime) setRuntime(nextRuntime);
+  };
+
+  const copyCommand = async (label: string, command: string) => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopiedCommand(label);
+      window.setTimeout(() => setCopiedCommand(''), 1800);
+    } catch {
+      setCopiedCommand('');
+      setMessage(command);
+    }
   };
 
   useEffect(() => {
@@ -220,12 +232,53 @@ export default function LocalPlayer() {
                   </span>
                 </div>
                 <p className="text-sm leading-6 text-muted-foreground">{runtime.message}</p>
+                <button
+                  type="button"
+                  onClick={() => refreshRuntime()}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-3 py-2 text-xs font-black text-foreground transition-colors hover:border-primary/40"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Refresh status
+                </button>
               </div>
             ) : (
               <p className="mt-3 text-sm leading-6 text-muted-foreground">
                 This screen is ready for Tauri to connect a local torrent engine and MPV playback. Web users still get download/source search only.
               </p>
             )}
+          </div>
+
+          <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-5">
+            <div className="flex items-center gap-2 font-black text-foreground">
+              <Terminal className="h-4 w-4 text-primary" />
+              Windows setup
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              Install both tools once, then keep the command fields as `rqbit` and `mpv`.
+            </p>
+            <div className="mt-4 space-y-2">
+              {[
+                ['rqbit', 'cargo install rqbit'],
+                ['MPV', 'winget install --id shinchiro.mpv -e'],
+                ['Desktop app', '.\\desktop-dev.cmd'],
+              ].map(([label, command]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => copyCommand(label, command)}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2 text-left transition-colors hover:border-primary/40"
+                >
+                  <span>
+                    <span className="block text-xs font-black uppercase tracking-wider text-muted-foreground">{label}</span>
+                    <span className="mt-0.5 block truncate font-mono text-xs text-foreground">{command}</span>
+                  </span>
+                  <Clipboard className="h-4 w-4 shrink-0 text-primary" />
+                </button>
+              ))}
+            </div>
+            {copiedCommand ? (
+              <p className="mt-3 text-xs font-bold text-emerald-300">{copiedCommand} command copied.</p>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-5">

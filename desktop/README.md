@@ -11,6 +11,8 @@ npm run desktop:build
 
 The desktop build uses `VITE_STREAMNYAA_APP_TARGET=desktop`, skips sitemap generation, and avoids web-only SEO, analytics, and ad scripts inside the Tauri shell.
 
+For Windows development, the project root also includes `desktop-dev.cmd` and `desktop-dev.ps1` launchers. Run either one from the StreamNyaa project folder to start the desktop app without typing the full npm command.
+
 ## Platform target
 
 This desktop package is optimized for Windows. The current local playback design expects Windows desktop tools such as rqbit and MPV, then launches MPV from the Tauri app.

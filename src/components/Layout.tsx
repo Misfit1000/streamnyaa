@@ -5,9 +5,11 @@ import { useEffect } from 'react';
 import { Cat } from 'lucide-react';
 import RouteSeo from './RouteSeo';
 import DesktopAppPrompt from './DesktopAppPrompt';
+import { isDesktopApp } from '../lib/desktop';
 
 export default function Layout() {
   const theme = useStore((state) => state.theme);
+  const desktop = isDesktopApp();
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -24,9 +26,9 @@ export default function Layout() {
       <main>
         <Outlet />
       </main>
-      <DesktopAppPrompt />
+      {!desktop ? <DesktopAppPrompt /> : null}
 
-      <footer className="mt-20 border-t border-[var(--glass-border)] bg-secondary/25 py-12 shadow-inner shadow-black/10 backdrop-blur-2xl">
+      {!desktop ? <footer className="mt-20 border-t border-[var(--glass-border)] bg-secondary/25 py-12 shadow-inner shadow-black/10 backdrop-blur-2xl">
         <div className="container mx-auto px-4 text-center text-muted-foreground">
           <div className="flex items-center justify-center gap-2 mb-4">
             <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary">
@@ -47,7 +49,7 @@ export default function Layout() {
           </div>
           <p className="text-xs mt-4 opacity-60">Copyright {new Date().getFullYear()} StreamNyaa. Independent anime discovery project.</p>
         </div>
-      </footer>
+      </footer> : null}
     </div>
   );
 }
