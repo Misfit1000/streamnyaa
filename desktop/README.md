@@ -35,6 +35,8 @@ With Rust installed, rqbit can be installed with:
 cargo install rqbit
 ```
 
+On Windows, StreamNyaa auto-detects MPV at common install paths such as `C:\Program Files\MPV Player\mpv.exe`, even when `mpv` is not available in PATH.
+
 The desktop player screen lets users save command names or full executable paths. For development, the native bridge also reads these optional environment variables:
 
 ```bash

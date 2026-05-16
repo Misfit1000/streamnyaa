@@ -417,6 +417,9 @@ export default function LocalPlayer() {
                   className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
                   placeholder="mpv"
                 />
+                <span className="mt-1 block text-[11px] font-semibold text-muted-foreground">
+                  On Windows, StreamNyaa auto-detects MPV from Program Files when this is left as `mpv`.
+                </span>
               </label>
               <label className="block">
                 <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Cache folder</span>

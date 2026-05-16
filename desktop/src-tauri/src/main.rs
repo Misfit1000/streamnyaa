@@ -86,6 +86,28 @@ fn configured_value(
         .or_else(|| Some(fallback.to_string()))
 }
 
+fn configured_command(
+    settings_value: Option<String>,
+    env_key: &str,
+    fallback: &str,
+    windows_paths: &[&str],
+) -> Option<String> {
+    if let Some(value) = clean_value(settings_value) {
+        return Some(value);
+    }
+    if let Some(value) = clean_value(env::var(env_key).ok()) {
+        return Some(value);
+    }
+
+    for path in windows_paths {
+        if Path::new(path).exists() {
+            return Some(path.to_string());
+        }
+    }
+
+    Some(fallback.to_string())
+}
+
 fn looks_like_path(value: &str) -> bool {
     value.contains('/') || value.contains('\\')
 }
@@ -398,7 +420,17 @@ fn get_desktop_runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatu
         "rqbit",
     );
     let player_path = if player_mode == "mpv" {
-        configured_value(settings.mpv_path, "STREAMNYAA_MPV_PATH", "mpv")
+        configured_command(
+            settings.mpv_path,
+            "STREAMNYAA_MPV_PATH",
+            "mpv",
+            &[
+                r"C:\Program Files\MPV Player\mpv.exe",
+                r"C:\Program Files\mpv\mpv.exe",
+                r"C:\Program Files (x86)\MPV Player\mpv.exe",
+                r"C:\Program Files (x86)\mpv\mpv.exe",
+            ],
+        )
     } else {
         None
     };
