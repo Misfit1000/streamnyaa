@@ -14,6 +14,14 @@ The native release profile is tuned for smaller Windows installers with strippin
 
 For Windows development, the project root also includes `desktop-dev.cmd` and `desktop-dev.ps1` launchers. Run either one from the StreamNyaa project folder to start the desktop app without typing the full npm command.
 
+For a production Windows installer, run `desktop-build.cmd` or `desktop-build.ps1` from the project root. The finished installer is created under:
+
+```text
+desktop\src-tauri\target\release\bundle\nsis
+```
+
+The production desktop window disables devtools and keeps web-only scripts such as analytics, ads, and SEO helpers out of the Tauri shell.
+
 ## Platform target
 
 This desktop package is optimized for Windows. The current local playback design expects Windows desktop tools such as rqbit and MPV, then launches MPV from the Tauri app.
@@ -46,3 +54,5 @@ STREAMNYAA_CACHE_DIR=
 ```
 
 When both commands are available, clicking `Play locally` starts the local rqbit server, adds the selected magnet source, opens the local playlist in MPV, and keeps the StreamNyaa player screen updated with torrent readiness, peers, speed, progress, and cache folder status.
+
+The local player keeps a small source selector on the device, so users can switch between recently chosen sources without repeating the download search.

@@ -1,20 +1,24 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Clipboard, Download, FolderOpen, HardDrive, Loader2, MonitorPlay, Play, RefreshCw, RotateCcw, Terminal } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clipboard, Download, FolderOpen, HardDrive, ListVideo, Loader2, MonitorPlay, Play, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react';
 import Seo from '../components/Seo';
 import {
+  clearLocalPlaybackHistory,
   getDesktopRuntimeStatus,
   getLocalPlaybackProgress,
   isDesktopApp,
   loadDesktopPlaybackSettings,
+  loadLocalPlaybackHistory,
   loadLocalPlaybackSource,
   openDesktopCacheFolder,
   saveDesktopPlaybackSettings,
+  saveLocalPlaybackSource,
   startLocalPlaybackWithSettings,
   testDesktopMpv,
   type DesktopPlaybackSettings,
   type DesktopPlaybackProgress,
   type DesktopRuntimeStatus,
+  type LocalPlaybackSource,
 } from '../lib/desktop';
 
 function formatBytes(value?: number | null) {
@@ -26,7 +30,8 @@ function formatBytes(value?: number | null) {
 
 export default function LocalPlayer() {
   const desktop = isDesktopApp();
-  const source = useMemo(() => loadLocalPlaybackSource(), []);
+  const [source, setSource] = useState<LocalPlaybackSource | null>(() => loadLocalPlaybackSource());
+  const [sourceHistory, setSourceHistory] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
   const [status, setStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
@@ -38,6 +43,30 @@ export default function LocalPlayer() {
   const refreshRuntime = async (nextSettings = settings) => {
     const nextRuntime = await getDesktopRuntimeStatus(nextSettings);
     if (nextRuntime) setRuntime(nextRuntime);
+  };
+
+  const sourceOptions = sourceHistory.length ? sourceHistory : source ? [source] : [];
+
+  const selectSource = (magnet: string) => {
+    const nextSource = sourceOptions.find((item) => item.magnet === magnet);
+    if (!nextSource) return;
+    saveLocalPlaybackSource(nextSource);
+    setSource(nextSource);
+    setSourceHistory(loadLocalPlaybackHistory());
+    setStatus('idle');
+    setMessage('Source selected. Press Play locally when you are ready.');
+    setActiveTorrentId('');
+    setPlayback(null);
+  };
+
+  const clearSources = () => {
+    clearLocalPlaybackHistory();
+    setSource(null);
+    setSourceHistory([]);
+    setActiveTorrentId('');
+    setPlayback(null);
+    setStatus('idle');
+    setMessage('Desktop source list cleared.');
   };
 
   const copyCommand = async (label: string, command: string) => {
@@ -109,8 +138,10 @@ export default function LocalPlayer() {
       return;
     }
     setStatus('starting');
-    setMessage('Starting local rqbit engine...');
+      setMessage('Starting local rqbit engine...');
     try {
+      saveLocalPlaybackSource(source);
+      setSourceHistory(loadLocalPlaybackHistory());
       const result = await startLocalPlaybackWithSettings(source, settings);
       setStatus(result.ok ? 'ready' : 'error');
       setMessage(result.message || 'Local playback request sent to the desktop engine.');
@@ -264,7 +295,7 @@ export default function LocalPlayer() {
               <div className="mt-3 grid gap-2 text-xs font-bold text-muted-foreground sm:grid-cols-3">
                 <span>{playback.progress != null ? `${Math.round(playback.progress)}% ready` : 'Preparing stream'}</span>
                 <span>{formatBytes(playback.downloaded_bytes)} / {formatBytes(playback.total_bytes)}</span>
-                <span>{playback.peers ?? 0} peers · {formatBytes(playback.download_speed)}/s</span>
+                <span>{playback.peers ?? 0} peers - {formatBytes(playback.download_speed)}/s</span>
               </div>
               <p className="mt-3 truncate font-mono text-[11px] text-muted-foreground">{playback.playlist_url}</p>
             </div>
@@ -295,6 +326,40 @@ export default function LocalPlayer() {
                 <p className="text-xs text-muted-foreground">Local desktop playback queue</p>
               </div>
             </div>
+
+            {sourceOptions.length ? (
+              <div className="mt-4 rounded-xl border border-border bg-background/45 p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-wider text-muted-foreground">
+                    <ListVideo className="h-3.5 w-3.5 text-primary" />
+                    Source selector
+                  </span>
+                  <button
+                    type="button"
+                    onClick={clearSources}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-[11px] font-black text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Clear
+                  </button>
+                </div>
+                <select
+                  value={source?.magnet || ''}
+                  onChange={(event) => selectSource(event.target.value)}
+                  className="w-full rounded-xl border border-border bg-[#09090b] px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
+                >
+                  {sourceOptions.map((item) => (
+                    <option key={item.magnet} value={item.magnet}>
+                      {item.episode ? `Ep ${item.episode} - ` : ''}{item.title}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Recent desktop sources stay on this device so you can switch files without returning to search.
+                </p>
+              </div>
+            ) : null}
+
             {source ? (
               <div className="mt-4 space-y-3">
                 <div>
@@ -314,7 +379,19 @@ export default function LocalPlayer() {
                 </div>
               </div>
             ) : (
-              <p className="mt-4 text-sm leading-6 text-muted-foreground">No source has been selected for local playback yet.</p>
+              <div className="mt-4 rounded-xl border border-dashed border-border bg-background/35 p-4">
+                <p className="text-sm font-bold text-foreground">No source selected yet</p>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Search downloads in the desktop app, then choose Play locally on the source you want.
+                </p>
+                <Link
+                  to="/nyaa"
+                  className="mt-3 inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-primary-foreground hover:bg-primary/90"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Find sources
+                </Link>
+              </div>
             )}
           </div>
 

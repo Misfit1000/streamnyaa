@@ -6,6 +6,7 @@ export type LocalPlaybackSource = {
   episode?: string | number | null;
   size?: string;
   seeders?: string | number;
+  savedAt?: number;
 };
 
 export type DesktopRuntimeStatus = {
@@ -57,7 +58,9 @@ export type DesktopPlaybackSettings = {
 };
 
 const LOCAL_PLAYBACK_KEY = 'streamnyaa.localPlayback';
+const LOCAL_PLAYBACK_HISTORY_KEY = 'streamnyaa.localPlaybackHistory';
 const DESKTOP_SETTINGS_KEY = 'streamnyaa.desktopSettings';
+const LOCAL_PLAYBACK_HISTORY_LIMIT = 18;
 
 export const DESKTOP_RELEASES_URL = 'https://github.com/Misfit1000/streamnyaa/releases';
 export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
@@ -95,7 +98,9 @@ export function isDesktopApp() {
 
 export function saveLocalPlaybackSource(source: LocalPlaybackSource) {
   try {
-    sessionStorage.setItem(LOCAL_PLAYBACK_KEY, JSON.stringify(source));
+    const normalized = { ...source, savedAt: Date.now() };
+    sessionStorage.setItem(LOCAL_PLAYBACK_KEY, JSON.stringify(normalized));
+    saveLocalPlaybackHistoryItem(normalized);
   } catch {
     // The local player can still open, but it will ask the user to select a source again.
   }
@@ -107,6 +112,42 @@ export function loadLocalPlaybackSource(): LocalPlaybackSource | null {
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
+  }
+}
+
+export function loadLocalPlaybackHistory(): LocalPlaybackSource[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_PLAYBACK_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is LocalPlaybackSource => Boolean(item?.magnet && item?.title))
+      .slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
+  try {
+    const normalized = { ...source, savedAt: source.savedAt || Date.now() };
+    const next = [
+      normalized,
+      ...loadLocalPlaybackHistory().filter((item) => item.magnet !== normalized.magnet),
+    ].slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
+    localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
+  } catch {
+    // Playback history is a convenience feature. Failing to persist it should not block playback.
+  }
+}
+
+export function clearLocalPlaybackHistory() {
+  try {
+    localStorage.removeItem(LOCAL_PLAYBACK_HISTORY_KEY);
+    sessionStorage.removeItem(LOCAL_PLAYBACK_KEY);
+  } catch {
+    // Ignore storage cleanup failures.
   }
 }
 
