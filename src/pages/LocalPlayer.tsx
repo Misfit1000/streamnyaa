@@ -11,6 +11,7 @@ import {
   openDesktopCacheFolder,
   saveDesktopPlaybackSettings,
   startLocalPlaybackWithSettings,
+  testDesktopMpv,
   type DesktopPlaybackSettings,
   type DesktopPlaybackProgress,
   type DesktopRuntimeStatus,
@@ -148,6 +149,18 @@ export default function LocalPlayer() {
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Could not open the cache folder.');
+    }
+  };
+
+  const testMpv = async () => {
+    try {
+      const result = await testDesktopMpv(settings);
+      setStatus(result.ok ? 'ready' : 'error');
+      setMessage(`${result.message}${result.path ? ` Path: ${result.path}` : ''}`);
+      await refreshRuntime(settings);
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'Could not test MPV.');
     }
   };
 
@@ -436,6 +449,13 @@ export default function LocalPlayer() {
                 className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 Save desktop settings
+              </button>
+              <button
+                type="button"
+                onClick={testMpv}
+                className="w-full rounded-xl border border-border bg-background/55 px-4 py-2.5 text-sm font-black text-foreground transition-colors hover:border-primary/40"
+              >
+                Test MPV window
               </button>
             </div>
           </div>

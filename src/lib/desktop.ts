@@ -42,6 +42,13 @@ export type DesktopPlaybackProgress = {
   playlist_url: string;
 };
 
+export type DesktopToolTestStatus = {
+  ok: boolean;
+  message: string;
+  path?: string | null;
+  version?: string | null;
+};
+
 export type DesktopPlaybackSettings = {
   torrent_engine_path: string;
   mpv_path: string;
@@ -167,4 +174,13 @@ export async function getLocalPlaybackProgress(torrentId: string) {
       torrent_id: torrentId,
     },
   });
+}
+
+export async function testDesktopMpv(settings = loadDesktopPlaybackSettings()) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('MPV can only be tested inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<DesktopToolTestStatus>('test_mpv_player', { settings });
 }

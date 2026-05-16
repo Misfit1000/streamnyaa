@@ -20,6 +20,14 @@ struct PlaybackStatus {
 }
 
 #[derive(Serialize)]
+struct ToolTestStatus {
+    ok: bool,
+    message: String,
+    path: Option<String>,
+    version: Option<String>,
+}
+
+#[derive(Serialize)]
 struct LocalPlaybackProgress {
     ok: bool,
     torrent_id: String,
@@ -470,6 +478,69 @@ fn get_desktop_runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatu
 }
 
 #[tauri::command]
+fn test_mpv_player(settings: Option<DesktopSettings>) -> ToolTestStatus {
+    let settings = settings.unwrap_or(DesktopSettings {
+        torrent_engine_path: None,
+        mpv_path: None,
+        cache_dir: None,
+        player_mode: None,
+    });
+    let player_path = configured_command(
+        settings.mpv_path,
+        "STREAMNYAA_MPV_PATH",
+        "mpv",
+        &[
+            r"C:\Program Files\MPV Player\mpv.exe",
+            r"C:\Program Files\mpv\mpv.exe",
+            r"C:\Program Files (x86)\MPV Player\mpv.exe",
+            r"C:\Program Files (x86)\mpv\mpv.exe",
+        ],
+    );
+    let version = command_version(&player_path, &["mpv", "mpv.exe"]);
+
+    let Some(path) = player_path else {
+        return ToolTestStatus {
+            ok: false,
+            message: "MPV path is missing.".to_string(),
+            path: None,
+            version: None,
+        };
+    };
+
+    if version.is_none() {
+        return ToolTestStatus {
+            ok: false,
+            message: "MPV was not found at the configured path.".to_string(),
+            path: Some(path),
+            version: None,
+        };
+    }
+
+    match Command::new(&path)
+        .arg("--force-window=yes")
+        .arg("--idle=yes")
+        .arg("--title=StreamNyaa MPV Test")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(_) => ToolTestStatus {
+            ok: true,
+            message: "MPV test window opened. Close the MPV window when you are done.".to_string(),
+            path: Some(path),
+            version,
+        },
+        Err(error) => ToolTestStatus {
+            ok: false,
+            message: format!("Could not open MPV: {}", error),
+            path: Some(path),
+            version,
+        },
+    }
+}
+
+#[tauri::command]
 fn open_cache_folder(settings: Option<DesktopSettings>) -> Result<(), String> {
     let cache_dir = resolved_cache_dir(settings.and_then(|value| value.cache_dir));
     fs::create_dir_all(&cache_dir)
@@ -597,7 +668,8 @@ fn main() {
             get_desktop_runtime_status,
             get_local_playback_progress,
             open_cache_folder,
-            play_local_torrent
+            play_local_torrent,
+            test_mpv_player
         ])
         .run(tauri::generate_context!())
         .expect("failed to start StreamNyaa desktop app");
