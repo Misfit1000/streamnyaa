@@ -6,7 +6,7 @@ use std::{
     path::Path,
     process::{Command, Stdio},
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Serialize)]
@@ -54,6 +54,12 @@ struct RuntimeStatus {
     message: String,
 }
 
+#[derive(Serialize)]
+struct SourceApiResponse {
+    data: serde_json::Value,
+    fetched_at: u128,
+}
+
 #[derive(Clone, Deserialize)]
 struct DesktopSettings {
     torrent_engine_path: Option<String>,
@@ -74,6 +80,13 @@ struct PlaybackRequest {
 #[derive(Deserialize)]
 struct PlaybackProgressRequest {
     torrent_id: String,
+}
+
+fn now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
 }
 
 fn clean_value(value: Option<String>) -> Option<String> {
@@ -662,9 +675,42 @@ fn get_local_playback_progress(
     ))
 }
 
+#[tauri::command]
+fn fetch_desktop_source_api(url: String) -> Result<SourceApiResponse, String> {
+    let trimmed_url = url.trim();
+    if !trimmed_url.starts_with("https://www.streamnyaa.xyz/api/nyaa?") {
+        return Err("Desktop source search can only call the StreamNyaa source API.".to_string());
+    }
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(18))
+        .user_agent("StreamNyaa Desktop/0.1")
+        .build()
+        .map_err(|error| format!("Could not prepare desktop source search: {}", error))?;
+
+    let response = client
+        .get(trimmed_url)
+        .send()
+        .map_err(|error| format!("Desktop source search failed: {}", error))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Desktop source search returned {}", status.as_u16()));
+    }
+
+    let data = response
+        .json::<serde_json::Value>()
+        .map_err(|error| format!("Could not read desktop source results: {}", error))?;
+
+    Ok(SourceApiResponse {
+        data,
+        fetched_at: now_millis(),
+    })
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            fetch_desktop_source_api,
             get_desktop_runtime_status,
             get_local_playback_progress,
             open_cache_folder,

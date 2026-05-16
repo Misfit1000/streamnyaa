@@ -56,3 +56,5 @@ STREAMNYAA_CACHE_DIR=
 When both commands are available, clicking `Play locally` starts the local rqbit server, adds the selected magnet source, opens the local playlist in MPV, and keeps the StreamNyaa player screen updated with torrent readiness, peers, speed, progress, and cache folder status.
 
 The local player keeps a small source selector on the device, so users can switch between recently chosen sources without repeating the download search.
+
+Desktop source search uses the StreamNyaa production source API through the native Tauri bridge. This keeps download/source results working in the packaged app even though the desktop shell does not run Vercel serverless routes locally.

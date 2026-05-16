@@ -1,3 +1,5 @@
+import { fetchDesktopSourceApi, isDesktopApp } from '../lib/desktop';
+
 export interface NyaaItem {
   title: string;
   link: string;
@@ -70,7 +72,8 @@ export async function searchNyaa(
   options: { deep?: boolean; pages?: number; wide?: boolean } = {}
 ): Promise<NyaaItem[]> {
   try {
-    const url = new URL('/api/nyaa', window.location.origin);
+    const desktop = isDesktopApp();
+    const url = new URL('/api/nyaa', desktop ? 'https://www.streamnyaa.xyz' : window.location.origin);
     if (query) url.searchParams.append('q', query);
     if (category) url.searchParams.append('c', category);
     if (filter) url.searchParams.append('f', filter);
@@ -78,15 +81,27 @@ export async function searchNyaa(
     if (query && options.deep !== false) url.searchParams.append('deep', '1');
     if (query) url.searchParams.append('pages', String(options.pages || 3));
     if (query && options.wide) url.searchParams.append('wide', '1');
-    
-    const response = await fetch(url.toString());
-    if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
-    
-    const sourceCacheStatus = response.headers.get('X-Source-Cache') || '';
-    const sourceQueryCount = Number(response.headers.get('X-Source-Query-Count') || 1);
-    const fetchedAtHeader = response.headers.get('X-Source-Fetched-At');
-    const sourceFetchedAt = fetchedAtHeader ? Number(fetchedAtHeader) : Date.now();
-    const data = await response.json();
+
+    let sourceCacheStatus = '';
+    let sourceQueryCount = 1;
+    let sourceFetchedAt = Date.now();
+    let data: unknown;
+
+    if (desktop) {
+      const desktopResponse = await fetchDesktopSourceApi(url.toString());
+      data = desktopResponse.data;
+      sourceFetchedAt = Number(desktopResponse.fetched_at || Date.now());
+      sourceCacheStatus = 'DESKTOP';
+    } else {
+      const response = await fetch(url.toString());
+      if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
+      sourceCacheStatus = response.headers.get('X-Source-Cache') || '';
+      sourceQueryCount = Number(response.headers.get('X-Source-Query-Count') || 1);
+      const fetchedAtHeader = response.headers.get('X-Source-Fetched-At');
+      sourceFetchedAt = fetchedAtHeader ? Number(fetchedAtHeader) : Date.now();
+      data = await response.json();
+    }
+
     if (!Array.isArray(data)) {
         console.error("Source search did not return an array:", data);
         return [];

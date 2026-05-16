@@ -50,6 +50,11 @@ export type DesktopToolTestStatus = {
   version?: string | null;
 };
 
+export type DesktopSourceApiResponse = {
+  data: unknown;
+  fetched_at: number;
+};
+
 export type DesktopPlaybackSettings = {
   torrent_engine_path: string;
   mpv_path: string;
@@ -224,4 +229,13 @@ export async function testDesktopMpv(settings = loadDesktopPlaybackSettings()) {
   }
 
   return invoke<DesktopToolTestStatus>('test_mpv_player', { settings });
+}
+
+export async function fetchDesktopSourceApi(url: string) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Desktop source search is only available inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<DesktopSourceApiResponse>('fetch_desktop_source_api', { url });
 }
