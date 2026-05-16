@@ -58,7 +58,7 @@ export default function LocalPlayer() {
       return;
     }
     setStatus('starting');
-    setMessage('Starting local torrent engine...');
+    setMessage('Starting local rqbit engine...');
     try {
       const result = await startLocalPlaybackWithSettings(source, settings);
       setStatus(result.ok ? 'ready' : 'error');
@@ -231,16 +231,16 @@ export default function LocalPlayer() {
           <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-5">
             <h2 className="font-black text-foreground">Local playback settings</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Use `webtorrent` and `mpv` when both commands are available in PATH, or paste the full executable paths.
+              Use `rqbit` and `mpv` when both commands are available in PATH, or paste the full executable paths.
             </p>
             <div className="mt-4 space-y-3">
               <label className="block">
-                <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">WebTorrent command/path</span>
+                <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">rqbit command/path</span>
                 <input
                   value={settings.torrent_engine_path}
                   onChange={(event) => setSettings((current) => ({ ...current, torrent_engine_path: event.target.value }))}
                   className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
-                  placeholder="webtorrent"
+                  placeholder="rqbit"
                 />
               </label>
               <label className="block">

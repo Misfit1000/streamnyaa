@@ -37,7 +37,7 @@ const DESKTOP_SETTINGS_KEY = 'streamnyaa.desktopSettings';
 
 export const DESKTOP_RELEASES_URL = 'https://github.com/Misfit1000/streamnyaa/releases';
 export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
-  torrent_engine_path: 'webtorrent',
+  torrent_engine_path: 'rqbit',
   mpv_path: 'mpv',
   cache_dir: '',
   player_mode: 'mpv',
