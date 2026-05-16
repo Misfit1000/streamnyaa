@@ -42,4 +42,4 @@ STREAMNYAA_MPV_PATH=
 STREAMNYAA_CACHE_DIR=
 ```
 
-When both commands are available, clicking `Play locally` starts local rqbit playback with MPV and stores data in the configured cache folder.
+When both commands are available, clicking `Play locally` starts the local rqbit server, adds the selected magnet source, opens the local playlist in MPV, and keeps the StreamNyaa player screen updated with torrent readiness, peers, speed, progress, and cache folder status.

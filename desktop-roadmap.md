@@ -11,6 +11,7 @@ This desktop build shares the same React UI as the web app and adds desktop-only
 - The Tauri scaffold lives in `desktop/src-tauri` and has a `play_local_torrent` command target for the local engine.
 - The desktop app reports local runtime readiness before trying playback.
 - Local playback starts a local rqbit server, adds the selected magnet source, and opens rqbit's playlist URL in MPV when `rqbit` and `mpv` are configured.
+- The player screen polls rqbit for local playback progress, peers, speed, and cache status after playback starts.
 
 ## Local desktop commands
 
@@ -25,6 +26,6 @@ Bundle the local playback sidecar:
 1. Package rqbit as a sidecar so users do not need to install it manually.
 2. Bundle MPV or guide users to install it.
 3. Add a signed app installer.
-4. Add progress events from the engine back to the React player screen.
+4. Add file selection for multi-file torrents before launching MPV.
 
 The web app should not run torrent playback code.

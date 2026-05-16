@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Clipboard, Download, FolderOpen, HardDrive
 import Seo from '../components/Seo';
 import {
   getDesktopRuntimeStatus,
+  getLocalPlaybackProgress,
   isDesktopApp,
   loadDesktopPlaybackSettings,
   loadLocalPlaybackSource,
@@ -11,8 +12,16 @@ import {
   saveDesktopPlaybackSettings,
   startLocalPlaybackWithSettings,
   type DesktopPlaybackSettings,
+  type DesktopPlaybackProgress,
   type DesktopRuntimeStatus,
 } from '../lib/desktop';
+
+function formatBytes(value?: number | null) {
+  if (!value || value <= 0) return '0 B';
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
 
 export default function LocalPlayer() {
   const desktop = isDesktopApp();
@@ -20,6 +29,8 @@ export default function LocalPlayer() {
   const [status, setStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
+  const [playback, setPlayback] = useState<DesktopPlaybackProgress | null>(null);
+  const [activeTorrentId, setActiveTorrentId] = useState('');
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
   const [copiedCommand, setCopiedCommand] = useState('');
 
@@ -66,6 +77,30 @@ export default function LocalPlayer() {
     };
   }, [desktop]);
 
+  useEffect(() => {
+    if (!desktop || !activeTorrentId) return undefined;
+    let cancelled = false;
+
+    const refreshPlayback = async () => {
+      try {
+        const nextPlayback = await getLocalPlaybackProgress(activeTorrentId);
+        if (!cancelled) setPlayback(nextPlayback);
+      } catch (error) {
+        if (!cancelled) {
+          setPlayback((current) => current);
+          setMessage(error instanceof Error ? error.message : 'Could not read local playback progress yet.');
+        }
+      }
+    };
+
+    refreshPlayback();
+    const interval = window.setInterval(refreshPlayback, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeTorrentId, desktop]);
+
   const start = async () => {
     if (!source) {
       setStatus('error');
@@ -78,6 +113,21 @@ export default function LocalPlayer() {
       const result = await startLocalPlaybackWithSettings(source, settings);
       setStatus(result.ok ? 'ready' : 'error');
       setMessage(result.message || 'Local playback request sent to the desktop engine.');
+      if (result.torrent_id) {
+        setActiveTorrentId(result.torrent_id);
+        setPlayback({
+          ok: true,
+          torrent_id: result.torrent_id,
+          state: result.state,
+          message: result.message,
+          progress: null,
+          downloaded_bytes: null,
+          total_bytes: null,
+          peers: null,
+          download_speed: null,
+          playlist_url: result.playlist_url || `http://127.0.0.1:3030/torrents/${result.torrent_id}/playlist`,
+        });
+      }
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Desktop playback could not start.');
@@ -178,6 +228,32 @@ export default function LocalPlayer() {
           {message && status === 'error' ? (
             <div className="mt-4 rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm leading-6 text-red-200">
               {message}
+            </div>
+          ) : null}
+
+          {playback ? (
+            <div className="mt-4 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wider text-primary">Local torrent stream</p>
+                  <p className="mt-1 text-sm font-bold text-foreground">{playback.message}</p>
+                </div>
+                <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300">
+                  {playback.state || 'active'}
+                </span>
+              </div>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${Math.max(4, Math.min(100, playback.progress ?? 6))}%` }}
+                />
+              </div>
+              <div className="mt-3 grid gap-2 text-xs font-bold text-muted-foreground sm:grid-cols-3">
+                <span>{playback.progress != null ? `${Math.round(playback.progress)}% ready` : 'Preparing stream'}</span>
+                <span>{formatBytes(playback.downloaded_bytes)} / {formatBytes(playback.total_bytes)}</span>
+                <span>{playback.peers ?? 0} peers · {formatBytes(playback.download_speed)}/s</span>
+              </div>
+              <p className="mt-3 truncate font-mono text-[11px] text-muted-foreground">{playback.playlist_url}</p>
             </div>
           ) : null}
 

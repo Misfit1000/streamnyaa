@@ -25,6 +25,21 @@ export type DesktopPlaybackStatus = {
   state: string;
   message: string;
   title: string;
+  torrent_id?: string | null;
+  playlist_url?: string | null;
+};
+
+export type DesktopPlaybackProgress = {
+  ok: boolean;
+  torrent_id: string;
+  state: string;
+  message: string;
+  progress?: number | null;
+  downloaded_bytes?: number | null;
+  total_bytes?: number | null;
+  peers?: number | null;
+  download_speed?: number | null;
+  playlist_url: string;
 };
 
 export type DesktopPlaybackSettings = {
@@ -139,4 +154,17 @@ export async function openDesktopCacheFolder(settings = loadDesktopPlaybackSetti
   }
 
   return invoke<void>('open_cache_folder', { settings });
+}
+
+export async function getLocalPlaybackProgress(torrentId: string) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Playback progress is only available inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<DesktopPlaybackProgress>('get_local_playback_progress', {
+    request: {
+      torrent_id: torrentId,
+    },
+  });
 }

@@ -15,6 +15,22 @@ struct PlaybackStatus {
     state: String,
     message: String,
     title: String,
+    torrent_id: Option<String>,
+    playlist_url: Option<String>,
+}
+
+#[derive(Serialize)]
+struct LocalPlaybackProgress {
+    ok: bool,
+    torrent_id: String,
+    state: String,
+    message: String,
+    progress: Option<f64>,
+    downloaded_bytes: Option<u64>,
+    total_bytes: Option<u64>,
+    peers: Option<u64>,
+    download_speed: Option<f64>,
+    playlist_url: String,
 }
 
 #[derive(Serialize)]
@@ -45,6 +61,11 @@ struct PlaybackRequest {
     anime_title: String,
     episode: String,
     settings: Option<DesktopSettings>,
+}
+
+#[derive(Deserialize)]
+struct PlaybackProgressRequest {
+    torrent_id: String,
 }
 
 fn clean_value(value: Option<String>) -> Option<String> {
@@ -191,6 +212,135 @@ fn local_http_request(method: &str, path: &str, body: Option<&str>) -> Result<St
     Ok(payload)
 }
 
+fn find_number(value: &serde_json::Value, keys: &[&str]) -> Option<f64> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for key in keys {
+                if let Some(number) = map.get(*key).and_then(|item| item.as_f64()) {
+                    return Some(number);
+                }
+                if let Some(number) = map
+                    .get(*key)
+                    .and_then(|item| item.as_u64())
+                    .map(|item| item as f64)
+                {
+                    return Some(number);
+                }
+            }
+
+            map.values().find_map(|item| find_number(item, keys))
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(|item| find_number(item, keys)),
+        _ => None,
+    }
+}
+
+fn find_string(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for key in keys {
+                if let Some(text) = map.get(*key).and_then(|item| item.as_str()) {
+                    return Some(text.to_string());
+                }
+            }
+
+            map.values().find_map(|item| find_string(item, keys))
+        }
+        serde_json::Value::Array(items) => items.iter().find_map(|item| find_string(item, keys)),
+        _ => None,
+    }
+}
+
+fn playback_progress_from_json(
+    torrent_id: &str,
+    playlist_url: &str,
+    json: serde_json::Value,
+) -> LocalPlaybackProgress {
+    let downloaded_bytes = find_number(
+        &json,
+        &[
+            "downloaded_bytes",
+            "bytes_completed",
+            "completed_bytes",
+            "downloaded",
+            "finished_bytes",
+        ],
+    )
+    .map(|value| value.max(0.0) as u64);
+    let total_bytes = find_number(
+        &json,
+        &[
+            "total_bytes",
+            "bytes_total",
+            "size_bytes",
+            "total_size",
+            "length",
+            "size",
+        ],
+    )
+    .map(|value| value.max(0.0) as u64);
+    let progress = find_number(&json, &["progress", "progress_percent", "finished_percent"])
+        .or_else(|| match (downloaded_bytes, total_bytes) {
+            (Some(downloaded), Some(total)) if total > 0 => {
+                Some(((downloaded as f64 / total as f64) * 100.0).clamp(0.0, 100.0))
+            }
+            _ => None,
+        });
+    let peers = find_number(
+        &json,
+        &[
+            "peers",
+            "num_peers",
+            "live_peers",
+            "connected_peers",
+            "peer_count",
+        ],
+    )
+    .map(|value| value.max(0.0) as u64);
+    let download_speed = find_number(
+        &json,
+        &[
+            "download_speed",
+            "download_speed_bytes_per_second",
+            "download_rate",
+            "down_rate",
+        ],
+    );
+    let raw_state = find_string(&json, &["state", "status", "phase"]).unwrap_or_else(|| {
+        if progress.unwrap_or(0.0) >= 99.9 {
+            "ready".to_string()
+        } else if downloaded_bytes.unwrap_or(0) > 0 || peers.unwrap_or(0) > 0 {
+            "buffering".to_string()
+        } else {
+            "starting".to_string()
+        }
+    });
+    let normalized_state = raw_state.to_ascii_lowercase();
+    let message = if normalized_state.contains("error") {
+        "rqbit reported an error for this source.".to_string()
+    } else if progress.unwrap_or(0.0) >= 99.9 {
+        "Torrent data is ready locally. MPV can continue playback from the local stream."
+            .to_string()
+    } else if peers.unwrap_or(0) > 0 {
+        "Torrent metadata is active and pieces are being fetched locally.".to_string()
+    } else {
+        "Waiting for torrent metadata and peers. Low-seed sources can take longer.".to_string()
+    };
+
+    LocalPlaybackProgress {
+        ok: true,
+        torrent_id: torrent_id.to_string(),
+        state: normalized_state,
+        message,
+        progress,
+        downloaded_bytes,
+        total_bytes,
+        peers,
+        download_speed,
+        playlist_url: playlist_url.to_string(),
+    }
+}
+
 fn rqbit_server_ready() -> bool {
     local_http_request("GET", "/", None).is_ok()
 }
@@ -332,6 +482,8 @@ fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String
             state: "needs_setup".to_string(),
             message: runtime.message,
             title: label,
+            torrent_id: None,
+            playlist_url: None,
         });
     }
 
@@ -379,13 +531,39 @@ fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String
             "Local rqbit stream started. MPV should open once torrent metadata and pieces are ready."
                 .to_string(),
         title: label,
+        torrent_id: Some(torrent_id),
+        playlist_url: Some(playlist_url),
     })
+}
+
+#[tauri::command]
+fn get_local_playback_progress(
+    request: PlaybackProgressRequest,
+) -> Result<LocalPlaybackProgress, String> {
+    let torrent_id = request.torrent_id.trim();
+    if torrent_id.is_empty() {
+        return Err("Torrent id is missing.".to_string());
+    }
+
+    let playlist_url = format!("http://127.0.0.1:3030/torrents/{}/playlist", torrent_id);
+    let stats_payload =
+        local_http_request("GET", &format!("/torrents/{}/stats/v1", torrent_id), None)
+            .or_else(|_| local_http_request("GET", &format!("/torrents/{}", torrent_id), None))?;
+    let stats_json: serde_json::Value = serde_json::from_str(&stats_payload)
+        .map_err(|error| format!("Could not parse rqbit playback status: {}", error))?;
+
+    Ok(playback_progress_from_json(
+        torrent_id,
+        &playlist_url,
+        stats_json,
+    ))
 }
 
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_desktop_runtime_status,
+            get_local_playback_progress,
             open_cache_folder,
             play_local_torrent
         ])
