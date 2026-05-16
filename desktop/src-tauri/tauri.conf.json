@@ -5,7 +5,7 @@
   "identifier": "xyz.streamnyaa.desktop",
   "build": {
     "beforeDevCommand": "npm.cmd run dev:desktop",
-    "devUrl": "http://localhost:5173?desktop=1",
+    "devUrl": "http://127.0.0.1:5173?desktop=1",
     "beforeBuildCommand": "npm.cmd run build:desktop",
     "frontendDist": "../../dist"
   },

@@ -10,6 +10,7 @@ npm run desktop:build
 ```
 
 The desktop build uses `VITE_STREAMNYAA_APP_TARGET=desktop`, skips sitemap generation, and avoids web-only SEO, analytics, and ad scripts inside the Tauri shell.
+The native release profile is tuned for smaller Windows installers with stripping, LTO, size-oriented optimization, and a single codegen unit.
 
 For Windows development, the project root also includes `desktop-dev.cmd` and `desktop-dev.ps1` launchers. Run either one from the StreamNyaa project folder to start the desktop app without typing the full npm command.
 
