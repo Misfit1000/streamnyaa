@@ -56,6 +56,7 @@ export default function AnimeDownloads() {
   const [searchParams, setSearchParams] = useSearchParams();
   const epParam = searchParams.get('ep');
   const typeParam = searchParams.get('type');
+  const playIntent = searchParams.get('play') === '1';
   const selectedEpisodeNumber = epParam && /^\d+$/.test(epParam) ? parseInt(epParam, 10) : null;
   const episodePage = selectedEpisodeNumber ? Math.max(1, Math.ceil(selectedEpisodeNumber / 100)) : 1;
   
@@ -310,8 +311,8 @@ export default function AnimeDownloads() {
           <div>
             <h1 className="text-2xl font-black text-foreground mb-1">{anime.title}</h1>
             <p className="text-muted-foreground flex items-center gap-2">
-              <HardDrive className="w-4 h-4" />
-              Download Options
+              {desktopApp && playIntent ? <Play className="w-4 h-4" /> : <HardDrive className="w-4 h-4" />}
+              {desktopApp && playIntent ? 'Local Playback Sources' : 'Download Options'}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Last updated {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
@@ -434,6 +435,27 @@ export default function AnimeDownloads() {
           </p>
         </div>
       </div>
+
+      {desktopApp && playIntent ? (
+        <div className="mb-6 rounded-2xl border border-primary/25 bg-primary/10 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-wider text-primary">Watch locally</p>
+              <h2 className="mt-1 text-lg font-black text-foreground">Choose a source to start the desktop player</h2>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Pick a healthy source below and click <span className="font-bold text-foreground">Play locally</span>. StreamNyaa will send it to rqbit and open MPV.
+              </p>
+            </div>
+            <Link
+              to="/local-player?desktop=1"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-background/60 px-4 py-2.5 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+            >
+              <Play className="h-4 w-4 fill-current" />
+              Open player
+            </Link>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         {[

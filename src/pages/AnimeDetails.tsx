@@ -8,6 +8,7 @@ import { animePath, mangaPath } from '../lib/slug';
 import Seo from '../components/Seo';
 import RelatedBlogArticles from '../components/RelatedBlogArticles';
 import { saveRecentAnime } from '../lib/activity';
+import { isDesktopApp } from '../lib/desktop';
 
 function formatStatus(value?: string) {
   return value ? value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unknown';
@@ -47,6 +48,7 @@ function canShowDownloadOptions(anime: any, episodeItems: any[] = []) {
 export default function AnimeDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const desktopApp = isDesktopApp();
   const { isInMyList, addToMyList, removeFromMyList, isLiked, toggleLike } = useStore();
   const relationsScrollRef = useRef<HTMLDivElement>(null);
   const recommendationsScrollRef = useRef<HTMLDivElement>(null);
@@ -187,6 +189,12 @@ export default function AnimeDetails() {
     if (inList) removeFromMyList(anime.mal_id);
     else addToMyList(anime);
   };
+  const watchPath = animePath(
+    anime,
+    latestAiredEpisode
+      ? `/downloads?ep=${latestAiredEpisode}&type=sub&play=1`
+      : '/downloads?type=sub&play=1',
+  );
 
   return (
     <div className="pb-20">
@@ -254,13 +262,24 @@ export default function AnimeDetails() {
 
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 mb-8">
             {downloadOptionsAvailable ? (
-              <Link
-                to={animePath(anime, '/downloads')}
-                className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
-              >
-                <Download className="w-5 h-5" />
-                Downloads
-              </Link>
+              <>
+                {desktopApp ? (
+                  <Link
+                    to={watchPath}
+                    className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
+                  >
+                    <Play className="w-5 h-5 fill-current" />
+                    Watch locally
+                  </Link>
+                ) : null}
+                <Link
+                  to={animePath(anime, '/downloads')}
+                  className={`${desktopApp ? 'bg-secondary text-foreground hover:bg-secondary/80' : 'bg-primary text-primary-foreground hover:bg-primary/90'} flex items-center gap-2 px-8 py-3 rounded-full font-bold transition-transform hover:scale-105`}
+                >
+                  <Download className="w-5 h-5" />
+                  Downloads
+                </Link>
+              </>
             ) : (
               <span className="flex items-center gap-2 rounded-full border border-border bg-secondary/70 px-6 py-3 font-bold text-muted-foreground">
                 <Calendar className="h-5 w-5" />
