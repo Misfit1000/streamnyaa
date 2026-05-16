@@ -57,11 +57,12 @@ export default function AnimeDownloads() {
   const epParam = searchParams.get('ep');
   const typeParam = searchParams.get('type');
   const playIntent = searchParams.get('play') === '1';
+  const wideIntent = playIntent || searchParams.get('wide') === '1';
   const selectedEpisodeNumber = epParam && /^\d+$/.test(epParam) ? parseInt(epParam, 10) : null;
   const episodePage = selectedEpisodeNumber ? Math.max(1, Math.ceil(selectedEpisodeNumber / 100)) : 1;
   
   // If epParam is present, default filter to empty or "1080p" instead of "[Batch]"
-  const [downloadFilter, setDownloadFilter] = useState(epParam ? '1080p' : '[Batch]');
+  const [downloadFilter, setDownloadFilter] = useState(epParam && !playIntent ? '1080p' : epParam ? '' : '[Batch]');
   const [audioFilter, setAudioFilter] = useState<AudioFilter>(typeParam === 'dub' ? 'dub' : 'sub');
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
@@ -87,7 +88,7 @@ export default function AnimeDownloads() {
   });
 
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
-    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults, showAllSources],
+    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults, showAllSources, wideIntent],
     queryFn: async () => {
       const romaji = anime?.title_romaji;
       const english = anime?.title_english;
@@ -95,7 +96,7 @@ export default function AnimeDownloads() {
 
       const epStr = epParam ? epParam.padStart(2, '0') : '';
       const isDub = audioFilter === 'dub';
-      const effectiveDownloadFilter = showAiringEpisodeResults ? '1080p' : downloadFilter;
+      const effectiveDownloadFilter = playIntent && epParam ? '' : showAiringEpisodeResults ? '1080p' : downloadFilter;
 
       const cleanTitle = (t: string) => {
         if (!t) return '';
@@ -108,7 +109,10 @@ export default function AnimeDownloads() {
         if (ep) query += ` ${ep}`;
         if (effectiveDownloadFilter && effectiveDownloadFilter !== 'RAW') query += ` ${effectiveDownloadFilter}`;
         if (isDub) query += ' dub';
-        return await searchNyaa(query, effectiveDownloadFilter === 'RAW' ? '1_4' : '1_2', '0', '1', { pages: showAllSources ? 2 : 1, wide: showAllSources });
+        return await searchNyaa(query, effectiveDownloadFilter === 'RAW' ? '1_4' : '1_2', '0', '1', {
+          pages: showAllSources || wideIntent ? 3 : 1,
+          wide: showAllSources || wideIntent,
+        });
       };
 
       const trySearches = async (epNumStr: string) => {
@@ -143,6 +147,12 @@ export default function AnimeDownloads() {
       // Fallback without padding if still 0
       if (results.length === 0 && epParam && epStr !== epParam) {
         results = await trySearches(epParam);
+      }
+
+      // Playback needs a selectable source more than a perfect filter match.
+      // If an episode-specific search is empty, broaden to title-only results automatically.
+      if (results.length === 0 && epParam && playIntent) {
+        results = await trySearches("");
       }
       
       // Secondary fallback without episode number at all (useful for movies or single OVAs)
@@ -253,6 +263,8 @@ export default function AnimeDownloads() {
       setDownloadFilter('1080p');
     }
     nextParams.set('type', audioFilter);
+    if (playIntent) nextParams.set('play', '1');
+    if (wideIntent) nextParams.set('wide', '1');
     setSearchParams(nextParams);
   };
   const applyPreset = (preset: typeof SOURCE_PRESETS[number]) => {
@@ -263,6 +275,8 @@ export default function AnimeDownloads() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('type', preset.type);
     if (preset.sourceFilter === 'batch') nextParams.delete('ep');
+    if (playIntent) nextParams.set('play', '1');
+    if (wideIntent) nextParams.set('wide', '1');
     setSearchParams(nextParams);
   };
   const recordDownloadAction = (torrent: any, action: 'copy' | 'open') => {
@@ -443,7 +457,7 @@ export default function AnimeDownloads() {
               <p className="text-[11px] font-black uppercase tracking-wider text-primary">Watch locally</p>
               <h2 className="mt-1 text-lg font-black text-foreground">Choose a source to start the desktop player</h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Pick a healthy source below and click <span className="font-bold text-foreground">Play locally</span>. StreamNyaa will send it to rqbit and open MPV.
+                Pick a healthy source below and click <span className="font-bold text-foreground">Play locally</span>. If the exact episode is not found, StreamNyaa broadens the search so you can still choose a source.
               </p>
             </div>
             <Link
@@ -574,6 +588,10 @@ export default function AnimeDownloads() {
               onClick={() => {
                 setShowAllSources(true);
                 setSourceFilter('');
+                const nextParams = new URLSearchParams(searchParams);
+                nextParams.set('wide', '1');
+                if (playIntent) nextParams.set('play', '1');
+                setSearchParams(nextParams);
               }}
               className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
             >

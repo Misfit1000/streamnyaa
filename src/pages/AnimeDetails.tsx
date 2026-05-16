@@ -192,8 +192,8 @@ export default function AnimeDetails() {
   const watchPath = animePath(
     anime,
     latestAiredEpisode
-      ? `/downloads?ep=${latestAiredEpisode}&type=sub&play=1`
-      : '/downloads?type=sub&play=1',
+      ? `/downloads?ep=${latestAiredEpisode}&type=sub&play=1&wide=1`
+      : '/downloads?type=sub&play=1&wide=1',
   );
 
   return (
