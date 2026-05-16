@@ -6,6 +6,7 @@ import { Cat } from 'lucide-react';
 import RouteSeo from './RouteSeo';
 import DesktopAppPrompt from './DesktopAppPrompt';
 import { isDesktopApp } from '../lib/desktop';
+import DesktopShell from './DesktopShell';
 
 export default function Layout() {
   const theme = useStore((state) => state.theme);
@@ -18,6 +19,20 @@ export default function Layout() {
       document.documentElement.classList.remove('dark');
     }
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('streamnyaa-desktop', desktop);
+    return () => document.documentElement.classList.remove('streamnyaa-desktop');
+  }, [desktop]);
+
+  if (desktop) {
+    return (
+      <>
+        <RouteSeo />
+        <DesktopShell />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans selection:bg-red-600/30">

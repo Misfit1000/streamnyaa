@@ -79,3 +79,38 @@ body {
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+.streamnyaa-desktop body {
+  background: #050507;
+  overflow-x: hidden;
+}
+
+.streamnyaa-desktop .container {
+  width: 100%;
+  max-width: 1180px;
+}
+
+.desktop-shell * {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.desktop-shell ::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.desktop-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.desktop-shell ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.desktop-shell ::-webkit-scrollbar-thumb:hover {
+  background: rgba(225, 29, 72, 0.55);
+  background-clip: content-box;
+}

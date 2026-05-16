@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { searchNyaa } from '../api/nyaa';
 import { fetchAnimeDetails, fetchAnimeEpisodes, searchAnime } from '../api/jikan';
 import { Search, Loader2, Download, HardDrive, AlertTriangle, Link as LinkIcon, Play } from 'lucide-react';
@@ -25,8 +26,10 @@ function releaseTrackerText(anime: any, selectedEpisode?: string) {
 export default function NyaaSearchPage() {
   const { session, user } = useAuth();
   const desktopApp = isDesktopApp();
-  const [query, setQuery] = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  const [urlSearchParams] = useSearchParams();
+  const initialQuery = urlSearchParams.get('q') || '';
+  const [query, setQuery] = useState(initialQuery);
+  const [searchInput, setSearchInput] = useState(initialQuery);
   const [category, setCategory] = useState('1_0');
   const [filter, setFilter] = useState('0');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
@@ -35,6 +38,15 @@ export default function NyaaSearchPage() {
   const [showAllSources, setShowAllSources] = useState(false);
   const [animeLookupQuery, setAnimeLookupQuery] = useState('');
   const [selectedEpisode, setSelectedEpisode] = useState('batch');
+
+  useEffect(() => {
+    const nextQuery = urlSearchParams.get('q') || '';
+    if (!nextQuery) return;
+    setQuery(nextQuery);
+    setSearchInput(nextQuery);
+    setAnimeLookupQuery(nextQuery);
+    setSelectedEpisode('batch');
+  }, [urlSearchParams]);
 
   const { data: torrents, isLoading } = useQuery({
     queryKey: ['nyaaSearch', query, category, filter, showAllSources],
