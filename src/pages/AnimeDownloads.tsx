@@ -248,6 +248,11 @@ export default function AnimeDownloads() {
   const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
   const totalSeeders = sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0);
   const highSeederCount = sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length;
+  const playbackSearchLabel = selectedEpisodeNumber
+    ? `Episode ${selectedEpisodeNumber}${wideIntent ? ' with broader source matching' : ''}`
+    : wideIntent
+      ? 'Broad source matching'
+      : 'Batch / all available episodes';
   const airedEpisodeCount = anime.nextAiringEpisode?.episode
     ? Math.max(anime.nextAiringEpisode.episode - 1, 0)
     : (anime.episodes || 0);
@@ -459,14 +464,33 @@ export default function AnimeDownloads() {
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Pick a healthy source below and click <span className="font-bold text-foreground">Play locally</span>. If the exact episode is not found, StreamNyaa broadens the search so you can still choose a source.
               </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+                <span className="rounded-full bg-background/65 px-2.5 py-1 text-muted-foreground">{playbackSearchLabel}</span>
+                <span className="rounded-full bg-background/65 px-2.5 py-1 text-muted-foreground">{audioFilter === 'dub' ? 'Dub / dual-audio preferred' : 'Sub preferred'}</span>
+                {topSource ? (
+                  <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-400">Best score {sourceQualityScore(topSource)}</span>
+                ) : null}
+              </div>
             </div>
-            <Link
-              to="/local-player?desktop=1"
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-background/60 px-4 py-2.5 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
-            >
-              <Play className="h-4 w-4 fill-current" />
-              Open player
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              {topSource ? (
+                <button
+                  type="button"
+                  onClick={() => openLocalPlayer(topSource)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  <Play className="h-4 w-4 fill-current" />
+                  Play best source
+                </button>
+              ) : null}
+              <Link
+                to="/local-player?desktop=1"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-background/60 px-4 py-2.5 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+              >
+                <Play className="h-4 w-4 fill-current" />
+                Open player
+              </Link>
+            </div>
           </div>
         </div>
       ) : null}
