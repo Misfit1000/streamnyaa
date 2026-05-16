@@ -114,7 +114,16 @@ fn configured_command(
     windows_paths: &[&str],
 ) -> Option<String> {
     if let Some(value) = clean_value(settings_value) {
-        return Some(value);
+        let normalized_value = command_name(&value);
+        let normalized_fallback = command_name(fallback);
+        let default_command_names = [
+            normalized_fallback.clone(),
+            format!("{}.exe", normalized_fallback),
+        ];
+
+        if looks_like_path(&value) || !default_command_names.iter().any(|name| name == &normalized_value) {
+            return Some(value);
+        }
     }
     if let Some(value) = clean_value(env::var(env_key).ok()) {
         return Some(value);
