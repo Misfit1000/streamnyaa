@@ -24,6 +24,8 @@ struct RuntimeStatus {
     player_configured: bool,
     torrent_engine_path: Option<String>,
     player_path: Option<String>,
+    torrent_engine_version: Option<String>,
+    player_version: Option<String>,
     cache_dir: String,
     message: String,
 }
@@ -101,6 +103,37 @@ fn command_configured(path_value: &Option<String>, allowed_names: &[&str]) -> bo
         .status()
         .map(|status| status.success())
         .unwrap_or(false)
+}
+
+fn command_version(path_value: &Option<String>, allowed_names: &[&str]) -> Option<String> {
+    let value = path_value.as_ref()?;
+    if !allowed_command(value, allowed_names) {
+        return None;
+    }
+    if looks_like_path(value) && !Path::new(value).exists() {
+        return None;
+    }
+
+    let output = Command::new(value)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let version = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if version.is_empty() {
+        None
+    } else {
+        Some(version)
+    }
 }
 
 fn percent_encode(value: &str) -> String {
@@ -224,6 +257,12 @@ fn get_desktop_runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatu
         command_configured(&torrent_engine_path, &["rqbit", "rqbit.exe"]);
     let player_configured =
         player_mode != "mpv" || command_configured(&player_path, &["mpv", "mpv.exe"]);
+    let torrent_engine_version = command_version(&torrent_engine_path, &["rqbit", "rqbit.exe"]);
+    let player_version = if player_mode == "mpv" {
+        command_version(&player_path, &["mpv", "mpv.exe"])
+    } else {
+        None
+    };
     let ready = torrent_engine_configured && player_configured;
     let message = if ready {
         "rqbit and MPV commands are configured.".to_string()
@@ -241,9 +280,28 @@ fn get_desktop_runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatu
         player_configured,
         torrent_engine_path,
         player_path,
+        torrent_engine_version,
+        player_version,
         cache_dir,
         message,
     }
+}
+
+#[tauri::command]
+fn open_cache_folder(settings: Option<DesktopSettings>) -> Result<(), String> {
+    let cache_dir = resolved_cache_dir(settings.and_then(|value| value.cache_dir));
+    fs::create_dir_all(&cache_dir)
+        .map_err(|error| format!("Could not create local cache folder: {}", error))?;
+
+    Command::new("explorer")
+        .arg(&cache_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("Could not open cache folder: {}", error))?;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -328,6 +386,7 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             get_desktop_runtime_status,
+            open_cache_folder,
             play_local_torrent
         ])
         .run(tauri::generate_context!())

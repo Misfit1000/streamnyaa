@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Clipboard, Download, HardDrive, Loader2, MonitorPlay, Play, RefreshCw, RotateCcw, Terminal } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clipboard, Download, FolderOpen, HardDrive, Loader2, MonitorPlay, Play, RefreshCw, RotateCcw, Terminal } from 'lucide-react';
 import Seo from '../components/Seo';
 import {
   getDesktopRuntimeStatus,
   isDesktopApp,
   loadDesktopPlaybackSettings,
   loadLocalPlaybackSource,
+  openDesktopCacheFolder,
   saveDesktopPlaybackSettings,
   startLocalPlaybackWithSettings,
   type DesktopPlaybackSettings,
@@ -53,6 +54,8 @@ export default function LocalPlayer() {
             torrent_engine_configured: false,
             player_configured: false,
             cache_dir: '',
+            torrent_engine_version: null,
+            player_version: null,
             message: 'Desktop runtime status could not be read yet.',
           });
         }
@@ -86,6 +89,16 @@ export default function LocalPlayer() {
     setStatus('idle');
     setMessage('Desktop playback settings saved.');
     await refreshRuntime(settings);
+  };
+
+  const openCacheFolder = async () => {
+    try {
+      await openDesktopCacheFolder(settings);
+      setMessage('Cache folder opened.');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'Could not open the cache folder.');
+    }
   };
 
   return (
@@ -232,14 +245,38 @@ export default function LocalPlayer() {
                   </span>
                 </div>
                 <p className="text-sm leading-6 text-muted-foreground">{runtime.message}</p>
-                <button
-                  type="button"
-                  onClick={() => refreshRuntime()}
-                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-3 py-2 text-xs font-black text-foreground transition-colors hover:border-primary/40"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Refresh status
-                </button>
+                <div className="space-y-2 rounded-xl border border-border bg-background/40 p-3 text-xs">
+                  <div>
+                    <span className="font-black uppercase tracking-wider text-muted-foreground">Engine</span>
+                    <p className="mt-0.5 truncate font-mono text-foreground">{runtime.torrent_engine_version || runtime.torrent_engine_path || 'Not detected'}</p>
+                  </div>
+                  <div>
+                    <span className="font-black uppercase tracking-wider text-muted-foreground">Player</span>
+                    <p className="mt-0.5 truncate font-mono text-foreground">{runtime.player_version || runtime.player_path || 'Not detected'}</p>
+                  </div>
+                  <div>
+                    <span className="font-black uppercase tracking-wider text-muted-foreground">Cache</span>
+                    <p className="mt-0.5 truncate font-mono text-foreground">{runtime.cache_dir || 'System temp folder'}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => refreshRuntime()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-3 py-2 text-xs font-black text-foreground transition-colors hover:border-primary/40"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openCacheFolder}
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-3 py-2 text-xs font-black text-foreground transition-colors hover:border-primary/40"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    Open cache
+                  </button>
+                </div>
               </div>
             ) : (
               <p className="mt-3 text-sm leading-6 text-muted-foreground">

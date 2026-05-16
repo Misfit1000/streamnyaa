@@ -14,6 +14,8 @@ export type DesktopRuntimeStatus = {
   player_configured: boolean;
   torrent_engine_path?: string | null;
   player_path?: string | null;
+  torrent_engine_version?: string | null;
+  player_version?: string | null;
   cache_dir: string;
   message: string;
 };
@@ -128,4 +130,13 @@ export async function getDesktopRuntimeStatus(settings = loadDesktopPlaybackSett
   }
 
   return invoke<DesktopRuntimeStatus>('get_desktop_runtime_status', { settings });
+}
+
+export async function openDesktopCacheFolder(settings = loadDesktopPlaybackSettings()) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Cache folder can only be opened inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<void>('open_cache_folder', { settings });
 }
