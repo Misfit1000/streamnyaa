@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "dev:desktop": "vite --host 127.0.0.1",
+    "dev:desktop": "set VITE_STREAMNYAA_APP_TARGET=desktop&& vite --host 127.0.0.1",
     "desktop:dev": "cd desktop/src-tauri && npx @tauri-apps/cli@latest dev",
     "desktop:build": "cd desktop/src-tauri && npx @tauri-apps/cli@latest build",
     "start": "node dist/server.cjs",
     "build": "npm run generate:sitemap && vite build --config vite.config.mjs --configLoader native",
+    "build:desktop": "set VITE_STREAMNYAA_APP_TARGET=desktop&& vite build --config vite.config.mjs --configLoader native",
     "build:server": "esbuild server.ts --bundle --platform=node --target=node20 --outfile=dist/server.cjs --format=cjs",
     "build:local": "npm run build && npm run build:server",
     "preview": "vite preview",

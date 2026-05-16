@@ -3,17 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Google tag (gtag.js) -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-T6TMP6R1BW"></script>
     <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
+      (function () {
+        var isDesktopShell = window.location.search.indexOf('desktop=1') !== -1
+          || !/^https?:$/.test(window.location.protocol)
+          || window.location.hostname === 'tauri.localhost';
 
-      gtag('config', 'G-T6TMP6R1BW');
+        if (isDesktopShell) {
+          document.documentElement.setAttribute('data-streamnyaa-target', 'desktop');
+          return;
+        }
+
+        var analytics = document.createElement('script');
+        analytics.async = true;
+        analytics.src = 'https://www.googletagmanager.com/gtag/js?id=G-T6TMP6R1BW';
+        document.head.appendChild(analytics);
+
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function(){ dataLayer.push(arguments); };
+        window.gtag('js', new Date());
+        window.gtag('config', 'G-T6TMP6R1BW');
+
+        var adsense = document.createElement('script');
+        adsense.async = true;
+        adsense.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3878702638437768';
+        adsense.crossOrigin = 'anonymous';
+        document.head.appendChild(adsense);
+      })();
     </script>
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3878702638437768"
-     crossorigin="anonymous"></script>
     <title>StreamNyaa</title>
     <meta name="description" content="StreamNyaa helps anime fans find anime downloads, follow release schedules, browse episode updates, and search anime source options from one clean interface." />
     <meta name="keywords" content="anime discovery, anime release schedule, anime episode updates, seasonal anime, anime metadata, anime search, manga details" />
@@ -46,6 +63,11 @@
     </script>
     <script>
       (function () {
+        var isDesktopShell = window.location.search.indexOf('desktop=1') !== -1
+          || !/^https?:$/.test(window.location.protocol)
+          || window.location.hostname === 'tauri.localhost';
+        if (isDesktopShell) return;
+
         var siteUrl = 'https://www.streamnyaa.xyz';
         var path = window.location.pathname === '/' ? '/' : window.location.pathname.replace(/\/+$/, '');
         var canonicalUrl = siteUrl + path;

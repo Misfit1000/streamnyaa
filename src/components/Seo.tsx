@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isDesktopApp } from '../lib/desktop';
 
 interface SeoProps {
   title: string;
@@ -52,6 +53,12 @@ function setJsonLd(jsonLd?: SeoProps['jsonLd']) {
 
 export default function Seo({ title, description, canonicalPath = '/', image, robots = 'index, follow, max-image-preview:large', jsonLd }: SeoProps) {
   useEffect(() => {
+    if (isDesktopApp()) {
+      document.title = title.replace(/\s*\|\s*StreamNyaa\s*$/i, '') || 'StreamNyaa';
+      document.getElementById('streamnyaa-jsonld')?.remove();
+      return;
+    }
+
     const canonicalUrl = new URL(canonicalPath, SITE_URL).toString();
     const imageUrl = image ? new URL(image, SITE_URL).toString() : SITE_URL + '/logo.svg';
 

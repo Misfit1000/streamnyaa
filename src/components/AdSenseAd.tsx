@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isDesktopApp } from '../lib/desktop';
 
 type AdSenseAdProps = {
   className?: string;
@@ -8,9 +9,11 @@ type AdSenseAdProps = {
 const ADSENSE_CLIENT_ID = 'ca-pub-3878702638437768';
 
 export default function AdSenseAd({ className = '', slot }: AdSenseAdProps) {
+  const desktop = isDesktopApp();
   const adSlot = slot || import.meta.env.VITE_ADSENSE_DISPLAY_SLOT || '';
 
   useEffect(() => {
+    if (desktop) return;
     if (!adSlot) return;
     try {
       window.adsbygoogle = window.adsbygoogle || [];
@@ -18,9 +21,9 @@ export default function AdSenseAd({ className = '', slot }: AdSenseAdProps) {
     } catch {
       // Ad blockers or early script timing can throw here; the page should keep working.
     }
-  }, [adSlot]);
+  }, [adSlot, desktop]);
 
-  if (!adSlot) return null;
+  if (desktop || !adSlot) return null;
 
   return (
     <aside className={`my-8 ${className}`} aria-label="Advertisement">
