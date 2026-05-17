@@ -30,6 +30,21 @@ const navItems = [
   { to: '/desktop-settings', label: 'Settings', icon: Settings },
 ];
 
+const sidebarSections = [
+  {
+    label: 'Watch desk',
+    items: navItems.filter((item) => ['Home', 'Player', 'Library'].includes(item.label)),
+  },
+  {
+    label: 'Find anime',
+    items: navItems.filter((item) => ['Sources', 'Browse', 'Schedule', 'Compare'].includes(item.label)),
+  },
+  {
+    label: 'System',
+    items: navItems.filter((item) => ['Settings'].includes(item.label)),
+  },
+];
+
 const quickItems = [
   { to: '/schedule', label: 'Latest episodes', icon: CalendarDays },
   { to: '/search?sort=trending&status=airing', label: 'Trending', icon: Sparkles },
@@ -254,40 +269,62 @@ export default function DesktopShell() {
     <div className="desktop-shell min-h-screen overflow-hidden bg-[#030305] text-foreground">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.20),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(255,255,255,0.08),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.035),transparent_32%)]" />
 
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[252px] border-r border-white/10 bg-black/50 shadow-2xl shadow-black/40 backdrop-blur-2xl lg:flex lg:flex-col">
-        <Link to="/" className="group flex h-20 items-center gap-3 px-5">
-          <span className="relative flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-primary text-white shadow-lg shadow-primary/25">
-            <span className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.45),transparent_45%)]" />
-            <HardDrive className="relative h-5 w-5" />
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[276px] border-r border-white/10 bg-[#050507]/78 shadow-2xl shadow-black/50 backdrop-blur-2xl lg:flex lg:flex-col">
+        <Link to="/" className="group m-3 mb-2 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-4 shadow-xl shadow-black/20">
+          <span className="flex items-center gap-3">
+            <span className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-primary text-white shadow-lg shadow-primary/25">
+              <span className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.45),transparent_45%)]" />
+              <HardDrive className="relative h-5 w-5" />
+            </span>
+            <span>
+              <span className="block text-lg font-black tracking-tight text-white">StreamNyaa</span>
+              <span className="block text-[11px] font-bold uppercase tracking-[0.18em] text-white/38">Desktop cinema</span>
+            </span>
           </span>
-          <span>
-            <span className="block text-lg font-black tracking-tight text-white">StreamNyaa</span>
-            <span className="block text-[11px] font-bold uppercase tracking-[0.18em] text-white/35">Desktop</span>
+          <span className="mt-4 grid grid-cols-3 gap-2">
+            {['Sources', 'Player', 'List'].map((item) => (
+              <span key={item} className="rounded-xl border border-white/10 bg-black/24 px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide text-white/48">
+                {item}
+              </span>
+            ))}
           </span>
         </Link>
 
-        <nav className="flex-1 space-y-1 px-3 py-2">
-          {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) => `group flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-bold transition-all ${
-                isActive
-                  ? 'bg-white text-black shadow-lg shadow-black/25'
-                  : 'text-white/58 hover:bg-white/[0.075] hover:text-white'
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              <span>{label}</span>
-            </NavLink>
+        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-3">
+          {sidebarSections.map((section) => (
+            <div key={section.label}>
+              <p className="mb-2 px-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/30">{section.label}</p>
+              <div className="space-y-1">
+                {section.items.map(({ to, label, icon: Icon }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={to === '/'}
+                    className={({ isActive }) => `group flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-bold transition-all ${
+                      isActive
+                        ? 'bg-white text-black shadow-lg shadow-black/25'
+                        : 'text-white/58 hover:bg-white/[0.075] hover:text-white'
+                    }`}
+                  >
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
+                      location.pathname === to.split('?')[0] || (to !== '/' && location.pathname.startsWith(to.split('?')[0]))
+                        ? 'bg-black/10 text-black'
+                        : 'bg-white/[0.055] text-white/58 group-hover:text-white'
+                    }`}>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <span>{label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
-        <div className="space-y-3 border-t border-white/10 p-4">
+        <div className="space-y-3 border-t border-white/10 p-3">
           <Link
             to="/local-player?desktop=1"
-            className="block rounded-3xl border border-white/10 bg-white/[0.055] p-4 transition-colors hover:border-primary/45 hover:bg-primary/10"
+            className="block rounded-3xl border border-white/10 bg-[linear-gradient(135deg,rgba(225,29,72,0.16),rgba(255,255,255,0.05))] p-4 transition-colors hover:border-primary/45 hover:bg-primary/10"
           >
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/42">
@@ -331,7 +368,7 @@ export default function DesktopShell() {
         </div>
       </aside>
 
-      <div className="relative min-h-screen lg:pl-[252px]">
+      <div className="relative min-h-screen lg:pl-[276px]">
         <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050507]/72 backdrop-blur-2xl">
           <div className="flex h-auto flex-col gap-3 px-4 py-3 lg:h-20 lg:flex-row lg:items-center lg:justify-between lg:px-7 lg:py-0">
             <div className="flex min-w-0 items-center gap-3">
