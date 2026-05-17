@@ -411,7 +411,7 @@ export default function LocalPlayer() {
   };
 
   return (
-    <div className="container mx-auto max-w-6xl px-4 py-6">
+    <div className="mx-auto max-w-[1480px] px-4 py-6 lg:px-7">
       <Seo
         title="Local Desktop Player | StreamNyaa"
         description="StreamNyaa desktop local torrent playback screen."
@@ -419,43 +419,44 @@ export default function LocalPlayer() {
         robots="noindex, nofollow"
       />
 
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Local playback</p>
-          <h1 className="mt-1 text-3xl font-black tracking-tight text-foreground">Player</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Choose a source, start playback, and monitor the local stream.</p>
+          <h1 className="mt-1 text-4xl font-black tracking-tight text-white md:text-5xl">Player</h1>
+          <p className="mt-2 text-sm text-white/48">Pick the right source, launch MPV, and keep the local stream under control.</p>
         </div>
         <Link
           to="/nyaa?desktop=1"
-          className="inline-flex w-fit items-center gap-2 rounded-lg border border-border bg-background/60 px-4 py-2.5 text-sm font-bold text-foreground hover:border-primary/40 hover:text-primary"
+          className="inline-flex w-fit items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.065] px-5 py-3 text-sm font-black text-white backdrop-blur-xl hover:border-primary/40 hover:text-primary"
         >
           <Download className="h-4 w-4" />
           Find sources
         </Link>
       </div>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-5">
-          <div className="overflow-hidden rounded-2xl border border-border bg-[#050507]">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.035] px-5 py-3">
+          <div className="overflow-hidden rounded-[2rem] border border-white/10 bg-[#040406] shadow-2xl shadow-black/35">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.045] px-6 py-4 backdrop-blur-xl">
               <div className="flex items-center gap-3">
-                <span className={`h-2.5 w-2.5 rounded-full ${runtimeReady ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                <span className="text-sm font-bold text-white">{runtimeLabel(runtime)}</span>
-                <span className="text-xs text-white/45">{runtime?.message || 'Checking local tools.'}</span>
+                <span className={`h-2.5 w-2.5 rounded-full ${runtimeReady ? 'bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`} />
+                <span className="text-sm font-black text-white">{runtimeLabel(runtime)}</span>
+                <span className="hidden text-xs font-semibold text-white/38 md:inline">{runtime?.message || 'Checking local tools.'}</span>
               </div>
               <button
                 type="button"
                 onClick={() => refreshRuntime()}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-white/70 hover:border-primary/40 hover:text-white"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-black text-white/70 hover:border-primary/40 hover:text-white"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
                 Refresh
               </button>
             </div>
 
-            <div className="grid min-h-[440px] place-items-center px-5 py-8 text-center">
+            <div className="relative grid min-h-[560px] place-items-center overflow-hidden px-6 py-10 text-center">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(225,29,72,0.22),transparent_32%),radial-gradient(circle_at_20%_100%,rgba(255,255,255,0.08),transparent_30%)]" />
               {!desktop ? (
-                <div className="max-w-md">
+                <div className="relative max-w-md">
                   <AlertTriangle className="mx-auto h-12 w-12 text-primary" />
                   <h2 className="mt-4 text-2xl font-black text-white">Desktop app required</h2>
                   <p className="mt-2 text-sm leading-6 text-white/60">
@@ -463,40 +464,42 @@ export default function LocalPlayer() {
                   </p>
                 </div>
               ) : !source ? (
-                <div className="max-w-md">
-                  <MonitorPlay className="mx-auto h-14 w-14 text-white/30" />
-                  <h2 className="mt-4 text-2xl font-black text-white">No source selected</h2>
-                  <p className="mt-2 text-sm leading-6 text-white/58">
-                    Open Sources, pick a result, then choose Play locally.
+                <div className="relative max-w-md">
+                  <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-[2rem] border border-white/10 bg-white/[0.06] text-primary shadow-2xl shadow-black/25">
+                    <MonitorPlay className="h-11 w-11" />
+                  </div>
+                  <h2 className="mt-6 text-3xl font-black text-white">Choose a source to begin</h2>
+                  <p className="mt-3 text-sm leading-6 text-white/58">
+                    Search from the panel, select the best episode match, then start local playback.
                   </p>
                   <Link
                     to="/nyaa?desktop=1"
-                    className="mt-5 inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-black text-white hover:bg-primary/90"
+                    className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-primary px-6 py-3 text-sm font-black text-white shadow-xl shadow-primary/25 hover:bg-primary/90"
                   >
                     <Download className="h-4 w-4" />
                     Find a source
                   </Link>
                 </div>
               ) : (
-                <div className="w-full max-w-2xl">
-                  <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-primary/25 bg-primary/12 text-primary">
+                <div className="relative w-full max-w-3xl">
+                  <div className="mx-auto mb-7 flex h-24 w-24 items-center justify-center rounded-[2rem] border border-primary/25 bg-primary/15 text-primary shadow-2xl shadow-primary/10">
                     {status === 'starting' ? <Loader2 className="h-9 w-9 animate-spin" /> : status === 'ready' ? <CheckCircle2 className="h-9 w-9" /> : <Play className="ml-1 h-9 w-9 fill-current" />}
                   </div>
 
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Selected source</p>
-                  <h2 className="mx-auto mt-2 line-clamp-2 max-w-2xl text-2xl font-black leading-tight text-white">
+                  <h2 className="mx-auto mt-3 line-clamp-2 max-w-3xl text-3xl font-black leading-tight text-white md:text-5xl">
                     {shortTitle(source)}
                   </h2>
-                  <p className="mx-auto mt-3 line-clamp-2 max-w-2xl text-sm leading-6 text-white/55">{source.title}</p>
+                  <p className="mx-auto mt-4 line-clamp-2 max-w-2xl text-sm leading-6 text-white/50">{source.title}</p>
 
-                  <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs font-bold text-white/62">
-                    {source.episode ? <span className="rounded-md bg-white/8 px-2.5 py-1">Episode {source.episode}</span> : null}
-                    {source.size ? <span className="rounded-md bg-white/8 px-2.5 py-1">{source.size}</span> : null}
-                    {source.seeders ? <span className="rounded-md bg-white/8 px-2.5 py-1">{source.seeders} seeders</span> : null}
+                  <div className="mt-5 flex flex-wrap justify-center gap-2 text-xs font-black text-white/66">
+                    {source.episode ? <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5">Episode {source.episode}</span> : null}
+                    {source.size ? <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5">{source.size}</span> : null}
+                    {source.seeders ? <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1.5">{source.seeders} seeders</span> : null}
                   </div>
 
                   {sourceWarnings.length ? (
-                    <div className="mx-auto mt-4 max-w-xl space-y-2 text-left">
+                    <div className="mx-auto mt-5 max-w-xl space-y-2 text-left">
                       {sourceWarnings.map((warning) => (
                         <div key={warning} className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
                           {warning}
@@ -505,12 +508,12 @@ export default function LocalPlayer() {
                     </div>
                   ) : null}
 
-                  <div className="mt-8 flex flex-wrap justify-center gap-3">
+                  <div className="mt-9 flex flex-wrap justify-center gap-3">
                     <button
                       type="button"
                       onClick={start}
                       disabled={!canPlay}
-                      className="inline-flex min-w-[180px] items-center justify-center gap-3 rounded-xl bg-primary px-7 py-4 text-base font-black text-white shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
+                      className="inline-flex min-w-[190px] items-center justify-center gap-3 rounded-2xl bg-primary px-8 py-4 text-base font-black text-white shadow-xl shadow-primary/25 transition-transform hover:-translate-y-0.5 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {status === 'starting' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />}
                       {status === 'starting' ? 'Starting' : 'Play'}
@@ -519,7 +522,7 @@ export default function LocalPlayer() {
                       type="button"
                       onClick={startDownloadOnly}
                       disabled={!desktop || !source || !runtimeReady || downloadStatus === 'starting'}
-                      className="inline-flex min-w-[150px] items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-45"
+                      className="inline-flex min-w-[150px] items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-4 text-sm font-black text-white backdrop-blur-xl hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {downloadStatus === 'starting' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                       Download
@@ -528,7 +531,7 @@ export default function LocalPlayer() {
                       type="button"
                       onClick={stopActive}
                       disabled={!activeTorrentId && status !== 'starting' && downloadStatus !== 'starting'}
-                      className="inline-flex min-w-[110px] items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white/72 hover:border-red-400/40 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-35"
+                      className="inline-flex min-w-[110px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-4 text-sm font-black text-white/72 backdrop-blur-xl hover:border-red-400/40 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-35"
                     >
                       Stop
                     </button>
@@ -536,7 +539,7 @@ export default function LocalPlayer() {
                       type="button"
                       onClick={reopenPlayer}
                       disabled={!activeTorrentId || !runtimeReady}
-                      className="inline-flex min-w-[130px] items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white/72 hover:border-primary/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                      className="inline-flex min-w-[130px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-4 text-sm font-black text-white/72 backdrop-blur-xl hover:border-primary/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
                     >
                       Open MPV
                     </button>
@@ -573,7 +576,7 @@ export default function LocalPlayer() {
           </div>
 
           {playback ? (
-            <div className="rounded-2xl border border-border bg-[var(--glass)] p-5">
+            <div className="rounded-[2rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl shadow-black/15 backdrop-blur-xl">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Stream status</p>
@@ -599,25 +602,25 @@ export default function LocalPlayer() {
         </div>
 
         <aside className="space-y-5">
-          <section className="rounded-2xl border border-border bg-[var(--glass)] p-4">
+          <section className="rounded-[2rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl shadow-black/15 backdrop-blur-xl">
             <div className="flex items-center gap-2">
               <Search className="h-4 w-4 text-primary" />
-              <h2 className="font-black text-foreground">Find sources here</h2>
+              <h2 className="font-black text-white">Source command</h2>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">Search and switch sources without leaving the player.</p>
+            <p className="mt-1 text-xs text-white/42">Search, filter, and switch playback sources without leaving the player.</p>
 
             <div className="mt-4 space-y-3">
               <input
                 value={sourceQuery}
                 onChange={(event) => setSourceQuery(event.target.value)}
-                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary"
+                className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/28 focus:border-primary"
                 placeholder="Anime title"
               />
               <div className="grid grid-cols-[1fr_120px] gap-2">
                 <select
                   value={selectedEpisode}
                   onChange={(event) => setSelectedEpisode(event.target.value)}
-                  className="rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary [&>option]:bg-background"
+                  className="rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-sm font-bold text-white outline-none focus:border-primary [&>option]:bg-background"
                 >
                   <option value="">Batch / no episode</option>
                   {Array.from({ length: 200 }, (_, index) => index + 1).map((episode) => (
@@ -627,7 +630,7 @@ export default function LocalPlayer() {
                 <select
                   value={quality}
                   onChange={(event) => setQuality(event.target.value as typeof quality)}
-                  className="rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary [&>option]:bg-background"
+                  className="rounded-2xl border border-white/10 bg-black/25 px-3 py-3 text-sm font-bold text-white outline-none focus:border-primary [&>option]:bg-background"
                 >
                   <option value="1080p">1080p</option>
                   <option value="720p">720p</option>
@@ -646,14 +649,14 @@ export default function LocalPlayer() {
                     key={label}
                     type="button"
                     onClick={() => applyPreset(nextQuality as typeof quality, queryLabel)}
-                    className="rounded-lg border border-border bg-background/45 px-3 py-2 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+                    className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2.5 text-xs font-black text-white/72 hover:border-primary/40 hover:text-white"
                   >
                     {label}
                   </button>
                 ))}
               </div>
               {selectedEpisode ? (
-                <label className="flex cursor-pointer items-center justify-between rounded-lg border border-border bg-background/45 px-3 py-2 text-xs font-bold text-muted-foreground">
+                <label className="flex cursor-pointer items-center justify-between rounded-2xl border border-white/10 bg-black/25 px-3 py-2.5 text-xs font-bold text-white/48">
                   <span>Prefer exact episode matches</span>
                   <input
                     type="checkbox"
@@ -670,7 +673,7 @@ export default function LocalPlayer() {
                   if (submittedSourceQuery === builtSourceQuery) refetchSources();
                 }}
                 disabled={sourceQuery.trim().length < 2 || sourcesLoading}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-3 py-3 text-sm font-black text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {sourcesLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 {sourcesLoading ? 'Searching' : 'Search sources'}
@@ -679,7 +682,7 @@ export default function LocalPlayer() {
                 <button
                   type="button"
                   onClick={chooseBestSource}
-                  className="w-full rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm font-black text-emerald-300 hover:bg-emerald-500/15"
+                  className="w-full rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2.5 text-sm font-black text-emerald-300 hover:bg-emerald-500/15"
                 >
                   Select best result
                 </button>
@@ -690,7 +693,7 @@ export default function LocalPlayer() {
               {sourcesLoading ? (
                 <div className="space-y-2">
                   {[0, 1, 2].map((item) => (
-                    <div key={item} className="h-20 animate-pulse rounded-xl border border-border bg-background/45" />
+                    <div key={item} className="h-20 animate-pulse rounded-2xl border border-white/10 bg-black/25" />
                   ))}
                 </div>
               ) : sourcesError ? (
@@ -700,7 +703,7 @@ export default function LocalPlayer() {
               ) : rankedSearchedSources.length ? (
                 <>
                   {selectedEpisode ? (
-                    <div className="rounded-xl border border-border bg-background/35 px-3 py-2 text-xs font-bold text-muted-foreground">
+                    <div className="rounded-2xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-bold text-white/45">
                       {exactEpisodeCount
                         ? `${exactEpisodeCount} exact episode match${exactEpisodeCount === 1 ? '' : 'es'} found.`
                         : 'No exact episode marker found; showing best related sources.'}
@@ -714,14 +717,14 @@ export default function LocalPlayer() {
                     key={torrent.infoHash || torrent.magnet}
                     type="button"
                     onClick={() => selectTorrentSource(torrent)}
-                    className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                    className={`w-full rounded-2xl border p-3 text-left transition-colors ${
                       active
                         ? 'border-primary/40 bg-primary/10'
-                        : 'border-border bg-background/45 hover:border-primary/30'
+                        : 'border-white/10 bg-black/25 hover:border-primary/30 hover:bg-primary/10'
                     }`}
                   >
-                    <span className="line-clamp-2 text-sm font-bold text-foreground">{torrent.title}</span>
-                    <span className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-muted-foreground">
+                    <span className="line-clamp-2 text-sm font-bold text-white">{torrent.title}</span>
+                    <span className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-white/42">
                       <span>Score {sourceQualityScore(torrent)}</span>
                       <span>{torrent.size}</span>
                       <span>{torrent.seeders} seeders</span>
@@ -740,18 +743,18 @@ export default function LocalPlayer() {
               })}
                 </>
               ) : sourceQuery.trim().length >= 2 ? (
-                <div className="rounded-xl border border-dashed border-border p-4 text-sm leading-6 text-muted-foreground">
+                <div className="rounded-2xl border border-dashed border-white/12 p-4 text-sm leading-6 text-white/45">
                   No sources found for this search yet.
                 </div>
               ) : null}
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border bg-[var(--glass)] p-4">
+          <section className="rounded-[2rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl shadow-black/15 backdrop-blur-xl">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="font-black text-foreground">Recent sources</h2>
-                <p className="mt-1 text-xs text-muted-foreground">Click one to switch playback.</p>
+                <h2 className="font-black text-white">Recent sources</h2>
+                <p className="mt-1 text-xs text-white/42">Click one to switch playback.</p>
               </div>
               {sourceOptions.length ? (
                 <button
@@ -773,14 +776,14 @@ export default function LocalPlayer() {
                     key={item.magnet}
                     type="button"
                     onClick={() => selectSource(item)}
-                    className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                    className={`w-full rounded-2xl border p-3 text-left transition-colors ${
                       active
                         ? 'border-primary/40 bg-primary/10'
-                        : 'border-border bg-background/45 hover:border-primary/30'
+                        : 'border-white/10 bg-black/25 hover:border-primary/30 hover:bg-primary/10'
                     }`}
                   >
-                    <span className="line-clamp-2 text-sm font-bold text-foreground">{shortTitle(item)}</span>
-                    <span className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-muted-foreground">
+                    <span className="line-clamp-2 text-sm font-bold text-white">{shortTitle(item)}</span>
+                    <span className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-white/42">
                       {item.episode ? <span>Ep {item.episode}</span> : null}
                       {item.size ? <span>{item.size}</span> : null}
                       {item.seeders ? <span>{item.seeders} seeders</span> : null}
@@ -788,17 +791,17 @@ export default function LocalPlayer() {
                   </button>
                 );
               }) : (
-                <div className="rounded-xl border border-dashed border-border p-4 text-sm leading-6 text-muted-foreground">
+                <div className="rounded-2xl border border-dashed border-white/12 p-4 text-sm leading-6 text-white/45">
                   No recent sources yet. Start from the Sources page.
                 </div>
               )}
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border bg-[var(--glass)] p-4">
+          <section className="rounded-[2rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl shadow-black/15 backdrop-blur-xl">
             <div className="flex items-center gap-2">
               <HardDrive className="h-4 w-4 text-primary" />
-              <h2 className="font-black text-foreground">Local tools</h2>
+              <h2 className="font-black text-white">Local tools</h2>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <div className={`rounded-xl border px-3 py-3 ${runtime?.torrent_engine_configured ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10'}`}>
