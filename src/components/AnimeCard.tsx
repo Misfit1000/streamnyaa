@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Check, Heart } from 'lucide-react';
+import { Plus, Check, Heart, Star } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { animePath } from '../lib/slug';
 import { fetchAnimeDetails } from '../api/jikan';
@@ -50,9 +50,9 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           staleTime: 1000 * 60 * 30,
         });
       }}
-      className="group relative block w-full"
+      className="streamnyaa-anime-card group relative block w-full"
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-secondary shadow-lg shadow-black/16 ring-1 ring-white/[0.03]">
+      <div className="streamnyaa-anime-card-media relative aspect-[2/3] overflow-hidden rounded-xl bg-secondary shadow-lg shadow-black/16 ring-1 ring-white/[0.03]">
         <img
           src={anime.images.jpg.large_image_url || anime.images.jpg.image_url}
           alt={anime.title}
@@ -86,7 +86,10 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           </div>
           <div className="text-[10px] text-zinc-300 flex justify-between items-center">
             <span>{anime.latestEpisode ? `EP ${anime.latestEpisode}` : (anime.episodes ? `EP ${anime.episodes}` : anime.type)}</span>
-            <span className="text-yellow-400 font-medium">⭐ {anime.score || 'N/A'}</span>
+            <span className="inline-flex items-center gap-1 text-yellow-400 font-medium">
+              <Star className="h-2.5 w-2.5 fill-current" />
+              {anime.score || 'N/A'}
+            </span>
           </div>
         </div>
 

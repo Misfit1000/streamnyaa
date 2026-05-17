@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
+  ArrowRight,
   BarChart3,
   CalendarDays,
   Download,
@@ -13,6 +14,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserCircle,
+  Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getDesktopRuntimeStatus, loadDesktopPlaybackSettings, type DesktopRuntimeStatus } from '../lib/desktop';
@@ -35,6 +37,150 @@ const quickItems = [
   { to: '/local-player?desktop=1', label: 'Player', icon: MonitorPlay },
   { to: '/my-list', label: 'Library', icon: Library },
 ];
+
+const routeImages = {
+  sources: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/21-jR5z3nlQF9m3.jpg',
+  player: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/16498-C6FPmWm59CyP.jpg',
+  browse: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/147105-oOj4tG6IujS7.jpg',
+  schedule: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/5114-4EP2X4MMDi0I.jpg',
+  library: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/11061-i7VYEDTd0HXT.jpg',
+  compare: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/1735-MdBQjA6gE1pT.jpg',
+  settings: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/1535-NfoFLxZ2QZ9G.jpg',
+  account: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/19815-RaCx7Qvx3S5N.jpg',
+  admin: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/9253-GBCo1l1b8YV0.jpg',
+  anime: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/1-OquNCNB6srGe.jpg',
+  blog: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/101348-2fhS7Oa92F0L.jpg',
+  default: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/20-HHxhPj5JD13a.jpg',
+};
+
+function routeKey(pathname: string) {
+  if (pathname === '/') return 'home';
+  if (pathname.startsWith('/nyaa')) return 'sources';
+  if (pathname.startsWith('/local-player')) return 'player';
+  if (pathname.startsWith('/search')) return 'browse';
+  if (pathname.startsWith('/schedule')) return 'schedule';
+  if (pathname.startsWith('/my-list')) return 'library';
+  if (pathname.startsWith('/compare')) return 'compare';
+  if (pathname.startsWith('/desktop-settings')) return 'settings';
+  if (pathname.startsWith('/dashboard')) return 'account';
+  if (pathname.startsWith('/admin')) return 'admin';
+  if (pathname.startsWith('/anime') || pathname.startsWith('/manga')) return 'anime';
+  if (pathname.startsWith('/blog')) return 'blog';
+  return 'default';
+}
+
+function getRouteMeta(pathname: string) {
+  const key = routeKey(pathname);
+  const baseActions = {
+    sources: { to: '/nyaa?desktop=1', label: 'Find sources', icon: Download },
+    browse: { to: '/search', label: 'Browse anime', icon: Search },
+    schedule: { to: '/schedule', label: 'Schedule', icon: CalendarDays },
+    player: { to: '/local-player?desktop=1', label: 'Open player', icon: MonitorPlay },
+    library: { to: '/my-list', label: 'My library', icon: Library },
+  };
+
+  const meta = {
+    home: null,
+    sources: {
+      eyebrow: 'Source studio',
+      title: 'Find the cleanest anime source fast.',
+      description: 'Search episode, batch, sub, dub, and quality metadata with source scoring, presets, freshness labels, and local playback handoff.',
+      image: routeImages.sources,
+      stats: ['Quality scoring', 'Episode matching', 'Source presets'],
+      actions: [baseActions.sources, baseActions.player],
+    },
+    player: {
+      eyebrow: 'Local player',
+      title: 'Choose a source, then play it locally.',
+      description: 'A desktop-first playback space with source selector, episode targeting, runtime status, download progress, and fallback player controls.',
+      image: routeImages.player,
+      stats: ['In-app playback', 'Local cache', 'Smart fallback'],
+      actions: [baseActions.sources, baseActions.player],
+    },
+    browse: {
+      eyebrow: 'Anime discovery',
+      title: 'Browse titles without losing context.',
+      description: 'Filter by format, status, rating, and genre, then jump into title pages, source search, related anime, and seasonal hubs.',
+      image: routeImages.browse,
+      stats: ['Genre filters', 'Title pages', 'Clean slugs'],
+      actions: [baseActions.browse, baseActions.sources],
+    },
+    schedule: {
+      eyebrow: 'Release board',
+      title: 'See what is airing next.',
+      description: 'Track current episodes by day, local time, and title page, with quick paths into downloads when an episode has aired.',
+      image: routeImages.schedule,
+      stats: ['Local timezone', 'Airing days', 'Episode labels'],
+      actions: [baseActions.schedule, baseActions.sources],
+    },
+    library: {
+      eyebrow: 'Personal shelf',
+      title: 'Keep favorites and saved anime close.',
+      description: 'Your saved titles, liked anime, recent activity, and account shortcuts stay in one calm desktop workspace.',
+      image: routeImages.library,
+      stats: ['Saved titles', 'Favorites', 'Recent activity'],
+      actions: [baseActions.library, baseActions.browse],
+    },
+    compare: {
+      eyebrow: 'Matchup desk',
+      title: 'Compare anime like a scorecard.',
+      description: 'Pick two titles and compare score, popularity, status, studios, genres, episodes, and recommendations in one view.',
+      image: routeImages.compare,
+      stats: ['Core stats', 'Shared genres', 'Direct links'],
+      actions: [{ to: '/compare', label: 'Start comparing', icon: BarChart3 }, baseActions.browse],
+    },
+    settings: {
+      eyebrow: 'Desktop control',
+      title: 'Tune local playback and storage.',
+      description: 'Check readiness, save player settings, open storage, and keep the desktop app configured without technical clutter.',
+      image: routeImages.settings,
+      stats: ['Readiness', 'Storage', 'Player setup'],
+      actions: [{ to: '/desktop-settings', label: 'Check setup', icon: Settings }, baseActions.player],
+    },
+    account: {
+      eyebrow: 'Account hub',
+      title: 'Your StreamNyaa workspace.',
+      description: 'Saved titles, source history, quick tools, and sign-in synced activity are grouped into a cleaner desktop dashboard.',
+      image: routeImages.account,
+      stats: ['History', 'My list', 'Shortcuts'],
+      actions: [{ to: '/dashboard', label: 'Dashboard', icon: UserCircle }, baseActions.sources],
+    },
+    admin: {
+      eyebrow: 'Admin cockpit',
+      title: 'Manage content and site tools.',
+      description: 'Admin actions stay separate from the user flow, with quick access to blog generation, account tools, and site controls.',
+      image: routeImages.admin,
+      stats: ['Admin tools', 'Blog actions', 'Access'],
+      actions: [{ to: '/admin', label: 'Admin tools', icon: ShieldCheck }, baseActions.browse],
+    },
+    anime: {
+      eyebrow: 'Title room',
+      title: 'Anime details with download-first actions.',
+      description: 'Synopsis, score, genres, schedule context, related titles, and source links live together in a more cinematic title page.',
+      image: routeImages.anime,
+      stats: ['MAL details', 'Related anime', 'Sources'],
+      actions: [baseActions.sources, baseActions.browse],
+    },
+    blog: {
+      eyebrow: 'Anime journal',
+      title: 'Guides and anime stories with better context.',
+      description: 'Read anime articles, related titles, current topic pages, and discovery links without leaving the StreamNyaa design system.',
+      image: routeImages.blog,
+      stats: ['Articles', 'Related anime', 'SEO pages'],
+      actions: [{ to: '/blog', label: 'Read blog', icon: Sparkles }, baseActions.browse],
+    },
+    default: {
+      eyebrow: 'StreamNyaa desktop',
+      title: 'One place for anime discovery.',
+      description: 'Search, compare, track, save, and prepare local playback from a consistent desktop interface.',
+      image: routeImages.default,
+      stats: ['Discovery', 'Sources', 'Local playback'],
+      actions: [baseActions.browse, baseActions.sources],
+    },
+  } as const;
+
+  return meta[key] || meta.default;
+}
 
 function pageTitle(pathname: string) {
   if (pathname === '/') return 'Home';
@@ -90,6 +236,8 @@ export default function DesktopShell() {
   const runtimeReady = Boolean(runtime?.ready);
   const title = pageTitle(location.pathname);
   const statusLabel = useMemo(() => runtimeText(runtime), [runtime]);
+  const currentRouteKey = routeKey(location.pathname);
+  const routeMeta = useMemo(() => getRouteMeta(location.pathname), [location.pathname]);
 
   const submitBrowse = (event: FormEvent) => {
     event.preventDefault();
@@ -254,8 +402,66 @@ export default function DesktopShell() {
           ) : null}
         </header>
 
-        <main className="min-w-0 pb-10">
-          <Outlet />
+        <main className={`desktop-route-main desktop-page-${currentRouteKey} min-w-0 pb-10`}>
+          {routeMeta ? (
+            <section className="desktop-route-hero relative overflow-hidden">
+              <img
+                src={routeMeta.image}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover opacity-40"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-[linear-gradient(90deg,#030305_0%,rgba(3,3,5,0.88)_33%,rgba(3,3,5,0.42)_70%,rgba(3,3,5,0.82)_100%),linear-gradient(0deg,#030305_0%,rgba(3,3,5,0.58)_28%,rgba(3,3,5,0.05)_100%)]" />
+              <div className="relative grid gap-6 px-5 py-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:px-7 lg:py-10">
+                <div className="max-w-3xl">
+                  <p className="text-[11px] font-black uppercase tracking-[0.26em] text-primary">{routeMeta.eyebrow}</p>
+                  <h2 className="mt-3 max-w-3xl text-4xl font-black leading-[0.98] tracking-tight text-white md:text-6xl">
+                    {routeMeta.title}
+                  </h2>
+                  <p className="mt-4 max-w-2xl text-sm font-semibold leading-7 text-white/62 md:text-base">
+                    {routeMeta.description}
+                  </p>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    {routeMeta.actions.map(({ to, label, icon: Icon }, index) => (
+                      <Link
+                        key={`${label}-${to}`}
+                        to={to}
+                        className={`inline-flex h-10 items-center gap-2 rounded px-5 text-sm font-black transition-colors ${
+                          index === 0
+                            ? 'bg-white text-black hover:bg-white/88'
+                            : 'border border-white/18 bg-black/35 text-white backdrop-blur hover:border-white/35'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+
+                <aside className="hidden self-end rounded-2xl border border-white/10 bg-black/35 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl xl:block">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-white/45">
+                      <Zap className="h-3.5 w-3.5 text-primary" />
+                      Smart tools
+                    </span>
+                    <ArrowRight className="h-4 w-4 text-white/35" />
+                  </div>
+                  <div className="mt-4 grid gap-2">
+                    {routeMeta.stats.map((item) => (
+                      <div key={item} className="rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-sm font-black text-white/78">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                </aside>
+              </div>
+            </section>
+          ) : null}
+          <div className="desktop-outlet-wrap">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
