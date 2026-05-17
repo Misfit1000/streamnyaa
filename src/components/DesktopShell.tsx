@@ -3,14 +3,20 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import {
   ArrowRight,
   BarChart3,
+  Bell,
   CalendarDays,
+  ChevronDown,
+  Clock,
+  Compass,
   Download,
   HardDrive,
+  Heart,
   Home,
+  History,
   Library,
+  ListMusic,
+  Menu,
   MonitorPlay,
-  PanelLeftClose,
-  PanelLeftOpen,
   Play,
   Search,
   Settings,
@@ -18,34 +24,26 @@ import {
   Sparkles,
   UserCircle,
   Zap,
+  Minus,
+  Square,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getDesktopRuntimeStatus, loadDesktopPlaybackSettings, loadLocalPlaybackSource, type DesktopRuntimeStatus, type LocalPlaybackSource } from '../lib/desktop';
 
 const navItems = [
   { to: '/', label: 'Home', icon: Home },
-  { to: '/nyaa?desktop=1', label: 'Sources', icon: Download },
-  { to: '/local-player?desktop=1', label: 'Player', icon: MonitorPlay },
-  { to: '/search', label: 'Browse', icon: Search },
-  { to: '/schedule', label: 'Schedule', icon: CalendarDays },
-  { to: '/my-list', label: 'Library', icon: Library },
-  { to: '/compare', label: 'Compare', icon: BarChart3 },
-  { to: '/desktop-settings', label: 'Settings', icon: Settings },
+  { to: '/search', label: 'Explore', icon: Compass },
+  { to: '/schedule', label: 'Calendar', icon: CalendarDays },
+  { to: '/my-list', label: 'My Library', icon: Library },
+  { to: '/nyaa?desktop=1', label: 'Downloads', icon: Download },
+  { to: '/local-player?desktop=1', label: 'Watch Later', icon: Clock },
 ];
 
-const sidebarSections = [
-  {
-    label: 'Watch desk',
-    items: navItems.filter((item) => ['Home', 'Player', 'Library'].includes(item.label)),
-  },
-  {
-    label: 'Find anime',
-    items: navItems.filter((item) => ['Sources', 'Browse', 'Schedule', 'Compare'].includes(item.label)),
-  },
-  {
-    label: 'System',
-    items: navItems.filter((item) => ['Settings'].includes(item.label)),
-  },
+const libraryItems = [
+  { to: '/my-list', label: 'Favorites', icon: Heart },
+  { to: '/dashboard', label: 'History', icon: History },
+  { to: '/compare', label: 'Playlists', icon: ListMusic },
 ];
 
 const quickItems = [
@@ -278,69 +276,57 @@ export default function DesktopShell() {
     <div className="desktop-shell min-h-screen overflow-hidden bg-[#030305] text-foreground">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.20),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(255,255,255,0.08),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.035),transparent_32%)]" />
 
-      <aside className={`fixed inset-y-0 left-0 z-40 hidden border-r border-white/10 bg-[#050507]/78 shadow-2xl shadow-black/50 backdrop-blur-2xl transition-[width] duration-300 lg:flex lg:flex-col ${sidebarCollapsed ? 'w-[92px]' : 'w-[276px]'}`}>
-        <div className="flex items-center justify-between gap-2 p-3">
-          <Link to="/" className={`group flex min-w-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] shadow-xl shadow-black/20 transition-all ${sidebarCollapsed ? 'justify-center p-3' : 'p-4'}`}>
-            <span className={`flex items-center gap-3 ${sidebarCollapsed ? 'justify-center' : ''}`}>
-            <span className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-primary text-white shadow-lg shadow-primary/25">
-              <span className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.45),transparent_45%)]" />
-              <HardDrive className="relative h-5 w-5" />
+      <aside className={`desktop-cinema-sidebar fixed inset-y-0 left-0 z-40 hidden border-r border-white/10 bg-[#111114]/72 shadow-2xl shadow-black/50 backdrop-blur-2xl transition-[width] duration-300 lg:flex lg:flex-col ${sidebarCollapsed ? 'w-[86px]' : 'w-[236px]'}`}>
+        <div className="px-8 pb-5 pt-4">
+          <Link to="/" className="block">
+            <span className={`block text-[24px] font-black leading-tight tracking-[-0.04em] text-white ${sidebarCollapsed ? 'sr-only' : ''}`}>StreamNyaa</span>
+            <span className={`mt-2 block text-[15px] font-semibold uppercase tracking-[0.28em] text-white/52 ${sidebarCollapsed ? 'sr-only' : ''}`}>Desktop</span>
+            <span className={`mt-1 block text-[15px] font-semibold uppercase tracking-[0.28em] text-white/52 ${sidebarCollapsed ? 'sr-only' : ''}`}>Cinema</span>
+            <span className={`hidden h-11 w-11 items-center justify-center rounded-xl bg-primary text-white ${sidebarCollapsed ? 'flex' : ''}`}>
+              <Home className="h-5 w-5" />
             </span>
-            <span className={sidebarCollapsed ? 'hidden' : ''}>
-              <span className="block text-lg font-black tracking-tight text-white">StreamNyaa</span>
-              <span className="block text-[11px] font-bold uppercase tracking-[0.18em] text-white/38">Desktop cinema</span>
-            </span>
-          </span>
-          <span className={`mt-4 grid grid-cols-3 gap-2 ${sidebarCollapsed ? 'hidden' : ''}`}>
-            {['Sources', 'Player', 'List'].map((item) => (
-              <span key={item} className="rounded-xl border border-white/10 bg-black/24 px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide text-white/48">
-                {item}
-              </span>
-            ))}
-          </span>
           </Link>
-          <button
-            type="button"
-            onClick={() => setSidebarCollapsed((value) => !value)}
-            className={`hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.045] text-white/52 hover:border-primary/35 hover:text-white xl:flex ${sidebarCollapsed ? 'absolute right-3 top-[86px]' : ''}`}
-            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-          </button>
         </div>
 
-        <nav className={`flex-1 overflow-y-auto px-3 py-3 ${sidebarCollapsed ? 'space-y-2 pt-8' : 'space-y-5'}`}>
-          {sidebarSections.map((section) => (
-            <div key={section.label}>
-              <p className={`mb-2 px-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/30 ${sidebarCollapsed ? 'sr-only' : ''}`}>{section.label}</p>
-              <div className="space-y-1">
-                {section.items.map(({ to, label, icon: Icon }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={to === '/'}
-                    className={({ isActive }) => `group flex items-center rounded-2xl text-sm font-bold transition-all ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3.5 py-3'} ${
-                      isActive
-                        ? 'bg-white text-black shadow-lg shadow-black/25'
-                        : 'text-white/58 hover:bg-white/[0.075] hover:text-white'
-                    }`}
-                  >
-                    <span className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
-                      location.pathname === to.split('?')[0] || (to !== '/' && location.pathname.startsWith(to.split('?')[0]))
-                        ? 'bg-black/10 text-black'
-                        : 'bg-white/[0.055] text-white/58 group-hover:text-white'
-                    }`}>
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className={sidebarCollapsed ? 'sr-only' : ''}>{label}</span>
-                  </NavLink>
-                ))}
-              </div>
+        <nav className="flex-1 overflow-y-auto px-4 py-2">
+          <div className="space-y-2">
+            {navItems.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === '/'}
+                className={({ isActive }) => `group flex h-11 items-center rounded-md text-[15px] font-medium transition-all ${sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} ${
+                  isActive
+                    ? 'bg-primary/20 text-white shadow-[inset_0_0_0_1px_rgba(244,63,94,0.28)]'
+                    : 'text-white/68 hover:bg-white/[0.06] hover:text-white'
+                }`}
+              >
+                <Icon className={`h-5 w-5 ${location.pathname === to.split('?')[0] || (to !== '/' && location.pathname.startsWith(to.split('?')[0])) ? 'text-primary' : 'text-white/58 group-hover:text-white'}`} />
+                <span className={sidebarCollapsed ? 'sr-only' : ''}>{label}</span>
+              </NavLink>
+            ))}
+          </div>
+
+          <div className="mt-8">
+            <p className={`mb-3 px-3 text-[12px] font-medium uppercase tracking-[0.14em] text-white/42 ${sidebarCollapsed ? 'sr-only' : ''}`}>Library</p>
+            <div className="space-y-2">
+              {libraryItems.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) => `group flex h-11 items-center rounded-md text-[15px] font-medium transition-all ${sidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} ${
+                    isActive ? 'bg-white/10 text-white' : 'text-white/68 hover:bg-white/[0.06] hover:text-white'
+                  }`}
+                >
+                  <Icon className="h-5 w-5 text-white/58 group-hover:text-white" />
+                  <span className={sidebarCollapsed ? 'sr-only' : ''}>{label}</span>
+                </NavLink>
+              ))}
             </div>
-          ))}
+          </div>
         </nav>
 
-        <div className={`space-y-3 border-t border-white/10 p-3 ${sidebarCollapsed ? 'pb-4' : ''}`}>
+        <div className={`space-y-3 border-t border-white/8 p-3 ${sidebarCollapsed ? 'pb-4' : 'hidden'}`}>
           <Link
             to="/local-player?desktop=1"
             className={`block rounded-3xl border border-white/10 bg-[linear-gradient(135deg,rgba(225,29,72,0.16),rgba(255,255,255,0.05))] transition-colors hover:border-primary/45 hover:bg-primary/10 ${sidebarCollapsed ? 'p-3' : 'p-4'}`}
@@ -387,43 +373,54 @@ export default function DesktopShell() {
         </div>
       </aside>
 
-      <div className={`relative min-h-screen transition-[padding-left] duration-300 ${sidebarCollapsed ? 'lg:pl-[92px]' : 'lg:pl-[276px]'}`}>
-        <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050507]/72 backdrop-blur-2xl">
-          <div className="flex h-auto flex-col gap-3 px-4 py-3 lg:h-20 lg:flex-row lg:items-center lg:justify-between lg:px-7 lg:py-0">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="hidden h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.055] text-primary lg:flex">
-                <Sparkles className="h-4 w-4" />
-              </span>
-              <div>
-                <h1 className="truncate text-xl font-black text-white">{title}</h1>
-                <p className="hidden text-xs font-semibold text-white/38 lg:block">Local-first anime source discovery and playback</p>
+      <div className={`relative min-h-screen transition-[padding-left] duration-300 ${sidebarCollapsed ? 'lg:pl-[86px]' : 'lg:pl-[236px]'}`}>
+        <header className="sticky top-0 z-30 bg-[#101014]/78 backdrop-blur-2xl">
+          <div className="flex h-[70px] items-center gap-4 px-6">
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              className="hidden h-11 w-11 items-center justify-center rounded-md border border-white/9 bg-white/[0.045] text-white/75 hover:bg-white/[0.07] lg:flex"
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <Menu className="h-6 w-6" />
+            </button>
+
+            <form onSubmit={submitBrowse} className="relative w-full max-w-[520px]">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/50" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search anime..."
+                className="h-11 w-full rounded-md border border-white/9 bg-white/[0.035] pl-12 pr-16 text-[15px] font-normal text-white outline-none placeholder:text-white/50 focus:border-primary/55 focus:bg-white/[0.055]"
+              />
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded bg-white/[0.06] px-2 py-1 text-[12px] font-medium text-white/44">Ctrl K</span>
+            </form>
+
+            <button
+              type="button"
+              onClick={submitSources}
+              className="hidden h-11 rounded-md border border-white/9 bg-white/[0.045] px-4 text-sm font-medium text-white/72 hover:bg-white/[0.07] xl:inline-flex xl:items-center"
+            >
+              Sources
+            </button>
+
+            <div className="ml-auto flex items-center gap-5">
+              <button className="relative text-white/72 hover:text-white" aria-label="Notifications">
+                <Bell className="h-5 w-5" />
+                <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-primary" />
+              </button>
+              <Link to={user ? '/dashboard' : '/login'} className="flex items-center gap-2">
+                <span className="grid h-9 w-9 place-items-center overflow-hidden rounded-full border border-white/12 bg-[linear-gradient(135deg,#233,#6366f1)]">
+                  <UserCircle className="h-6 w-6 text-white/86" />
+                </span>
+                <ChevronDown className="h-4 w-4 text-white/58" />
+              </Link>
+              <div className="hidden items-center gap-6 pl-8 text-white/62 xl:flex">
+                <Minus className="h-5 w-5" />
+                <Square className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </div>
             </div>
-
-            <form onSubmit={submitBrowse} className="flex w-full max-w-3xl gap-2">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search anime, episode, source..."
-                  className="h-12 w-full rounded-2xl border border-white/10 bg-white/[0.065] pl-11 pr-3 text-sm font-semibold text-white outline-none placeholder:text-white/32 focus:border-primary/70 focus:bg-white/[0.09]"
-                />
-              </div>
-              <button
-                type="submit"
-                className="h-12 rounded-2xl border border-white/10 bg-white/[0.07] px-5 text-sm font-black text-white hover:bg-white/12"
-              >
-                Browse
-              </button>
-              <button
-                type="button"
-                onClick={submitSources}
-                className="h-12 rounded-2xl bg-primary px-5 text-sm font-black text-white shadow-lg shadow-primary/20 hover:bg-primary/90"
-              >
-                Sources
-              </button>
-            </form>
           </div>
 
           <div className="flex gap-1 overflow-x-auto border-t border-white/10 px-3 py-2 lg:hidden">
