@@ -147,6 +147,16 @@ fn configured_command(
         }
     }
 
+    for path in dynamic_windows_command_paths(fallback) {
+        if Path::new(&path).exists() {
+            return Some(path);
+        }
+    }
+
+    if let Some(path) = command_from_path(fallback) {
+        return Some(path);
+    }
+
     Some(fallback.to_string())
 }
 
@@ -160,6 +170,67 @@ fn command_name(value: &str) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or(value)
         .to_ascii_lowercase()
+}
+
+fn dynamic_windows_command_paths(fallback: &str) -> Vec<String> {
+    let name = command_name(fallback);
+    if name != "mpv" && name != "mpv.exe" {
+        return Vec::new();
+    }
+
+    let mut candidates = Vec::new();
+    let mut push_candidate = |base: Option<String>, suffix: &str| {
+        if let Some(base) = clean_value(base) {
+            candidates.push(format!(
+                r"{}\{}",
+                base.trim_end_matches(|ch| ch == '\\' || ch == '/'),
+                suffix
+            ));
+        }
+    };
+
+    push_candidate(env::var("ProgramW6432").ok(), r"MPV Player\mpv.exe");
+    push_candidate(env::var("ProgramW6432").ok(), r"mpv\mpv.exe");
+    push_candidate(env::var("ProgramW6432").ok(), r"mpv.net\mpv.exe");
+    push_candidate(env::var("ProgramFiles").ok(), r"MPV Player\mpv.exe");
+    push_candidate(env::var("ProgramFiles").ok(), r"mpv\mpv.exe");
+    push_candidate(env::var("ProgramFiles").ok(), r"mpv.net\mpv.exe");
+    push_candidate(env::var("ProgramFiles(x86)").ok(), r"MPV Player\mpv.exe");
+    push_candidate(env::var("ProgramFiles(x86)").ok(), r"mpv\mpv.exe");
+    push_candidate(env::var("ProgramFiles(x86)").ok(), r"mpv.net\mpv.exe");
+    push_candidate(env::var("LOCALAPPDATA").ok(), r"Programs\mpv\mpv.exe");
+    push_candidate(env::var("LOCALAPPDATA").ok(), r"Microsoft\WinGet\Links\mpv.exe");
+
+    candidates
+}
+
+fn command_from_path(command: &str) -> Option<String> {
+    let mut names = vec![command.to_string()];
+    if !command.to_ascii_lowercase().ends_with(".exe") {
+        names.push(format!("{}.exe", command));
+    }
+
+    for name in names {
+        let output = Command::new("where.exe")
+            .arg(&name)
+            .stdin(Stdio::null())
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            continue;
+        }
+
+        let path = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty() && Path::new(line).exists())
+            .map(|line| line.to_string());
+        if path.is_some() {
+            return path;
+        }
+    }
+
+    None
 }
 
 fn allowed_command(value: &str, allowed_names: &[&str]) -> bool {
@@ -664,6 +735,12 @@ fn add_local_torrent_blocking(
             .arg("--keep-open=yes")
             .arg("--osc=yes")
             .arg("--osd-bar=yes")
+            .arg("--cache=yes")
+            .arg("--cache-secs=25")
+            .arg("--demuxer-readahead-secs=60")
+            .arg("--demuxer-max-bytes=512MiB")
+            .arg("--network-timeout=30")
+            .arg("--force-seekable=yes")
             .arg("--save-position-on-quit")
             .arg(format!("--title=StreamNyaa - {}", label))
             .stdin(Stdio::null())
@@ -799,6 +876,12 @@ fn open_local_torrent_player_blocking(request: OpenTorrentPlayerRequest) -> Resu
         .arg("--keep-open=yes")
         .arg("--osc=yes")
         .arg("--osd-bar=yes")
+        .arg("--cache=yes")
+        .arg("--cache-secs=25")
+        .arg("--demuxer-readahead-secs=60")
+        .arg("--demuxer-max-bytes=512MiB")
+        .arg("--network-timeout=30")
+        .arg("--force-seekable=yes")
         .arg("--save-position-on-quit")
         .arg(format!("--title=StreamNyaa - {}", title))
         .stdin(Stdio::null())

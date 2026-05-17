@@ -47,6 +47,7 @@ import {
   openLocalTorrentPlayer,
   saveLocalPlaybackSource,
   startLocalDownloadWithSettings,
+  startLocalPlaybackWithSettings,
   stopLocalPlayback,
   type DesktopPlaybackProgress,
   type DesktopPlaybackSettings,
@@ -378,15 +379,15 @@ export default function LocalPlayer() {
     }
 
     setStatus('starting');
-    setMessage('Preparing in-app playback...');
+    setMessage('Opening the local player for reliable playback...');
     setShowResume(false);
     try {
       saveLocalPlaybackSource(source);
       setSourceHistory(loadLocalPlaybackHistory());
-      const result = await startLocalDownloadWithSettings(source, settings);
+      const result = await startLocalPlaybackWithSettings(source, settings);
       if (result.torrent_id) fallbackOpenedRef.current = '';
       setStatus(result.ok ? 'ready' : 'error');
-      setMessage(result.ok ? 'Playback is ready inside StreamNyaa.' : result.message || 'Playback could not start.');
+      setMessage(result.ok ? 'Local player opened. The in-app preview will also appear when the stream is browser-compatible.' : result.message || 'Playback could not start.');
 
       if (result.torrent_id) {
         setActiveTorrentId(result.torrent_id);
@@ -394,7 +395,7 @@ export default function LocalPlayer() {
           ok: true,
           torrent_id: result.torrent_id,
           state: result.state,
-          message: 'In-app stream is preparing. Playback will begin when enough data is ready.',
+          message: 'Reliable playback opened in the local player. The in-app preview is optional and may take longer for some anime files.',
           progress: null,
           downloaded_bytes: null,
           total_bytes: null,
