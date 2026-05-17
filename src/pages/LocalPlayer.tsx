@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -154,6 +154,8 @@ function StatCard({ icon, label, value, detail }: { icon: ReactNode; label: stri
 export default function LocalPlayer() {
   const desktop = isDesktopApp();
   const desktopBridgeReady = Boolean(window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke);
+  const autoplayIntent = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('autoplay') === '1';
+  const autoplayHandledRef = useRef(false);
   const [settings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
   const [source, setSource] = useState<LocalPlaybackSource | null>(() => loadLocalPlaybackSource());
@@ -417,6 +419,12 @@ export default function LocalPlayer() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   });
+
+  useEffect(() => {
+    if (!autoplayIntent || autoplayHandledRef.current || !source || !desktopBridgeReady || !runtimeReady) return;
+    autoplayHandledRef.current = true;
+    void playSelectedSource();
+  }, [autoplayIntent, desktopBridgeReady, runtimeReady, source]);
 
   return (
     <div className="mx-auto max-w-[1680px] px-4 py-5 lg:px-6">

@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa } from '../api/nyaa';
 import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo, Link as LinkIcon, Play } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
@@ -49,6 +49,10 @@ function canSearchDownloads(anime: any) {
   return true;
 }
 
+function isDualAudioSource(title = '') {
+  return /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title);
+}
+
 export default function AnimeDownloads() {
   const { session, user } = useAuth();
   const desktopApp = isDesktopApp();
@@ -57,6 +61,7 @@ export default function AnimeDownloads() {
   const epParam = searchParams.get('ep');
   const typeParam = searchParams.get('type');
   const playIntent = searchParams.get('play') === '1';
+  const autoplayIntent = playIntent && searchParams.get('autoplay') === '1';
   const wideIntent = playIntent || searchParams.get('wide') === '1';
   const selectedEpisodeNumber = epParam && /^\d+$/.test(epParam) ? parseInt(epParam, 10) : null;
   const episodePage = selectedEpisodeNumber ? Math.max(1, Math.ceil(selectedEpisodeNumber / 100)) : 1;
@@ -68,6 +73,7 @@ export default function AnimeDownloads() {
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
   const [showAllSources, setShowAllSources] = useState(false);
+  const autoplayHandledRef = useRef('');
 
   const { data, isLoading: animeLoading } = useQuery({
     queryKey: ['anime', id],
@@ -103,27 +109,27 @@ export default function AnimeDownloads() {
         return t.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
       };
 
-      const performSearch = async (t: string, ep: string) => {
+      const performSearch = async (t: string, ep: string, preferDub = isDub) => {
         if (!t) return [];
         let query = `${cleanTitle(t)}`;
         if (ep) query += ` ${ep}`;
         if (effectiveDownloadFilter && effectiveDownloadFilter !== 'RAW') query += ` ${effectiveDownloadFilter}`;
-        if (isDub) query += ' dub';
+        if (preferDub) query += ' dub';
         return await searchNyaa(query, effectiveDownloadFilter === 'RAW' ? '1_4' : '1_2', '0', '1', {
           pages: showAllSources || wideIntent ? 3 : 1,
           wide: showAllSources || wideIntent,
         });
       };
 
-      const trySearches = async (epNumStr: string) => {
+      const trySearches = async (epNumStr: string, preferDub = isDub) => {
         const titles = [romaji, english, native].filter((title, index, list): title is string => Boolean(title) && list.indexOf(title) === index);
         if (showAllSources) {
-          const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr)));
+          const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr, preferDub)));
           return dedupeNyaaItems(searches.flat());
         }
 
         for (const title of titles) {
-          const items = await performSearch(title, epNumStr);
+          const items = await performSearch(title, epNumStr, preferDub);
           if (items.length > 0) return items;
         }
         return [];
@@ -158,6 +164,14 @@ export default function AnimeDownloads() {
       // Secondary fallback without episode number at all (useful for movies or single OVAs)
       if (results.length === 0 && epParam === '1') {
         results = await trySearches("");
+      }
+
+      // If the watch flow prefers dual audio but nothing exists, fall back to the
+      // healthiest normal release so playback still opens.
+      if (results.length === 0 && isDub && playIntent) {
+        results = await trySearches(epStr, false);
+        if (results.length === 0 && epParam && epStr !== epParam) results = await trySearches(epParam, false);
+        if (results.length === 0 && epParam) results = await trySearches("", false);
       }
       
       const filteredResults = removeBatchResults(applyAudioFilter(results));
@@ -243,7 +257,16 @@ export default function AnimeDownloads() {
         return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
     }
   });
-  const topSource = sortedTorrents[0];
+  const autoplaySource = useMemo(() => {
+    const candidates = [...(torrents || [])].sort((a, b) => {
+      const dualDelta = Number(isDualAudioSource(b.title)) - Number(isDualAudioSource(a.title));
+      if (dualDelta) return dualDelta;
+      if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
+      return sourceQualityScore(b) - sourceQualityScore(a);
+    });
+    return candidates[0];
+  }, [torrents]);
+  const topSource = autoplayIntent && autoplaySource ? autoplaySource : sortedTorrents[0];
   const visibleTorrents = showAllSources ? sortedTorrents : sortedTorrents.slice(0, 5);
   const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
   const totalSeeders = sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0);
@@ -308,8 +331,17 @@ export default function AnimeDownloads() {
       seeders: torrent.seeders,
     });
     recordDownloadAction(torrent, 'open');
-    window.location.href = window.location.search.includes('desktop=1') ? '/local-player?desktop=1' : '/local-player';
+    const query = window.location.search.includes('desktop=1') || autoplayIntent ? '?desktop=1&autoplay=1' : '';
+    window.location.href = `/local-player${query}`;
   };
+
+  useEffect(() => {
+    if (!desktopApp || !autoplayIntent || torrentsLoading || !autoplaySource) return;
+    const key = autoplaySource.magnet || autoplaySource.infoHash || autoplaySource.title;
+    if (!key || autoplayHandledRef.current === key) return;
+    autoplayHandledRef.current = key;
+    openLocalPlayer(autoplaySource);
+  }, [desktopApp, autoplayIntent, torrentsLoading, autoplaySource]);
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
