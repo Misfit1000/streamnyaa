@@ -252,7 +252,7 @@ export async function stopLocalPlayback(torrentId: string) {
   });
 }
 
-export async function openLocalTorrentPlayer(torrentId: string, settings = loadDesktopPlaybackSettings()) {
+export async function openLocalTorrentPlayer(torrentId: string, title = 'Local stream', settings = loadDesktopPlaybackSettings()) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
     throw new Error('Local playback is only available inside the StreamNyaa desktop app.');
@@ -261,6 +261,7 @@ export async function openLocalTorrentPlayer(torrentId: string, settings = loadD
   return invoke<DesktopPlaybackStatus>('open_local_torrent_player', {
     request: {
       torrent_id: torrentId,
+      title,
       settings,
     },
   });

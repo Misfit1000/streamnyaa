@@ -90,6 +90,7 @@ struct StopPlaybackRequest {
 #[derive(Deserialize)]
 struct OpenTorrentPlayerRequest {
     torrent_id: String,
+    title: Option<String>,
     settings: Option<DesktopSettings>,
 }
 
@@ -659,6 +660,12 @@ fn add_local_torrent_blocking(
 
         Command::new(&player_path)
             .arg(&playlist_url)
+            .arg("--force-window=yes")
+            .arg("--keep-open=yes")
+            .arg("--osc=yes")
+            .arg("--osd-bar=yes")
+            .arg("--save-position-on-quit")
+            .arg(format!("--title=StreamNyaa - {}", label))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -784,9 +791,16 @@ fn open_local_torrent_player_blocking(request: OpenTorrentPlayerRequest) -> Resu
         .map_err(|error| format!("Could not create local cache folder: {}", error))?;
     start_rqbit_server(&engine_path, &runtime.cache_dir)?;
 
+    let title = clean_value(request.title).unwrap_or_else(|| "Local stream".to_string());
     let playlist_url = format!("http://127.0.0.1:3030/torrents/{}/playlist", percent_encode(torrent_id));
     Command::new(&player_path)
         .arg(&playlist_url)
+        .arg("--force-window=yes")
+        .arg("--keep-open=yes")
+        .arg("--osc=yes")
+        .arg("--osd-bar=yes")
+        .arg("--save-position-on-quit")
+        .arg(format!("--title=StreamNyaa - {}", title))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -797,7 +811,7 @@ fn open_local_torrent_player_blocking(request: OpenTorrentPlayerRequest) -> Resu
         ok: true,
         state: "opened".to_string(),
         message: "The active local stream opened.".to_string(),
-        title: "Local stream".to_string(),
+        title,
         torrent_id: Some(torrent_id.to_string()),
         playlist_url: Some(playlist_url),
     })

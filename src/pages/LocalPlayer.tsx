@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -22,6 +22,7 @@ import {
   loadDesktopPlaybackSettings,
   loadLocalPlaybackHistory,
   loadLocalPlaybackSource,
+  openLocalTorrentPlayer,
   saveLocalPlaybackSource,
   startLocalDownloadWithSettings,
   stopLocalPlayback,
@@ -109,6 +110,7 @@ export default function LocalPlayer() {
   const [submittedSourceQuery, setSubmittedSourceQuery] = useState('');
   const [autoSelectedQuery, setAutoSelectedQuery] = useState('');
   const [strictEpisode, setStrictEpisode] = useState(true);
+  const fallbackOpenedRef = useRef('');
 
   const sourceOptions = sourceHistory.length ? sourceHistory : source ? [source] : [];
   const runtimeReady = Boolean(runtime?.ready);
@@ -287,6 +289,7 @@ export default function LocalPlayer() {
       saveLocalPlaybackSource(source);
       setSourceHistory(loadLocalPlaybackHistory());
       const result = await startLocalDownloadWithSettings(source, settings);
+      if (result.torrent_id) fallbackOpenedRef.current = '';
       setStatus(result.ok ? 'ready' : 'error');
       setMessage(result.ok ? 'Playback is ready inside StreamNyaa.' : result.message || 'Playback could not start.');
 
@@ -363,6 +366,37 @@ export default function LocalPlayer() {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Could not stop local playback.');
     }
+  };
+
+  const openDedicatedPlayer = async (reason = 'Opening the dedicated player...') => {
+    if (!activeTorrentId) {
+      setMessage('Start a source first.');
+      return;
+    }
+
+    setMessage(reason);
+    try {
+      const result = await openLocalTorrentPlayer(
+        activeTorrentId,
+        source ? shortTitle(source) : 'Local stream',
+        settings,
+      );
+      setStatus(result.ok ? 'ready' : 'error');
+      setMessage(result.ok ? 'Dedicated player opened. It supports more anime video formats than the in-app preview.' : result.message || 'Dedicated player could not open.');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'Could not open the dedicated player.');
+    }
+  };
+
+  const handleEmbeddedPlayerError = () => {
+    if (!activeTorrentId || fallbackOpenedRef.current === activeTorrentId) {
+      setMessage('This source is not playable in the in-app preview. Try the dedicated player or choose another source.');
+      return;
+    }
+
+    fallbackOpenedRef.current = activeTorrentId;
+    void openDedicatedPlayer('This source needs the dedicated player. Opening it now...');
   };
 
   return (
@@ -444,8 +478,10 @@ export default function LocalPlayer() {
                         src={playbackUrl}
                         controls
                         autoPlay
+                        playsInline
+                        preload="auto"
                         className="aspect-video w-full bg-black"
-                        onError={() => setMessage('The selected file is preparing or uses a format this in-app player cannot decode yet. Try another source with MP4/H.264 or let it buffer longer.')}
+                        onError={handleEmbeddedPlayerError}
                       />
                     </div>
                   ) : (
@@ -502,6 +538,14 @@ export default function LocalPlayer() {
                       className="inline-flex min-w-[110px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-4 text-sm font-black text-white/72 backdrop-blur-xl hover:border-red-400/40 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-35"
                     >
                       Stop
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openDedicatedPlayer()}
+                      disabled={!activeTorrentId || !runtimeReady}
+                      className="inline-flex min-w-[160px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-4 text-sm font-black text-white/72 backdrop-blur-xl hover:border-primary/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                    >
+                      Dedicated player
                     </button>
                   </div>
 
