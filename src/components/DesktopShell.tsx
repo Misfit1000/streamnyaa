@@ -15,7 +15,6 @@ import {
   Menu,
   MonitorPlay,
   Search,
-  Settings,
   ShieldCheck,
   Sparkles,
   UserCircle,
@@ -136,32 +135,22 @@ export default function DesktopShell() {
         </nav>
 
         <div className="border-t border-white/8 p-3">
-          <div className={`grid gap-2 ${sidebarCollapsed ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          <Link
+            to={user ? '/dashboard' : '/login'}
+            className="flex items-center justify-center gap-2 rounded-md px-3 py-2.5 text-xs font-medium text-white/56 hover:bg-white/[0.055] hover:text-white"
+          >
+            <UserCircle className="h-4 w-4" />
+            <span className={sidebarCollapsed ? 'sr-only' : ''}>{user ? 'Account' : 'Sign in'}</span>
+          </Link>
+          {isAdmin ? (
             <Link
-              to={user ? '/dashboard' : '/login'}
-              className="flex items-center justify-center gap-2 rounded-md px-3 py-2.5 text-xs font-medium text-white/56 hover:bg-white/[0.055] hover:text-white"
+              to="/admin"
+              className="mt-2 flex items-center justify-center gap-2 rounded-md px-3 py-2.5 text-xs font-medium text-white/56 hover:bg-white/[0.055] hover:text-white"
             >
-              <UserCircle className="h-4 w-4" />
-              <span className={sidebarCollapsed ? 'sr-only' : ''}>{user ? 'Account' : 'Sign in'}</span>
+              <ShieldCheck className="h-4 w-4" />
+              <span className={sidebarCollapsed ? 'sr-only' : ''}>Admin</span>
             </Link>
-            {isAdmin ? (
-              <Link
-                to="/admin"
-                className="flex items-center justify-center gap-2 rounded-md px-3 py-2.5 text-xs font-medium text-white/56 hover:bg-white/[0.055] hover:text-white"
-              >
-                <ShieldCheck className="h-4 w-4" />
-                <span className={sidebarCollapsed ? 'sr-only' : ''}>Admin</span>
-              </Link>
-            ) : (
-              <Link
-                to="/desktop-settings"
-                className="flex items-center justify-center gap-2 rounded-md px-3 py-2.5 text-xs font-medium text-white/56 hover:bg-white/[0.055] hover:text-white"
-              >
-                <Settings className="h-4 w-4" />
-                <span className={sidebarCollapsed ? 'sr-only' : ''}>Setup</span>
-              </Link>
-            )}
-          </div>
+          ) : null}
         </div>
       </aside>
 

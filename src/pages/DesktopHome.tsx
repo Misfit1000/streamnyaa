@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Download, Info, Play, Search, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, Play, Search } from 'lucide-react';
 import Seo from '../components/Seo';
 import { fetchPopularAnime, fetchRecentEpisodes, fetchSeasonalAnime, fetchTopAiring } from '../api/jikan';
 import { animePath } from '../lib/slug';
@@ -210,16 +210,6 @@ export default function DesktopHome() {
           {popular.map((anime: any, index: number) => (
             <ContinueCard key={`popular-${anime.mal_id || index}`} anime={anime} to={animePath(anime)} episode={anime.episodes || index + 1} />
           ))}
-          <Link to="/nyaa?desktop=1" className="flex h-[118px] w-[238px] shrink-0 flex-col justify-center rounded-lg border border-white/9 bg-white/[0.055] px-5 text-white hover:bg-white/[0.08]">
-            <Download className="h-5 w-5 text-primary" />
-            <span className="mt-3 text-[15px] font-medium">Download Sources</span>
-            <span className="mt-1 text-[13px] text-white/45">Search by anime, quality, episode, or batch.</span>
-          </Link>
-          <Link to="/search" className="flex h-[118px] w-[238px] shrink-0 flex-col justify-center rounded-lg border border-white/9 bg-white/[0.055] px-5 text-white hover:bg-white/[0.08]">
-            <Star className="h-5 w-5 text-primary" />
-            <span className="mt-3 text-[15px] font-medium">Explore Anime</span>
-            <span className="mt-1 text-[13px] text-white/45">Filter by score, format, season, and status.</span>
-          </Link>
         </div>
       </section>
     </div>
