@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Info, Play, Search } from 'lucide-react';
@@ -87,17 +87,42 @@ function SourceCard({ source }: { source: LocalPlaybackSource }) {
 
 export default function DesktopHome() {
   const recentSources = loadLocalPlaybackHistory().slice(0, 5);
+  const [heroIndex, setHeroIndex] = useState(0);
   const { data: seasonalData, isLoading } = useQuery({ queryKey: ['desktop-seasonal'], queryFn: fetchSeasonalAnime, staleTime: 1000 * 60 * 12 });
   const { data: topData } = useQuery({ queryKey: ['desktop-top-airing'], queryFn: fetchTopAiring, staleTime: 1000 * 60 * 12 });
   const { data: recentEpisodeData } = useQuery({ queryKey: ['desktop-recent-episodes'], queryFn: fetchRecentEpisodes, staleTime: 1000 * 60 * 5 });
   const { data: popularData } = useQuery({ queryKey: ['desktop-popular'], queryFn: fetchPopularAnime, staleTime: 1000 * 60 * 30 });
 
-  const heroPool = seasonalData?.data || topData?.data || [];
-  const hero = useMemo(() => heroPool.find((anime: any) => imageFor(anime)) || heroPool[0], [heroPool]);
+  const heroPool = useMemo(() => {
+    const seasonal = (seasonalData?.data || []).filter((anime: any) => imageFor(anime));
+    const topSeasonal = [...seasonal]
+      .sort((a: any, b: any) => (b.score || 0) - (a.score || 0))
+      .slice(0, 8);
+    return topSeasonal.length ? topSeasonal : (topData?.data || []).filter((anime: any) => imageFor(anime)).slice(0, 8);
+  }, [seasonalData?.data, topData?.data]);
+  const hero = heroPool[heroIndex] || heroPool[0];
   const continueItems = (recentEpisodeData?.data || topData?.data || seasonalData?.data || []).slice(0, 5);
   const latestEpisodes = (recentEpisodeData?.data || []).slice(0, 6);
   const trending = (seasonalData?.data || topData?.data || []).slice(0, 6);
   const popular = (popularData?.data || []).slice(0, 6);
+  const heroCount = heroPool.length;
+
+  useEffect(() => {
+    setHeroIndex(0);
+  }, [heroPool]);
+
+  useEffect(() => {
+    if (heroCount < 2) return undefined;
+    const timer = window.setInterval(() => {
+      setHeroIndex((index) => (index + 1) % heroCount);
+    }, 7000);
+    return () => window.clearInterval(timer);
+  }, [heroCount]);
+
+  const moveHero = (direction: 1 | -1) => {
+    if (!heroCount) return;
+    setHeroIndex((index) => (index + direction + heroCount) % heroCount);
+  };
 
   return (
     <div className="desktop-home-cinema px-6 pb-9 pt-3">
@@ -152,19 +177,37 @@ export default function DesktopHome() {
           </div>
 
           <div className="absolute right-12 top-1/2 flex -translate-y-1/2 gap-6">
-            <button className="grid h-10 w-10 place-items-center rounded-full bg-black/36 text-white/80 backdrop-blur hover:bg-white/15" aria-label="Previous">
+            <button
+              type="button"
+              onClick={() => moveHero(-1)}
+              className="grid h-10 w-10 place-items-center rounded-full bg-black/36 text-white/80 backdrop-blur hover:bg-white/15"
+              aria-label="Previous seasonal pick"
+            >
               <ChevronLeft className="h-5 w-5" />
             </button>
-            <button className="grid h-10 w-10 place-items-center rounded-full bg-black/36 text-white/80 backdrop-blur hover:bg-white/15" aria-label="Next">
+            <button
+              type="button"
+              onClick={() => moveHero(1)}
+              className="grid h-10 w-10 place-items-center rounded-full bg-black/36 text-white/80 backdrop-blur hover:bg-white/15"
+              aria-label="Next seasonal pick"
+            >
               <ChevronRight className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 gap-4">
-            {[0, 1, 2, 3, 4, 5, 6, 7].map((item) => (
-              <span key={item} className={`h-2 w-2 rounded-full ${item === 2 ? 'bg-primary' : item === 3 ? 'bg-white' : 'bg-white/28'}`} />
-            ))}
-          </div>
+          {heroCount > 1 ? (
+            <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 gap-4">
+              {heroPool.map((anime: any, item: number) => (
+                <button
+                  key={anime.mal_id || anime.title || item}
+                  type="button"
+                  onClick={() => setHeroIndex(item)}
+                  className={`h-2 w-2 rounded-full transition-all ${item === heroIndex ? 'bg-primary' : 'bg-white/28 hover:bg-white/60'}`}
+                  aria-label={`Show seasonal pick ${item + 1}`}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
       </section>
 
