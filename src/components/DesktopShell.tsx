@@ -23,11 +23,12 @@ import { useAuth } from '../context/AuthContext';
 
 const navItems = [
   { to: '/', label: 'Home', icon: Home },
+  { to: '/local-player?desktop=1', label: 'Player', icon: MonitorPlay },
   { to: '/search', label: 'Explore', icon: Compass },
   { to: '/schedule', label: 'Calendar', icon: CalendarDays },
   { to: '/my-list', label: 'My Library', icon: Library },
-  { to: '/nyaa?desktop=1', label: 'Downloads', icon: Download },
-  { to: '/local-player?desktop=1', label: 'Watch Later', icon: Clock },
+  { to: '/nyaa?desktop=1', label: 'Sources', icon: Download },
+  { to: '/dashboard', label: 'History', icon: Clock },
 ];
 
 const libraryItems = [
@@ -37,10 +38,10 @@ const libraryItems = [
 ];
 
 const quickItems = [
+  { to: '/local-player?desktop=1', label: 'Player', icon: MonitorPlay },
   { to: '/schedule', label: 'Latest episodes', icon: CalendarDays },
   { to: '/search?sort=trending&status=airing', label: 'Trending', icon: Sparkles },
-  { to: '/nyaa?desktop=1', label: 'Sources', icon: Download },
-  { to: '/local-player?desktop=1', label: 'Player', icon: MonitorPlay },
+  { to: '/nyaa?desktop=1', label: 'Source browser', icon: Download },
   { to: '/my-list', label: 'Library', icon: Library },
 ];
 
@@ -182,7 +183,7 @@ export default function DesktopShell() {
               onClick={submitSources}
               className="hidden h-11 rounded-md border border-white/9 bg-white/[0.045] px-4 text-sm font-medium text-white/72 hover:bg-white/[0.07] xl:inline-flex xl:items-center"
             >
-              Sources
+              Find source
             </button>
 
             <div className="ml-auto flex items-center gap-5">

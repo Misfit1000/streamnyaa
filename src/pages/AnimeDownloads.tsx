@@ -363,7 +363,7 @@ export default function AnimeDownloads() {
             <h1 className="text-2xl font-black text-foreground mb-1">{anime.title}</h1>
             <p className="text-muted-foreground flex items-center gap-2">
               {desktopApp && playIntent ? <Play className="w-4 h-4" /> : <HardDrive className="w-4 h-4" />}
-              {desktopApp && playIntent ? 'Local Playback Sources' : 'Download Options'}
+              {desktopApp ? (playIntent ? 'Playback Sources' : 'Source Browser') : 'Download Options'}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Last updated {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
@@ -491,10 +491,10 @@ export default function AnimeDownloads() {
         <div className="mb-6 rounded-2xl border border-primary/25 bg-primary/10 p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-wider text-primary">Watch locally</p>
-              <h2 className="mt-1 text-lg font-black text-foreground">Choose a source to start the desktop player</h2>
+              <p className="text-[11px] font-black uppercase tracking-wider text-primary">Streaming first</p>
+              <h2 className="mt-1 text-lg font-black text-foreground">Stream the best local source automatically</h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Pick a healthy source below and click <span className="font-bold text-foreground">Play locally</span>. If the exact episode is not found, StreamNyaa broadens the search so you can still choose a source.
+                StreamNyaa prioritizes dual-audio releases and high seeders, then opens the desktop player. You can still choose a different source below when you want more control.
               </p>
               <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
                 <span className="rounded-full bg-background/65 px-2.5 py-1 text-muted-foreground">{playbackSearchLabel}</span>
@@ -512,7 +512,7 @@ export default function AnimeDownloads() {
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90"
                 >
                   <Play className="h-4 w-4 fill-current" />
-                  Play best source
+                  Stream best source
                 </button>
               ) : null}
               <Link
@@ -775,7 +775,7 @@ export default function AnimeDownloads() {
                       className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25"
                     >
                       <Play className="w-4 h-4 fill-current" />
-                      Play locally
+                      Stream
                     </button>
                   ) : null}
                   <a

@@ -195,6 +195,11 @@ export default function AnimeDetails() {
       ? `/downloads?ep=${latestAiredEpisode}&type=dub&play=1&wide=1&autoplay=1`
       : '/downloads?type=dub&play=1&wide=1&autoplay=1',
   );
+  const sourceLabel = desktopApp ? 'Source browser' : 'Downloads';
+  const sourcePanelTitle = desktopApp ? 'Watch and source options' : 'Best download options';
+  const sourcePanelDescription = desktopApp
+    ? `Start ${anime.title} from the healthiest local playback source first, or browse source metadata by episode, subtitles, and dual-audio preference.`
+    : `Search source metadata by latest listed episode, batch results, subtitles, or dual-audio releases without leaving this title page.`;
 
   return (
     <div className="pb-20">
@@ -277,7 +282,7 @@ export default function AnimeDetails() {
                   className={`${desktopApp ? 'bg-secondary text-foreground hover:bg-secondary/80' : 'bg-primary text-primary-foreground hover:bg-primary/90'} flex items-center gap-2 px-8 py-3 rounded-full font-bold transition-transform hover:scale-105`}
                 >
                   <Download className="w-5 h-5" />
-                  Downloads
+                  {sourceLabel}
                 </Link>
               </>
             ) : (
@@ -332,18 +337,24 @@ export default function AnimeDetails() {
               <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 md:p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="text-[11px] font-black uppercase tracking-wider text-primary">Best download options</p>
-                    <h3 className="mt-1 text-xl font-black text-foreground">{anime.title} source search</h3>
+                    <p className="text-[11px] font-black uppercase tracking-wider text-primary">{sourcePanelTitle}</p>
+                    <h3 className="mt-1 text-xl font-black text-foreground">{anime.title} {desktopApp ? 'playback' : 'source search'}</h3>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                      Search source metadata by latest listed episode, batch results, subtitles, or dual-audio releases without leaving this title page.
+                      {sourcePanelDescription}
                     </p>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[420px]">
+                    {desktopApp ? (
+                      <Link to={watchPath} className="rounded-xl border border-primary/35 bg-primary px-4 py-3 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90">
+                        Watch best source
+                        <span className="mt-1 block text-xs font-semibold text-primary-foreground/75">Dual-audio and high seeders first</span>
+                      </Link>
+                    ) : null}
                     <Link to={animePath(anime, latestAiredEpisode ? `/downloads?ep=${latestAiredEpisode}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
-                      Latest episode
+                      {desktopApp ? 'Latest episode source' : 'Latest episode'}
                       <span className="mt-1 block text-xs font-semibold text-muted-foreground">{latestAiredEpisode ? `Episode ${latestAiredEpisode} sub` : 'Episode source search'}</span>
                     </Link>
-                    <Link to={animePath(anime, '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                    <Link to={animePath(anime, '/downloads?type=sub')} className={`${desktopApp ? 'hidden sm:block' : ''} rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary`}>
                       Batch download
                       <span className="mt-1 block text-xs font-semibold text-muted-foreground">Full-season source metadata</span>
                     </Link>
@@ -603,18 +614,18 @@ export default function AnimeDetails() {
                           
                           <div className="flex flex-wrap items-center gap-2 shrink-0">
                             <Link 
-                              to={`${animePath(anime, '/downloads')}?ep=${epNum}&type=sub`}
+                              to={desktopApp ? `${animePath(anime, '/downloads')}?ep=${epNum}&type=sub&play=1&wide=1&autoplay=1` : `${animePath(anime, '/downloads')}?ep=${epNum}&type=sub`}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg text-sm font-semibold transition-colors shrink-0"
                             >
-                              <Download className="w-3.5 h-3.5" />
-                              DL Sub
+                              {desktopApp ? <Play className="w-3.5 h-3.5 fill-current" /> : <Download className="w-3.5 h-3.5" />}
+                              {desktopApp ? 'Watch Sub' : 'DL Sub'}
                             </Link>
                             <Link 
-                              to={`${animePath(anime, '/downloads')}?ep=${epNum}&type=dub`}
+                              to={desktopApp ? `${animePath(anime, '/downloads')}?ep=${epNum}&type=dub&play=1&wide=1&autoplay=1` : `${animePath(anime, '/downloads')}?ep=${epNum}&type=dub`}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary/80 text-foreground rounded-lg text-sm font-semibold transition-colors shrink-0"
                             >
-                              <Download className="w-3.5 h-3.5" />
-                              DL Dub
+                              {desktopApp ? <Play className="w-3.5 h-3.5 fill-current" /> : <Download className="w-3.5 h-3.5" />}
+                              {desktopApp ? 'Watch Dub' : 'DL Dub'}
                             </Link>
                           </div>
                         </div>

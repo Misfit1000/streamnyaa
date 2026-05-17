@@ -21,8 +21,14 @@ function scoreText(score?: number) {
 }
 
 function heroDescription(anime: any) {
-  const text = anime?.synopsis || 'Find current anime, track fresh episodes, and continue local playback from a calm desktop cinema home.';
+  const text = anime?.synopsis || 'Start local playback quickly, continue recent sources, and use source browsing only when you want to choose another release.';
   return text.length > 136 ? `${text.slice(0, 132).trim()}...` : text;
+}
+
+function watchPathFor(anime: any, episode?: string | number) {
+  if (!anime) return '/local-player?desktop=1';
+  const episodeQuery = episode ? `ep=${episode}&` : '';
+  return `${animePath(anime, `/downloads?${episodeQuery}type=dub&play=1&wide=1&autoplay=1`)}`;
 }
 
 function RailHeader({ title, to }: { title: string; to?: string }) {
@@ -159,11 +165,11 @@ export default function DesktopHome() {
               <p className="mt-5 max-w-[500px] text-[15px] leading-7 text-white/72">{heroDescription(hero)}</p>
               <div className="mt-7 flex gap-3">
                 <Link
-                  to={hero ? animePath(hero, '/downloads') : '/nyaa?desktop=1'}
+                  to={watchPathFor(hero, hero?.latestEpisode)}
                   className="inline-flex h-11 items-center gap-3 rounded-md bg-primary px-6 text-[16px] font-medium text-white shadow-xl shadow-primary/20 hover:bg-primary/90"
                 >
                   <Play className="h-4 w-4 fill-current" />
-                  Continue Watching
+                  Watch Now
                 </Link>
                 <Link
                   to={hero ? animePath(hero) : '/search'}
@@ -216,12 +222,12 @@ export default function DesktopHome() {
         <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
           {recentSources.map((source) => <SourceCard key={source.magnet} source={source} />)}
           {(recentSources.length ? continueItems.slice(0, 5 - recentSources.length) : continueItems).map((anime: any, index: number) => (
-            <ContinueCard key={`continue-${anime.mal_id || index}`} anime={anime} to={animePath(anime, '/downloads')} episode={anime.latestEpisode || index + 1} />
+            <ContinueCard key={`continue-${anime.mal_id || index}`} anime={anime} to={watchPathFor(anime, anime.latestEpisode || index + 1)} episode={anime.latestEpisode || index + 1} />
           ))}
           {!recentSources.length && !continueItems.length ? (
             <>
-              <Link to="/nyaa?desktop=1" className="grid h-[118px] w-[238px] shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.06] text-white/60">
-                <span className="inline-flex items-center gap-2 text-sm font-medium"><Search className="h-4 w-4" /> Find sources</span>
+              <Link to="/search" className="grid h-[118px] w-[238px] shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.06] text-white/60">
+                <span className="inline-flex items-center gap-2 text-sm font-medium"><Search className="h-4 w-4" /> Find anime</span>
               </Link>
               {isLoading ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 animate-pulse rounded-lg bg-white/[0.06]" />) : null}
             </>
@@ -233,7 +239,7 @@ export default function DesktopHome() {
         <RailHeader title="New Episodes" to="/schedule" />
         <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
           {latestEpisodes.map((anime: any, index: number) => (
-            <ContinueCard key={`latest-${anime.mal_id || index}`} anime={anime} to={animePath(anime, '/downloads')} episode={anime.latestEpisode || index + 1} />
+            <ContinueCard key={`latest-${anime.mal_id || index}`} anime={anime} to={watchPathFor(anime, anime.latestEpisode || index + 1)} episode={anime.latestEpisode || index + 1} />
           ))}
         </div>
       </section>

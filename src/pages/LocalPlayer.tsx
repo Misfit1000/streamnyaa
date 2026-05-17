@@ -232,7 +232,7 @@ export default function LocalPlayer() {
     setPlayback(null);
     setActiveTorrentId('');
     setPlayState('idle');
-    setMessage('Source selected. Press play when ready.');
+    setMessage('Source selected. Press play to stream it locally.');
     if (nextSource.animeTitle) setSourceQuery(nextSource.animeTitle);
     if (nextSource.episode && nextSource.episode !== 'batch') setSelectedEpisode(String(nextSource.episode));
   };
@@ -279,7 +279,7 @@ export default function LocalPlayer() {
       setHistory(loadLocalPlaybackHistory());
       const result = await startLocalPlaybackWithSettings(source, settings);
       setPlayState(result.ok ? 'ready' : 'error');
-      setMessage(result.ok ? 'Playback opened in the local player.' : cleanRuntimeMessage(result.message || 'Playback could not start.'));
+      setMessage(result.ok ? 'Streaming opened in the local player.' : cleanRuntimeMessage(result.message || 'Playback could not start.'));
       if (result.torrent_id) {
         setActiveTorrentId(result.torrent_id);
         setPlayback({
@@ -558,7 +558,7 @@ export default function LocalPlayer() {
                   className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-semibold text-white shadow-lg shadow-primary/15 hover:bg-primary/90"
                 >
                   <MonitorPlay className="h-4 w-4" />
-                  Open player
+                  Open stream
                 </button>
                 <button
                   type="button"
@@ -566,7 +566,7 @@ export default function LocalPlayer() {
                   className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.055] px-4 text-sm font-semibold text-white/70 hover:border-primary/35 hover:text-white"
                 >
                   <Download className="h-4 w-4" />
-                  Save
+                  Save source
                 </button>
               </div>
             </div>
@@ -601,7 +601,7 @@ export default function LocalPlayer() {
               <div className="flex border-b border-white/10 px-4 pt-4">
                 {([
                   ['episodes', 'Episodes', ListVideo],
-                  ['sources', 'Sources', Download],
+                  ['sources', 'Sources', Search],
                   ['info', 'Info', Info],
                 ] as const).map(([tab, label, Icon]) => (
                   <button
@@ -622,7 +622,7 @@ export default function LocalPlayer() {
                   <div className="mb-4 flex items-center justify-between">
                     <div>
                       <p className="text-sm font-semibold text-white">Season 1</p>
-                      <p className="text-xs text-white/38">Pick an episode to search matching sources.</p>
+                        <p className="text-xs text-white/38">Pick an episode to find a streamable source.</p>
                     </div>
                     <select
                       value={selectedEpisode}
@@ -653,7 +653,7 @@ export default function LocalPlayer() {
                           <span className="block aspect-video overflow-hidden rounded-lg bg-[linear-gradient(135deg,rgba(225,29,72,0.42),rgba(255,255,255,0.07))]" />
                           <span className="min-w-0">
                             <span className="line-clamp-1 block text-sm font-semibold text-white">Episode {episode}</span>
-                            <span className="mt-0.5 block text-xs text-white/38">{active ? 'Selected' : 'Find source'}</span>
+                            <span className="mt-0.5 block text-xs text-white/38">{active ? 'Selected' : 'Find stream'}</span>
                           </span>
                           {active ? <Check className="h-4 w-4 text-primary" /> : null}
                         </button>
@@ -726,7 +726,7 @@ export default function LocalPlayer() {
                       );
                     }) : (
                       <div className="rounded-xl border border-dashed border-white/12 p-4 text-sm leading-6 text-white/42">
-                        Search an anime title or open a source from the downloads page.
+                        Search an anime title or open a source from any anime page.
                       </div>
                     )}
                   </div>
@@ -809,7 +809,7 @@ export default function LocalPlayer() {
           <StatCard icon={<ShieldCheck className="h-4 w-4" />} label="Status" value={playState === 'ready' ? 'Playing' : runtimeLabel(runtime)} detail={cleanRuntimeMessage(message)} />
           <StatCard icon={<Gauge className="h-4 w-4" />} label="Peers" value={String(peers || 0)} detail="Connected source health" />
           <StatCard icon={<SlidersHorizontal className="h-4 w-4" />} label="Bandwidth" value={`${formatBytes(playback?.download_speed)}/s`} detail="Current transfer speed" />
-          <StatCard icon={<HardDrive className="h-4 w-4" />} label="Storage" value={formatBytes(playback?.downloaded_bytes)} detail={playback?.total_bytes ? `of ${formatBytes(playback.total_bytes)}` : 'Cache managed locally'} />
+              <StatCard icon={<HardDrive className="h-4 w-4" />} label="Cache" value={formatBytes(playback?.downloaded_bytes)} detail={playback?.total_bytes ? `of ${formatBytes(playback.total_bytes)}` : 'Playback cache managed locally'} />
           <StatCard icon={<Clock className="h-4 w-4" />} label="Buffer" value={`${Math.round(progress)}%`} detail="Ready for playback" />
         </div>
 
