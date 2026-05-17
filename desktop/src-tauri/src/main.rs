@@ -236,12 +236,12 @@ fn percent_encode(value: &str) -> String {
 fn local_http_request(method: &str, path: &str, body: Option<&str>) -> Result<String, String> {
     let addr: SocketAddr = "127.0.0.1:3030"
         .parse()
-        .map_err(|error| format!("Invalid rqbit address: {}", error))?;
+        .map_err(|error| format!("Invalid local playback address: {}", error))?;
     let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(700))
-        .map_err(|error| format!("rqbit server is not reachable: {}", error))?;
+        .map_err(|error| format!("Local playback service is not reachable: {}", error))?;
     stream
         .set_read_timeout(Some(Duration::from_secs(8)))
-        .map_err(|error| format!("Could not set rqbit read timeout: {}", error))?;
+        .map_err(|error| format!("Could not set local playback timeout: {}", error))?;
 
     let body = body.unwrap_or("");
     let request = format!(
@@ -253,12 +253,12 @@ fn local_http_request(method: &str, path: &str, body: Option<&str>) -> Result<St
     );
     stream
         .write_all(request.as_bytes())
-        .map_err(|error| format!("Could not write rqbit request: {}", error))?;
+        .map_err(|error| format!("Could not send local playback request: {}", error))?;
 
     let mut response = String::new();
     stream
         .read_to_string(&mut response)
-        .map_err(|error| format!("Could not read rqbit response: {}", error))?;
+        .map_err(|error| format!("Could not read local playback response: {}", error))?;
 
     let mut parts = response.splitn(2, "\r\n\r\n");
     let headers = parts.next().unwrap_or("");
@@ -269,7 +269,7 @@ fn local_http_request(method: &str, path: &str, body: Option<&str>) -> Result<St
         || status_line.contains(" 202 ")
         || status_line.contains(" 204 ");
     if !ok_status {
-        return Err(format!("rqbit returned an error: {}", status_line));
+        return Err(format!("Local playback returned an error: {}", status_line));
     }
 
     Ok(payload)
@@ -380,9 +380,9 @@ fn playback_progress_from_json(
     });
     let normalized_state = raw_state.to_ascii_lowercase();
     let message = if normalized_state.contains("error") {
-        "rqbit reported an error for this source.".to_string()
+        "Local playback reported an error for this source.".to_string()
     } else if progress.unwrap_or(0.0) >= 99.9 {
-        "Torrent data is ready locally. MPV can continue playback from the local stream."
+        "The selected source is ready locally. Playback can continue inside StreamNyaa."
             .to_string()
     } else if peers.unwrap_or(0) > 0 {
         "Torrent metadata is active and pieces are being fetched locally.".to_string()
@@ -421,7 +421,7 @@ fn start_rqbit_server(engine_path: &str, cache_dir: &str) -> Result<(), String> 
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|error| format!("Could not start rqbit server: {}", error))?;
+        .map_err(|error| format!("Could not start local playback: {}", error))?;
 
     for _ in 0..40 {
         if rqbit_server_ready() {
@@ -430,7 +430,7 @@ fn start_rqbit_server(engine_path: &str, cache_dir: &str) -> Result<(), String> 
         thread::sleep(Duration::from_millis(250));
     }
 
-    Err("rqbit server did not become ready in time.".to_string())
+    Err("Local playback did not become ready in time.".to_string())
 }
 
 fn resolved_cache_dir(settings: Option<String>) -> String {
@@ -488,13 +488,13 @@ fn get_desktop_runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatu
     };
     let ready = torrent_engine_configured && player_configured;
     let message = if ready {
-        "rqbit and MPV commands are configured.".to_string()
+        "Local playback is ready.".to_string()
     } else if !torrent_engine_configured {
-        "Set the rqbit command or full executable path to enable local playback.".to_string()
+        "Set the local playback engine path to enable playback.".to_string()
     } else if !player_configured {
-        "Set the MPV command or full executable path to enable local playback.".to_string()
+        "Set the local player path to enable playback.".to_string()
     } else {
-        "Local playback bridge is installed. Configure the torrent engine and MPV paths to enable playback.".to_string()
+        "Local playback is installed. Configure the playback paths to enable playback.".to_string()
     };
 
     RuntimeStatus {
@@ -534,7 +534,7 @@ fn test_mpv_player(settings: Option<DesktopSettings>) -> ToolTestStatus {
     let Some(path) = player_path else {
         return ToolTestStatus {
             ok: false,
-            message: "MPV path is missing.".to_string(),
+            message: "Local player path is missing.".to_string(),
             path: None,
             version: None,
         };
@@ -543,7 +543,7 @@ fn test_mpv_player(settings: Option<DesktopSettings>) -> ToolTestStatus {
     if version.is_none() {
         return ToolTestStatus {
             ok: false,
-            message: "MPV was not found at the configured path.".to_string(),
+            message: "The local player was not found at the configured path.".to_string(),
             path: Some(path),
             version: None,
         };
@@ -552,7 +552,7 @@ fn test_mpv_player(settings: Option<DesktopSettings>) -> ToolTestStatus {
     match Command::new(&path)
         .arg("--force-window=yes")
         .arg("--idle=yes")
-        .arg("--title=StreamNyaa MPV Test")
+        .arg("--title=StreamNyaa Player Test")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -560,13 +560,13 @@ fn test_mpv_player(settings: Option<DesktopSettings>) -> ToolTestStatus {
     {
         Ok(_) => ToolTestStatus {
             ok: true,
-            message: "MPV test window opened. Close the MPV window when you are done.".to_string(),
+            message: "Player test window opened. Close it when you are done.".to_string(),
             path: Some(path),
             version,
         },
         Err(error) => ToolTestStatus {
             ok: false,
-            message: format!("Could not open MPV: {}", error),
+            message: format!("Could not open the local player: {}", error),
             path: Some(path),
             version,
         },
@@ -641,7 +641,7 @@ fn add_local_torrent_blocking(
     );
     let add_response = local_http_request("POST", &add_path, Some(&request.magnet))?;
     let add_json: serde_json::Value = serde_json::from_str(&add_response)
-        .map_err(|error| format!("Could not parse rqbit add response: {}", error))?;
+        .map_err(|error| format!("Could not parse local playback response: {}", error))?;
     let torrent_id = add_json
         .get("id")
         .and_then(|id| {
@@ -649,12 +649,12 @@ fn add_local_torrent_blocking(
                 .map(|value| value.to_string())
                 .or_else(|| id.as_str().map(|value| value.to_string()))
         })
-        .ok_or_else(|| "rqbit did not return a playable torrent id yet.".to_string())?;
+        .ok_or_else(|| "Local playback did not return a playable source id yet.".to_string())?;
     let playlist_url = format!("http://127.0.0.1:3030/torrents/{}/playlist", torrent_id);
 
     if open_player {
         let Some(player_path) = player_path else {
-            return Err("MPV path is missing.".to_string());
+            return Err("Local player path is missing.".to_string());
         };
 
         Command::new(&player_path)
@@ -663,17 +663,17 @@ fn add_local_torrent_blocking(
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|error| format!("Could not start MPV: {}", error))?;
+            .map_err(|error| format!("Could not start the local player: {}", error))?;
     }
 
     Ok(PlaybackStatus {
         ok: true,
         state: if open_player { "started" } else { "downloading" }.to_string(),
         message: if open_player {
-            "Local rqbit stream started. MPV should open once torrent metadata and pieces are ready."
+            "Local stream started. Playback will begin once metadata and pieces are ready."
                 .to_string()
         } else {
-            "Local download started. The file will be saved in the StreamNyaa cache folder."
+            "Local playback started. The file will be saved in StreamNyaa storage."
                 .to_string()
         },
         title: label,
@@ -717,7 +717,7 @@ fn get_local_playback_progress_blocking(
         local_http_request("GET", &format!("/torrents/{}/stats/v1", torrent_id), None)
             .or_else(|_| local_http_request("GET", &format!("/torrents/{}", torrent_id), None))?;
     let stats_json: serde_json::Value = serde_json::from_str(&stats_payload)
-        .map_err(|error| format!("Could not parse rqbit playback status: {}", error))?;
+        .map_err(|error| format!("Could not parse local playback status: {}", error))?;
 
     Ok(playback_progress_from_json(
         torrent_id,
@@ -777,7 +777,7 @@ fn open_local_torrent_player_blocking(request: OpenTorrentPlayerRequest) -> Resu
         return Err("Torrent engine path is missing.".to_string());
     };
     let Some(player_path) = runtime.player_path.clone() else {
-        return Err("MPV path is missing.".to_string());
+        return Err("Local player path is missing.".to_string());
     };
 
     fs::create_dir_all(&runtime.cache_dir)
@@ -791,12 +791,12 @@ fn open_local_torrent_player_blocking(request: OpenTorrentPlayerRequest) -> Resu
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|error| format!("Could not start MPV: {}", error))?;
+        .map_err(|error| format!("Could not start the local player: {}", error))?;
 
     Ok(PlaybackStatus {
         ok: true,
         state: "opened".to_string(),
-        message: "MPV opened for the active local stream.".to_string(),
+        message: "The active local stream opened.".to_string(),
         title: "Local stream".to_string(),
         torrent_id: Some(torrent_id.to_string()),
         playlist_url: Some(playlist_url),

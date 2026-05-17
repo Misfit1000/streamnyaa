@@ -45,9 +45,17 @@ function pageTitle(pathname: string) {
 function runtimeText(runtime: DesktopRuntimeStatus | null) {
   if (!runtime) return 'Checking';
   if (runtime.ready) return 'Local playback ready';
-  if (!runtime.torrent_engine_configured) return 'Torrent engine needed';
-  if (!runtime.player_configured) return 'MPV player needed';
+  if (!runtime.torrent_engine_configured) return 'Playback setup needed';
+  if (!runtime.player_configured) return 'Player setup needed';
   return 'Setup needed';
+}
+
+function friendlyRuntimeMessage(message = '') {
+  return message
+    .replace(/rqbit/gi, 'the local engine')
+    .replace(/MPV/gi, 'the local player')
+    .replace(/command or full executable path/gi, 'setup path')
+    .replace(/commands are configured/gi, 'is ready');
 }
 
 export default function DesktopShell() {
@@ -134,7 +142,7 @@ export default function DesktopShell() {
             </div>
             <p className="mt-2 text-sm font-black text-white">{statusLabel}</p>
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/42">
-              {runtime?.message || 'Checking the local player bridge.'}
+              {friendlyRuntimeMessage(runtime?.message || 'Checking local playback.')}
             </p>
           </Link>
 

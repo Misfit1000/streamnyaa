@@ -5,14 +5,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
-  FolderOpen,
-  HardDrive,
   Loader2,
   MonitorPlay,
   Play,
   RefreshCw,
   Search,
-  Settings,
   Trash2,
 } from 'lucide-react';
 import Seo from '../components/Seo';
@@ -25,14 +22,9 @@ import {
   loadDesktopPlaybackSettings,
   loadLocalPlaybackHistory,
   loadLocalPlaybackSource,
-  openLocalTorrentPlayer,
-  openDesktopCacheFolder,
-  saveDesktopPlaybackSettings,
   saveLocalPlaybackSource,
   startLocalDownloadWithSettings,
-  startLocalPlaybackWithSettings,
   stopLocalPlayback,
-  testDesktopMpv,
   type DesktopPlaybackProgress,
   type DesktopPlaybackSettings,
   type DesktopRuntimeStatus,
@@ -51,9 +43,17 @@ function formatBytes(value?: number | null) {
 function runtimeLabel(runtime: DesktopRuntimeStatus | null) {
   if (!runtime) return 'Checking';
   if (runtime.ready) return 'Ready';
-  if (!runtime.torrent_engine_configured) return 'rqbit missing';
-  if (!runtime.player_configured) return 'MPV missing';
+  if (!runtime.torrent_engine_configured) return 'Playback engine needed';
+  if (!runtime.player_configured) return 'Player setup needed';
   return 'Setup needed';
+}
+
+function friendlyRuntimeMessage(message = '') {
+  return message
+    .replace(/rqbit/gi, 'the local engine')
+    .replace(/MPV/gi, 'the local player')
+    .replace(/command or full executable path/gi, 'setup path')
+    .replace(/commands are configured/gi, 'is ready');
 }
 
 function shortTitle(source: LocalPlaybackSource) {
@@ -99,7 +99,7 @@ export default function LocalPlayer() {
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
   const [playback, setPlayback] = useState<DesktopPlaybackProgress | null>(null);
   const [activeTorrentId, setActiveTorrentId] = useState('');
-  const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
+  const [settings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
   const [sourceQuery, setSourceQuery] = useState(() => loadLocalPlaybackSource()?.animeTitle || '');
   const [selectedEpisode, setSelectedEpisode] = useState(() => {
     const episode = loadLocalPlaybackSource()?.episode;
@@ -113,6 +113,7 @@ export default function LocalPlayer() {
   const sourceOptions = sourceHistory.length ? sourceHistory : source ? [source] : [];
   const runtimeReady = Boolean(runtime?.ready);
   const canPlay = Boolean(desktop && source && runtimeReady && status !== 'starting');
+  const playbackUrl = playback?.playlist_url || '';
   const builtSourceQuery = [
     sourceQuery.trim(),
     selectedEpisode ? selectedEpisode.padStart(2, '0') : '',
@@ -228,7 +229,7 @@ export default function LocalPlayer() {
             cache_dir: '',
             torrent_engine_version: null,
             player_version: null,
-            message: 'Desktop runtime status could not be read yet.',
+          message: 'Local playback status could not be read yet.',
           });
         }
       });
@@ -281,13 +282,13 @@ export default function LocalPlayer() {
     }
 
     setStatus('starting');
-    setMessage('Starting local playback...');
+    setMessage('Preparing in-app playback...');
     try {
       saveLocalPlaybackSource(source);
       setSourceHistory(loadLocalPlaybackHistory());
-      const result = await startLocalPlaybackWithSettings(source, settings);
+      const result = await startLocalDownloadWithSettings(source, settings);
       setStatus(result.ok ? 'ready' : 'error');
-      setMessage(result.message || 'Playback started.');
+      setMessage(result.ok ? 'Playback is ready inside StreamNyaa.' : result.message || 'Playback could not start.');
 
       if (result.torrent_id) {
         setActiveTorrentId(result.torrent_id);
@@ -295,7 +296,7 @@ export default function LocalPlayer() {
           ok: true,
           torrent_id: result.torrent_id,
           state: result.state,
-          message: result.message,
+          message: 'In-app stream is preparing. Playback will begin when enough data is ready.',
           progress: null,
           downloaded_bytes: null,
           total_bytes: null,
@@ -364,52 +365,6 @@ export default function LocalPlayer() {
     }
   };
 
-  const reopenPlayer = async () => {
-    if (!activeTorrentId) {
-      setMessage('Start or download a source first.');
-      return;
-    }
-    setStatus('starting');
-    setMessage('Opening MPV for the active stream...');
-    try {
-      const result = await openLocalTorrentPlayer(activeTorrentId, settings);
-      setStatus(result.ok ? 'ready' : 'error');
-      setMessage(result.message || 'MPV opened.');
-    } catch (error) {
-      setStatus('error');
-      setMessage(error instanceof Error ? error.message : 'Could not open MPV.');
-    }
-  };
-
-  const saveSettings = async () => {
-    saveDesktopPlaybackSettings(settings);
-    setStatus('idle');
-    setMessage('Settings saved.');
-    await refreshRuntime(settings);
-  };
-
-  const openCacheFolder = async () => {
-    try {
-      await openDesktopCacheFolder(settings);
-      setMessage('Cache folder opened.');
-    } catch (error) {
-      setStatus('error');
-      setMessage(error instanceof Error ? error.message : 'Could not open the cache folder.');
-    }
-  };
-
-  const testMpv = async () => {
-    try {
-      const result = await testDesktopMpv(settings);
-      setStatus(result.ok ? 'ready' : 'error');
-      setMessage(result.message);
-      await refreshRuntime(settings);
-    } catch (error) {
-      setStatus('error');
-      setMessage(error instanceof Error ? error.message : 'Could not test MPV.');
-    }
-  };
-
   return (
     <div className="mx-auto max-w-[1480px] px-4 py-6 lg:px-7">
       <Seo
@@ -423,7 +378,7 @@ export default function LocalPlayer() {
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Local playback</p>
           <h1 className="mt-1 text-4xl font-black tracking-tight text-white md:text-5xl">Player</h1>
-          <p className="mt-2 text-sm text-white/48">Pick the right source, launch MPV, and keep the local stream under control.</p>
+          <p className="mt-2 text-sm text-white/48">Pick the right source, play inside StreamNyaa, and keep the local stream under control.</p>
         </div>
         <Link
           to="/nyaa?desktop=1"
@@ -441,7 +396,7 @@ export default function LocalPlayer() {
               <div className="flex items-center gap-3">
                 <span className={`h-2.5 w-2.5 rounded-full ${runtimeReady ? 'bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`} />
                 <span className="text-sm font-black text-white">{runtimeLabel(runtime)}</span>
-                <span className="hidden text-xs font-semibold text-white/38 md:inline">{runtime?.message || 'Checking local tools.'}</span>
+                <span className="hidden text-xs font-semibold text-white/38 md:inline">{friendlyRuntimeMessage(runtime?.message || 'Checking local playback.')}</span>
               </div>
               <button
                 type="button"
@@ -481,13 +436,26 @@ export default function LocalPlayer() {
                   </Link>
                 </div>
               ) : (
-                <div className="relative w-full max-w-3xl">
-                  <div className="mx-auto mb-7 flex h-24 w-24 items-center justify-center rounded-[2rem] border border-primary/25 bg-primary/15 text-primary shadow-2xl shadow-primary/10">
-                    {status === 'starting' ? <Loader2 className="h-9 w-9 animate-spin" /> : status === 'ready' ? <CheckCircle2 className="h-9 w-9" /> : <Play className="ml-1 h-9 w-9 fill-current" />}
-                  </div>
+                <div className="relative w-full max-w-4xl">
+                  {playbackUrl ? (
+                    <div className="mb-7 overflow-hidden rounded-[2rem] border border-white/10 bg-black shadow-2xl shadow-black/50">
+                      <video
+                        key={playbackUrl}
+                        src={playbackUrl}
+                        controls
+                        autoPlay
+                        className="aspect-video w-full bg-black"
+                        onError={() => setMessage('The selected file is preparing or uses a format this in-app player cannot decode yet. Try another source with MP4/H.264 or let it buffer longer.')}
+                      />
+                    </div>
+                  ) : (
+                    <div className="mx-auto mb-7 flex h-24 w-24 items-center justify-center rounded-[2rem] border border-primary/25 bg-primary/15 text-primary shadow-2xl shadow-primary/10">
+                      {status === 'starting' ? <Loader2 className="h-9 w-9 animate-spin" /> : status === 'ready' ? <CheckCircle2 className="h-9 w-9" /> : <Play className="ml-1 h-9 w-9 fill-current" />}
+                    </div>
+                  )}
 
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Selected source</p>
-                  <h2 className="mx-auto mt-3 line-clamp-2 max-w-3xl text-3xl font-black leading-tight text-white md:text-5xl">
+                  <h2 className="mx-auto mt-3 line-clamp-2 max-w-3xl text-3xl font-black leading-tight text-white md:text-4xl">
                     {shortTitle(source)}
                   </h2>
                   <p className="mx-auto mt-4 line-clamp-2 max-w-2xl text-sm leading-6 text-white/50">{source.title}</p>
@@ -516,7 +484,7 @@ export default function LocalPlayer() {
                       className="inline-flex min-w-[190px] items-center justify-center gap-3 rounded-2xl bg-primary px-8 py-4 text-base font-black text-white shadow-xl shadow-primary/25 transition-transform hover:-translate-y-0.5 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {status === 'starting' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />}
-                      {status === 'starting' ? 'Starting' : 'Play'}
+                      {status === 'starting' ? 'Starting' : playbackUrl ? 'Restart' : 'Play'}
                     </button>
                     <button
                       type="button"
@@ -535,14 +503,6 @@ export default function LocalPlayer() {
                     >
                       Stop
                     </button>
-                    <button
-                      type="button"
-                      onClick={reopenPlayer}
-                      disabled={!activeTorrentId || !runtimeReady}
-                      className="inline-flex min-w-[130px] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-4 text-sm font-black text-white/72 backdrop-blur-xl hover:border-primary/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
-                    >
-                      Open MPV
-                    </button>
                   </div>
 
                   {message ? (
@@ -558,7 +518,7 @@ export default function LocalPlayer() {
                         <Loader2 className="h-4 w-4 animate-spin text-primary" />
                       </div>
                       <div className="space-y-3">
-                        {['Starting local engine', 'Adding selected source', 'Opening MPV player'].map((step, index) => (
+                        {['Starting local playback', 'Adding selected source', 'Preparing in-app player'].map((step, index) => (
                           <div key={step} className="flex items-center gap-3">
                             <span className={`h-2.5 w-2.5 rounded-full ${index === 0 ? 'bg-primary' : 'bg-white/25'}`} />
                             <span className="text-sm font-semibold text-white/68">{step}</span>
@@ -580,7 +540,7 @@ export default function LocalPlayer() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Stream status</p>
-                  <p className="mt-1 text-sm font-bold text-foreground">{playback.message}</p>
+                  <p className="mt-1 text-sm font-bold text-white/72">{friendlyRuntimeMessage(playback.message)}</p>
                 </div>
                 <span className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300">
                   {playback.state || 'active'}
@@ -800,95 +760,22 @@ export default function LocalPlayer() {
 
           <section className="rounded-[2rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl shadow-black/15 backdrop-blur-xl">
             <div className="flex items-center gap-2">
-              <HardDrive className="h-4 w-4 text-primary" />
-              <h2 className="font-black text-white">Local tools</h2>
+              <MonitorPlay className="h-4 w-4 text-primary" />
+              <h2 className="font-black text-white">Playback status</h2>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <div className={`rounded-xl border px-3 py-3 ${runtime?.torrent_engine_configured ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10'}`}>
-                <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">rqbit</p>
-                <p className={`mt-1 text-sm font-black ${runtime?.torrent_engine_configured ? 'text-emerald-300' : 'text-amber-300'}`}>
-                  {runtime?.torrent_engine_configured ? 'Ready' : 'Needed'}
-                </p>
-              </div>
-              <div className={`rounded-xl border px-3 py-3 ${runtime?.player_configured ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10'}`}>
-                <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">MPV</p>
-                <p className={`mt-1 text-sm font-black ${runtime?.player_configured ? 'text-emerald-300' : 'text-amber-300'}`}>
-                  {runtime?.player_configured ? 'Ready' : 'Needed'}
-                </p>
-              </div>
+            <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-4">
+              <p className="text-sm font-black text-white">{runtimeLabel(runtime)}</p>
+              <p className="mt-1 text-xs leading-5 text-white/45">{friendlyRuntimeMessage(runtime?.message || 'Checking local playback.')}</p>
             </div>
-            <p className="mt-3 line-clamp-2 text-xs leading-5 text-muted-foreground">{runtime?.message || 'Checking local playback tools.'}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => refreshRuntime()}
-                className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/55 px-3 py-2 text-xs font-bold text-foreground hover:border-primary/40"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={openCacheFolder}
-                className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/55 px-3 py-2 text-xs font-bold text-foreground hover:border-primary/40"
-              >
-                <FolderOpen className="h-3.5 w-3.5" />
-                Cache
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => refreshRuntime()}
+              className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/25 px-4 py-2.5 text-xs font-black text-white/70 hover:border-primary/40 hover:text-white"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh status
+            </button>
           </section>
-
-          <details className="rounded-2xl border border-border bg-[var(--glass)] p-4">
-            <summary className="flex cursor-pointer list-none items-center gap-2 font-black text-foreground">
-              <Settings className="h-4 w-4 text-primary" />
-              Advanced settings
-            </summary>
-            <div className="mt-4 space-y-3">
-              <label className="block">
-                <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">rqbit command/path</span>
-                <input
-                  value={settings.torrent_engine_path}
-                  onChange={(event) => setSettings((current) => ({ ...current, torrent_engine_path: event.target.value }))}
-                  className="mt-1 w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary"
-                  placeholder="rqbit"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">MPV command/path</span>
-                <input
-                  value={settings.mpv_path}
-                  onChange={(event) => setSettings((current) => ({ ...current, mpv_path: event.target.value }))}
-                  className="mt-1 w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary"
-                  placeholder="mpv"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Cache folder</span>
-                <input
-                  value={settings.cache_dir}
-                  onChange={(event) => setSettings((current) => ({ ...current, cache_dir: event.target.value }))}
-                  className="mt-1 w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary"
-                  placeholder="Leave blank for system temp"
-                />
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={saveSettings}
-                  className="rounded-lg bg-primary px-3 py-2 text-sm font-black text-primary-foreground hover:bg-primary/90"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={testMpv}
-                  className="rounded-lg border border-border bg-background/55 px-3 py-2 text-sm font-black text-foreground hover:border-primary/40"
-                >
-                  Test MPV
-                </button>
-              </div>
-            </div>
-          </details>
         </aside>
       </section>
     </div>
