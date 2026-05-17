@@ -1,6 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Clipboard, Download, FolderOpen, HardDrive, ListVideo, Loader2, MonitorPlay, Play, RefreshCw, RotateCcw, Terminal, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  FolderOpen,
+  HardDrive,
+  Loader2,
+  MonitorPlay,
+  Play,
+  RefreshCw,
+  Settings,
+  Trash2,
+} from 'lucide-react';
 import Seo from '../components/Seo';
 import {
   clearLocalPlaybackHistory,
@@ -15,8 +27,8 @@ import {
   saveLocalPlaybackSource,
   startLocalPlaybackWithSettings,
   testDesktopMpv,
-  type DesktopPlaybackSettings,
   type DesktopPlaybackProgress,
+  type DesktopPlaybackSettings,
   type DesktopRuntimeStatus,
   type LocalPlaybackSource,
 } from '../lib/desktop';
@@ -26,6 +38,21 @@ function formatBytes(value?: number | null) {
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
   return `${(value / 1024 ** index).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function runtimeLabel(runtime: DesktopRuntimeStatus | null) {
+  if (!runtime) return 'Checking';
+  if (runtime.ready) return 'Ready';
+  if (!runtime.torrent_engine_configured) return 'rqbit missing';
+  if (!runtime.player_configured) return 'MPV missing';
+  return 'Setup needed';
+}
+
+function shortTitle(source: LocalPlaybackSource) {
+  if (source.animeTitle && source.episode && source.episode !== 'batch') {
+    return `${source.animeTitle} - Episode ${source.episode}`;
+  }
+  return source.animeTitle || source.title;
 }
 
 export default function LocalPlayer() {
@@ -38,23 +65,22 @@ export default function LocalPlayer() {
   const [playback, setPlayback] = useState<DesktopPlaybackProgress | null>(null);
   const [activeTorrentId, setActiveTorrentId] = useState('');
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
-  const [copiedCommand, setCopiedCommand] = useState('');
+
+  const sourceOptions = sourceHistory.length ? sourceHistory : source ? [source] : [];
+  const runtimeReady = Boolean(runtime?.ready);
+  const canPlay = Boolean(desktop && source && runtimeReady && status !== 'starting');
 
   const refreshRuntime = async (nextSettings = settings) => {
     const nextRuntime = await getDesktopRuntimeStatus(nextSettings);
     if (nextRuntime) setRuntime(nextRuntime);
   };
 
-  const sourceOptions = sourceHistory.length ? sourceHistory : source ? [source] : [];
-
-  const selectSource = (magnet: string) => {
-    const nextSource = sourceOptions.find((item) => item.magnet === magnet);
-    if (!nextSource) return;
+  const selectSource = (nextSource: LocalPlaybackSource) => {
     saveLocalPlaybackSource(nextSource);
     setSource(nextSource);
     setSourceHistory(loadLocalPlaybackHistory());
     setStatus('idle');
-    setMessage('Source selected. Press Play locally when you are ready.');
+    setMessage('Source selected.');
     setActiveTorrentId('');
     setPlayback(null);
   };
@@ -66,18 +92,7 @@ export default function LocalPlayer() {
     setActiveTorrentId('');
     setPlayback(null);
     setStatus('idle');
-    setMessage('Desktop source list cleared.');
-  };
-
-  const copyCommand = async (label: string, command: string) => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopiedCommand(label);
-      window.setTimeout(() => setCopiedCommand(''), 1800);
-    } catch {
-      setCopiedCommand('');
-      setMessage(command);
-    }
+    setMessage('Source list cleared.');
   };
 
   useEffect(() => {
@@ -116,10 +131,7 @@ export default function LocalPlayer() {
         const nextPlayback = await getLocalPlaybackProgress(activeTorrentId);
         if (!cancelled) setPlayback(nextPlayback);
       } catch (error) {
-        if (!cancelled) {
-          setPlayback((current) => current);
-          setMessage(error instanceof Error ? error.message : 'Could not read local playback progress yet.');
-        }
+        if (!cancelled) setMessage(error instanceof Error ? error.message : 'Could not read playback progress.');
       }
     };
 
@@ -134,17 +146,19 @@ export default function LocalPlayer() {
   const start = async () => {
     if (!source) {
       setStatus('error');
-      setMessage('No local playback source was selected. Go back to downloads and choose Play locally.');
+      setMessage('Choose a source first.');
       return;
     }
+
     setStatus('starting');
-      setMessage('Starting local rqbit engine...');
+    setMessage('Starting local playback...');
     try {
       saveLocalPlaybackSource(source);
       setSourceHistory(loadLocalPlaybackHistory());
       const result = await startLocalPlaybackWithSettings(source, settings);
       setStatus(result.ok ? 'ready' : 'error');
-      setMessage(result.message || 'Local playback request sent to the desktop engine.');
+      setMessage(result.message || 'Playback started.');
+
       if (result.torrent_id) {
         setActiveTorrentId(result.torrent_id);
         setPlayback({
@@ -169,7 +183,7 @@ export default function LocalPlayer() {
   const saveSettings = async () => {
     saveDesktopPlaybackSettings(settings);
     setStatus('idle');
-    setMessage('Desktop playback settings saved.');
+    setMessage('Settings saved.');
     await refreshRuntime(settings);
   };
 
@@ -187,7 +201,7 @@ export default function LocalPlayer() {
     try {
       const result = await testDesktopMpv(settings);
       setStatus(result.ok ? 'ready' : 'error');
-      setMessage(`${result.message}${result.path ? ` Path: ${result.path}` : ''}`);
+      setMessage(result.message);
       await refreshRuntime(settings);
     } catch (error) {
       setStatus('error');
@@ -196,7 +210,7 @@ export default function LocalPlayer() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-6">
+    <div className="container mx-auto max-w-6xl px-4 py-6">
       <Seo
         title="Local Desktop Player | StreamNyaa"
         description="StreamNyaa desktop local torrent playback screen."
@@ -204,85 +218,110 @@ export default function LocalPlayer() {
         robots="noindex, nofollow"
       />
 
-      <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
-        <Link to="/" className="hover:text-primary">Home</Link>
-        <span>/</span>
-        <Link to="/nyaa" className="hover:text-primary">Downloads</Link>
-        <span>/</span>
-        <span className="text-foreground">Local Player</span>
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Local playback</p>
+          <h1 className="mt-1 text-3xl font-black tracking-tight text-foreground">Player</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Choose a source, start playback, and monitor the local stream.</p>
+        </div>
+        <Link
+          to="/nyaa?desktop=1"
+          className="inline-flex w-fit items-center gap-2 rounded-lg border border-border bg-background/60 px-4 py-2.5 text-sm font-bold text-foreground hover:border-primary/40 hover:text-primary"
+        >
+          <Download className="h-4 w-4" />
+          Find sources
+        </Link>
       </div>
 
-      <section className="grid gap-6 lg:grid-cols-[1fr_340px]">
-        <div>
-          <div className="relative aspect-video overflow-hidden rounded-[24px] border border-[var(--glass-border)] bg-[#050507] shadow-2xl">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(225,29,72,0.18),transparent_38%),#050507]" />
-            <div className="pointer-events-none absolute left-4 top-4 z-20 flex flex-wrap gap-2">
-              <span className="rounded-full border border-primary/25 bg-black/55 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary backdrop-blur">
-                Desktop local player
-              </span>
-              <span className="rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[11px] font-bold text-white/80 backdrop-blur">
-                No web streaming provider
-              </span>
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-5">
+          <div className="overflow-hidden rounded-2xl border border-border bg-[#050507]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/[0.035] px-5 py-3">
+              <div className="flex items-center gap-3">
+                <span className={`h-2.5 w-2.5 rounded-full ${runtimeReady ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                <span className="text-sm font-bold text-white">{runtimeLabel(runtime)}</span>
+                <span className="text-xs text-white/45">{runtime?.message || 'Checking local tools.'}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => refreshRuntime()}
+                className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold text-white/70 hover:border-primary/40 hover:text-white"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </button>
             </div>
 
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center px-6 text-center">
+            <div className="grid min-h-[440px] place-items-center px-5 py-8 text-center">
               {!desktop ? (
-                <>
-                  <AlertTriangle className="h-12 w-12 text-primary" />
-                  <h1 className="mt-4 text-2xl font-black text-white">Desktop app required</h1>
-                  <p className="mt-2 max-w-lg text-sm leading-6 text-white/65">
-                    Local torrent playback needs the StreamNyaa desktop app because browsers cannot run the local torrent engine or MPV layer.
+                <div className="max-w-md">
+                  <AlertTriangle className="mx-auto h-12 w-12 text-primary" />
+                  <h2 className="mt-4 text-2xl font-black text-white">Desktop app required</h2>
+                  <p className="mt-2 text-sm leading-6 text-white/60">
+                    Local playback needs the StreamNyaa desktop app.
                   </p>
-                </>
-              ) : status === 'starting' ? (
-                <>
-                  <Loader2 className="h-14 w-14 animate-spin text-primary" />
-                  <h1 className="mt-4 text-2xl font-black text-white">Starting local playback</h1>
-                  <p className="mt-2 max-w-lg text-sm leading-6 text-white/65">{message}</p>
-                </>
-              ) : status === 'ready' ? (
-                <>
-                  <CheckCircle2 className="h-14 w-14 text-primary" />
-                  <h1 className="mt-4 text-2xl font-black text-white">Playback request sent</h1>
-                  <p className="mt-2 max-w-lg text-sm leading-6 text-white/65">{message}</p>
-                </>
+                </div>
+              ) : !source ? (
+                <div className="max-w-md">
+                  <MonitorPlay className="mx-auto h-14 w-14 text-white/30" />
+                  <h2 className="mt-4 text-2xl font-black text-white">No source selected</h2>
+                  <p className="mt-2 text-sm leading-6 text-white/58">
+                    Open Sources, pick a result, then choose Play locally.
+                  </p>
+                  <Link
+                    to="/nyaa?desktop=1"
+                    className="mt-5 inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-black text-white hover:bg-primary/90"
+                  >
+                    <Download className="h-4 w-4" />
+                    Find a source
+                  </Link>
+                </div>
               ) : (
-                <>
+                <div className="w-full max-w-2xl">
+                  <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-primary/25 bg-primary/12 text-primary">
+                    {status === 'starting' ? <Loader2 className="h-9 w-9 animate-spin" /> : status === 'ready' ? <CheckCircle2 className="h-9 w-9" /> : <Play className="ml-1 h-9 w-9 fill-current" />}
+                  </div>
+
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Selected source</p>
+                  <h2 className="mx-auto mt-2 line-clamp-2 max-w-2xl text-2xl font-black leading-tight text-white">
+                    {shortTitle(source)}
+                  </h2>
+                  <p className="mx-auto mt-3 line-clamp-2 max-w-2xl text-sm leading-6 text-white/55">{source.title}</p>
+
+                  <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs font-bold text-white/62">
+                    {source.episode ? <span className="rounded-md bg-white/8 px-2.5 py-1">Episode {source.episode}</span> : null}
+                    {source.size ? <span className="rounded-md bg-white/8 px-2.5 py-1">{source.size}</span> : null}
+                    {source.seeders ? <span className="rounded-md bg-white/8 px-2.5 py-1">{source.seeders} seeders</span> : null}
+                  </div>
+
                   <button
                     type="button"
                     onClick={start}
-                    disabled={!source}
-                    className="rounded-full border border-primary/30 bg-primary/20 p-7 text-primary shadow-lg shadow-primary/20 transition-all hover:scale-105 hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!canPlay}
+                    className="mt-8 inline-flex min-w-[220px] items-center justify-center gap-3 rounded-xl bg-primary px-7 py-4 text-base font-black text-white shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
                   >
-                    <Play className="ml-1 h-14 w-14 fill-current" />
+                    {status === 'starting' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />}
+                    {status === 'starting' ? 'Starting' : 'Play'}
                   </button>
-                  <h1 className="mt-5 text-2xl font-black text-white">{source ? 'Play locally' : 'No source selected'}</h1>
-                  <p className="mt-2 max-w-lg text-sm leading-6 text-white/65">
-                    {runtime && !runtime.ready
-                      ? runtime.message
-                      : source
-                      ? 'The desktop app will pass this source to the local torrent engine and open it in the local video player.'
-                      : 'Open a source from the desktop download page first.'}
-                  </p>
-                </>
+
+                  {message ? (
+                    <p className={`mx-auto mt-4 max-w-xl text-sm leading-6 ${status === 'error' ? 'text-red-300' : 'text-white/55'}`}>
+                      {message}
+                    </p>
+                  ) : null}
+                </div>
               )}
             </div>
           </div>
 
-          {message && status === 'error' ? (
-            <div className="mt-4 rounded-2xl border border-red-500/25 bg-red-500/10 p-4 text-sm leading-6 text-red-200">
-              {message}
-            </div>
-          ) : null}
-
           {playback ? (
-            <div className="mt-4 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-4">
+            <div className="rounded-2xl border border-border bg-[var(--glass)] p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-wider text-primary">Local torrent stream</p>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Stream status</p>
                   <p className="mt-1 text-sm font-bold text-foreground">{playback.message}</p>
                 </div>
-                <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300">
+                <span className="rounded-md border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-300">
                   {playback.state || 'active'}
                 </span>
               </div>
@@ -297,205 +336,111 @@ export default function LocalPlayer() {
                 <span>{formatBytes(playback.downloaded_bytes)} / {formatBytes(playback.total_bytes)}</span>
                 <span>{playback.peers ?? 0} peers - {formatBytes(playback.download_speed)}/s</span>
               </div>
-              <p className="mt-3 truncate font-mono text-[11px] text-muted-foreground">{playback.playlist_url}</p>
             </div>
           ) : null}
-
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Link to="/nyaa" className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-4 py-2.5 text-sm font-black text-foreground hover:border-primary/40">
-              <RotateCcw className="h-4 w-4" />
-              Back to downloads
-            </Link>
-            {source?.magnet ? (
-              <a href={source.magnet} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90">
-                <Download className="h-4 w-4" />
-                Open source link
-              </a>
-            ) : null}
-          </div>
         </div>
 
-        <aside className="space-y-4">
-          <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-5">
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/12 text-primary">
-                <MonitorPlay className="h-5 w-5" />
-              </span>
+        <aside className="space-y-5">
+          <section className="rounded-2xl border border-border bg-[var(--glass)] p-4">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="font-black text-foreground">Selected source</p>
-                <p className="text-xs text-muted-foreground">Local desktop playback queue</p>
+                <h2 className="font-black text-foreground">Recent sources</h2>
+                <p className="mt-1 text-xs text-muted-foreground">Click one to switch playback.</p>
               </div>
-            </div>
-
-            {sourceOptions.length ? (
-              <div className="mt-4 rounded-xl border border-border bg-background/45 p-3">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-wider text-muted-foreground">
-                    <ListVideo className="h-3.5 w-3.5 text-primary" />
-                    Source selector
-                  </span>
-                  <button
-                    type="button"
-                    onClick={clearSources}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-[11px] font-black text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    Clear
-                  </button>
-                </div>
-                <select
-                  value={source?.magnet || ''}
-                  onChange={(event) => selectSource(event.target.value)}
-                  className="w-full rounded-xl border border-border bg-[#09090b] px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
-                >
-                  {sourceOptions.map((item) => (
-                    <option key={item.magnet} value={item.magnet}>
-                      {item.episode ? `Ep ${item.episode} - ` : ''}{item.title}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                  Recent desktop sources stay on this device so you can switch files without returning to search.
-                </p>
-              </div>
-            ) : null}
-
-            {source ? (
-              <div className="mt-4 space-y-3">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Title</p>
-                  <p className="mt-1 line-clamp-3 text-sm font-bold text-foreground">{source.title}</p>
-                </div>
-                {source.animeTitle ? (
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-wider text-muted-foreground">Anime</p>
-                    <p className="mt-1 text-sm font-bold text-foreground">{source.animeTitle}</p>
-                  </div>
-                ) : null}
-                <div className="flex flex-wrap gap-2 text-xs font-black uppercase">
-                  {source.episode ? <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary">Ep {source.episode}</span> : null}
-                  {source.size ? <span className="rounded-full bg-secondary px-2.5 py-1 text-muted-foreground">{source.size}</span> : null}
-                  {source.seeders ? <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-400">{source.seeders} seeders</span> : null}
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-xl border border-dashed border-border bg-background/35 p-4">
-                <p className="text-sm font-bold text-foreground">No source selected yet</p>
-                <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  Search downloads in the desktop app, then choose Play locally on the source you want.
-                </p>
-                <Link
-                  to="/nyaa"
-                  className="mt-3 inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-black text-primary-foreground hover:bg-primary/90"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Find sources
-                </Link>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-5">
-            <div className="flex items-center gap-2 font-black text-foreground">
-              <HardDrive className="h-4 w-4 text-primary" />
-              Desktop runtime
-            </div>
-            {runtime ? (
-              <div className="mt-4 space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <span className={`rounded-xl border px-3 py-2 text-xs font-black ${runtime.torrent_engine_configured ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-border bg-background/45 text-muted-foreground'}`}>
-                    Engine {runtime.torrent_engine_configured ? 'ready' : 'missing'}
-                  </span>
-                  <span className={`rounded-xl border px-3 py-2 text-xs font-black ${runtime.player_configured ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'border-border bg-background/45 text-muted-foreground'}`}>
-                    MPV {runtime.player_configured ? 'ready' : 'missing'}
-                  </span>
-                </div>
-                <p className="text-sm leading-6 text-muted-foreground">{runtime.message}</p>
-                <div className="space-y-2 rounded-xl border border-border bg-background/40 p-3 text-xs">
-                  <div>
-                    <span className="font-black uppercase tracking-wider text-muted-foreground">Engine</span>
-                    <p className="mt-0.5 truncate font-mono text-foreground">{runtime.torrent_engine_version || runtime.torrent_engine_path || 'Not detected'}</p>
-                  </div>
-                  <div>
-                    <span className="font-black uppercase tracking-wider text-muted-foreground">Player</span>
-                    <p className="mt-0.5 truncate font-mono text-foreground">{runtime.player_version || runtime.player_path || 'Not detected'}</p>
-                  </div>
-                  <div>
-                    <span className="font-black uppercase tracking-wider text-muted-foreground">Cache</span>
-                    <p className="mt-0.5 truncate font-mono text-foreground">{runtime.cache_dir || 'System temp folder'}</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => refreshRuntime()}
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-3 py-2 text-xs font-black text-foreground transition-colors hover:border-primary/40"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Refresh
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openCacheFolder}
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/55 px-3 py-2 text-xs font-black text-foreground transition-colors hover:border-primary/40"
-                  >
-                    <FolderOpen className="h-3.5 w-3.5" />
-                    Open cache
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                This screen is ready for Tauri to connect a local torrent engine and MPV playback. Web users still get download/source search only.
-              </p>
-            )}
-          </div>
-
-          <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-5">
-            <div className="flex items-center gap-2 font-black text-foreground">
-              <Terminal className="h-4 w-4 text-primary" />
-              Windows setup
-            </div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Install both tools once, then keep the command fields as `rqbit` and `mpv`.
-            </p>
-            <div className="mt-4 space-y-2">
-              {[
-                ['rqbit', 'cargo install rqbit'],
-                ['MPV', 'winget install --id shinchiro.mpv -e'],
-                ['Desktop app', '.\\desktop-dev.cmd'],
-              ].map(([label, command]) => (
+              {sourceOptions.length ? (
                 <button
-                  key={label}
                   type="button"
-                  onClick={() => copyCommand(label, command)}
-                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2 text-left transition-colors hover:border-primary/40"
+                  onClick={clearSources}
+                  className="rounded-lg border border-border p-2 text-muted-foreground hover:border-primary/40 hover:text-primary"
+                  aria-label="Clear recent sources"
                 >
-                  <span>
-                    <span className="block text-xs font-black uppercase tracking-wider text-muted-foreground">{label}</span>
-                    <span className="mt-0.5 block truncate font-mono text-xs text-foreground">{command}</span>
-                  </span>
-                  <Clipboard className="h-4 w-4 shrink-0 text-primary" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
-              ))}
+              ) : null}
             </div>
-            {copiedCommand ? (
-              <p className="mt-3 text-xs font-bold text-emerald-300">{copiedCommand} command copied.</p>
-            ) : null}
-          </div>
 
-          <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--glass)] p-5">
-            <h2 className="font-black text-foreground">Local playback settings</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Use `rqbit` and `mpv` when both commands are available in PATH, or paste the full executable paths.
-            </p>
+            <div className="mt-4 space-y-2">
+              {sourceOptions.length ? sourceOptions.map((item) => {
+                const active = source?.magnet === item.magnet;
+                return (
+                  <button
+                    key={item.magnet}
+                    type="button"
+                    onClick={() => selectSource(item)}
+                    className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                      active
+                        ? 'border-primary/40 bg-primary/10'
+                        : 'border-border bg-background/45 hover:border-primary/30'
+                    }`}
+                  >
+                    <span className="line-clamp-2 text-sm font-bold text-foreground">{shortTitle(item)}</span>
+                    <span className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-muted-foreground">
+                      {item.episode ? <span>Ep {item.episode}</span> : null}
+                      {item.size ? <span>{item.size}</span> : null}
+                      {item.seeders ? <span>{item.seeders} seeders</span> : null}
+                    </span>
+                  </button>
+                );
+              }) : (
+                <div className="rounded-xl border border-dashed border-border p-4 text-sm leading-6 text-muted-foreground">
+                  No recent sources yet. Start from the Sources page.
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-border bg-[var(--glass)] p-4">
+            <div className="flex items-center gap-2">
+              <HardDrive className="h-4 w-4 text-primary" />
+              <h2 className="font-black text-foreground">Local tools</h2>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className={`rounded-xl border px-3 py-3 ${runtime?.torrent_engine_configured ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10'}`}>
+                <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">rqbit</p>
+                <p className={`mt-1 text-sm font-black ${runtime?.torrent_engine_configured ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  {runtime?.torrent_engine_configured ? 'Ready' : 'Needed'}
+                </p>
+              </div>
+              <div className={`rounded-xl border px-3 py-3 ${runtime?.player_configured ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/25 bg-amber-500/10'}`}>
+                <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">MPV</p>
+                <p className={`mt-1 text-sm font-black ${runtime?.player_configured ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  {runtime?.player_configured ? 'Ready' : 'Needed'}
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 line-clamp-2 text-xs leading-5 text-muted-foreground">{runtime?.message || 'Checking local playback tools.'}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => refreshRuntime()}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/55 px-3 py-2 text-xs font-bold text-foreground hover:border-primary/40"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={openCacheFolder}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-background/55 px-3 py-2 text-xs font-bold text-foreground hover:border-primary/40"
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                Cache
+              </button>
+            </div>
+          </section>
+
+          <details className="rounded-2xl border border-border bg-[var(--glass)] p-4">
+            <summary className="flex cursor-pointer list-none items-center gap-2 font-black text-foreground">
+              <Settings className="h-4 w-4 text-primary" />
+              Advanced settings
+            </summary>
             <div className="mt-4 space-y-3">
               <label className="block">
                 <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">rqbit command/path</span>
                 <input
                   value={settings.torrent_engine_path}
                   onChange={(event) => setSettings((current) => ({ ...current, torrent_engine_path: event.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
+                  className="mt-1 w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary"
                   placeholder="rqbit"
                 />
               </label>
@@ -504,38 +449,37 @@ export default function LocalPlayer() {
                 <input
                   value={settings.mpv_path}
                   onChange={(event) => setSettings((current) => ({ ...current, mpv_path: event.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
+                  className="mt-1 w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary"
                   placeholder="mpv"
                 />
-                <span className="mt-1 block text-[11px] font-semibold text-muted-foreground">
-                  On Windows, StreamNyaa auto-detects MPV from Program Files when this is left as `mpv`.
-                </span>
               </label>
               <label className="block">
                 <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Cache folder</span>
                 <input
                   value={settings.cache_dir}
                   onChange={(event) => setSettings((current) => ({ ...current, cache_dir: event.target.value }))}
-                  className="mt-1 w-full rounded-xl border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary"
+                  className="mt-1 w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary"
                   placeholder="Leave blank for system temp"
                 />
               </label>
-              <button
-                type="button"
-                onClick={saveSettings}
-                className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                Save desktop settings
-              </button>
-              <button
-                type="button"
-                onClick={testMpv}
-                className="w-full rounded-xl border border-border bg-background/55 px-4 py-2.5 text-sm font-black text-foreground transition-colors hover:border-primary/40"
-              >
-                Test MPV window
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={saveSettings}
+                  className="rounded-lg bg-primary px-3 py-2 text-sm font-black text-primary-foreground hover:bg-primary/90"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={testMpv}
+                  className="rounded-lg border border-border bg-background/55 px-3 py-2 text-sm font-black text-foreground hover:border-primary/40"
+                >
+                  Test MPV
+                </button>
+              </div>
             </div>
-          </div>
+          </details>
         </aside>
       </section>
     </div>
