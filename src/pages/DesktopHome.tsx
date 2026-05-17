@@ -104,7 +104,7 @@ export default function DesktopHome() {
   const upcoming = (upcomingData?.data || []).slice(0, 7);
 
   return (
-    <div className="relative min-h-[calc(100vh-5rem)] overflow-hidden bg-[#08080a]">
+    <div className="desktop-home-cinematic relative min-h-[calc(100vh-5rem)] overflow-hidden bg-[#08080a]">
       <Seo title="StreamNyaa Desktop" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
 
       {hero ? (

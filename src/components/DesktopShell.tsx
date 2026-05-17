@@ -28,6 +28,14 @@ const navItems = [
   { to: '/desktop-settings', label: 'Settings', icon: Settings },
 ];
 
+const quickItems = [
+  { to: '/schedule', label: 'Latest episodes', icon: CalendarDays },
+  { to: '/search?sort=trending&status=airing', label: 'Trending', icon: Sparkles },
+  { to: '/nyaa?desktop=1', label: 'Sources', icon: Download },
+  { to: '/local-player?desktop=1', label: 'Player', icon: MonitorPlay },
+  { to: '/my-list', label: 'Library', icon: Library },
+];
+
 function pageTitle(pathname: string) {
   if (pathname === '/') return 'Home';
   if (pathname.startsWith('/nyaa')) return 'Sources';
@@ -229,6 +237,21 @@ export default function DesktopShell() {
               </NavLink>
             ))}
           </div>
+
+          {location.pathname !== '/' ? (
+            <div className="hidden gap-2 overflow-x-auto border-t border-white/10 px-7 py-2 lg:flex">
+              {quickItems.map(({ to, label, icon: Icon }) => (
+                <Link
+                  key={label}
+                  to={to}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-[11px] font-black text-white/55 hover:border-primary/40 hover:bg-primary/10 hover:text-white"
+                >
+                  <Icon className="h-3.5 w-3.5 text-primary" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          ) : null}
         </header>
 
         <main className="min-w-0 pb-10">
