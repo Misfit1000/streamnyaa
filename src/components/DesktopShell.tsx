@@ -24,6 +24,7 @@ const navItems = [
   { to: '/schedule', label: 'Schedule', icon: CalendarDays },
   { to: '/my-list', label: 'Library', icon: Library },
   { to: '/compare', label: 'Compare', icon: BarChart3 },
+  { to: '/desktop-settings', label: 'Settings', icon: Settings },
 ];
 
 function pageTitle(pathname: string) {
@@ -34,6 +35,7 @@ function pageTitle(pathname: string) {
   if (pathname.startsWith('/schedule')) return 'Schedule';
   if (pathname.startsWith('/my-list')) return 'Library';
   if (pathname.startsWith('/compare')) return 'Compare';
+  if (pathname.startsWith('/desktop-settings')) return 'Settings';
   if (pathname.startsWith('/dashboard')) return 'Account';
   if (pathname.startsWith('/admin')) return 'Admin';
   return 'StreamNyaa';
@@ -213,6 +215,13 @@ export default function DesktopShell() {
           >
             <Settings className="h-4 w-4 text-primary" />
             Player
+          </Link>
+          <Link
+            to="/desktop-settings"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-[#111217]/95 px-3 text-sm font-bold text-white shadow-lg shadow-black/25 backdrop-blur hover:border-primary/50"
+          >
+            <Settings className="h-4 w-4 text-primary" />
+            Settings
           </Link>
         </div>
       </div>

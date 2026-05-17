@@ -160,6 +160,23 @@ export async function startLocalPlayback(source: LocalPlaybackSource) {
   return startLocalPlaybackWithSettings(source, loadDesktopPlaybackSettings());
 }
 
+export async function startLocalDownloadWithSettings(source: LocalPlaybackSource, settings: DesktopPlaybackSettings) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Local download is only available inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<DesktopPlaybackStatus>('download_local_torrent', {
+    request: {
+      magnet: source.magnet,
+      title: source.title,
+      anime_title: source.animeTitle || '',
+      episode: source.episode ? String(source.episode) : '',
+      settings,
+    },
+  });
+}
+
 export function loadDesktopPlaybackSettings(): DesktopPlaybackSettings {
   try {
     const raw = localStorage.getItem(DESKTOP_SETTINGS_KEY);
@@ -216,6 +233,19 @@ export async function getLocalPlaybackProgress(torrentId: string) {
   }
 
   return invoke<DesktopPlaybackProgress>('get_local_playback_progress', {
+    request: {
+      torrent_id: torrentId,
+    },
+  });
+}
+
+export async function stopLocalPlayback(torrentId: string) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Local playback can only be stopped inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<void>('stop_local_playback', {
     request: {
       torrent_id: torrentId,
     },

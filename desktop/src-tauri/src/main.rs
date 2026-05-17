@@ -82,6 +82,11 @@ struct PlaybackProgressRequest {
     torrent_id: String,
 }
 
+#[derive(Deserialize)]
+struct StopPlaybackRequest {
+    torrent_id: String,
+}
+
 fn now_millis() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -579,7 +584,10 @@ fn open_cache_folder(settings: Option<DesktopSettings>) -> Result<(), String> {
     Ok(())
 }
 
-fn play_local_torrent_blocking(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
+fn add_local_torrent_blocking(
+    request: PlaybackRequest,
+    open_player: bool,
+) -> Result<PlaybackStatus, String> {
     if request.magnet.trim().is_empty() {
         return Err("No source link was provided.".to_string());
     }
@@ -614,9 +622,7 @@ fn play_local_torrent_blocking(request: PlaybackRequest) -> Result<PlaybackStatu
     let Some(engine_path) = runtime.torrent_engine_path.clone() else {
         return Err("Torrent engine path is missing.".to_string());
     };
-    let Some(player_path) = runtime.player_path.clone() else {
-        return Err("MPV path is missing.".to_string());
-    };
+    let player_path = runtime.player_path.clone();
 
     fs::create_dir_all(&runtime.cache_dir)
         .map_err(|error| format!("Could not create local cache folder: {}", error))?;
@@ -640,24 +646,42 @@ fn play_local_torrent_blocking(request: PlaybackRequest) -> Result<PlaybackStatu
         .ok_or_else(|| "rqbit did not return a playable torrent id yet.".to_string())?;
     let playlist_url = format!("http://127.0.0.1:3030/torrents/{}/playlist", torrent_id);
 
-    Command::new(&player_path)
-        .arg(&playlist_url)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| format!("Could not start MPV: {}", error))?;
+    if open_player {
+        let Some(player_path) = player_path else {
+            return Err("MPV path is missing.".to_string());
+        };
+
+        Command::new(&player_path)
+            .arg(&playlist_url)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| format!("Could not start MPV: {}", error))?;
+    }
 
     Ok(PlaybackStatus {
         ok: true,
-        state: "started".to_string(),
-        message:
+        state: if open_player { "started" } else { "downloading" }.to_string(),
+        message: if open_player {
             "Local rqbit stream started. MPV should open once torrent metadata and pieces are ready."
-                .to_string(),
+                .to_string()
+        } else {
+            "Local download started. The file will be saved in the StreamNyaa cache folder."
+                .to_string()
+        },
         title: label,
         torrent_id: Some(torrent_id),
         playlist_url: Some(playlist_url),
     })
+}
+
+fn play_local_torrent_blocking(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
+    add_local_torrent_blocking(request, true)
+}
+
+fn download_local_torrent_blocking(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
+    add_local_torrent_blocking(request, false)
 }
 
 #[tauri::command]
@@ -665,6 +689,13 @@ async fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, 
     tauri::async_runtime::spawn_blocking(move || play_local_torrent_blocking(request))
         .await
         .map_err(|error| format!("Local playback task could not finish: {}", error))?
+}
+
+#[tauri::command]
+async fn download_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || download_local_torrent_blocking(request))
+        .await
+        .map_err(|error| format!("Local download task could not finish: {}", error))?
 }
 
 fn get_local_playback_progress_blocking(
@@ -696,6 +727,26 @@ async fn get_local_playback_progress(
     tauri::async_runtime::spawn_blocking(move || get_local_playback_progress_blocking(request))
         .await
         .map_err(|error| format!("Playback progress task could not finish: {}", error))?
+}
+
+fn stop_local_playback_blocking(request: StopPlaybackRequest) -> Result<(), String> {
+    let torrent_id = request.torrent_id.trim();
+    if torrent_id.is_empty() {
+        return Ok(());
+    }
+
+    let delete_path = format!("/torrents/{}", percent_encode(torrent_id));
+    local_http_request("DELETE", &delete_path, None)
+        .or_else(|_| local_http_request("DELETE", &format!("{}?with_files=false", delete_path), None))
+        .map(|_| ())
+        .map_err(|error| format!("Could not stop local torrent: {}", error))
+}
+
+#[tauri::command]
+async fn stop_local_playback(request: StopPlaybackRequest) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || stop_local_playback_blocking(request))
+        .await
+        .map_err(|error| format!("Stop task could not finish: {}", error))?
 }
 
 fn fetch_desktop_source_api_blocking(url: String) -> Result<SourceApiResponse, String> {
@@ -740,10 +791,12 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             fetch_desktop_source_api,
+            download_local_torrent,
             get_desktop_runtime_status,
             get_local_playback_progress,
             open_cache_folder,
             play_local_torrent,
+            stop_local_playback,
             test_mpv_player
         ])
         .run(tauri::generate_context!())

@@ -28,7 +28,9 @@ import {
   openDesktopCacheFolder,
   saveDesktopPlaybackSettings,
   saveLocalPlaybackSource,
+  startLocalDownloadWithSettings,
   startLocalPlaybackWithSettings,
+  stopLocalPlayback,
   testDesktopMpv,
   type DesktopPlaybackProgress,
   type DesktopPlaybackSettings,
@@ -65,6 +67,7 @@ export default function LocalPlayer() {
   const [source, setSource] = useState<LocalPlaybackSource | null>(() => loadLocalPlaybackSource());
   const [sourceHistory, setSourceHistory] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
   const [status, setStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle');
+  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'starting' | 'ready' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
   const [playback, setPlayback] = useState<DesktopPlaybackProgress | null>(null);
@@ -77,6 +80,7 @@ export default function LocalPlayer() {
   });
   const [quality, setQuality] = useState<'1080p' | '720p' | 'raw' | ''>('1080p');
   const [submittedSourceQuery, setSubmittedSourceQuery] = useState('');
+  const [autoSelectedQuery, setAutoSelectedQuery] = useState('');
 
   const sourceOptions = sourceHistory.length ? sourceHistory : source ? [source] : [];
   const runtimeReady = Boolean(runtime?.ready);
@@ -86,6 +90,12 @@ export default function LocalPlayer() {
     selectedEpisode ? selectedEpisode.padStart(2, '0') : '',
     quality && quality !== 'raw' ? quality : '',
   ].filter(Boolean).join(' ');
+  const sourceWarnings = source ? [
+    Number(source.seeders || 0) > 0 && Number(source.seeders || 0) < 10 ? 'Low seed count; playback may take longer.' : '',
+    selectedEpisode && source.episode && String(source.episode) !== selectedEpisode ? 'Selected source episode differs from the episode selector.' : '',
+    /\b(batch|complete|season pack|complete season)\b/i.test(source.title) && selectedEpisode ? 'This looks like a batch source, not a single episode.' : '',
+    /\braw\b/i.test(source.title) ? 'Raw source may not include subtitles.' : '',
+  ].filter(Boolean) : [];
 
   const {
     data: searchedSources = [],
@@ -131,6 +141,21 @@ export default function LocalPlayer() {
     });
   };
 
+  const chooseBestSource = () => {
+    const best = searchedSources[0];
+    if (best) selectTorrentSource(best);
+  };
+
+  const applyPreset = (nextQuality: typeof quality, label?: string) => {
+    setQuality(nextQuality);
+    const nextQuery = [
+      sourceQuery.trim(),
+      selectedEpisode ? selectedEpisode.padStart(2, '0') : '',
+      label || (nextQuality && nextQuality !== 'raw' ? nextQuality : ''),
+    ].filter(Boolean).join(' ');
+    setSubmittedSourceQuery(nextQuery);
+  };
+
   const clearSources = () => {
     clearLocalPlaybackHistory();
     setSource(null);
@@ -172,6 +197,15 @@ export default function LocalPlayer() {
     if (!desktop || submittedSourceQuery || builtSourceQuery.length < 2) return;
     setSubmittedSourceQuery(builtSourceQuery);
   }, [builtSourceQuery, desktop, submittedSourceQuery]);
+
+  useEffect(() => {
+    if (!searchedSources.length || !submittedSourceQuery || autoSelectedQuery === submittedSourceQuery) return;
+    if (!source) {
+      selectTorrentSource(searchedSources[0]);
+      setMessage('Best source selected automatically.');
+    }
+    setAutoSelectedQuery(submittedSourceQuery);
+  }, [autoSelectedQuery, searchedSources, source, submittedSourceQuery]);
 
   useEffect(() => {
     if (!desktop || !activeTorrentId) return undefined;
@@ -228,6 +262,60 @@ export default function LocalPlayer() {
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Desktop playback could not start.');
+    }
+  };
+
+  const startDownloadOnly = async () => {
+    if (!source) {
+      setStatus('error');
+      setMessage('Choose a source first.');
+      return;
+    }
+
+    setDownloadStatus('starting');
+    setMessage('Starting local download...');
+    try {
+      const result = await startLocalDownloadWithSettings(source, settings);
+      setDownloadStatus(result.ok ? 'ready' : 'error');
+      setMessage(result.message || 'Local download started.');
+      if (result.torrent_id) {
+        setActiveTorrentId(result.torrent_id);
+        setPlayback({
+          ok: true,
+          torrent_id: result.torrent_id,
+          state: result.state,
+          message: result.message,
+          progress: null,
+          downloaded_bytes: null,
+          total_bytes: null,
+          peers: null,
+          download_speed: null,
+          playlist_url: result.playlist_url || `http://127.0.0.1:3030/torrents/${result.torrent_id}/playlist`,
+        });
+      }
+    } catch (error) {
+      setDownloadStatus('error');
+      setMessage(error instanceof Error ? error.message : 'Local download could not start.');
+    }
+  };
+
+  const stopActive = async () => {
+    if (!activeTorrentId) {
+      setStatus('idle');
+      setDownloadStatus('idle');
+      setMessage('Nothing active to stop.');
+      return;
+    }
+    try {
+      await stopLocalPlayback(activeTorrentId);
+      setActiveTorrentId('');
+      setPlayback(null);
+      setStatus('idle');
+      setDownloadStatus('idle');
+      setMessage('Local stream stopped.');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'Could not stop local playback.');
     }
   };
 
@@ -345,15 +433,44 @@ export default function LocalPlayer() {
                     {source.seeders ? <span className="rounded-md bg-white/8 px-2.5 py-1">{source.seeders} seeders</span> : null}
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={start}
-                    disabled={!canPlay}
-                    className="mt-8 inline-flex min-w-[220px] items-center justify-center gap-3 rounded-xl bg-primary px-7 py-4 text-base font-black text-white shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {status === 'starting' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />}
-                    {status === 'starting' ? 'Starting' : 'Play'}
-                  </button>
+                  {sourceWarnings.length ? (
+                    <div className="mx-auto mt-4 max-w-xl space-y-2 text-left">
+                      {sourceWarnings.map((warning) => (
+                        <div key={warning} className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200">
+                          {warning}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-8 flex flex-wrap justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={start}
+                      disabled={!canPlay}
+                      className="inline-flex min-w-[180px] items-center justify-center gap-3 rounded-xl bg-primary px-7 py-4 text-base font-black text-white shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {status === 'starting' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />}
+                      {status === 'starting' ? 'Starting' : 'Play'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={startDownloadOnly}
+                      disabled={!desktop || !source || !runtimeReady || downloadStatus === 'starting'}
+                      className="inline-flex min-w-[150px] items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {downloadStatus === 'starting' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      Download
+                    </button>
+                    <button
+                      type="button"
+                      onClick={stopActive}
+                      disabled={!activeTorrentId && status !== 'starting' && downloadStatus !== 'starting'}
+                      className="inline-flex min-w-[110px] items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white/72 hover:border-red-400/40 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-35"
+                    >
+                      Stop
+                    </button>
+                  </div>
 
                   {message ? (
                     <p className={`mx-auto mt-4 max-w-xl text-sm leading-6 ${status === 'error' ? 'text-red-300' : 'text-white/55'}`}>
@@ -448,6 +565,23 @@ export default function LocalPlayer() {
                   <option value="raw">Raw</option>
                 </select>
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  ['Best 1080p', '1080p', '1080p'],
+                  ['Best 720p', '720p', '720p'],
+                  ['Dual Audio', '', 'dual audio'],
+                  ['HEVC', '', 'HEVC'],
+                ].map(([label, nextQuality, queryLabel]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => applyPreset(nextQuality as typeof quality, queryLabel)}
+                    className="rounded-lg border border-border bg-background/45 px-3 py-2 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -460,6 +594,15 @@ export default function LocalPlayer() {
                 {sourcesLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 {sourcesLoading ? 'Searching' : 'Search sources'}
               </button>
+              {searchedSources.length ? (
+                <button
+                  type="button"
+                  onClick={chooseBestSource}
+                  className="w-full rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-sm font-black text-emerald-300 hover:bg-emerald-500/15"
+                >
+                  Select best result
+                </button>
+              ) : null}
             </div>
 
             <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">

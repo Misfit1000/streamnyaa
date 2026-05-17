@@ -5,8 +5,10 @@ import Layout from './components/Layout';
 import Home from './pages/Home';
 import ScrollToTop from './components/ScrollToTop';
 import { AuthProvider } from './context/AuthContext';
+import { isDesktopApp } from './lib/desktop';
 
 const Search = lazy(() => import('./pages/Search'));
+const DesktopHome = lazy(() => import('./pages/DesktopHome'));
 const Schedule = lazy(() => import('./pages/Schedule'));
 const AnimeDetails = lazy(() => import('./pages/AnimeDetails'));
 const AnimeLanding = lazy(() => import('./pages/AnimeLanding'));
@@ -16,6 +18,7 @@ const NyaaSearchPage = lazy(() => import('./pages/NyaaSearchPage'));
 const AnimeDownloads = lazy(() => import('./pages/AnimeDownloads'));
 const AnimeCompare = lazy(() => import('./pages/AnimeCompare'));
 const LocalPlayer = lazy(() => import('./pages/LocalPlayer'));
+const DesktopSettings = lazy(() => import('./pages/DesktopSettings'));
 const Blog = lazy(() => import('./pages/Blog'));
 const BlogPost = lazy(() => import('./pages/BlogPost'));
 const Login = lazy(() => import('./pages/Login'));
@@ -60,6 +63,8 @@ function RouteFallback() {
 }
 
 export default function App() {
+  const desktop = isDesktopApp();
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
@@ -68,7 +73,7 @@ export default function App() {
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<Layout />}>
-                <Route index element={<Home />} />
+                <Route index element={desktop ? <DesktopHome /> : <Home />} />
                 <Route path="search" element={<Search />} />
                 <Route path="schedule" element={<Schedule />} />
                 <Route path="anime/popular" element={<AnimeLanding />} />
@@ -82,6 +87,7 @@ export default function App() {
                 <Route path="my-list" element={<MyList />} />
                 <Route path="nyaa" element={<NyaaSearchPage />} />
                 <Route path="local-player" element={<LocalPlayer />} />
+                <Route path="desktop-settings" element={<DesktopSettings />} />
                 <Route path="compare" element={<AnimeCompare />} />
                 <Route path="blog" element={<Blog />} />
                 <Route path="blog/:slug" element={<BlogPost />} />
