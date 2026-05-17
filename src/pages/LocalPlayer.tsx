@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -25,6 +25,7 @@ import {
   loadDesktopPlaybackSettings,
   loadLocalPlaybackHistory,
   loadLocalPlaybackSource,
+  openLocalTorrentPlayer,
   openDesktopCacheFolder,
   saveDesktopPlaybackSettings,
   saveLocalPlaybackSource,
@@ -38,7 +39,7 @@ import {
   type LocalPlaybackSource,
 } from '../lib/desktop';
 import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
-import { sourceQualityScore } from '../lib/sourceQuality';
+import { sourceFreshnessLabel, sourceQualityScore } from '../lib/sourceQuality';
 
 function formatBytes(value?: number | null) {
   if (!value || value <= 0) return '0 B';
@@ -62,6 +63,32 @@ function shortTitle(source: LocalPlaybackSource) {
   return source.animeTitle || source.title;
 }
 
+function sourceKind(title = '') {
+  if (/\b(batch|complete|season pack|complete season)\b/i.test(title)) return 'batch';
+  if (/\b(dual[\s-]?audio|multi[\s-]?audio|dub|dubbed)\b/i.test(title)) return 'dual';
+  if (/\b(raw)\b/i.test(title)) return 'raw';
+  return 'sub';
+}
+
+function sourceEpisodeMatch(title: string, selectedEpisode: string) {
+  const episodeNumber = Number(selectedEpisode);
+  if (!Number.isFinite(episodeNumber) || episodeNumber <= 0) return 'none';
+  if (sourceKind(title) === 'batch') return 'batch';
+
+  const padded = String(episodeNumber).padStart(2, '0');
+  const loose = String(episodeNumber);
+  const exactPatterns = [
+    new RegExp(`\\bS\\d{1,2}E0?${episodeNumber}\\b`, 'i'),
+    new RegExp(`\\bEP(?:ISODE)?\\.?\\s*0?${episodeNumber}\\b`, 'i'),
+    new RegExp(`(?:^|[\\s._\\-[\\(])${padded}(?:[\\s._\\-\\]\\)]|$)`, 'i'),
+    new RegExp(`(?:^|[\\s._\\-[\\(])${loose}(?:[\\s._\\-\\]\\)]|$)`, 'i'),
+  ];
+  if (exactPatterns.some((pattern) => pattern.test(title))) return 'exact';
+
+  const anyEpisodeMarker = /\bS\d{1,2}E\d{1,4}\b|\bEP(?:ISODE)?\.?\s*\d{1,4}\b|(?:^|[\s._\-[\(])\d{2,4}(?:[\s._\-\]\)]|$)/i;
+  return anyEpisodeMarker.test(title) ? 'mismatch' : 'unknown';
+}
+
 export default function LocalPlayer() {
   const desktop = isDesktopApp();
   const [source, setSource] = useState<LocalPlaybackSource | null>(() => loadLocalPlaybackSource());
@@ -81,6 +108,7 @@ export default function LocalPlayer() {
   const [quality, setQuality] = useState<'1080p' | '720p' | 'raw' | ''>('1080p');
   const [submittedSourceQuery, setSubmittedSourceQuery] = useState('');
   const [autoSelectedQuery, setAutoSelectedQuery] = useState('');
+  const [strictEpisode, setStrictEpisode] = useState(true);
 
   const sourceOptions = sourceHistory.length ? sourceHistory : source ? [source] : [];
   const runtimeReady = Boolean(runtime?.ready);
@@ -112,6 +140,23 @@ export default function LocalPlayer() {
     enabled: desktop && submittedSourceQuery.length >= 2,
     staleTime: 1000 * 60 * 2,
   });
+  const rankedSearchedSources = useMemo(() => {
+    const sorted = [...searchedSources].sort((a, b) => {
+      const aMatch = selectedEpisode ? sourceEpisodeMatch(a.title, selectedEpisode) : 'none';
+      const bMatch = selectedEpisode ? sourceEpisodeMatch(b.title, selectedEpisode) : 'none';
+      const matchWeight: Record<string, number> = { exact: 4, unknown: 3, none: 3, batch: 2, mismatch: 0 };
+      const aWeight = matchWeight[aMatch] ?? 0;
+      const bWeight = matchWeight[bMatch] ?? 0;
+      if (aWeight !== bWeight) return bWeight - aWeight;
+      return sourceQualityScore(b) - sourceQualityScore(a);
+    });
+    if (!strictEpisode || !selectedEpisode) return sorted;
+    const exact = sorted.filter((item) => sourceEpisodeMatch(item.title, selectedEpisode) === 'exact');
+    return exact.length ? exact : sorted;
+  }, [searchedSources, selectedEpisode, strictEpisode]);
+  const exactEpisodeCount = selectedEpisode
+    ? searchedSources.filter((item) => sourceEpisodeMatch(item.title, selectedEpisode) === 'exact').length
+    : 0;
 
   const refreshRuntime = async (nextSettings = settings) => {
     const nextRuntime = await getDesktopRuntimeStatus(nextSettings);
@@ -142,7 +187,7 @@ export default function LocalPlayer() {
   };
 
   const chooseBestSource = () => {
-    const best = searchedSources[0];
+    const best = rankedSearchedSources[0];
     if (best) selectTorrentSource(best);
   };
 
@@ -199,13 +244,13 @@ export default function LocalPlayer() {
   }, [builtSourceQuery, desktop, submittedSourceQuery]);
 
   useEffect(() => {
-    if (!searchedSources.length || !submittedSourceQuery || autoSelectedQuery === submittedSourceQuery) return;
+    if (!rankedSearchedSources.length || !submittedSourceQuery || autoSelectedQuery === submittedSourceQuery) return;
     if (!source) {
-      selectTorrentSource(searchedSources[0]);
+      selectTorrentSource(rankedSearchedSources[0]);
       setMessage('Best source selected automatically.');
     }
     setAutoSelectedQuery(submittedSourceQuery);
-  }, [autoSelectedQuery, searchedSources, source, submittedSourceQuery]);
+  }, [autoSelectedQuery, rankedSearchedSources, source, submittedSourceQuery]);
 
   useEffect(() => {
     if (!desktop || !activeTorrentId) return undefined;
@@ -316,6 +361,23 @@ export default function LocalPlayer() {
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'Could not stop local playback.');
+    }
+  };
+
+  const reopenPlayer = async () => {
+    if (!activeTorrentId) {
+      setMessage('Start or download a source first.');
+      return;
+    }
+    setStatus('starting');
+    setMessage('Opening MPV for the active stream...');
+    try {
+      const result = await openLocalTorrentPlayer(activeTorrentId, settings);
+      setStatus(result.ok ? 'ready' : 'error');
+      setMessage(result.message || 'MPV opened.');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'Could not open MPV.');
     }
   };
 
@@ -470,6 +532,14 @@ export default function LocalPlayer() {
                     >
                       Stop
                     </button>
+                    <button
+                      type="button"
+                      onClick={reopenPlayer}
+                      disabled={!activeTorrentId || !runtimeReady}
+                      className="inline-flex min-w-[130px] items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] px-5 py-4 text-sm font-black text-white/72 hover:border-primary/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                    >
+                      Open MPV
+                    </button>
                   </div>
 
                   {message ? (
@@ -582,6 +652,17 @@ export default function LocalPlayer() {
                   </button>
                 ))}
               </div>
+              {selectedEpisode ? (
+                <label className="flex cursor-pointer items-center justify-between rounded-lg border border-border bg-background/45 px-3 py-2 text-xs font-bold text-muted-foreground">
+                  <span>Prefer exact episode matches</span>
+                  <input
+                    type="checkbox"
+                    checked={strictEpisode}
+                    onChange={(event) => setStrictEpisode(event.target.checked)}
+                    className="h-4 w-4 accent-primary"
+                  />
+                </label>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
@@ -594,7 +675,7 @@ export default function LocalPlayer() {
                 {sourcesLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 {sourcesLoading ? 'Searching' : 'Search sources'}
               </button>
-              {searchedSources.length ? (
+              {rankedSearchedSources.length ? (
                 <button
                   type="button"
                   onClick={chooseBestSource}
@@ -616,8 +697,18 @@ export default function LocalPlayer() {
                 <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm leading-6 text-red-200">
                   {sourcesErrorValue instanceof Error ? sourcesErrorValue.message : 'Source search failed.'}
                 </div>
-              ) : searchedSources.length ? searchedSources.slice(0, 12).map((torrent) => {
+              ) : rankedSearchedSources.length ? (
+                <>
+                  {selectedEpisode ? (
+                    <div className="rounded-xl border border-border bg-background/35 px-3 py-2 text-xs font-bold text-muted-foreground">
+                      {exactEpisodeCount
+                        ? `${exactEpisodeCount} exact episode match${exactEpisodeCount === 1 ? '' : 'es'} found.`
+                        : 'No exact episode marker found; showing best related sources.'}
+                    </div>
+                  ) : null}
+                  {rankedSearchedSources.slice(0, 12).map((torrent) => {
                 const active = source?.magnet === torrent.magnet;
+                const match = selectedEpisode ? sourceEpisodeMatch(torrent.title, selectedEpisode) : 'none';
                 return (
                   <button
                     key={torrent.infoHash || torrent.magnet}
@@ -634,6 +725,8 @@ export default function LocalPlayer() {
                       <span>Score {sourceQualityScore(torrent)}</span>
                       <span>{torrent.size}</span>
                       <span>{torrent.seeders} seeders</span>
+                      <span>{sourceFreshnessLabel(torrent)}</span>
+                      {selectedEpisode ? <span>{match === 'exact' ? 'Exact episode' : match === 'batch' ? 'Batch' : match === 'mismatch' ? 'Different episode' : 'Related source'}</span> : null}
                     </span>
                     <span className="mt-2 flex flex-wrap gap-1.5">
                       {getTorrentBadges(torrent).slice(0, 3).map((badge) => (
@@ -644,7 +737,9 @@ export default function LocalPlayer() {
                     </span>
                   </button>
                 );
-              }) : sourceQuery.trim().length >= 2 ? (
+              })}
+                </>
+              ) : sourceQuery.trim().length >= 2 ? (
                 <div className="rounded-xl border border-dashed border-border p-4 text-sm leading-6 text-muted-foreground">
                   No sources found for this search yet.
                 </div>

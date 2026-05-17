@@ -87,6 +87,12 @@ struct StopPlaybackRequest {
     torrent_id: String,
 }
 
+#[derive(Deserialize)]
+struct OpenTorrentPlayerRequest {
+    torrent_id: String,
+    settings: Option<DesktopSettings>,
+}
+
 fn now_millis() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -749,6 +755,61 @@ async fn stop_local_playback(request: StopPlaybackRequest) -> Result<(), String>
         .map_err(|error| format!("Stop task could not finish: {}", error))?
 }
 
+fn open_local_torrent_player_blocking(request: OpenTorrentPlayerRequest) -> Result<PlaybackStatus, String> {
+    let torrent_id = request.torrent_id.trim();
+    if torrent_id.is_empty() {
+        return Err("Torrent id is missing.".to_string());
+    }
+
+    let runtime = get_desktop_runtime_status(request.settings.clone());
+    if !runtime.ready {
+        return Ok(PlaybackStatus {
+            ok: false,
+            state: "needs_setup".to_string(),
+            message: runtime.message,
+            title: "Local stream".to_string(),
+            torrent_id: Some(torrent_id.to_string()),
+            playlist_url: None,
+        });
+    }
+
+    let Some(engine_path) = runtime.torrent_engine_path.clone() else {
+        return Err("Torrent engine path is missing.".to_string());
+    };
+    let Some(player_path) = runtime.player_path.clone() else {
+        return Err("MPV path is missing.".to_string());
+    };
+
+    fs::create_dir_all(&runtime.cache_dir)
+        .map_err(|error| format!("Could not create local cache folder: {}", error))?;
+    start_rqbit_server(&engine_path, &runtime.cache_dir)?;
+
+    let playlist_url = format!("http://127.0.0.1:3030/torrents/{}/playlist", percent_encode(torrent_id));
+    Command::new(&player_path)
+        .arg(&playlist_url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|error| format!("Could not start MPV: {}", error))?;
+
+    Ok(PlaybackStatus {
+        ok: true,
+        state: "opened".to_string(),
+        message: "MPV opened for the active local stream.".to_string(),
+        title: "Local stream".to_string(),
+        torrent_id: Some(torrent_id.to_string()),
+        playlist_url: Some(playlist_url),
+    })
+}
+
+#[tauri::command]
+async fn open_local_torrent_player(request: OpenTorrentPlayerRequest) -> Result<PlaybackStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || open_local_torrent_player_blocking(request))
+        .await
+        .map_err(|error| format!("Open player task could not finish: {}", error))?
+}
+
 fn fetch_desktop_source_api_blocking(url: String) -> Result<SourceApiResponse, String> {
     let trimmed_url = url.trim();
     if !trimmed_url.starts_with("https://www.streamnyaa.xyz/api/nyaa?") {
@@ -795,6 +856,7 @@ fn main() {
             get_desktop_runtime_status,
             get_local_playback_progress,
             open_cache_folder,
+            open_local_torrent_player,
             play_local_torrent,
             stop_local_playback,
             test_mpv_player
