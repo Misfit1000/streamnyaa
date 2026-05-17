@@ -32,7 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import Seo from '../components/Seo';
-import { searchNyaa, type NyaaItem } from '../api/nyaa';
+import type { NyaaItem } from '../api/nyaa';
 import {
   clearLocalPlaybackHistory,
   getDesktopRuntimeStatus,
@@ -69,14 +69,6 @@ function sourceKind(title = '') {
   if (/\b(dual[\s-]?audio|multi[\s-]?audio|dub|dubbed)\b/i.test(title)) return 'dual audio';
   if (/\b(raw)\b/i.test(title)) return 'raw';
   return 'sub';
-}
-
-function shortTitle(source: LocalPlaybackSource | null) {
-  if (!source) return 'Select a source';
-  if (source.animeTitle && source.episode && source.episode !== 'batch') {
-    return `${source.animeTitle} - Episode ${source.episode}`;
-  }
-  return source.animeTitle || source.title;
 }
 
 function sourceEpisodeMatch(title: string, selectedEpisode: string) {
@@ -121,19 +113,15 @@ function qualityFromTitle(title = '') {
   return 'Auto';
 }
 
-function IconButton({
-  label,
-  onClick,
-  disabled,
-  active,
-  children,
-}: {
-  label: string;
-  onClick?: () => void;
-  disabled?: boolean;
-  active?: boolean;
-  children: ReactNode;
-}) {
+function shortTitle(source: LocalPlaybackSource | null) {
+  if (!source) return 'Select a source';
+  if (source.animeTitle && source.episode && source.episode !== 'batch') {
+    return `${source.animeTitle} - Episode ${source.episode}`;
+  }
+  return source.animeTitle || source.title;
+}
+
+function IconButton({ label, onClick, disabled, children }: { label: string; onClick?: () => void; disabled?: boolean; children: ReactNode }) {
   return (
     <button
       type="button"
@@ -141,11 +129,7 @@ function IconButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className={`grid h-10 w-10 place-items-center rounded-xl border transition-colors ${
-        active
-          ? 'border-primary/45 bg-primary/18 text-white'
-          : 'border-white/10 bg-white/[0.055] text-white/70 hover:border-primary/35 hover:bg-white/[0.085] hover:text-white'
-      } disabled:cursor-not-allowed disabled:opacity-35`}
+      className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.055] text-white/70 transition-colors hover:border-primary/35 hover:bg-white/[0.085] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
     >
       {children}
     </button>
@@ -162,7 +146,7 @@ function StatCard({ icon, label, value, detail }: { icon: ReactNode; label: stri
           <p className="mt-0.5 text-lg font-semibold text-white">{value}</p>
         </div>
       </div>
-      <p className="mt-2 text-xs text-white/42">{detail}</p>
+      <p className="mt-2 line-clamp-1 text-xs text-white/42">{detail}</p>
     </div>
   );
 }
@@ -191,17 +175,13 @@ export default function LocalPlayer() {
   const runtimeReady = Boolean(runtime?.ready);
   const progress = Math.max(0, Math.min(100, playback?.progress ?? (playState === 'ready' ? 100 : playState === 'starting' ? 22 : 0)));
   const peers = playback?.peers ?? Number(source?.seeders || 0) ?? 0;
+  const sourceTitle = source?.title || '';
+  const sourceQuality = useMemo(() => qualityFromTitle(sourceTitle), [sourceTitle]);
+  const sourceType = useMemo(() => sourceKind(sourceTitle), [sourceTitle]);
   const episodeBase = Number(selectedEpisode || source?.episode || 1);
-  const episodeItems = useMemo(() => {
-    const start = Math.max(1, episodeBase - 6);
-    return Array.from({ length: 12 }, (_, index) => start + index);
-  }, [episodeBase]);
-
-  const builtQuery = [
-    sourceQuery.trim(),
-    selectedEpisode ? selectedEpisode.padStart(2, '0') : '',
-    quality,
-  ].filter(Boolean).join(' ');
+  const episodeItems = useMemo(() => Array.from({ length: 12 }, (_, index) => Math.max(1, episodeBase - 6) + index), [episodeBase]);
+  const episodeOptions = useMemo(() => Array.from({ length: 200 }, (_, index) => index + 1), []);
+  const builtQuery = [sourceQuery.trim(), selectedEpisode ? selectedEpisode.padStart(2, '0') : '', quality].filter(Boolean).join(' ');
 
   const {
     data: searchedSources = [],
@@ -211,7 +191,10 @@ export default function LocalPlayer() {
     refetch: refetchSources,
   } = useQuery({
     queryKey: ['local-player-sources', submittedQuery, quality],
-    queryFn: () => searchNyaa(submittedQuery, '1_2', '0', '1', { pages: 2, wide: true }),
+    queryFn: async () => {
+      const { searchNyaa } = await import('../api/nyaa');
+      return searchNyaa(submittedQuery, '1_2', '0', '1', { pages: 2, wide: true });
+    },
     enabled: desktopBridgeReady && submittedQuery.length >= 2,
     staleTime: 1000 * 60 * 2,
   });
@@ -378,23 +361,26 @@ export default function LocalPlayer() {
   useEffect(() => {
     let cancelled = false;
     if (!desktopBridgeReady) return undefined;
-    getDesktopRuntimeStatus(settings)
-      .then((nextRuntime) => {
-        if (!cancelled && nextRuntime) setRuntime(nextRuntime);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRuntime({
-            ready: false,
-            torrent_engine_configured: false,
-            player_configured: false,
-            cache_dir: '',
-            message: 'Playback status could not be read yet.',
-          });
-        }
-      });
+    const timer = window.setTimeout(() => {
+      getDesktopRuntimeStatus(settings)
+        .then((nextRuntime) => {
+          if (!cancelled && nextRuntime) setRuntime(nextRuntime);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setRuntime({
+              ready: false,
+              torrent_engine_configured: false,
+              player_configured: false,
+              cache_dir: '',
+              message: 'Playback status could not be read yet.',
+            });
+          }
+        });
+    }, 120);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [desktopBridgeReady, settings]);
 
@@ -410,7 +396,7 @@ export default function LocalPlayer() {
       }
     };
     void updateProgress();
-    const timer = window.setInterval(updateProgress, 2500);
+    const timer = window.setInterval(updateProgress, 3200);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -418,9 +404,19 @@ export default function LocalPlayer() {
   }, [activeTorrentId, desktopBridgeReady]);
 
   useEffect(() => {
-    if (!desktopBridgeReady || submittedQuery || builtQuery.length < 2) return;
-    setSubmittedQuery(builtQuery);
-  }, [builtQuery, desktopBridgeReady, submittedQuery]);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        document.querySelector<HTMLInputElement>('[data-local-player-search]')?.focus();
+      }
+      if (event.code === 'Space' && document.activeElement?.tagName !== 'INPUT') {
+        event.preventDefault();
+        void playSelectedSource();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 
   return (
     <div className="mx-auto max-w-[1680px] px-4 py-5 lg:px-6">
@@ -434,6 +430,7 @@ export default function LocalPlayer() {
           <div className="relative w-full max-w-[560px]">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/40" />
             <input
+              data-local-player-search
               value={sourceQuery}
               onChange={(event) => setSourceQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -474,8 +471,8 @@ export default function LocalPlayer() {
                     <h1 className="mt-1 line-clamp-1 text-2xl font-semibold tracking-[-0.02em] text-white md:text-3xl">{playerTitle}</h1>
                   </div>
                   <div className="flex gap-2 text-xs font-semibold text-white/58">
-                    <span className="rounded-md bg-white/10 px-2.5 py-1">{qualityFromTitle(source?.title || '')}</span>
-                    <span className="rounded-md bg-white/10 px-2.5 py-1">{sourceKind(source?.title || '')}</span>
+                    <span className="rounded-md bg-white/10 px-2.5 py-1">{sourceQuality}</span>
+                    <span className="rounded-md bg-white/10 px-2.5 py-1">{sourceType}</span>
                   </div>
                 </div>
 
@@ -521,7 +518,7 @@ export default function LocalPlayer() {
                       <IconButton label="Volume"><Volume2 className="h-4 w-4" /></IconButton>
                       <IconButton label="Subtitles"><Captions className="h-4 w-4" /></IconButton>
                       <button className="rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-xs font-semibold text-white/72">English</button>
-                      <button className="rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-xs font-semibold text-white/72">{qualityFromTitle(source?.title || '')}</button>
+                      <button className="rounded-xl border border-white/10 bg-white/[0.055] px-3 py-2 text-xs font-semibold text-white/72">{sourceQuality}</button>
                       <IconButton label="Fullscreen"><Maximize className="h-4 w-4" /></IconButton>
                     </div>
                   </div>
@@ -541,8 +538,8 @@ export default function LocalPlayer() {
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-white/64">
                   <span className="rounded-md bg-white/8 px-2.5 py-1">{source?.size || 'Unknown size'}</span>
                   <span className="rounded-md bg-white/8 px-2.5 py-1">{peers || 0} peers</span>
-                  <span className="rounded-md bg-primary/16 px-2.5 py-1 text-primary">{qualityFromTitle(source?.title || '')}</span>
-                  <span className="rounded-md bg-white/8 px-2.5 py-1">{sourceKind(source?.title || '')}</span>
+                  <span className="rounded-md bg-primary/16 px-2.5 py-1 text-primary">{sourceQuality}</span>
+                  <span className="rounded-md bg-white/8 px-2.5 py-1">{sourceType}</span>
                 </div>
                 <p className="mt-4 max-w-3xl text-sm leading-6 text-white/52">{message}</p>
               </div>
@@ -576,12 +573,7 @@ export default function LocalPlayer() {
               </div>
               <div className="flex gap-3 overflow-x-auto pb-2 hide-scrollbar">
                 {relatedCards.length ? relatedCards.map((item, index) => (
-                  <button
-                    key={`${item.magnet}-${index}`}
-                    type="button"
-                    onClick={() => selectSource(item)}
-                    className="group w-[190px] shrink-0 text-left"
-                  >
+                  <button key={`${item.magnet}-${index}`} type="button" onClick={() => selectSource(item)} className="group w-[190px] shrink-0 text-left">
                     <span className="relative block aspect-video overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(135deg,rgba(225,29,72,0.38),rgba(255,255,255,0.06)),#131217] shadow-lg shadow-black/20">
                       <span className="absolute inset-0 bg-[radial-gradient(circle_at_72%_28%,rgba(255,255,255,0.20),transparent_30%)] transition-transform duration-500 group-hover:scale-105" />
                       <span className="absolute bottom-2 right-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-semibold text-white/70">{qualityFromTitle(item.title)}</span>
@@ -630,7 +622,7 @@ export default function LocalPlayer() {
                       className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-xs font-semibold text-white outline-none [&>option]:bg-background"
                     >
                       <option value="">Batch</option>
-                      {Array.from({ length: 200 }, (_, index) => index + 1).map((episode) => (
+                      {episodeOptions.map((episode) => (
                         <option key={episode} value={episode}>Ep {episode}</option>
                       ))}
                     </select>
@@ -647,9 +639,7 @@ export default function LocalPlayer() {
                             setSubmittedQuery([sourceQuery.trim(), String(episode).padStart(2, '0'), quality].filter(Boolean).join(' '));
                             setPanelTab('sources');
                           }}
-                          className={`grid w-full grid-cols-[24px_82px_1fr_auto] items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${
-                            active ? 'border-primary/45 bg-primary/14' : 'border-white/8 bg-black/24 hover:border-primary/30 hover:bg-white/[0.055]'
-                          }`}
+                          className={`grid w-full grid-cols-[24px_82px_1fr_auto] items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${active ? 'border-primary/45 bg-primary/14' : 'border-white/8 bg-black/24 hover:border-primary/30 hover:bg-white/[0.055]'}`}
                         >
                           <span className="text-xs font-semibold text-white/50">{episode}</span>
                           <span className="block aspect-video overflow-hidden rounded-lg bg-[linear-gradient(135deg,rgba(225,29,72,0.42),rgba(255,255,255,0.07))]" />
@@ -740,9 +730,9 @@ export default function LocalPlayer() {
                   <div className="space-y-3">
                     {[
                       [Info, 'Current source', source?.title || 'No source selected'],
-                      [Languages, 'Audio mode', sourceKind(source?.title || '')],
-                      [Captions, 'Subtitles', /\braw\b/i.test(source?.title || '') ? 'May be unavailable' : 'Source dependent'],
-                      [Gauge, 'Quality', qualityFromTitle(source?.title || '')],
+                      [Languages, 'Audio mode', sourceType],
+                      [Captions, 'Subtitles', /\braw\b/i.test(sourceTitle) ? 'May be unavailable' : 'Source dependent'],
+                      [Gauge, 'Quality', sourceQuality],
                       [HardDrive, 'Size', source?.size || 'Unknown'],
                     ].map(([Icon, label, value]) => {
                       const RowIcon = Icon as typeof Info;
@@ -772,7 +762,7 @@ export default function LocalPlayer() {
                 {[
                   ['File size', source?.size || 'Unknown'],
                   ['Peers', String(peers || 0)],
-                  ['Speed', formatBytes(playback?.download_speed) + '/s'],
+                  ['Speed', `${formatBytes(playback?.download_speed)}/s`],
                   ['Buffer health', `${Math.round(progress)}%`],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-center justify-between gap-4 text-white/52">
