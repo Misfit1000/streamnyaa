@@ -141,15 +141,10 @@ body {
   z-index: -1;
 }
 
-.streamnyaa-desktop .desktop-route-hero {
-  min-height: 360px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
-  box-shadow: inset 0 -80px 120px rgba(0, 0, 0, 0.42);
-}
-
 .streamnyaa-desktop .desktop-route-main:not(.desktop-page-home) .desktop-outlet-wrap {
   position: relative;
-  margin-top: -34px;
+  margin-top: 0;
+  padding-top: 24px;
   padding-bottom: 48px;
   z-index: 1;
 }
@@ -175,7 +170,7 @@ body {
 
 .streamnyaa-desktop .desktop-page-anime .desktop-outlet-wrap,
 .streamnyaa-desktop .desktop-page-blog .desktop-outlet-wrap {
-  margin-top: -88px;
+  margin-top: 0;
 }
 
 .streamnyaa-desktop .desktop-page-anime .desktop-outlet-wrap > div:first-child,
