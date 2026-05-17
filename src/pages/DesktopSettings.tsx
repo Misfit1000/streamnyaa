@@ -104,6 +104,25 @@ export default function DesktopSettings() {
             </button>
           </div>
           {message ? <p className="mt-4 rounded-2xl border border-white/10 bg-black/25 p-3 text-sm font-bold text-white/55">{friendlyMessage(message)}</p> : null}
+
+          <div className="mt-6 rounded-[1.4rem] border border-white/10 bg-black/25 p-4">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Advanced playback profile</p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {[
+                ['Preferred engine', 'Native preview with compatibility fallback'],
+                ['Hardware acceleration', 'Auto-safe GPU decode'],
+                ['Torrent mode', 'Sequential stream while downloading'],
+                ['Subtitle renderer', 'ASS/SRT with embedded font support'],
+                ['Audio handling', 'Multi-track anime release support'],
+                ['Buffering strategy', '25s playback cache with 60s read-ahead'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                  <span className="block text-[11px] font-black uppercase tracking-wider text-white/34">{label}</span>
+                  <span className="mt-1 block text-sm font-bold text-white/72">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         <aside className="space-y-4">

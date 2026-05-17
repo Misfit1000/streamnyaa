@@ -7,9 +7,12 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Cpu,
   Download,
   FastForward,
+  FileVideo,
   Gauge,
+  HardDrive,
   Headphones,
   Info,
   Keyboard,
@@ -26,12 +29,14 @@ import {
   RefreshCw,
   Rewind,
   Search,
+  ServerCog,
   Settings,
   SkipForward,
   Sparkles,
   Trash2,
   Volume2,
   VolumeX,
+  Wifi,
   X,
 } from 'lucide-react';
 import Seo from '../components/Seo';
@@ -600,6 +605,29 @@ export default function LocalPlayer() {
 
   const progressPercent = duration ? (currentTime / duration) * 100 : 0;
   const buffering = status === 'starting' || (activeTorrentId && playback && !playbackUrl);
+  const bufferPercent = Math.max(0, Math.min(100, playback?.progress ?? (playbackUrl ? 100 : status === 'starting' ? 12 : 0)));
+  const peers = playback?.peers ?? Number(source?.seeders || 0) ?? 0;
+  const torrentHealth = peers >= 40 ? 'Excellent' : peers >= 12 ? 'Healthy' : peers > 0 ? 'Weak' : 'Waiting';
+  const torrentHealthTone = peers >= 12 ? 'text-emerald-300' : peers > 0 ? 'text-amber-300' : 'text-white/42';
+  const engineMode = status === 'starting'
+    ? 'Preparing local stream'
+    : playbackUrl
+      ? 'Native preview plus compatibility player'
+      : activeTorrentId
+        ? 'Compatibility player active'
+        : 'Ready for source';
+  const supportRows = [
+    ['Containers', 'MKV, MP4, AVI, WEBM', 'Handled by compatibility player'],
+    ['Video codecs', 'HEVC/H.265, H.264, variable bitrate', 'Hardware decode when available'],
+    ['Audio tracks', 'AAC, FLAC, multi-audio releases', 'Track switch in compatibility player'],
+    ['Subtitles', 'ASS, SRT, embedded styled subtitles', 'Anime subtitle rendering enabled'],
+  ];
+  const engineSteps = [
+    ['1', 'Metadata', activeTorrentId ? 'Connected' : 'Waiting'],
+    ['2', 'Piece buffer', activeTorrentId ? `${Math.round(bufferPercent)}%` : 'Idle'],
+    ['3', 'Codec route', playbackUrl ? 'Preview + fallback' : 'Compatibility'],
+    ['4', 'Progress sync', activeTorrentId ? 'Tracking' : 'Ready'],
+  ];
 
   return (
     <div className={`streamnyaa-watch-page mx-auto px-4 py-5 lg:px-7 ${theatreMode ? 'max-w-[1680px]' : 'max-w-[1480px]'}`}>
@@ -623,6 +651,7 @@ export default function LocalPlayer() {
             <p className="text-[11px] font-black uppercase tracking-[0.2em] text-primary">Now watching</p>
             <h1 className="truncate text-xl font-black text-white md:text-2xl">{playerTitle}</h1>
           </div>
+
         </div>
 
         <div className="flex items-center gap-2">
@@ -650,6 +679,59 @@ export default function LocalPlayer() {
 
       <section className={`grid gap-5 ${sidebarCollapsed ? 'grid-cols-1' : 'xl:grid-cols-[minmax(0,1fr)_420px]'}`}>
         <div className="space-y-5">
+          <section className="rounded-[1.7rem] border border-white/10 bg-[linear-gradient(135deg,rgba(225,29,72,0.13),rgba(255,255,255,0.045)_42%,rgba(59,130,246,0.08))] p-4 shadow-2xl shadow-black/25 backdrop-blur-2xl">
+            <div className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr_0.9fr]">
+              <div className="rounded-[1.35rem] border border-white/10 bg-black/30 p-4">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-11 w-11 place-items-center rounded-2xl bg-primary/16 text-primary">
+                    <ServerCog className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">Playback engine</p>
+                    <h2 className="truncate text-lg font-black text-white">{engineMode}</h2>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-white/54">
+                  Browser preview is used when the source is compatible. Anime-heavy files are routed through the local compatibility player for MKV, HEVC, FLAC, ASS subtitles, and multi-audio tracks.
+                </p>
+              </div>
+
+              <div className="rounded-[1.35rem] border border-white/10 bg-black/30 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">Torrent health</p>
+                    <p className={`mt-1 text-lg font-black ${torrentHealthTone}`}>{torrentHealth}</p>
+                  </div>
+                  <Wifi className="h-5 w-5 text-primary" />
+                </div>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-[linear-gradient(90deg,#e11d48,#38bdf8)] transition-all" style={{ width: `${Math.max(5, Math.min(100, peers * 2))}%` }} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-white/48">
+                  <span>{peers} peers/seeders</span>
+                  <span>{formatBytes(playback?.download_speed)}/s</span>
+                </div>
+              </div>
+
+              <div className="rounded-[1.35rem] border border-white/10 bg-black/30 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">Stream buffer</p>
+                    <p className="mt-1 text-lg font-black text-white">{Math.round(bufferPercent)}% ready</p>
+                  </div>
+                  <HardDrive className="h-5 w-5 text-primary" />
+                </div>
+                <div className="mt-4 grid grid-cols-10 gap-1">
+                  {Array.from({ length: 30 }, (_, index) => {
+                    const active = index < Math.ceil((bufferPercent / 100) * 30);
+                    return <span key={index} className={`h-4 rounded-sm ${active ? 'bg-primary shadow-[0_0_18px_rgba(225,29,72,0.35)]' : 'bg-white/10'}`} />;
+                  })}
+                </div>
+                <p className="mt-3 text-xs font-bold text-white/42">Sequential streaming is prioritized so playback can begin before the full file is downloaded.</p>
+              </div>
+            </div>
+          </section>
+
           <div
             className="streamnyaa-watch-stage group relative overflow-hidden rounded-[1.7rem] border border-white/10 bg-[#020204] shadow-2xl shadow-black/45"
             onMouseMove={revealControls}
@@ -689,11 +771,20 @@ export default function LocalPlayer() {
                   <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(225,29,72,0.22),transparent_36%),radial-gradient(circle_at_70%_20%,rgba(255,255,255,0.10),transparent_28%)]" />
                   {buffering ? (
                     <div className="relative text-center">
-                      <div className="mx-auto grid h-20 w-20 place-items-center rounded-[1.5rem] border border-primary/25 bg-primary/10 shadow-2xl shadow-primary/10">
+                      <div className="streamnyaa-engine-orbit mx-auto grid h-20 w-20 place-items-center rounded-[1.5rem] border border-primary/25 bg-primary/10 shadow-2xl shadow-primary/10">
                         <Loader2 className="h-9 w-9 animate-spin text-primary" />
                       </div>
                       <p className="mt-5 text-lg font-black text-white">Preparing stream</p>
-                      <p className="mt-2 text-sm text-white/48">Buffering enough pieces for smooth playback.</p>
+                      <p className="mt-2 text-sm text-white/48">Fetching metadata, choosing the video file, and buffering sequential pieces.</p>
+                      <div className="mx-auto mt-5 grid max-w-lg grid-cols-4 gap-2 text-left">
+                        {engineSteps.map(([step, label, value]) => (
+                          <div key={step} className="rounded-xl border border-white/10 bg-black/38 p-3">
+                            <span className="text-[10px] font-black text-primary">{step}</span>
+                            <span className="mt-1 block text-xs font-black text-white">{label}</span>
+                            <span className="mt-1 block text-[11px] font-bold text-white/44">{value}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ) : source ? (
                     <div className="relative max-w-lg text-center">
@@ -706,7 +797,12 @@ export default function LocalPlayer() {
                         <Play className="ml-1 h-10 w-10 fill-current" />
                       </button>
                       <h2 className="mt-6 text-3xl font-black text-white">Ready when you are</h2>
-                      <p className="mt-3 text-sm leading-6 text-white/58">Start local playback, then the custom player controls will take over.</p>
+                      <p className="mt-3 text-sm leading-6 text-white/58">Start the stream. StreamNyaa will use the fastest compatible playback path and fall back automatically for anime encodes the embedded preview cannot decode.</p>
+                      <div className="mt-5 flex flex-wrap justify-center gap-2 text-[11px] font-black text-white/62">
+                        {['MKV', 'HEVC', 'ASS subs', 'Multi-audio'].map((item) => (
+                          <span key={item} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5">{item}</span>
+                        ))}
+                      </div>
                     </div>
                   ) : (
                     <div className="relative max-w-md text-center">
@@ -903,8 +999,23 @@ export default function LocalPlayer() {
             </section>
 
             <section className="rounded-[1.6rem] border border-white/10 bg-white/[0.055] p-5 shadow-xl shadow-black/15 backdrop-blur-xl">
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Shortcuts</p>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-white/58">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Compatibility</p>
+                  <p className="mt-1 text-sm font-bold text-white">Anime encode support</p>
+                </div>
+                <Cpu className="h-5 w-5 text-primary" />
+              </div>
+              <div className="mt-3 grid gap-2 text-xs font-bold text-white/58">
+                {supportRows.map(([label, value, detail]) => (
+                  <div key={label} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2">
+                    <span className="block font-black text-white">{label}</span>
+                    <span className="mt-1 block text-white/60">{value}</span>
+                    <span className="mt-1 block text-white/34">{detail}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden">
                 {[
                   ['Space', 'Play/Pause'],
                   ['← / →', 'Seek 10s'],
@@ -919,6 +1030,34 @@ export default function LocalPlayer() {
               </div>
             </section>
           </div>
+
+          <section className="rounded-[1.7rem] border border-white/10 bg-white/[0.045] p-5 shadow-xl shadow-black/15 backdrop-blur-xl">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Engine fallback flow</p>
+                <h2 className="mt-1 text-xl font-black text-white">One player interface, multiple playback routes</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => void openDedicatedPlayer('Opening compatibility player now...')}
+                disabled={!activeTorrentId}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-4 py-2 text-xs font-black text-white/72 hover:border-primary/40 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <MonitorPlay className="h-4 w-4" />
+                Open compatibility player
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              {engineSteps.map(([step, label, value], index) => (
+                <div key={step} className="relative rounded-2xl border border-white/10 bg-black/25 p-4">
+                  {index < engineSteps.length - 1 ? <span className="absolute -right-3 top-1/2 hidden h-px w-6 bg-primary/50 md:block" /> : null}
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-primary text-xs font-black text-white">{step}</span>
+                  <p className="mt-3 text-sm font-black text-white">{label}</p>
+                  <p className="mt-1 text-xs font-bold text-white/44">{value}</p>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
 
         {!sidebarCollapsed ? (
@@ -1157,14 +1296,20 @@ export default function LocalPlayer() {
 
                   <section className="rounded-2xl border border-white/10 bg-black/25 p-4">
                     <h2 className="font-black text-white">Subtitle style</h2>
-                    <div className="mt-3 rounded-xl bg-black/35 p-3 text-center" style={{ fontSize: subtitleSize }}>
+                    <div className="streamnyaa-subtitle-preview mt-3 rounded-xl bg-black/35 p-3 text-center" style={{ fontSize: subtitleSize }}>
                       <span className="text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.9)]">English subtitle preview</span>
+                      <span className="mt-1 block text-sm text-white/54 [text-shadow:0_2px_10px_rgba(0,0,0,0.9)]">Japanese subtitle layer</span>
                       <span className="mt-1 block text-sm text-white/54 [text-shadow:0_2px_10px_rgba(0,0,0,0.9)]">日本語 subtitle layer</span>
                     </div>
                     <label className="mt-3 flex items-center justify-between text-sm font-bold text-white/58">
                       <span>Dual subtitle mode</span>
                       <input type="checkbox" className="accent-primary" defaultChecked />
                     </label>
+                    <div className="mt-3 grid gap-2 text-xs font-bold text-white/44">
+                      {['ASS styling and embedded fonts', 'SRT fallback', 'Subtitle delay adjustment', 'Karaoke timing support'].map((item) => (
+                        <span key={item} className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">{item}</span>
+                      ))}
+                    </div>
                   </section>
 
                   <section className="rounded-2xl border border-white/10 bg-black/25 p-4">
@@ -1174,6 +1319,7 @@ export default function LocalPlayer() {
                         [Languages, 'Audio language', 'Auto'],
                         [Gauge, 'Playback speed', `${playbackRate}x`],
                         [Headphones, 'Hardware acceleration', 'On'],
+                        [FileVideo, 'File selection', 'Largest playable video'],
                         [Keyboard, 'Keyboard shortcuts', 'Enabled'],
                         [MessageCircle, 'Live comments', 'Hidden'],
                       ].map(([Icon, label, value]) => {
