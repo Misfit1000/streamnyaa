@@ -2,7 +2,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa } from '../api/nyaa';
-import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo, Link as LinkIcon, Play } from 'lucide-react';
+import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo, Link as LinkIcon, Play, Star, Copy, SlidersHorizontal } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
@@ -51,6 +51,14 @@ function canSearchDownloads(anime: any) {
 
 function isDualAudioSource(title = '') {
   return /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title);
+}
+
+function sourceResolution(title = '') {
+  if (/\b2160p|4k\b/i.test(title)) return '4K';
+  if (/\b1080p\b/i.test(title)) return '1080p';
+  if (/\b720p\b/i.test(title)) return '720p';
+  if (/\b480p\b/i.test(title)) return '480p';
+  return 'AUTO';
 }
 
 export default function AnimeDownloads() {
@@ -342,6 +350,335 @@ export default function AnimeDownloads() {
     autoplayHandledRef.current = key;
     openLocalPlayer(autoplaySource);
   }, [desktopApp, autoplayIntent, torrentsLoading, autoplaySource]);
+
+  if (desktopApp && playIntent) {
+    const poster = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
+    const banner = anime.banner_image || poster;
+    const genres = anime.genres?.map((genre: any) => genre.name).filter(Boolean) || [];
+    const activeEpisode = selectedEpisodeNumber || Math.max(1, knownAiredEpisodeCount(anime) || 1);
+    const firstEpisode = Math.max(1, activeEpisode - 2);
+    const episodeCards = Array.from({ length: Math.min(8, Math.max(1, airedEpisodeCount || 8)) }, (_, index) => {
+      const episodeNumber = firstEpisode + index;
+      if (airedEpisodeCount && episodeNumber > airedEpisodeCount) return null;
+      const episodeInfo = currentEpisodePageItems.find((episode: any) => episode.mal_id === episodeNumber);
+      return {
+        number: episodeNumber,
+        title: episodeInfo?.title || `Episode ${episodeNumber}`,
+        active: episodeNumber === activeEpisode,
+      };
+    }).filter(Boolean) as Array<{ number: number; title: string; active: boolean }>;
+    const sourceRows = showAllSources ? sortedTorrents : sortedTorrents.slice(0, 8);
+    const synopsis = anime.synopsis || `${anime.title} streaming sources, episode choices, release metadata, and local playback controls.`;
+
+    return (
+      <div className="relative min-h-[calc(100vh-70px)] overflow-hidden bg-[#050509] text-white">
+        <Seo
+          title={`${anime.title} Streaming Sources | StreamNyaa Desktop`}
+          description={`Stream ${anime.title} from local desktop sources with episode selection, seeders, quality filters, and torrent source controls.`}
+          canonicalPath={animePath(anime, '/downloads')}
+          image={poster}
+          robots="noindex, nofollow"
+        />
+        {banner ? (
+          <img
+            src={banner}
+            alt=""
+            className="pointer-events-none fixed inset-0 h-full w-full scale-105 object-cover opacity-18 blur-2xl"
+            referrerPolicy="no-referrer"
+          />
+        ) : null}
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(124,58,237,0.20),transparent_30%),radial-gradient(circle_at_40%_80%,rgba(225,29,72,0.14),transparent_32%),linear-gradient(90deg,rgba(5,5,9,0.98)_0%,rgba(5,5,9,0.76)_43%,rgba(5,5,9,0.93)_100%)]" />
+
+        <div className="relative grid min-h-[calc(100vh-70px)] grid-cols-1 xl:grid-cols-[430px_minmax(0,1fr)]">
+          <aside className="border-r border-white/10 px-5 py-6 xl:px-8 xl:py-8">
+            <Link
+              to={animePath(anime)}
+              className="mb-6 grid h-10 w-10 place-items-center rounded-full bg-black/45 text-white/88 shadow-xl shadow-black/30 transition-colors hover:bg-white/10"
+              aria-label="Back to anime details"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
+
+            <div className="grid gap-6 md:grid-cols-[220px_1fr] xl:block">
+              <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.055] shadow-2xl shadow-black/40 xl:max-w-[260px]">
+                {poster ? (
+                  <img src={poster} alt={anime.title} className="aspect-[2/3] w-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="aspect-[2/3] bg-white/8" />
+                )}
+              </div>
+
+              <div className="min-w-0 xl:mt-6">
+                <h1 className="text-3xl font-black tracking-[-0.04em] text-white xl:text-[34px]">{anime.title}</h1>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-sm font-semibold text-white/50">
+                  <span>{anime.year || 'TBA'}</span>
+                  <span className="h-1 w-1 rounded-full bg-white/28" />
+                  <span className="inline-flex items-center gap-1 text-amber-300">
+                    <Star className="h-4 w-4 fill-current" />
+                    {anime.score ? anime.score.toFixed(1) : 'N/A'}
+                  </span>
+                  <span className="h-1 w-1 rounded-full bg-white/28" />
+                  <span>{anime.episodes || airedEpisodeCount || '?'} episodes</span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {genres.slice(0, 4).map((genre: string) => (
+                    <span key={genre} className="rounded-full border border-white/16 bg-white/[0.065] px-3 py-1.5 text-xs font-bold text-white/72">
+                      {genre}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-6 line-clamp-6 max-w-xl text-sm leading-7 text-white/68">{synopsis}</p>
+
+                <div className="mt-7 grid grid-cols-3 gap-2 text-center">
+                  {[
+                    ['Score', anime.score ? anime.score.toFixed(1) : 'N/A'],
+                    ['Status', anime.status?.replace(/_/g, ' ') || 'Unknown'],
+                    ['Sources', torrentsLoading ? '...' : String(sortedTorrents.length)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl border border-white/10 bg-white/[0.055] px-3 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-white/34">{label}</p>
+                      <p className="mt-1 line-clamp-1 text-sm font-black text-white">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <main className="min-w-0 px-5 py-6 xl:px-8 xl:py-10">
+            <section className="flex flex-col gap-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p className="inline-flex items-center gap-2 text-sm font-black text-white">
+                    <ListVideo className="h-4 w-4 text-primary" />
+                    Episodes
+                  </p>
+                  <p className="mt-1 text-xs text-white/36">Pick an episode, then choose a torrent source to stream locally.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {['sub', 'dub'].map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setShowAllSources(false);
+                        setAudioFilter(mode as AudioFilter);
+                        const nextParams = new URLSearchParams(searchParams);
+                        nextParams.set('type', mode);
+                        nextParams.set('play', '1');
+                        nextParams.set('wide', '1');
+                        setSearchParams(nextParams);
+                      }}
+                      className={`rounded-full px-4 py-2 text-sm font-black transition-colors ${
+                        audioFilter === mode ? 'bg-white text-black' : 'border border-white/12 bg-white/[0.055] text-white/58 hover:text-white'
+                      }`}
+                    >
+                      {mode === 'dub' ? 'Dual / Dub' : 'Sub'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 overflow-x-auto pb-3 hide-scrollbar">
+                {episodeCards.map((episode) => (
+                  <button
+                    key={episode.number}
+                    type="button"
+                    onClick={() => updateEpisodeSelection(String(episode.number))}
+                    className={`group w-[210px] shrink-0 overflow-hidden rounded-xl border text-left transition-all ${
+                      episode.active
+                        ? 'border-violet-500 bg-violet-500/12 shadow-[0_0_0_1px_rgba(139,92,246,0.30),0_18px_50px_rgba(124,58,237,0.18)]'
+                        : 'border-white/10 bg-white/[0.055] hover:border-violet-400/50 hover:bg-white/[0.075]'
+                    }`}
+                  >
+                    <span className="relative block aspect-video overflow-hidden bg-black/40">
+                      {banner ? (
+                        <img src={banner} alt="" className="h-full w-full object-cover opacity-75 transition-transform duration-500 group-hover:scale-105" referrerPolicy="no-referrer" />
+                      ) : null}
+                      <span className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-xs font-black text-white">{episode.number}</span>
+                    </span>
+                    <span className="block p-3">
+                      <span className="line-clamp-1 text-sm font-black text-white">{episode.title}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="mt-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-full border border-white/12 bg-white/[0.055] px-4 py-2 text-sm font-black text-white/48"
+                  >
+                    Stremio Addons
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-full bg-violet-500 px-4 py-2 text-sm font-black text-white shadow-lg shadow-violet-500/20"
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Torrent Sources
+                  </button>
+                  {topSource ? (
+                    <button
+                      type="button"
+                      onClick={() => openLocalPlayer(topSource)}
+                      className="rounded-full bg-primary px-4 py-2 text-sm font-black text-white shadow-lg shadow-primary/20 hover:bg-primary/90"
+                    >
+                      Play best source
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    className="rounded-lg border border-white/12 bg-white/[0.065] px-3 py-2 text-xs font-semibold text-white outline-none [&>option]:bg-background"
+                    value={sortBy}
+                    onChange={(event) => {
+                      setShowAllSources(false);
+                      setSortBy(event.target.value as 'best' | 'seeders' | 'size');
+                    }}
+                  >
+                    <option value="best">Best Match</option>
+                    <option value="seeders">Seeders</option>
+                    <option value="size">File Size</option>
+                  </select>
+                  {sortBy !== 'best' ? (
+                    <button
+                      type="button"
+                      onClick={() => setSortDirection((value) => value === 'desc' ? 'asc' : 'desc')}
+                      className="rounded-lg border border-white/12 bg-white/[0.065] px-3 py-2 text-xs font-black text-white/70 hover:text-white"
+                    >
+                      {sortDirection === 'desc' ? 'High to low' : 'Low to high'}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="inline-flex items-center gap-2 text-base font-black text-white">
+                  <Download className="h-4 w-4 text-white/52" />
+                  Available Sources
+                  <span className="text-white/35">- {selectedEpisodeNumber ? `Episode ${selectedEpisodeNumber}` : 'Batch'}</span>
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: 'quality-1080p', label: '1080p' },
+                    { value: 'high-seeders', label: 'High seeders' },
+                    { value: 'dual-audio', label: 'Dual Audio' },
+                    { value: 'hevc', label: 'HEVC' },
+                    { value: 'batch', label: 'Batch' },
+                  ].map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => {
+                        setShowAllSources(false);
+                        setSourceFilter(sourceFilter === item.value ? '' : item.value as TorrentSourceFilter);
+                      }}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-black transition-colors ${
+                        sourceFilter === item.value
+                          ? 'border-violet-400 bg-violet-500 text-white'
+                          : 'border-white/10 bg-white/[0.055] text-white/52 hover:border-violet-400/50 hover:text-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {torrentsLoading ? (
+                <div className="mt-6 grid gap-3">
+                  {[0, 1, 2, 3].map((item) => (
+                    <div key={item} className="h-[92px] animate-pulse rounded-xl border border-white/10 bg-white/[0.055]" />
+                  ))}
+                </div>
+              ) : torrentsErrorState ? (
+                <div className="mt-6 rounded-xl border border-red-500/25 bg-red-500/10 p-6 text-red-100">
+                  <p className="font-black">Source search could not connect</p>
+                  <p className="mt-2 text-sm text-red-100/70">{torrentsError instanceof Error ? torrentsError.message : 'The desktop source bridge did not return results.'}</p>
+                  <button type="button" onClick={() => refetchTorrents()} className="mt-4 rounded-full bg-primary px-4 py-2 text-sm font-black text-white">Retry</button>
+                </div>
+              ) : sortedTorrents.length === 0 ? (
+                <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.055] p-8 text-center">
+                  <p className="text-lg font-black text-white">No sources found</p>
+                  <p className="mt-2 text-sm text-white/48">Try a different episode, audio mode, or clear the filters.</p>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {sourceRows.map((torrent, index) => {
+                    const best = index === 0;
+                    const score = sourceQualityScore(torrent);
+                    return (
+                      <div
+                        key={torrent.infoHash || torrent.magnet || index}
+                        className={`grid gap-4 rounded-xl border p-3 transition-colors md:grid-cols-[48px_1fr_auto] md:items-center ${
+                          best
+                            ? 'border-violet-500/70 bg-violet-500/10 shadow-[0_0_0_1px_rgba(139,92,246,0.18)]'
+                            : 'border-white/10 bg-white/[0.048] hover:border-violet-400/40 hover:bg-white/[0.065]'
+                        }`}
+                      >
+                        <div className="flex flex-wrap gap-1.5 md:block md:space-y-1.5">
+                          <span className="inline-flex rounded-md bg-blue-600 px-2 py-1 text-[11px] font-black text-white">{sourceResolution(torrent.title)}</span>
+                          {getTorrentBadges(torrent).slice(0, 2).map((badge) => (
+                            <span key={`${torrent.infoHash}-${badge.label}`} className={torrentBadgeClassName(badge.tone)}>{badge.label}</span>
+                          ))}
+                        </div>
+                        <div className="min-w-0">
+                          {best ? <p className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-300">Best match</p> : null}
+                          <h3 className="mt-1 line-clamp-2 text-sm font-black leading-5 text-white">{torrent.title}</h3>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/45">
+                            <span className="text-emerald-400">↑ {torrent.seeders}</span>
+                            <span>{torrent.size}</span>
+                            <span>{sourceHealth(torrent.rawSeeders)}</span>
+                            <span>Score {score}</span>
+                            <span>{sourceFreshnessLabel(torrent)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard?.writeText(torrent.magnet);
+                              recordDownloadAction(torrent, 'copy');
+                            }}
+                            className="grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/[0.06] text-white/52 hover:text-white"
+                            aria-label="Copy source"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openLocalPlayer(torrent)}
+                            className="grid h-10 w-10 place-items-center rounded-lg bg-violet-600 text-white shadow-lg shadow-violet-600/20 hover:bg-violet-500"
+                            aria-label="Play source"
+                          >
+                            <Play className="ml-0.5 h-4 w-4 fill-current" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {hiddenSourceCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllSources(true)}
+                      className="w-full rounded-xl border border-violet-400/30 bg-violet-500/10 px-4 py-3 text-sm font-black text-violet-200 hover:bg-violet-500/20"
+                    >
+                      Show all source files ({hiddenSourceCount} more)
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </section>
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-5xl">
