@@ -237,6 +237,44 @@ body {
     0 0 0 1px rgba(225, 29, 72, 0.12);
 }
 
+.streamnyaa-desktop .streamnyaa-watch-stage:fullscreen {
+  border-radius: 0;
+  border: 0;
+}
+
+.streamnyaa-desktop .streamnyaa-player-range,
+.streamnyaa-desktop .streamnyaa-volume-range {
+  appearance: none;
+  background: linear-gradient(90deg, var(--primary), rgba(255, 255, 255, 0.2));
+  border-radius: 999px;
+  outline: none;
+}
+
+.streamnyaa-desktop .streamnyaa-player-range::-webkit-slider-thumb,
+.streamnyaa-desktop .streamnyaa-volume-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 5px rgba(225, 29, 72, 0.16), 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.streamnyaa-desktop .streamnyaa-player-range::-moz-range-thumb,
+.streamnyaa-desktop .streamnyaa-volume-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 5px rgba(225, 29, 72, 0.16), 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.streamnyaa-desktop .streamnyaa-volume-range {
+  height: 5px;
+}
+
 .streamnyaa-desktop .desktop-page-schedule .desktop-outlet-wrap > .container > .flex.items-center.gap-3.mb-8,
 .streamnyaa-desktop .desktop-page-browse .desktop-outlet-wrap > .container > .flex.flex-col.md\:flex-row > .flex-1 > form {
   margin-top: 4px;
