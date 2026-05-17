@@ -28,7 +28,7 @@ function heroDescription(anime: any) {
 function watchPathFor(anime: any, episode?: string | number) {
   if (!anime) return '/local-player?desktop=1';
   const episodeQuery = episode ? `ep=${episode}&` : '';
-  return `${animePath(anime, `/downloads?${episodeQuery}type=dub&play=1&wide=1`)}`;
+  return `${animePath(anime, `/downloads?${episodeQuery}type=dub&play=1&autoplay=1`)}`;
 }
 
 function RailHeader({ title, to }: { title: string; to?: string }) {

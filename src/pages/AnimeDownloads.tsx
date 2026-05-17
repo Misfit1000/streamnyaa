@@ -69,8 +69,8 @@ export default function AnimeDownloads() {
   const epParam = searchParams.get('ep');
   const typeParam = searchParams.get('type');
   const playIntent = searchParams.get('play') === '1';
-  const autoplayIntent = playIntent && searchParams.get('autoplay') === '1';
-  const wideIntent = playIntent || searchParams.get('wide') === '1';
+  const autoplayIntent = playIntent && (desktopApp || searchParams.get('autoplay') === '1');
+  const wideIntent = !autoplayIntent && (playIntent || searchParams.get('wide') === '1');
   const selectedEpisodeNumber = epParam && /^\d+$/.test(epParam) ? parseInt(epParam, 10) : null;
   const episodePage = selectedEpisodeNumber ? Math.max(1, Math.ceil(selectedEpisodeNumber / 100)) : 1;
   
@@ -102,7 +102,7 @@ export default function AnimeDownloads() {
   });
 
   const { data: torrents, isLoading: torrentsLoading, isError: torrentsErrorState, error: torrentsError, refetch: refetchTorrents } = useQuery({
-    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults, showAllSources, wideIntent],
+    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults, showAllSources, wideIntent, autoplayIntent],
     queryFn: async () => {
       const romaji = anime?.title_romaji;
       const english = anime?.title_english;
@@ -110,7 +110,7 @@ export default function AnimeDownloads() {
 
       const epStr = epParam ? epParam.padStart(2, '0') : '';
       const isDub = audioFilter === 'dub';
-      const effectiveDownloadFilter = playIntent && epParam ? '' : showAiringEpisodeResults ? '1080p' : downloadFilter;
+      const effectiveDownloadFilter = autoplayIntent && epParam ? '1080p' : playIntent && epParam ? '' : showAiringEpisodeResults ? '1080p' : downloadFilter;
 
       const cleanTitle = (t: string) => {
         if (!t) return '';
@@ -124,8 +124,8 @@ export default function AnimeDownloads() {
         if (effectiveDownloadFilter && effectiveDownloadFilter !== 'RAW') query += ` ${effectiveDownloadFilter}`;
         if (preferDub) query += ' dub';
         return await searchNyaa(query, effectiveDownloadFilter === 'RAW' ? '1_4' : '1_2', '0', '1', {
-          pages: showAllSources || wideIntent ? 3 : 1,
-          wide: showAllSources || wideIntent,
+          pages: autoplayIntent ? 1 : showAllSources || wideIntent ? 3 : 1,
+          wide: autoplayIntent ? false : showAllSources || wideIntent,
         });
       };
 
@@ -351,7 +351,55 @@ export default function AnimeDownloads() {
     openLocalPlayer(autoplaySource);
   }, [desktopApp, autoplayIntent, torrentsLoading, autoplaySource]);
 
-  if (desktopApp && playIntent) {
+  if (desktopApp && autoplayIntent) {
+    return (
+      <div className="grid min-h-[calc(100vh-70px)] place-items-center bg-[#050507] px-6 text-center text-white">
+        <Seo
+          title={`Opening ${anime.title} Stream | StreamNyaa Desktop`}
+          description={`Opening the best local stream source for ${anime.title}.`}
+          canonicalPath={animePath(anime, '/downloads')}
+          image={anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url}
+          robots="noindex, nofollow"
+        />
+        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.055] p-8 shadow-2xl shadow-black/40 backdrop-blur-2xl">
+          {torrentsLoading || autoplaySource ? (
+            <>
+              <Loader2 className="mx-auto h-10 w-10 animate-spin text-primary" />
+              <h1 className="mt-5 text-2xl font-black tracking-[-0.03em]">Opening player</h1>
+              <p className="mt-3 text-sm leading-6 text-white/55">
+                Picking the best dual-audio/high-seed source for {anime.title}. The external player will open automatically.
+              </p>
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="mx-auto h-10 w-10 text-amber-300" />
+              <h1 className="mt-5 text-2xl font-black tracking-[-0.03em]">No fast source found</h1>
+              <p className="mt-3 text-sm leading-6 text-white/55">
+                Try again, or open the source browser to choose manually.
+              </p>
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => refetchTorrents()}
+                  className="rounded-full bg-primary px-5 py-2.5 text-sm font-black text-white hover:bg-primary/90"
+                >
+                  Retry
+                </button>
+                <Link
+                  to={`${animePath(anime, selectedEpisodeNumber ? `/downloads?ep=${selectedEpisodeNumber}&type=${audioFilter}` : `/downloads?type=${audioFilter}`)}&wide=1`}
+                  className="rounded-full border border-white/12 bg-white/[0.055] px-5 py-2.5 text-sm font-black text-white/70 hover:text-white"
+                >
+                  Choose source
+                </Link>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (desktopApp && playIntent && !autoplayIntent) {
     const poster = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
     const banner = anime.banner_image || poster;
     const genres = anime.genres?.map((genre: any) => genre.name).filter(Boolean) || [];
