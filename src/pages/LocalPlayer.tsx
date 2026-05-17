@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,10 +11,12 @@ import {
   MonitorPlay,
   Play,
   RefreshCw,
+  Search,
   Settings,
   Trash2,
 } from 'lucide-react';
 import Seo from '../components/Seo';
+import { searchNyaa, type NyaaItem } from '../api/nyaa';
 import {
   clearLocalPlaybackHistory,
   getDesktopRuntimeStatus,
@@ -32,6 +35,8 @@ import {
   type DesktopRuntimeStatus,
   type LocalPlaybackSource,
 } from '../lib/desktop';
+import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
+import { sourceQualityScore } from '../lib/sourceQuality';
 
 function formatBytes(value?: number | null) {
   if (!value || value <= 0) return '0 B';
@@ -65,10 +70,38 @@ export default function LocalPlayer() {
   const [playback, setPlayback] = useState<DesktopPlaybackProgress | null>(null);
   const [activeTorrentId, setActiveTorrentId] = useState('');
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
+  const [sourceQuery, setSourceQuery] = useState(() => loadLocalPlaybackSource()?.animeTitle || '');
+  const [selectedEpisode, setSelectedEpisode] = useState(() => {
+    const episode = loadLocalPlaybackSource()?.episode;
+    return episode && episode !== 'batch' ? String(episode) : '';
+  });
+  const [quality, setQuality] = useState<'1080p' | '720p' | 'raw' | ''>('1080p');
+  const [submittedSourceQuery, setSubmittedSourceQuery] = useState('');
 
   const sourceOptions = sourceHistory.length ? sourceHistory : source ? [source] : [];
   const runtimeReady = Boolean(runtime?.ready);
   const canPlay = Boolean(desktop && source && runtimeReady && status !== 'starting');
+  const builtSourceQuery = [
+    sourceQuery.trim(),
+    selectedEpisode ? selectedEpisode.padStart(2, '0') : '',
+    quality && quality !== 'raw' ? quality : '',
+  ].filter(Boolean).join(' ');
+
+  const {
+    data: searchedSources = [],
+    isFetching: sourcesLoading,
+    isError: sourcesError,
+    error: sourcesErrorValue,
+    refetch: refetchSources,
+  } = useQuery({
+    queryKey: ['local-player-sources', submittedSourceQuery, quality],
+    queryFn: () => searchNyaa(submittedSourceQuery, quality === 'raw' ? '1_4' : '1_2', '0', '1', {
+      pages: 2,
+      wide: true,
+    }),
+    enabled: desktop && submittedSourceQuery.length >= 2,
+    staleTime: 1000 * 60 * 2,
+  });
 
   const refreshRuntime = async (nextSettings = settings) => {
     const nextRuntime = await getDesktopRuntimeStatus(nextSettings);
@@ -83,6 +116,19 @@ export default function LocalPlayer() {
     setMessage('Source selected.');
     setActiveTorrentId('');
     setPlayback(null);
+    if (nextSource.animeTitle) setSourceQuery(nextSource.animeTitle);
+    if (nextSource.episode && nextSource.episode !== 'batch') setSelectedEpisode(String(nextSource.episode));
+  };
+
+  const selectTorrentSource = (torrent: NyaaItem) => {
+    selectSource({
+      title: torrent.title,
+      magnet: torrent.magnet,
+      animeTitle: sourceQuery.trim() || source?.animeTitle,
+      episode: selectedEpisode || null,
+      size: torrent.size,
+      seeders: torrent.seeders,
+    });
   };
 
   const clearSources = () => {
@@ -121,6 +167,11 @@ export default function LocalPlayer() {
       cancelled = true;
     };
   }, [desktop]);
+
+  useEffect(() => {
+    if (!desktop || submittedSourceQuery || builtSourceQuery.length < 2) return;
+    setSubmittedSourceQuery(builtSourceQuery);
+  }, [builtSourceQuery, desktop, submittedSourceQuery]);
 
   useEffect(() => {
     if (!desktop || !activeTorrentId) return undefined;
@@ -309,6 +360,26 @@ export default function LocalPlayer() {
                       {message}
                     </p>
                   ) : null}
+
+                  {status === 'starting' ? (
+                    <div className="mx-auto mt-6 max-w-lg rounded-2xl border border-white/10 bg-white/[0.045] p-4 text-left">
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="text-xs font-black uppercase tracking-[0.18em] text-primary">Starting stream</span>
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      </div>
+                      <div className="space-y-3">
+                        {['Starting local engine', 'Adding selected source', 'Opening MPV player'].map((step, index) => (
+                          <div key={step} className="flex items-center gap-3">
+                            <span className={`h-2.5 w-2.5 rounded-full ${index === 0 ? 'bg-primary' : 'bg-white/25'}`} />
+                            <span className="text-sm font-semibold text-white/68">{step}</span>
+                            <span className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-white/10">
+                              <span className="block h-full w-1/2 animate-pulse rounded-full bg-primary" />
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -341,6 +412,103 @@ export default function LocalPlayer() {
         </div>
 
         <aside className="space-y-5">
+          <section className="rounded-2xl border border-border bg-[var(--glass)] p-4">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 text-primary" />
+              <h2 className="font-black text-foreground">Find sources here</h2>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Search and switch sources without leaving the player.</p>
+
+            <div className="mt-4 space-y-3">
+              <input
+                value={sourceQuery}
+                onChange={(event) => setSourceQuery(event.target.value)}
+                className="w-full rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary"
+                placeholder="Anime title"
+              />
+              <div className="grid grid-cols-[1fr_120px] gap-2">
+                <select
+                  value={selectedEpisode}
+                  onChange={(event) => setSelectedEpisode(event.target.value)}
+                  className="rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary [&>option]:bg-background"
+                >
+                  <option value="">Batch / no episode</option>
+                  {Array.from({ length: 200 }, (_, index) => index + 1).map((episode) => (
+                    <option key={episode} value={episode}>Episode {episode}</option>
+                  ))}
+                </select>
+                <select
+                  value={quality}
+                  onChange={(event) => setQuality(event.target.value as typeof quality)}
+                  className="rounded-lg border border-border bg-background/60 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary [&>option]:bg-background"
+                >
+                  <option value="1080p">1080p</option>
+                  <option value="720p">720p</option>
+                  <option value="">Any</option>
+                  <option value="raw">Raw</option>
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSubmittedSourceQuery(builtSourceQuery);
+                  if (submittedSourceQuery === builtSourceQuery) refetchSources();
+                }}
+                disabled={sourceQuery.trim().length < 2 || sourcesLoading}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-sm font-black text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {sourcesLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                {sourcesLoading ? 'Searching' : 'Search sources'}
+              </button>
+            </div>
+
+            <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+              {sourcesLoading ? (
+                <div className="space-y-2">
+                  {[0, 1, 2].map((item) => (
+                    <div key={item} className="h-20 animate-pulse rounded-xl border border-border bg-background/45" />
+                  ))}
+                </div>
+              ) : sourcesError ? (
+                <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm leading-6 text-red-200">
+                  {sourcesErrorValue instanceof Error ? sourcesErrorValue.message : 'Source search failed.'}
+                </div>
+              ) : searchedSources.length ? searchedSources.slice(0, 12).map((torrent) => {
+                const active = source?.magnet === torrent.magnet;
+                return (
+                  <button
+                    key={torrent.infoHash || torrent.magnet}
+                    type="button"
+                    onClick={() => selectTorrentSource(torrent)}
+                    className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                      active
+                        ? 'border-primary/40 bg-primary/10'
+                        : 'border-border bg-background/45 hover:border-primary/30'
+                    }`}
+                  >
+                    <span className="line-clamp-2 text-sm font-bold text-foreground">{torrent.title}</span>
+                    <span className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-muted-foreground">
+                      <span>Score {sourceQualityScore(torrent)}</span>
+                      <span>{torrent.size}</span>
+                      <span>{torrent.seeders} seeders</span>
+                    </span>
+                    <span className="mt-2 flex flex-wrap gap-1.5">
+                      {getTorrentBadges(torrent).slice(0, 3).map((badge) => (
+                        <span key={`${torrent.infoHash}-${badge.label}`} className={torrentBadgeClassName(badge.tone)}>
+                          {badge.label}
+                        </span>
+                      ))}
+                    </span>
+                  </button>
+                );
+              }) : sourceQuery.trim().length >= 2 ? (
+                <div className="rounded-xl border border-dashed border-border p-4 text-sm leading-6 text-muted-foreground">
+                  No sources found for this search yet.
+                </div>
+              ) : null}
+            </div>
+          </section>
+
           <section className="rounded-2xl border border-border bg-[var(--glass)] p-4">
             <div className="flex items-center justify-between gap-3">
               <div>

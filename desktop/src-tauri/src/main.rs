@@ -579,8 +579,7 @@ fn open_cache_folder(settings: Option<DesktopSettings>) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
+fn play_local_torrent_blocking(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
     if request.magnet.trim().is_empty() {
         return Err("No source link was provided.".to_string());
     }
@@ -662,7 +661,13 @@ fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String
 }
 
 #[tauri::command]
-fn get_local_playback_progress(
+async fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || play_local_torrent_blocking(request))
+        .await
+        .map_err(|error| format!("Local playback task could not finish: {}", error))?
+}
+
+fn get_local_playback_progress_blocking(
     request: PlaybackProgressRequest,
 ) -> Result<LocalPlaybackProgress, String> {
     let torrent_id = request.torrent_id.trim();
@@ -685,7 +690,15 @@ fn get_local_playback_progress(
 }
 
 #[tauri::command]
-fn fetch_desktop_source_api(url: String) -> Result<SourceApiResponse, String> {
+async fn get_local_playback_progress(
+    request: PlaybackProgressRequest,
+) -> Result<LocalPlaybackProgress, String> {
+    tauri::async_runtime::spawn_blocking(move || get_local_playback_progress_blocking(request))
+        .await
+        .map_err(|error| format!("Playback progress task could not finish: {}", error))?
+}
+
+fn fetch_desktop_source_api_blocking(url: String) -> Result<SourceApiResponse, String> {
     let trimmed_url = url.trim();
     if !trimmed_url.starts_with("https://www.streamnyaa.xyz/api/nyaa?") {
         return Err("Desktop source search can only call the StreamNyaa source API.".to_string());
@@ -714,6 +727,13 @@ fn fetch_desktop_source_api(url: String) -> Result<SourceApiResponse, String> {
         data,
         fetched_at: now_millis(),
     })
+}
+
+#[tauri::command]
+async fn fetch_desktop_source_api(url: String) -> Result<SourceApiResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || fetch_desktop_source_api_blocking(url))
+        .await
+        .map_err(|error| format!("Desktop source search task could not finish: {}", error))?
 }
 
 fn main() {
