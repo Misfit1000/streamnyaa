@@ -9,6 +9,9 @@ import {
   Home,
   Library,
   MonitorPlay,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Play,
   Search,
   Settings,
   ShieldCheck,
@@ -17,7 +20,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getDesktopRuntimeStatus, loadDesktopPlaybackSettings, type DesktopRuntimeStatus } from '../lib/desktop';
+import { getDesktopRuntimeStatus, loadDesktopPlaybackSettings, loadLocalPlaybackSource, type DesktopRuntimeStatus, type LocalPlaybackSource } from '../lib/desktop';
 
 const navItems = [
   { to: '/', label: 'Home', icon: Home },
@@ -233,6 +236,8 @@ export default function DesktopShell() {
   const { user, isAdmin } = useAuth();
   const [query, setQuery] = useState('');
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [miniSource, setMiniSource] = useState<LocalPlaybackSource | null>(() => loadLocalPlaybackSource());
 
   useEffect(() => {
     let cancelled = false;
@@ -246,6 +251,10 @@ export default function DesktopShell() {
     return () => {
       cancelled = true;
     };
+  }, [location.pathname]);
+
+  useEffect(() => {
+    setMiniSource(loadLocalPlaybackSource());
   }, [location.pathname]);
 
   const runtimeReady = Boolean(runtime?.ready);
@@ -269,38 +278,48 @@ export default function DesktopShell() {
     <div className="desktop-shell min-h-screen overflow-hidden bg-[#030305] text-foreground">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(225,29,72,0.20),transparent_34%),radial-gradient(circle_at_80%_0%,rgba(255,255,255,0.08),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.035),transparent_32%)]" />
 
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[276px] border-r border-white/10 bg-[#050507]/78 shadow-2xl shadow-black/50 backdrop-blur-2xl lg:flex lg:flex-col">
-        <Link to="/" className="group m-3 mb-2 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-4 shadow-xl shadow-black/20">
-          <span className="flex items-center gap-3">
+      <aside className={`fixed inset-y-0 left-0 z-40 hidden border-r border-white/10 bg-[#050507]/78 shadow-2xl shadow-black/50 backdrop-blur-2xl transition-[width] duration-300 lg:flex lg:flex-col ${sidebarCollapsed ? 'w-[92px]' : 'w-[276px]'}`}>
+        <div className="flex items-center justify-between gap-2 p-3">
+          <Link to="/" className={`group flex min-w-0 flex-1 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] shadow-xl shadow-black/20 transition-all ${sidebarCollapsed ? 'justify-center p-3' : 'p-4'}`}>
+            <span className={`flex items-center gap-3 ${sidebarCollapsed ? 'justify-center' : ''}`}>
             <span className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-primary text-white shadow-lg shadow-primary/25">
               <span className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.45),transparent_45%)]" />
               <HardDrive className="relative h-5 w-5" />
             </span>
-            <span>
+            <span className={sidebarCollapsed ? 'hidden' : ''}>
               <span className="block text-lg font-black tracking-tight text-white">StreamNyaa</span>
               <span className="block text-[11px] font-bold uppercase tracking-[0.18em] text-white/38">Desktop cinema</span>
             </span>
           </span>
-          <span className="mt-4 grid grid-cols-3 gap-2">
+          <span className={`mt-4 grid grid-cols-3 gap-2 ${sidebarCollapsed ? 'hidden' : ''}`}>
             {['Sources', 'Player', 'List'].map((item) => (
               <span key={item} className="rounded-xl border border-white/10 bg-black/24 px-2 py-2 text-center text-[10px] font-black uppercase tracking-wide text-white/48">
                 {item}
               </span>
             ))}
           </span>
-        </Link>
+          </Link>
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            className={`hidden h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.045] text-white/52 hover:border-primary/35 hover:text-white xl:flex ${sidebarCollapsed ? 'absolute right-3 top-[86px]' : ''}`}
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
+        </div>
 
-        <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-3">
+        <nav className={`flex-1 overflow-y-auto px-3 py-3 ${sidebarCollapsed ? 'space-y-2 pt-8' : 'space-y-5'}`}>
           {sidebarSections.map((section) => (
             <div key={section.label}>
-              <p className="mb-2 px-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/30">{section.label}</p>
+              <p className={`mb-2 px-3 text-[10px] font-black uppercase tracking-[0.22em] text-white/30 ${sidebarCollapsed ? 'sr-only' : ''}`}>{section.label}</p>
               <div className="space-y-1">
                 {section.items.map(({ to, label, icon: Icon }) => (
                   <NavLink
                     key={to}
                     to={to}
                     end={to === '/'}
-                    className={({ isActive }) => `group flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-bold transition-all ${
+                    className={({ isActive }) => `group flex items-center rounded-2xl text-sm font-bold transition-all ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3.5 py-3'} ${
                       isActive
                         ? 'bg-white text-black shadow-lg shadow-black/25'
                         : 'text-white/58 hover:bg-white/[0.075] hover:text-white'
@@ -313,7 +332,7 @@ export default function DesktopShell() {
                     }`}>
                       <Icon className="h-4 w-4" />
                     </span>
-                    <span>{label}</span>
+                    <span className={sidebarCollapsed ? 'sr-only' : ''}>{label}</span>
                   </NavLink>
                 ))}
               </div>
@@ -321,31 +340,31 @@ export default function DesktopShell() {
           ))}
         </nav>
 
-        <div className="space-y-3 border-t border-white/10 p-3">
+        <div className={`space-y-3 border-t border-white/10 p-3 ${sidebarCollapsed ? 'pb-4' : ''}`}>
           <Link
             to="/local-player?desktop=1"
-            className="block rounded-3xl border border-white/10 bg-[linear-gradient(135deg,rgba(225,29,72,0.16),rgba(255,255,255,0.05))] p-4 transition-colors hover:border-primary/45 hover:bg-primary/10"
+            className={`block rounded-3xl border border-white/10 bg-[linear-gradient(135deg,rgba(225,29,72,0.16),rgba(255,255,255,0.05))] transition-colors hover:border-primary/45 hover:bg-primary/10 ${sidebarCollapsed ? 'p-3' : 'p-4'}`}
           >
             <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/42">
+              <span className={`flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/42 ${sidebarCollapsed ? 'justify-center' : ''}`}>
                 <span className={`h-2.5 w-2.5 rounded-full ${runtimeReady ? 'bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`} />
-                Playback
+                <span className={sidebarCollapsed ? 'sr-only' : ''}>Playback</span>
               </span>
               <MonitorPlay className="h-4 w-4 text-primary" />
             </div>
-            <p className="mt-2 text-sm font-black text-white">{statusLabel}</p>
-            <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/42">
+            <p className={`mt-2 text-sm font-black text-white ${sidebarCollapsed ? 'sr-only' : ''}`}>{statusLabel}</p>
+            <p className={`mt-1 line-clamp-2 text-xs leading-5 text-white/42 ${sidebarCollapsed ? 'sr-only' : ''}`}>
               {friendlyRuntimeMessage(runtime?.message || 'Checking local playback.')}
             </p>
           </Link>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className={`grid gap-2 ${sidebarCollapsed ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <Link
               to={user ? '/dashboard' : '/login'}
               className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-2.5 text-xs font-black text-white/70 hover:border-primary/35 hover:text-white"
             >
               <UserCircle className="h-4 w-4" />
-              {user ? 'Account' : 'Sign in'}
+              <span className={sidebarCollapsed ? 'sr-only' : ''}>{user ? 'Account' : 'Sign in'}</span>
             </Link>
             {isAdmin ? (
               <Link
@@ -353,7 +372,7 @@ export default function DesktopShell() {
                 className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-2.5 text-xs font-black text-white/70 hover:border-primary/35 hover:text-white"
               >
                 <ShieldCheck className="h-4 w-4" />
-                Admin
+                <span className={sidebarCollapsed ? 'sr-only' : ''}>Admin</span>
               </Link>
             ) : (
               <Link
@@ -361,14 +380,14 @@ export default function DesktopShell() {
                 className="flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-2.5 text-xs font-black text-white/70 hover:border-primary/35 hover:text-white"
               >
                 <Settings className="h-4 w-4" />
-                Setup
+                <span className={sidebarCollapsed ? 'sr-only' : ''}>Setup</span>
               </Link>
             )}
           </div>
         </div>
       </aside>
 
-      <div className="relative min-h-screen lg:pl-[276px]">
+      <div className={`relative min-h-screen transition-[padding-left] duration-300 ${sidebarCollapsed ? 'lg:pl-[92px]' : 'lg:pl-[276px]'}`}>
         <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050507]/72 backdrop-blur-2xl">
           <div className="flex h-auto flex-col gap-3 px-4 py-3 lg:h-20 lg:flex-row lg:items-center lg:justify-between lg:px-7 lg:py-0">
             <div className="flex min-w-0 items-center gap-3">
@@ -500,6 +519,27 @@ export default function DesktopShell() {
             <Outlet />
           </div>
         </main>
+
+        {miniSource && !location.pathname.startsWith('/local-player') ? (
+          <Link
+            to="/local-player?desktop=1"
+            className="fixed bottom-5 right-5 z-40 hidden w-[360px] overflow-hidden rounded-3xl border border-white/12 bg-[#08080a]/86 p-3 shadow-2xl shadow-black/50 backdrop-blur-2xl transition-transform hover:-translate-y-1 xl:block"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-white shadow-lg shadow-primary/20">
+                <Play className="ml-0.5 h-5 w-5 fill-current" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-black uppercase tracking-[0.18em] text-white/36">Ready to play</span>
+                <span className="mt-1 block truncate text-sm font-black text-white">{miniSource.animeTitle || miniSource.title}</span>
+                <span className="mt-0.5 block truncate text-xs font-semibold text-white/42">
+                  {miniSource.episode ? `Episode ${miniSource.episode}` : miniSource.size || 'Local source selected'}
+                </span>
+              </span>
+              <ArrowRight className="h-4 w-4 shrink-0 text-white/36" />
+            </div>
+          </Link>
+        ) : null}
       </div>
     </div>
   );
