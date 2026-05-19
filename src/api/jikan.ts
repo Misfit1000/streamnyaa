@@ -3,6 +3,31 @@ import { extractNumericId } from '../lib/slug';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 
+const fetchAniListDirect = (body: Record<string, unknown>) => fetch(ANILIST_URL, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600) => {
+  const gatewayResponse = await fetch(`/api/stream-sources?provider=anilist&ttl=${ttlSeconds}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(() => null);
+
+  if (gatewayResponse?.ok) return gatewayResponse;
+  return fetchAniListDirect(body);
+};
+
+const fetchJikanPathDirect = (path: string) => fetch(`https://api.jikan.moe/v4${path}`);
+
+const fetchJikanPath = async (path: string, ttlSeconds = 21600) => {
+  const gatewayResponse = await fetch(`/api/stream-sources?provider=jikan&ttl=${ttlSeconds}&path=${encodeURIComponent(path)}`).catch(() => null);
+  if (gatewayResponse?.ok) return gatewayResponse;
+  return fetchJikanPathDirect(path);
+};
+
 const mapAnilistToJikan = (m: any) => ({
   mal_id: m.idMal || m.id,
   title: m.title.english || m.title.romaji || m.title.native,
@@ -76,7 +101,7 @@ const mapAnilistToJikan = (m: any) => ({
 
 const fetchJikanAnimeStats = async (malId: number) => {
   try {
-    const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}`);
+    const res = await fetchJikanPath(`/anime/${malId}`, 21600);
     if (!res.ok) return null;
     const json = await res.json();
     const item = json?.data;
@@ -113,11 +138,7 @@ export const fetchTopAiring = async () => {
       }
     }
   `;
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query })
-  });
+  const res = await fetchAniList({ query }, 21600);
   if (!res.ok) throw new Error('Failed to fetch top airing anime');
   const data = await res.json();
   const rawData = data.data.Page.media.map(mapAnilistToJikan);
@@ -148,11 +169,7 @@ export const fetchRecentEpisodes = async () => {
       }
     }
   `;
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query })
-  });
+  const res = await fetchAniList({ query }, 300);
   if (!res.ok) throw new Error('Failed to fetch recent episodes');
   const data = await res.json();
   
@@ -198,11 +215,7 @@ export const fetchUpcomingAnime = async () => {
       }
     }
   `;
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query })
-  });
+  const res = await fetchAniList({ query }, 21600);
   if (!res.ok) throw new Error('Failed to fetch upcoming anime');
   const data = await res.json();
   const rawData = data.data.Page.media.map(mapAnilistToJikan);
@@ -230,11 +243,7 @@ export const fetchPopularAnime = async () => {
       }
     }
   `;
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query })
-  });
+  const res = await fetchAniList({ query }, 21600);
   if (!res.ok) throw new Error('Failed to fetch popular anime');
   const data = await res.json();
   const rawData = data.data.Page.media.map(mapAnilistToJikan);
@@ -262,11 +271,7 @@ export const fetchSeasonalAnime = async () => {
       }
     }
   `;
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query })
-  });
+  const res = await fetchAniList({ query }, 900);
   if (!res.ok) throw new Error('Failed to fetch seasonal anime');
   const data = await res.json();
   const rawData = data.data.Page.media.map(mapAnilistToJikan);
@@ -328,21 +333,13 @@ export const fetchAnimeDetails = async (id: string) => {
   `;
   // Fallback if querying by idMal fails, try grabbing by id (Anilist ID) directly 
   // since some components might pass anilist ID if Mal ID is missing
-  let res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables: { id: parseInt(extractNumericId(id)) } })
-  });
+  let res = await fetchAniList({ query, variables: { id: parseInt(extractNumericId(id)) } }, 21600);
   
   let data = await res.json();
   
   if (data.errors) {
     const fallbackQuery = query.replace('idMal: $id', 'id: $id');
-    res = await fetch(ANILIST_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: fallbackQuery, variables: { id: parseInt(extractNumericId(id)) } })
-    });
+    res = await fetchAniList({ query: fallbackQuery, variables: { id: parseInt(extractNumericId(id)) } }, 21600);
     data = await res.json();
   }
 
@@ -396,21 +393,13 @@ export const fetchMangaDetails = async (id: string) => {
       }
     }
   `;
-  let res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables: { id: parseInt(extractNumericId(id)) } })
-  });
+  let res = await fetchAniList({ query, variables: { id: parseInt(extractNumericId(id)) } }, 21600);
   
   let data = await res.json();
   
   if (data.errors) {
     const fallbackQuery = query.replace('idMal: $id', 'id: $id');
-    res = await fetch(ANILIST_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: fallbackQuery, variables: { id: parseInt(extractNumericId(id)) } })
-    });
+    res = await fetchAniList({ query: fallbackQuery, variables: { id: parseInt(extractNumericId(id)) } }, 21600);
     data = await res.json();
   }
 
@@ -433,7 +422,7 @@ export const fetchMangaDetails = async (id: string) => {
 
 export const fetchAnimeEpisodes = async (id: string, page: number = 1) => {
   try {
-    const res = await fetch(`https://api.jikan.moe/v4/anime/${extractNumericId(id)}/episodes?page=${page}`);
+    const res = await fetchJikanPath(`/anime/${extractNumericId(id)}/episodes?page=${page}`, 21600);
     const json = await res.json();
     return json;
   } catch (error) {
@@ -529,14 +518,10 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
     }
   `;
   
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      query: query ? gqlQuery : emptySearchQuery, 
-      variables: query ? { search: query, page } : { page } 
-    })
-  });
+  const res = await fetchAniList({
+    query: query ? gqlQuery : emptySearchQuery,
+    variables: query ? { search: query, page } : { page },
+  }, 1800);
   if (!res.ok) throw new Error('Failed to search anime');
   const data = await res.json();
   
@@ -577,11 +562,7 @@ export const fetchAnimeSeason = async (season: string, year: number, page = 1) =
     }
   `;
 
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: gqlQuery, variables: { page, seasonYear: year, season: validSeason } }),
-  });
+  const res = await fetchAniList({ query: gqlQuery, variables: { page, seasonYear: year, season: validSeason } }, 21600);
   if (!res.ok) throw new Error('Failed to fetch seasonal anime');
   const data = await res.json();
   if (data.errors) throw new Error('Failed to fetch seasonal anime');
@@ -600,11 +581,7 @@ export const fetchGenres = async () => {
       GenreCollection
     }
   `;
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query })
-  });
+  const res = await fetchAniList({ query }, 86400);
   if (!res.ok) throw new Error('Failed to fetch genres');
   const data = await res.json();
   
@@ -653,11 +630,7 @@ export const fetchSchedule = async (page = 1, startDate: number, endDate: number
     }
   `;
   
-  const res = await fetch(ANILIST_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables: { page, start: startDate, end: endDate } })
-  });
+  const res = await fetchAniList({ query, variables: { page, start: startDate, end: endDate } }, 180);
   
   if (!res.ok) throw new Error('Failed to fetch schedule');
   const data = await res.json();
