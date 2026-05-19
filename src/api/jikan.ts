@@ -2,6 +2,128 @@ import { useStore } from '../store/useStore';
 import { extractNumericId } from '../lib/slug';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
+const LOCAL_METADATA_PREFIX = 'streamnyaa.metadataCache.';
+const LOCAL_METADATA_LIMIT = 90;
+
+type MetadataCacheEntry = {
+  value: unknown;
+  expiresAt: number;
+  savedAt: number;
+};
+
+const memoryMetadataCache = new Map<string, MetadataCacheEntry>();
+
+const hashCacheKey = (input: string) => {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 33) ^ input.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const cacheKeyFor = (provider: 'anilist' | 'jikan', value: unknown) => {
+  const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+  return `${LOCAL_METADATA_PREFIX}${provider}.${hashCacheKey(serialized)}`;
+};
+
+const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale') => new Response(JSON.stringify(value), {
+  status: 200,
+  headers: {
+    'Content-Type': 'application/json',
+    'X-StreamNyaa-Local-Cache': cacheState,
+  },
+});
+
+const pruneLocalMetadataCache = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    const entries = Object.keys(localStorage)
+      .filter((key) => key.startsWith(LOCAL_METADATA_PREFIX))
+      .map((key) => {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key) || '{}') as Partial<MetadataCacheEntry>;
+          return { key, savedAt: Number(parsed.savedAt || 0) };
+        } catch {
+          return { key, savedAt: 0 };
+        }
+      })
+      .sort((a, b) => b.savedAt - a.savedAt);
+
+    entries.slice(LOCAL_METADATA_LIMIT).forEach(({ key }) => {
+      localStorage.removeItem(key);
+      memoryMetadataCache.delete(key);
+    });
+  } catch {
+    // Cache pruning is best-effort only.
+  }
+};
+
+const readLocalMetadata = (key: string, allowStale = false) => {
+  const now = Date.now();
+  const memoryEntry = memoryMetadataCache.get(key);
+  if (memoryEntry && (allowStale || memoryEntry.expiresAt > now)) return memoryEntry;
+
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as MetadataCacheEntry;
+    if (!parsed || typeof parsed.expiresAt !== 'number') return null;
+    if (!allowStale && parsed.expiresAt <= now) return null;
+    memoryMetadataCache.set(key, parsed);
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const writeLocalMetadata = (key: string, value: unknown, ttlSeconds: number) => {
+  const entry: MetadataCacheEntry = {
+    value,
+    expiresAt: Date.now() + ttlSeconds * 1000,
+    savedAt: Date.now(),
+  };
+  memoryMetadataCache.set(key, entry);
+
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(entry));
+    pruneLocalMetadataCache();
+  } catch {
+    try {
+      pruneLocalMetadataCache();
+      localStorage.setItem(key, JSON.stringify(entry));
+    } catch {
+      // The direct request already succeeded, so cache write failure should not break the page.
+    }
+  }
+};
+
+const fetchWithLocalMetadataCache = async (
+  key: string,
+  ttlSeconds: number,
+  request: () => Promise<Response>,
+) => {
+  const cached = readLocalMetadata(key);
+  if (cached) return jsonResponse(cached.value, 'local-hit');
+
+  try {
+    const response = await request();
+    if (!response.ok) {
+      const stale = readLocalMetadata(key, true);
+      if (stale) return jsonResponse(stale.value, 'local-stale');
+      return response;
+    }
+
+    const json = await response.clone().json();
+    writeLocalMetadata(key, json, ttlSeconds);
+    return response;
+  } catch (error) {
+    const stale = readLocalMetadata(key, true);
+    if (stale) return jsonResponse(stale.value, 'local-stale');
+    throw error;
+  }
+};
 
 const fetchAniListDirect = (body: Record<string, unknown>) => fetch(ANILIST_URL, {
   method: 'POST',
@@ -10,22 +132,28 @@ const fetchAniListDirect = (body: Record<string, unknown>) => fetch(ANILIST_URL,
 });
 
 const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600) => {
-  const gatewayResponse = await fetch(`/api/stream-sources?provider=anilist&ttl=${ttlSeconds}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).catch(() => null);
+  const cacheKey = cacheKeyFor('anilist', body);
+  return fetchWithLocalMetadataCache(cacheKey, ttlSeconds, async () => {
+    const gatewayResponse = await fetch(`/api/stream-sources?provider=anilist&ttl=${ttlSeconds}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).catch(() => null);
 
-  if (gatewayResponse?.ok) return gatewayResponse;
-  return fetchAniListDirect(body);
+    if (gatewayResponse?.ok) return gatewayResponse;
+    return fetchAniListDirect(body);
+  });
 };
 
 const fetchJikanPathDirect = (path: string) => fetch(`https://api.jikan.moe/v4${path}`);
 
 const fetchJikanPath = async (path: string, ttlSeconds = 21600) => {
-  const gatewayResponse = await fetch(`/api/stream-sources?provider=jikan&ttl=${ttlSeconds}&path=${encodeURIComponent(path)}`).catch(() => null);
-  if (gatewayResponse?.ok) return gatewayResponse;
-  return fetchJikanPathDirect(path);
+  const cacheKey = cacheKeyFor('jikan', path);
+  return fetchWithLocalMetadataCache(cacheKey, ttlSeconds, async () => {
+    const gatewayResponse = await fetch(`/api/stream-sources?provider=jikan&ttl=${ttlSeconds}&path=${encodeURIComponent(path)}`).catch(() => null);
+    if (gatewayResponse?.ok) return gatewayResponse;
+    return fetchJikanPathDirect(path);
+  });
 };
 
 const mapAnilistToJikan = (m: any) => ({
