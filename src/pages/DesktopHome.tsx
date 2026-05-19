@@ -199,7 +199,7 @@ function SourceCard({ source }: { source: LocalPlaybackSource }) {
       type="button"
       onClick={() => {
         void openLocalSourceNow(source).catch((error) => {
-          console.warn(error instanceof Error ? error.message.replace(/MPV/gi, 'the local player').replace(/rqbit/gi, 'the local engine') : 'Playback could not start.');
+          console.warn(error instanceof Error ? error.message.replace(/rqbit/gi, 'the local engine') : 'Playback could not start.');
         });
       }}
       className="group w-[238px] shrink-0 text-left"

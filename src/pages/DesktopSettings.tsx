@@ -11,7 +11,7 @@ import {
   openDesktopCacheFolder,
   prepareLocalPlayback,
   saveDesktopPlaybackSettings,
-  testDesktopMpv,
+  testDesktopVlc,
   type DesktopCacheStatus,
   type DesktopDiagnosticsStatus,
   type DesktopPlaybackSettings,
@@ -70,7 +70,7 @@ export default function DesktopSettings() {
   };
 
   const testPlayer = async () => {
-    const result = await testDesktopMpv(settings);
+    const result = await testDesktopVlc(settings);
     setMessage(result.message);
     await refresh(settings, true);
   };
@@ -97,7 +97,7 @@ export default function DesktopSettings() {
 
   const friendlyMessage = (value = '') => value
     .replace(/rqbit/gi, 'the local engine')
-    .replace(/MPV/gi, 'the local player')
+    .replace(/VLC/gi, 'VLC')
     .replace(/command or full executable path/gi, 'setup path')
     .replace(/commands are configured/gi, 'is ready');
 
@@ -128,14 +128,14 @@ export default function DesktopSettings() {
               />
             </label>
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wider text-white/42">Local player helper path</span>
+              <span className="text-xs font-black uppercase tracking-wider text-white/42">VLC player path</span>
               <input
-                value={settings.mpv_path}
-                onChange={(event) => setSettings((current) => ({ ...current, mpv_path: event.target.value }))}
+                value={settings.vlc_path}
+                onChange={(event) => setSettings((current) => ({ ...current, vlc_path: event.target.value, player_mode: 'vlc' }))}
                 className="mt-1 w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-bold text-white outline-none placeholder:text-white/28 focus:border-primary"
                 placeholder="Auto"
               />
-              <span className="mt-1 block text-xs text-white/40">Leave this on Auto unless you installed your player helper in a custom folder.</span>
+              <span className="mt-1 block text-xs text-white/40">Leave this on Auto unless VLC is installed in a custom folder.</span>
             </label>
             <label className="block">
               <span className="text-xs font-black uppercase tracking-wider text-white/42">Storage folder</span>
@@ -150,7 +150,7 @@ export default function DesktopSettings() {
 
           <div className="mt-5 flex flex-wrap gap-3">
             <button onClick={save} className="rounded-2xl bg-primary px-5 py-3 text-sm font-black text-primary-foreground hover:bg-primary/90">Save settings</button>
-            <button onClick={testPlayer} className="rounded-2xl border border-white/10 bg-black/25 px-5 py-3 text-sm font-black text-white hover:border-primary/40">Test player</button>
+            <button onClick={testPlayer} className="rounded-2xl border border-white/10 bg-black/25 px-5 py-3 text-sm font-black text-white hover:border-primary/40">Test VLC</button>
             <button onClick={warmupPlayback} className="rounded-2xl border border-white/10 bg-black/25 px-5 py-3 text-sm font-black text-white hover:border-primary/40">Check readiness</button>
             <button onClick={openCache} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/25 px-5 py-3 text-sm font-black text-white hover:border-primary/40">
               <FolderOpen className="h-4 w-4" />
@@ -167,12 +167,12 @@ export default function DesktopSettings() {
             <p className="text-xs font-black uppercase tracking-[0.18em] text-primary">Advanced playback profile</p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {[
-                ['Preferred engine', 'Native preview with compatibility fallback'],
-                ['Hardware acceleration', 'Auto-safe GPU decode'],
+                ['Preferred player', 'VLC external playback'],
+                ['Hardware acceleration', 'VLC automatic decode'],
                 ['Torrent mode', 'Sequential stream while downloading'],
-                ['Subtitle renderer', 'ASS/SRT with embedded font support'],
+                ['Subtitle renderer', 'VLC subtitle and track selector'],
                 ['Audio handling', 'Multi-track anime release support'],
-                ['Buffering strategy', '25s playback cache with 60s read-ahead'],
+                ['Buffering strategy', 'Single-session stream cache'],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
                   <span className="block text-[11px] font-black uppercase tracking-wider text-white/34">{label}</span>

@@ -5,7 +5,10 @@ use std::{
     net::{SocketAddr, TcpStream},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -91,9 +94,9 @@ struct DiagnosticsStatus {
 #[derive(Clone, Deserialize)]
 struct DesktopSettings {
     torrent_engine_path: Option<String>,
-    mpv_path: Option<String>,
+    #[serde(alias = "mpv_path")]
+    vlc_path: Option<String>,
     cache_dir: Option<String>,
-    player_mode: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -124,9 +127,9 @@ struct OpenTorrentPlayerRequest {
     settings: Option<DesktopSettings>,
 }
 
-const DEFAULT_CACHE_MAX_BYTES: u64 = 10 * 1024 * 1024 * 1024;
-const GUARDED_CACHE_MAX_BYTES: u64 = 5 * 1024 * 1024 * 1024;
-const LOW_SPACE_CACHE_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const DEFAULT_CACHE_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const GUARDED_CACHE_MAX_BYTES: u64 = 1024 * 1024 * 1024;
+const LOW_SPACE_CACHE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const EMERGENCY_CACHE_MAX_BYTES: u64 = 512 * 1024 * 1024;
 const GUARDED_FREE_BYTES: u64 = 15 * 1024 * 1024 * 1024;
 const LOW_FREE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
@@ -135,6 +138,7 @@ const MIN_PLAYBACK_FREE_BYTES: u64 = 1024 * 1024 * 1024;
 const MIN_PLAYBACK_RESERVE_BYTES: u64 = 1024 * 1024 * 1024;
 const INCOMPLETE_CACHE_MAX_AGE_MS: u128 = 3 * 24 * 60 * 60 * 1000;
 static RQBIT_SERVER_VALIDATED: AtomicBool = AtomicBool::new(false);
+static ACTIVE_PLAYBACK_CACHE_DIR: Mutex<Option<String>> = Mutex::new(None);
 
 fn now_millis() -> u128 {
     SystemTime::now()
@@ -222,7 +226,7 @@ fn command_name(value: &str) -> String {
 
 fn dynamic_windows_command_paths(fallback: &str) -> Vec<String> {
     let name = command_name(fallback);
-    if name != "mpv" && name != "mpv.exe" {
+    if name != "vlc" && name != "vlc.exe" {
         return Vec::new();
     }
 
@@ -237,17 +241,11 @@ fn dynamic_windows_command_paths(fallback: &str) -> Vec<String> {
         }
     };
 
-    push_candidate(env::var("ProgramW6432").ok(), r"MPV Player\mpv.exe");
-    push_candidate(env::var("ProgramW6432").ok(), r"mpv\mpv.exe");
-    push_candidate(env::var("ProgramW6432").ok(), r"mpv.net\mpv.exe");
-    push_candidate(env::var("ProgramFiles").ok(), r"MPV Player\mpv.exe");
-    push_candidate(env::var("ProgramFiles").ok(), r"mpv\mpv.exe");
-    push_candidate(env::var("ProgramFiles").ok(), r"mpv.net\mpv.exe");
-    push_candidate(env::var("ProgramFiles(x86)").ok(), r"MPV Player\mpv.exe");
-    push_candidate(env::var("ProgramFiles(x86)").ok(), r"mpv\mpv.exe");
-    push_candidate(env::var("ProgramFiles(x86)").ok(), r"mpv.net\mpv.exe");
-    push_candidate(env::var("LOCALAPPDATA").ok(), r"Programs\mpv\mpv.exe");
-    push_candidate(env::var("LOCALAPPDATA").ok(), r"Microsoft\WinGet\Links\mpv.exe");
+    push_candidate(env::var("ProgramW6432").ok(), r"VideoLAN\VLC\vlc.exe");
+    push_candidate(env::var("ProgramFiles").ok(), r"VideoLAN\VLC\vlc.exe");
+    push_candidate(env::var("ProgramFiles(x86)").ok(), r"VideoLAN\VLC\vlc.exe");
+    push_candidate(env::var("LOCALAPPDATA").ok(), r"Programs\VideoLAN\VLC\vlc.exe");
+    push_candidate(env::var("LOCALAPPDATA").ok(), r"Microsoft\WinGet\Links\vlc.exe");
 
     candidates
 }
@@ -682,248 +680,90 @@ fn wait_for_playlist_ready(torrent_id: &str) -> bool {
     false
 }
 
-fn ensure_streamnyaa_mpv_config(cache_dir: &str) -> Result<String, String> {
+fn ensure_streamnyaa_vlc_notes(cache_dir: &str) -> Result<(), String> {
     let mut config_dir = PathBuf::from(cache_dir);
-    config_dir.push("streamnyaa-mpv");
+    config_dir.push("streamnyaa-vlc");
     fs::create_dir_all(&config_dir)
-        .map_err(|error| format!("Could not prepare player theme folder: {}", error))?;
-
-    let mpv_conf = r#"# StreamNyaa desktop player profile
-osc=yes
-osd-bar=yes
-osd-duration=1100
-osd-font=Segoe UI
-osd-font-size=28
-osd-color=#FFFFFFFF
-osd-border-color=#CC000000
-osd-border-size=2
-sub-font=Segoe UI Semibold
-sub-font-size=42
-sub-color=#FFFFFFFF
-sub-border-color=#E6000000
-sub-border-size=3
-sub-shadow-offset=1
-sub-shadow-color=#B0000000
-slang=eng,en
-alang=jpn,ja,eng,en
-save-position-on-quit=yes
-keep-open=yes
-force-window=yes
-focus-on=open
-ontop=yes
-autofit-larger=92%x88%
-geometry=50%:50%
-cursor-autohide=900
-input-default-bindings=yes
-volume=85
-cache=yes
-cache-pause=yes
-cache-pause-initial=yes
-cache-pause-wait=1
-cache-secs=25
-demuxer-readahead-secs=60
-demuxer-max-bytes=512MiB
-network-timeout=45
-force-seekable=yes
-hwdec=auto-safe
-sub-auto=fuzzy
-sub-ass=yes
-embeddedfonts=yes
-audio-display=no
-script-opts=osc-layout=bottombar,osc-seekbarstyle=bar,osc-deadzonesize=0,osc-minmousemove=3,osc-scalewindowed=0.86,osc-scalefullscreen=0.92
-"#;
-
-    let input_conf = r#"# StreamNyaa keyboard controls
-SPACE cycle pause
-LEFT seek -5 exact
-RIGHT seek 5 exact
-Shift+LEFT seek -85 exact
-Shift+RIGHT seek 85 exact
-UP add volume 5
-DOWN add volume -5
-f cycle fullscreen
-ENTER cycle fullscreen
-ESC set fullscreen no
-s cycle sub
-a cycle audio
-m cycle mute
-t cycle ontop
-[ add speed -0.1
-] add speed 0.1
-BS set speed 1.0
-q quit-watch-later
-"#;
-
-    fs::write(config_dir.join("mpv.conf"), mpv_conf)
-        .map_err(|error| format!("Could not write player theme: {}", error))?;
-    fs::write(config_dir.join("input.conf"), input_conf)
-        .map_err(|error| format!("Could not write player shortcuts: {}", error))?;
-
-    Ok(config_dir.to_string_lossy().to_string())
+        .map_err(|error| format!("Could not prepare VLC support folder: {}", error))?;
+    fs::write(
+        config_dir.join("README.txt"),
+        "StreamNyaa uses this folder for VLC-only local playback support files.\n",
+    )
+    .map_err(|error| format!("Could not write VLC support note: {}", error))?;
+    Ok(())
 }
 
-fn xml_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
-fn ensure_loading_frame(cache_dir: &str, title: &str) -> Result<String, String> {
-    let mut frame_path = PathBuf::from(cache_dir);
-    frame_path.push("streamnyaa-loading.svg");
-    let title = xml_escape(title);
-    let svg = format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
-  <defs>
-    <radialGradient id="glow" cx="50%" cy="48%" r="52%">
-      <stop offset="0%" stop-color="#e11d48" stop-opacity="0.36"/>
-      <stop offset="42%" stop-color="#be123c" stop-opacity="0.18"/>
-      <stop offset="100%" stop-color="#050509" stop-opacity="1"/>
-    </radialGradient>
-    <linearGradient id="ring" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="45%" stop-color="#fb7185"/>
-      <stop offset="100%" stop-color="#e11d48"/>
-    </linearGradient>
-  </defs>
-  <rect width="1600" height="900" fill="#050509"/>
-  <rect width="1600" height="900" fill="url(#glow)"/>
-  <circle cx="800" cy="395" r="84" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="18"/>
-  <path d="M800 311a84 84 0 0 1 72 41" fill="none" stroke="url(#ring)" stroke-width="18" stroke-linecap="round"/>
-  <circle cx="800" cy="395" r="46" fill="#e11d48" fill-opacity="0.92"/>
-  <path d="M790 369v52l43-26z" fill="#fff"/>
-  <text x="800" y="520" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700" text-anchor="middle">Loading episode...</text>
-  <text x="800" y="568" fill="#cbd5e1" fill-opacity="0.86" font-family="Segoe UI, Arial, sans-serif" font-size="22" text-anchor="middle">{}</text>
-  <text x="800" y="626" fill="#94a3b8" fill-opacity="0.72" font-family="Segoe UI, Arial, sans-serif" font-size="18" text-anchor="middle">Preparing local stream and connecting peers</text>
-</svg>"##,
-        title
-    );
-    fs::write(&frame_path, svg)
-        .map_err(|error| format!("Could not prepare loading screen: {}", error))?;
-    Ok(frame_path.to_string_lossy().to_string())
-}
-
-fn mpv_command_base(player_path: &str, title: &str, cache_dir: &str) -> Result<Command, String> {
-    let config_dir = ensure_streamnyaa_mpv_config(cache_dir)?;
-    let mut command = Command::new(player_path);
-    command
-        .arg(format!("--config-dir={}", config_dir))
-        .arg("--force-window=yes")
-        .arg("--focus-on=open")
-        .arg("--ontop=yes")
-        .arg("--keep-open=yes")
-        .arg("--osc=yes")
-        .arg("--osd-bar=yes")
-        .arg("--cache=yes")
-        .arg("--cache-pause=yes")
-        .arg("--cache-pause-initial=yes")
-        .arg("--cache-pause-wait=1")
-        .arg("--cache-secs=25")
-        .arg("--demuxer-readahead-secs=60")
-        .arg("--demuxer-max-bytes=512MiB")
-        .arg("--force-seekable=yes")
-        .arg("--hwdec=auto-safe")
-        .arg("--sub-auto=fuzzy")
-        .arg("--sub-ass=yes")
-        .arg("--embeddedfonts=yes")
-        .arg("--audio-display=no")
-        .arg("--save-position-on-quit")
-        .arg(format!("--title=StreamNyaa - {}", title))
+#[cfg(windows)]
+fn stop_streamnyaa_player_processes() {
+    let _ = Command::new("taskkill")
+        .arg("/IM")
+        .arg("vlc.exe")
+        .arg("/F")
+        .arg("/T")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
-
-    Ok(command)
+        .stderr(Stdio::null())
+        .status();
 }
 
-fn launch_mpv_waiting_player(player_path: &str, title: &str, cache_dir: &str) -> Result<String, String> {
+#[cfg(not(windows))]
+fn stop_streamnyaa_player_processes() {
+    let _ = Command::new("pkill")
+        .arg("-f")
+        .arg("vlc")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+fn launch_vlc_player(player_path: &str, playlist_url: &str, title: &str, cache_dir: &str) -> Result<(), String> {
+    ensure_streamnyaa_vlc_notes(cache_dir)?;
+    stop_streamnyaa_player_processes();
     let mut last_error = None;
-    let ipc_name = format!(r"\\.\pipe\streamnyaa-{}", now_millis());
-    let loading_frame = ensure_loading_frame(cache_dir, title)?;
 
     for attempt in 0..2 {
-        let mut command = mpv_command_base(player_path, title, cache_dir)?;
+        let mut command = Command::new(player_path);
         let result = command
-            .arg(&loading_frame)
-            .arg("--idle=yes")
-            .arg("--force-window=immediate")
-            .arg("--image-display-duration=inf")
-            .arg("--loop-file=inf")
-            .arg("--osd-playing-msg=StreamNyaa is preparing the local stream...")
-            .arg(format!("--input-ipc-server={}", ipc_name))
+            .arg("--started-from-file")
+            .arg("--no-playlist-enqueue")
+            .arg("--play-and-exit")
+            .arg("--video-title")
+            .arg(format!("StreamNyaa - {}", title))
+            .arg("--meta-title")
+            .arg(format!("StreamNyaa - {}", title))
+            .arg("--network-caching=1800")
+            .arg("--file-caching=1800")
+            .arg("--disc-caching=1800")
+            .arg("--live-caching=1800")
+            .arg("--avcodec-hw=any")
+            .arg("--sub-track=0")
+            .arg(playlist_url)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn();
 
         match result {
-            Ok(_) => return Ok(ipc_name),
-            Err(error) => {
-                last_error = Some(error.to_string());
-                if attempt == 0 {
-                    thread::sleep(Duration::from_millis(450));
+            Ok(mut child) => {
+                let cleanup_dir = cache_dir.to_string();
+                if let Ok(mut active_dir) = ACTIVE_PLAYBACK_CACHE_DIR.lock() {
+                    *active_dir = Some(cleanup_dir.clone());
                 }
+                thread::spawn(move || {
+                    let _ = child.wait();
+                    clear_local_torrents(true);
+                    let _ = clear_cache_dir(&cleanup_dir);
+                    cleanup_legacy_temp_cache(&cleanup_dir);
+                    maintain_cache_dir(&cleanup_dir);
+                    if let Ok(mut active_dir) = ACTIVE_PLAYBACK_CACHE_DIR.lock() {
+                        if active_dir.as_deref() == Some(cleanup_dir.as_str()) {
+                            *active_dir = None;
+                        }
+                    }
+                });
+                return Ok(());
             }
-        }
-    }
-
-    Err(format!(
-        "Could not start the local player: {}",
-        last_error.unwrap_or_else(|| "unknown launch error".to_string())
-    ))
-}
-
-fn send_mpv_ipc(ipc_name: &str, command_json: &str) -> bool {
-    for _ in 0..30 {
-        match fs::OpenOptions::new().write(true).open(ipc_name) {
-            Ok(mut pipe) => {
-                if pipe.write_all(command_json.as_bytes()).is_ok()
-                    && pipe.write_all(b"\n").is_ok()
-                {
-                    return true;
-                }
-            }
-            Err(_) => {
-                thread::sleep(Duration::from_millis(100));
-            }
-        }
-    }
-    false
-}
-
-fn mpv_json_string(value: &str) -> String {
-    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
-}
-
-fn load_mpv_stream(ipc_name: &str, playlist_url: &str) -> bool {
-    let command = format!(
-        r#"{{"command":["loadfile",{},"replace"],"request_id":1}}"#,
-        mpv_json_string(playlist_url)
-    );
-    send_mpv_ipc(ipc_name, &command)
-}
-
-fn show_mpv_text(ipc_name: &str, message: &str) {
-    let command = format!(
-        r#"{{"command":["show-text",{},5000],"request_id":2}}"#,
-        mpv_json_string(message)
-    );
-    let _ = send_mpv_ipc(ipc_name, &command);
-}
-
-fn close_mpv_ipc(ipc_name: &str) {
-    let _ = send_mpv_ipc(ipc_name, r#"{"command":["quit"],"request_id":3}"#);
-}
-
-fn launch_mpv_player(player_path: &str, playlist_url: &str, title: &str, cache_dir: &str) -> Result<(), String> {
-    let mut last_error = None;
-
-    for attempt in 0..2 {
-        let mut command = mpv_command_base(player_path, title, cache_dir)?;
-        let result = command.arg(playlist_url).spawn();
-
-        match result {
-            Ok(_) => return Ok(()),
             Err(error) => {
                 last_error = Some(error.to_string());
                 if attempt == 0 {
@@ -1000,6 +840,55 @@ fn wait_for_rqbit_stop() {
         }
         thread::sleep(Duration::from_millis(150));
     }
+}
+
+fn active_torrent_ids() -> Vec<String> {
+    let payload = match local_http_request("GET", "/torrents", None) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(&payload) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    parsed
+        .get("torrents")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|torrent| {
+                    torrent.get("id").and_then(|id| {
+                        id.as_u64()
+                            .map(|value| value.to_string())
+                            .or_else(|| id.as_str().map(|value| value.to_string()))
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn clear_local_torrents(delete_files: bool) {
+    for id in active_torrent_ids() {
+        let path = format!(
+            "/torrents/{}?with_files={}",
+            percent_encode(&id),
+            if delete_files { "true" } else { "false" }
+        );
+        let _ = local_http_request("DELETE", &path, None);
+    }
+}
+
+fn reset_playback_session(cache_dir: &str) -> Result<(), String> {
+    stop_streamnyaa_player_processes();
+    clear_local_torrents(true);
+    clear_cache_dir(cache_dir)?;
+    maintain_cache_dir(cache_dir);
+    if let Ok(mut active_dir) = ACTIVE_PLAYBACK_CACHE_DIR.lock() {
+        *active_dir = Some(cache_dir.to_string());
+    }
+    Ok(())
 }
 
 fn start_rqbit_server(engine_path: &str, cache_dir: &str) -> Result<(), String> {
@@ -1263,7 +1152,7 @@ fn collect_cache_entries(cache_dir: &str) -> CacheStatus {
 
 fn is_protected_cache_path(path: &Path) -> bool {
     let name = path.file_name().and_then(|value| value.to_str()).unwrap_or("");
-    name == "streamnyaa-mpv" || name == "streamnyaa-loading.svg"
+    name == "streamnyaa-vlc"
 }
 
 fn is_incomplete_cache_file(path: &Path) -> bool {
@@ -1339,6 +1228,8 @@ fn startup_storage_maintenance() {
         wait_for_rqbit_stop();
     }
 
+    let _ = clear_cache_dir(&cache_dir);
+    cleanup_legacy_temp_cache(&cache_dir);
     maintain_cache_dir(&cache_dir);
 }
 
@@ -1367,7 +1258,7 @@ fn clear_cache_dir(cache_dir: &str) -> Result<(), String> {
     {
         let path = item.path();
         let name = path.file_name().and_then(|value| value.to_str()).unwrap_or("");
-        if name == "streamnyaa-mpv" || name == "streamnyaa-loading.svg" {
+        if name == "streamnyaa-vlc" {
             continue;
         }
 
@@ -1383,56 +1274,62 @@ fn clear_cache_dir(cache_dir: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn cleanup_playback_on_exit() {
+    let active_cache_dir = ACTIVE_PLAYBACK_CACHE_DIR
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+        .unwrap_or_else(default_cache_dir);
+
+    clear_local_torrents(true);
+    stop_streamnyaa_player_processes();
+    stop_rqbit_processes();
+    wait_for_rqbit_stop();
+
+    let _ = clear_cache_dir(&active_cache_dir);
+    cleanup_legacy_temp_cache(&active_cache_dir);
+    if active_cache_dir != default_cache_dir() {
+        let default_dir = default_cache_dir();
+        let _ = clear_cache_dir(&default_dir);
+        cleanup_legacy_temp_cache(&default_dir);
+    }
+}
+
 #[tauri::command]
 fn get_desktop_runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatus {
     let settings = settings.unwrap_or(DesktopSettings {
         torrent_engine_path: None,
-        mpv_path: None,
+        vlc_path: None,
         cache_dir: None,
-        player_mode: None,
     });
-    let player_mode = settings
-        .player_mode
-        .clone()
-        .unwrap_or_else(|| "mpv".to_string());
     let torrent_engine_path = configured_value(
         settings.torrent_engine_path,
         "STREAMNYAA_TORRENT_ENGINE_PATH",
         "rqbit",
     );
-    let player_path = if player_mode == "mpv" {
-        configured_command(
-            settings.mpv_path,
-            "STREAMNYAA_MPV_PATH",
-            "mpv",
-            &[
-                r"C:\Program Files\MPV Player\mpv.exe",
-                r"C:\Program Files\mpv\mpv.exe",
-                r"C:\Program Files (x86)\MPV Player\mpv.exe",
-                r"C:\Program Files (x86)\mpv\mpv.exe",
-            ],
-        )
-    } else {
-        None
-    };
+    let player_path = configured_command(
+        settings.vlc_path,
+        "STREAMNYAA_VLC_PATH",
+        "vlc",
+        &[
+            r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+            r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+        ],
+    );
     let cache_dir = resolved_cache_dir(settings.cache_dir);
     let torrent_engine_configured =
         command_configured(&torrent_engine_path, &["rqbit", "rqbit.exe"]);
     let player_configured =
-        player_mode != "mpv" || command_configured(&player_path, &["mpv", "mpv.exe"]);
+        command_configured(&player_path, &["vlc", "vlc.exe"]);
     let torrent_engine_version = command_version(&torrent_engine_path, &["rqbit", "rqbit.exe"]);
-    let player_version = if player_mode == "mpv" {
-        command_version(&player_path, &["mpv", "mpv.exe"])
-    } else {
-        None
-    };
+    let player_version = command_version(&player_path, &["vlc", "vlc.exe"]);
     let ready = torrent_engine_configured && player_configured;
     let message = if ready {
         "Local playback is ready.".to_string()
     } else if !torrent_engine_configured {
         "Set the local playback engine path to enable playback.".to_string()
     } else if !player_configured {
-        "Set the local player path to enable playback.".to_string()
+        "Install VLC or set the VLC executable path to enable playback.".to_string()
     } else {
         "Local playback is installed. Configure the playback paths to enable playback.".to_string()
     };
@@ -1451,30 +1348,27 @@ fn get_desktop_runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatu
 }
 
 #[tauri::command]
-fn test_mpv_player(settings: Option<DesktopSettings>) -> ToolTestStatus {
+fn test_vlc_player(settings: Option<DesktopSettings>) -> ToolTestStatus {
     let settings = settings.unwrap_or(DesktopSettings {
         torrent_engine_path: None,
-        mpv_path: None,
+        vlc_path: None,
         cache_dir: None,
-        player_mode: None,
     });
     let player_path = configured_command(
-        settings.mpv_path,
-        "STREAMNYAA_MPV_PATH",
-        "mpv",
+        settings.vlc_path,
+        "STREAMNYAA_VLC_PATH",
+        "vlc",
         &[
-            r"C:\Program Files\MPV Player\mpv.exe",
-            r"C:\Program Files\mpv\mpv.exe",
-            r"C:\Program Files (x86)\MPV Player\mpv.exe",
-            r"C:\Program Files (x86)\mpv\mpv.exe",
+            r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+            r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
         ],
     );
-    let version = command_version(&player_path, &["mpv", "mpv.exe"]);
+    let version = command_version(&player_path, &["vlc", "vlc.exe"]);
 
     let Some(path) = player_path else {
         return ToolTestStatus {
             ok: false,
-            message: "Local player path is missing.".to_string(),
+            message: "VLC path is missing.".to_string(),
             path: None,
             version: None,
         };
@@ -1483,16 +1377,18 @@ fn test_mpv_player(settings: Option<DesktopSettings>) -> ToolTestStatus {
     if version.is_none() {
         return ToolTestStatus {
             ok: false,
-            message: "The local player was not found at the configured path.".to_string(),
+            message: "VLC was not found at the configured path.".to_string(),
             path: Some(path),
             version: None,
         };
     }
 
     match Command::new(&path)
-        .arg("--force-window=yes")
-        .arg("--idle=yes")
-        .arg("--title=StreamNyaa Player Test")
+        .arg("--started-from-file")
+        .arg("--one-instance")
+        .arg("--qt-start-minimized")
+        .arg("--play-and-exit")
+        .arg("--meta-title=StreamNyaa VLC Test")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -1500,13 +1396,13 @@ fn test_mpv_player(settings: Option<DesktopSettings>) -> ToolTestStatus {
     {
         Ok(_) => ToolTestStatus {
             ok: true,
-            message: "Player test window opened. Close it when you are done.".to_string(),
+            message: "VLC was detected and opened successfully.".to_string(),
             path: Some(path),
             version,
         },
         Err(error) => ToolTestStatus {
             ok: false,
-            message: format!("Could not open the local player: {}", error),
+            message: format!("Could not open VLC: {}", error),
             path: Some(path),
             version,
         },
@@ -1639,23 +1535,12 @@ fn add_local_torrent_blocking(
         });
     }
 
-    let waiting_player_ipc = if open_player {
-        let Some(player_path) = player_path.as_deref() else {
-            return Err("Local player path is missing.".to_string());
-        };
-        Some(launch_mpv_waiting_player(player_path, &label, &runtime.cache_dir)?)
-    } else {
-        None
-    };
-
     if let Err(error) = start_rqbit_server(&engine_path, &runtime.cache_dir) {
-        if let Some(ipc_name) = waiting_player_ipc.as_deref() {
-            show_mpv_text(ipc_name, "StreamNyaa could not start the local stream engine.");
-        }
         return Err(error);
     }
-    if let Some(ipc_name) = waiting_player_ipc.as_deref() {
-        show_mpv_text(ipc_name, "Loading episode metadata...");
+
+    if open_player {
+        reset_playback_session(&runtime.cache_dir)?;
     }
 
     let torrent_id = if let Some(hash) = source_hash.as_deref() {
@@ -1685,18 +1570,19 @@ fn add_local_torrent_blocking(
 
     if open_player {
         let Some(player_path) = player_path else {
-            return Err("Local player path is missing.".to_string());
+            return Err("VLC path is missing.".to_string());
         };
-
-        if let Some(ipc_name) = waiting_player_ipc.as_deref() {
-            show_mpv_text(ipc_name, "Opening episode...");
-            if !load_mpv_stream(ipc_name, &playlist_url) {
-                close_mpv_ipc(ipc_name);
-                launch_mpv_player(&player_path, &playlist_url, &label, &runtime.cache_dir)?;
-            }
-        } else {
-            launch_mpv_player(&player_path, &playlist_url, &label, &runtime.cache_dir)?;
+        if !wait_for_playlist_ready(&torrent_id) {
+            return Ok(PlaybackStatus {
+                ok: false,
+                state: "preparing".to_string(),
+                message: "The local stream is still preparing. Try again in a few seconds or choose a higher-seeder source.".to_string(),
+                title: label,
+                torrent_id: Some(torrent_id),
+                playlist_url: Some(playlist_url),
+            });
         }
+        launch_vlc_player(&player_path, &playlist_url, &label, &runtime.cache_dir)?;
     }
 
     Ok(PlaybackStatus {
@@ -1774,9 +1660,10 @@ fn stop_local_playback_blocking(request: StopPlaybackRequest) -> Result<(), Stri
         return Ok(());
     }
 
+    stop_streamnyaa_player_processes();
     let delete_path = format!("/torrents/{}", percent_encode(torrent_id));
     local_http_request("DELETE", &delete_path, None)
-        .or_else(|_| local_http_request("DELETE", &format!("{}?with_files=false", delete_path), None))
+        .or_else(|_| local_http_request("DELETE", &format!("{}?with_files=true", delete_path), None))
         .map(|_| ())
         .map_err(|error| format!("Could not stop local torrent: {}", error))
 }
@@ -1810,7 +1697,7 @@ fn open_local_torrent_player_blocking(request: OpenTorrentPlayerRequest) -> Resu
         return Err("Torrent engine path is missing.".to_string());
     };
     let Some(player_path) = runtime.player_path.clone() else {
-        return Err("Local player path is missing.".to_string());
+        return Err("VLC path is missing.".to_string());
     };
 
     fs::create_dir_all(&runtime.cache_dir)
@@ -1840,7 +1727,7 @@ fn open_local_torrent_player_blocking(request: OpenTorrentPlayerRequest) -> Resu
             playlist_url: Some(playlist_url),
         });
     }
-    launch_mpv_player(&player_path, &playlist_url, &title, &runtime.cache_dir)?;
+    launch_vlc_player(&player_path, &playlist_url, &title, &runtime.cache_dir)?;
 
     Ok(PlaybackStatus {
         ok: true,
@@ -1903,6 +1790,11 @@ fn main() {
             thread::spawn(startup_storage_maintenance);
             Ok(())
         })
+        .on_window_event(|_, event| {
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                cleanup_playback_on_exit();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             fetch_desktop_source_api,
             clear_playback_cache,
@@ -1916,7 +1808,7 @@ fn main() {
             prepare_local_playback,
             play_local_torrent,
             stop_local_playback,
-            test_mpv_player
+            test_vlc_player
         ])
         .run(tauri::generate_context!())
         .expect("failed to start StreamNyaa desktop app");

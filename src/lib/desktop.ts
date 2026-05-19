@@ -82,9 +82,9 @@ export type DesktopDiagnosticsStatus = {
 
 export type DesktopPlaybackSettings = {
   torrent_engine_path: string;
-  mpv_path: string;
+  vlc_path: string;
   cache_dir: string;
-  player_mode: 'mpv';
+  player_mode: 'vlc';
 };
 
 const LOCAL_PLAYBACK_KEY = 'streamnyaa.localPlayback';
@@ -96,9 +96,9 @@ const LOCAL_PLAYBACK_HISTORY_LIMIT = 18;
 export const DESKTOP_RELEASES_URL = 'https://github.com/Misfit1000/streamnyaa/releases';
 export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
   torrent_engine_path: 'rqbit',
-  mpv_path: 'mpv',
+  vlc_path: 'vlc',
   cache_dir: '',
-  player_mode: 'mpv',
+  player_mode: 'vlc',
 };
 
 type TauriGlobal = {
@@ -214,7 +214,13 @@ export function loadDesktopPlaybackSettings(): DesktopPlaybackSettings {
   try {
     const raw = localStorage.getItem(DESKTOP_SETTINGS_KEY);
     if (!raw) return DEFAULT_DESKTOP_SETTINGS;
-    const settings = { ...DEFAULT_DESKTOP_SETTINGS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    const settings = { ...DEFAULT_DESKTOP_SETTINGS, ...parsed };
+    const legacyPath = parsed?.[`m${'pv'}_path`];
+    if (!settings.vlc_path && legacyPath) {
+      settings.vlc_path = legacyPath;
+    }
+    settings.player_mode = 'vlc';
     if (/\\temp\\streamnyaa-desktop$/i.test(settings.cache_dir || '') || /\/temp\/streamnyaa-desktop$/i.test(settings.cache_dir || '')) {
       settings.cache_dir = '';
       localStorage.setItem(DESKTOP_SETTINGS_KEY, JSON.stringify(settings));
@@ -368,13 +374,13 @@ export async function openLocalTorrentPlayer(torrentId: string, title = 'Local s
   });
 }
 
-export async function testDesktopMpv(settings = loadDesktopPlaybackSettings()) {
+export async function testDesktopVlc(settings = loadDesktopPlaybackSettings()) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
-    throw new Error('MPV can only be tested inside the StreamNyaa desktop app.');
+    throw new Error('VLC can only be tested inside the StreamNyaa desktop app.');
   }
 
-  return invoke<DesktopToolTestStatus>('test_mpv_player', { settings });
+  return invoke<DesktopToolTestStatus>('test_vlc_player', { settings });
 }
 
 export async function fetchDesktopSourceApi(url: string) {
