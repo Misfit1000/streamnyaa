@@ -1,7 +1,8 @@
+import { animeIdentity } from './animeIdentity';
 import type { AuthSession } from './supabaseAuth';
 
 export type RecentAnime = {
-  mal_id: number;
+  mal_id: number | string;
   title: string;
   images?: any;
   score?: number;
@@ -50,9 +51,10 @@ export function getRecentAnime(limit = 8) {
 }
 
 export function saveRecentAnime(anime: any) {
-  if (!anime?.mal_id || !anime?.title) return;
+  const id = animeIdentity(anime);
+  if (!id || !anime?.title) return;
   const nextItem: RecentAnime = {
-    mal_id: anime.mal_id,
+    mal_id: id,
     title: anime.title,
     images: anime.images,
     score: anime.score,
@@ -61,7 +63,7 @@ export function saveRecentAnime(anime: any) {
     year: anime.year,
     viewedAt: new Date().toISOString(),
   };
-  const existing = readList<RecentAnime>(RECENT_ANIME_KEY).filter((item) => item.mal_id !== nextItem.mal_id);
+  const existing = readList<RecentAnime>(RECENT_ANIME_KEY).filter((item) => String(item.mal_id) !== String(nextItem.mal_id));
   writeList(RECENT_ANIME_KEY, [nextItem, ...existing].slice(0, 12));
 }
 

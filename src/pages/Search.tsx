@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { searchAnime, fetchGenres } from '../api/jikan';
@@ -6,8 +6,55 @@ import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
 import { slugifyTitle } from '../lib/slug';
 import { Filter, Search as SearchIcon } from 'lucide-react';
+import { isDesktopApp } from '../lib/desktop';
+
+const DESKTOP_EXPLORE_FALLBACK = [
+  {
+    mal_id: 21,
+    title: 'ONE PIECE',
+    episodes: 1161,
+    score: 8.7,
+    images: { jpg: { image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-ELSYx3yMPcKM.jpg', large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-ELSYx3yMPcKM.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-ELSYx3yMPcKM.jpg' } },
+  },
+  {
+    mal_id: 51553,
+    title: 'Witch Hat Atelier',
+    episodes: 13,
+    score: 8.6,
+    images: { jpg: { image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx147105-rwOX8qyUy8gV.jpg', large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx147105-rwOX8qyUy8gV.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx147105-rwOX8qyUy8gV.jpg' } },
+  },
+  {
+    mal_id: 61316,
+    title: 'Re:ZERO -Starting Life in Another World- Season 4',
+    episodes: 19,
+    score: 8.7,
+    images: { jpg: { image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx189046-yaHWtS5FII46.jpg', large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx189046-yaHWtS5FII46.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx189046-yaHWtS5FII46.jpg' } },
+  },
+  {
+    mal_id: 59983,
+    title: 'Wistoria: Wand and Sword Season 2',
+    episodes: 12,
+    score: 8.1,
+    images: { jpg: { image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx182300-IYkq5KrkQq1V.jpg', large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx182300-IYkq5KrkQq1V.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx182300-IYkq5KrkQq1V.jpg' } },
+  },
+];
+
+function animeKey(anime: any) {
+  return String(anime?.mal_id || anime?.id || anime?.title || '');
+}
+
+function uniqueAnimeList(items: any[]) {
+  const seen = new Set<string>();
+  return items.filter((anime) => {
+    const key = animeKey(anime);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 export default function Search() {
+  const desktop = isDesktopApp();
   const [searchParams, setSearchParams] = useSearchParams();
   
   const [query, setQuery] = useState(searchParams.get('q') || '');
@@ -25,14 +72,19 @@ export default function Search() {
     queryKey: ['search', query, type, rating, genre, searchParams.get('sort'), status],
     queryFn: ({ pageParam = 1 }) => searchAnime(query, pageParam as number, type, rating, genre, searchParams.get('sort') || '', status),
     initialPageParam: 1,
+    placeholderData: (previous) => previous,
     getNextPageParam: (lastPage, allPages) => {
       return lastPage.pagination.has_next_page ? allPages.length + 1 : undefined;
     }
   });
 
-  const allAnimes = (data?.pages.flatMap(page => page.data) || []).filter((anime, index, self) => 
-    index === self.findIndex((a) => a.mal_id === anime.mal_id)
+  const allAnimes = useMemo(
+    () => uniqueAnimeList(data?.pages.flatMap((page) => page.data) || []),
+    [data?.pages],
   );
+  const visibleAnimes = desktop && !query && allAnimes.length === 0 && !isLoading
+    ? DESKTOP_EXPLORE_FALLBACK
+    : allAnimes;
   const sort = searchParams.get('sort') || '';
   const hasSimpleGenreFilter = Boolean(genre) && !query && !type && !status && !rating;
   const hasPopularFilter = sort === 'popular' && !query && !genre && !type && !status && !rating;
@@ -51,6 +103,7 @@ export default function Search() {
     : hasPopularFilter
       ? 'Browse popular anime on StreamNyaa with title pages, related anime, schedules, and download search options.'
       : 'Search anime on StreamNyaa by title, genre, type, status, and rating with clean anime pages and source search options.';
+  const activeFilterCount = [type, status, rating, genre, sort].filter(Boolean).length;
 
   useEffect(() => {
     setQuery(searchParams.get('q') || '');
@@ -67,6 +120,9 @@ export default function Search() {
     if (type) params.append('type', type);
     if (status) params.append('status', status);
     if (rating) params.append('rating', rating);
+    if (genre) params.append('genre', genre);
+    const currentSort = searchParams.get('sort');
+    if (currentSort) params.append('sort', currentSort);
     setSearchParams(params);
   };
 
@@ -78,16 +134,33 @@ export default function Search() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className={`container mx-auto px-4 py-8 ${desktop ? 'md:px-10' : ''}`}>
       <Seo
         title={seoTitle}
         description={seoDescription}
         canonicalPath={canonicalPath}
       />
+      {desktop ? (
+        <div className="mb-8 rounded-3xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))] p-6 shadow-2xl shadow-black/20">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Explore</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight text-white">Anime discovery</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">
+                Search titles, narrow by status or genre, and open the desktop watch flow without leaving the app shell.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-black text-white/60">
+              <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5">{visibleAnimes.length} visible</span>
+              <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5">{activeFilterCount} filters</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-col md:flex-row gap-6">
         {/* Filters Sidebar */}
         <div className="w-full md:w-64 shrink-0 space-y-6">
-          <div className="bg-secondary/50 rounded-xl p-4 border border-border">
+          <div className={`${desktop ? 'rounded-3xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.045),rgba(255,255,255,0.015))] p-5 shadow-xl shadow-black/15' : 'bg-secondary/50 rounded-xl p-4 border border-border'}`}>
             <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
               <Filter className="w-5 h-5" /> Filter
             </h3>
@@ -178,15 +251,15 @@ export default function Search() {
             <div className="flex justify-center py-20">
               <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : allAnimes.length === 0 ? (
+          ) : visibleAnimes.length === 0 ? (
             <div className="text-center py-20 text-muted-foreground">
               No anime found matching your criteria.
             </div>
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
-                {allAnimes.map((anime: any, index: number) => (
-                  <AnimeCard key={`search-${anime.mal_id}-${index}`} anime={anime} />
+                {visibleAnimes.map((anime: any, index: number) => (
+                  <AnimeCard key={`search-${animeKey(anime)}-${index}`} anime={anime} />
                 ))}
               </div>
 

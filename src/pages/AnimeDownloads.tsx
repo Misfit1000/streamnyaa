@@ -2,8 +2,8 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa } from '../api/nyaa';
-import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, ListVideo, Link as LinkIcon } from 'lucide-react';
-import { useState } from 'react';
+import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, Link as LinkIcon, Play } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
@@ -11,8 +11,11 @@ import type { TorrentSourceFilter } from '../lib/torrentBadges';
 import { useAuth } from '../context/AuthContext';
 import { saveDownloadHistory } from '../lib/activity';
 import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQualityScore } from '../lib/sourceQuality';
+import { isDesktopApp, openLocalSourceNow } from '../lib/desktop';
 
 type AudioFilter = 'sub' | 'dub';
+
+const DESKTOP_SOURCE_PRESETS = SOURCE_PRESETS.filter((preset) => preset.sourceFilter !== 'batch');
 
 function sourceHealth(seedCount: number) {
   if (seedCount >= 100) return 'Fast';
@@ -37,10 +40,20 @@ function isNotYetAired(anime: any) {
   return status === 'NOT_YET_RELEASED' || status === 'NOT_YET_AIRED' || status.includes('NOT_YET');
 }
 
-function knownAiredEpisodeCount(anime: any) {
-  if (anime?.nextAiringEpisode?.episode) return Math.max(anime.nextAiringEpisode.episode - 1, 0);
-  if (String(anime?.status || '').toUpperCase() === 'FINISHED') return anime?.episodes || 1;
-  return 0;
+function knownAiredEpisodeCount(anime: any, episodeItems: any[] = []) {
+  const pageMax = episodeItems.length
+    ? Math.max(...episodeItems.map((episode: any) => Number(episode?.mal_id) || 0))
+    : 0;
+  if (anime?.nextAiringEpisode?.episode) return Math.max(anime.nextAiringEpisode.episode - 1, pageMax, 0);
+  if (String(anime?.status || '').toUpperCase() === 'FINISHED') return Math.max(anime?.episodes || 1, pageMax, 1);
+  if (String(anime?.status || '').toUpperCase() === 'RELEASING') {
+    return Math.max(anime?.episodes || 0, anime?.streamingEpisodes?.length || 0, pageMax, 1);
+  }
+  return Math.max(pageMax, anime?.episodes || 0, 0);
+}
+
+function isBatchSource(title = '') {
+  return /\b(batch|complete|season pack|complete season|collection)\b/i.test(title);
 }
 
 function canSearchDownloads(anime: any) {
@@ -50,6 +63,7 @@ function canSearchDownloads(anime: any) {
 
 export default function AnimeDownloads() {
   const { session, user } = useAuth();
+  const desktop = isDesktopApp();
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const epParam = searchParams.get('ep');
@@ -57,13 +71,13 @@ export default function AnimeDownloads() {
   const selectedEpisodeNumber = epParam && /^\d+$/.test(epParam) ? parseInt(epParam, 10) : null;
   const episodePage = selectedEpisodeNumber ? Math.max(1, Math.ceil(selectedEpisodeNumber / 100)) : 1;
   
-  // If epParam is present, default filter to empty or "1080p" instead of "[Batch]"
-  const [downloadFilter, setDownloadFilter] = useState(epParam ? '1080p' : '[Batch]');
+  const [downloadFilter, setDownloadFilter] = useState('1080p');
   const [audioFilter, setAudioFilter] = useState<AudioFilter>(typeParam === 'dub' ? 'dub' : 'sub');
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size'>('best');
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
   const [showAllSources, setShowAllSources] = useState(false);
+  const [desktopNotice, setDesktopNotice] = useState<{ tone: 'loading' | 'success' | 'error'; text: string } | null>(null);
 
   const { data, isLoading: animeLoading } = useQuery({
     queryKey: ['anime', id],
@@ -73,9 +87,6 @@ export default function AnimeDownloads() {
 
   const anime = data?.data;
   const downloadSearchAvailable = canSearchDownloads(anime);
-  const isBatchView = !epParam && downloadFilter === '[Batch]';
-  const isCurrentlyAiring = anime?.status === 'RELEASING';
-  const showAiringEpisodeResults = Boolean(isCurrentlyAiring && isBatchView);
 
   const { data: episodeData } = useQuery({
     queryKey: ['anime-download-episodes', id, episodePage],
@@ -83,16 +94,20 @@ export default function AnimeDownloads() {
     enabled: !!id && !!anime,
   });
 
+  const currentEpisodePageItems = episodeData?.data || [];
+  const airedEpisodeCount = knownAiredEpisodeCount(anime, currentEpisodePageItems);
+  const resolvedEpisodeNumber = selectedEpisodeNumber || (airedEpisodeCount > 0 ? airedEpisodeCount : null);
+
   const { data: torrents, isLoading: torrentsLoading } = useQuery({
-    queryKey: ['nyaa-download', anime?.title, epParam, downloadFilter, typeParam, audioFilter, showAiringEpisodeResults, showAllSources],
+    queryKey: ['nyaa-download', anime?.title, resolvedEpisodeNumber, downloadFilter, typeParam, audioFilter, showAllSources],
     queryFn: async () => {
       const romaji = anime?.title_romaji;
       const english = anime?.title_english;
       const native = anime?.title;
 
-      const epStr = epParam ? epParam.padStart(2, '0') : '';
+      const epStr = resolvedEpisodeNumber ? String(resolvedEpisodeNumber).padStart(2, '0') : '';
       const isDub = audioFilter === 'dub';
-      const effectiveDownloadFilter = showAiringEpisodeResults ? '1080p' : downloadFilter;
+      const effectiveDownloadFilter = downloadFilter;
 
       const cleanTitle = (t: string) => {
         if (!t) return '';
@@ -123,17 +138,16 @@ export default function AnimeDownloads() {
       };
 
       const prefersDub = (title = '') => /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title);
-      const applyAudioFilter = (items: Awaited<ReturnType<typeof searchNyaa>>) => {
-        const filtered = isDub
-          ? items.filter((item) => prefersDub(item.title))
-          : items.filter((item) => !prefersDub(item.title));
-        return filtered.length ? filtered : items;
-      };
       const removeBatchResults = (items: Awaited<ReturnType<typeof searchNyaa>>) => (
-        showAiringEpisodeResults
-          ? items.filter((item) => !/\b(batch|complete|season pack|complete season)\b/i.test(item.title))
-          : items
+        items.filter((item) => !isBatchSource(item.title))
       );
+      const applyAudioFilter = (items: Awaited<ReturnType<typeof searchNyaa>>) => {
+        const episodeOnly = removeBatchResults(items);
+        const filtered = isDub
+          ? episodeOnly.filter((item) => prefersDub(item.title))
+          : episodeOnly.filter((item) => !prefersDub(item.title));
+        return filtered.length ? filtered : episodeOnly;
+      };
 
       let results = await trySearches(epStr);
 
@@ -147,8 +161,7 @@ export default function AnimeDownloads() {
         results = await trySearches("");
       }
       
-      const filteredResults = removeBatchResults(applyAudioFilter(results));
-      return filteredResults.length ? filteredResults : applyAudioFilter(results);
+      return applyAudioFilter(results);
     },
     enabled: !!anime?.title && downloadSearchAvailable,
   });
@@ -213,7 +226,7 @@ export default function AnimeDownloads() {
     );
   }
 
-  const sortedTorrents = [...(torrents || [])].filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
+  const sortedTorrents = useMemo(() => [...(torrents || [])].filter((torrent) => !isBatchSource(torrent.title)).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
     if (sortBy === 'best') {
         if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
         const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
@@ -229,26 +242,21 @@ export default function AnimeDownloads() {
         if (b.rawSize !== a.rawSize) return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
         return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
     }
-  });
+  }), [sortBy, sortDirection, sourceFilter, torrents]);
   const topSource = sortedTorrents[0];
-  const visibleTorrents = showAllSources ? sortedTorrents : sortedTorrents.slice(0, 5);
+  const visibleTorrents = useMemo(() => showAllSources ? sortedTorrents : sortedTorrents.slice(0, 5), [showAllSources, sortedTorrents]);
   const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
-  const totalSeeders = sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0);
-  const highSeederCount = sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length;
-  const airedEpisodeCount = anime.nextAiringEpisode?.episode
-    ? Math.max(anime.nextAiringEpisode.episode - 1, 0)
-    : (anime.episodes || 0);
-  const currentEpisodePageItems = episodeData?.data || [];
+  const totalSeeders = useMemo(() => sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0), [sortedTorrents]);
+  const highSeederCount = useMemo(() => sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length, [sortedTorrents]);
   const updateEpisodeSelection = (value: string) => {
     setShowAllSources(false);
     const nextParams = new URLSearchParams(searchParams);
-    if (value === 'batch') {
-      nextParams.delete('ep');
-      setDownloadFilter('[Batch]');
-    } else {
+    if (value) {
       nextParams.set('ep', value);
-      setDownloadFilter('1080p');
+    } else {
+      nextParams.delete('ep');
     }
+    setDownloadFilter('1080p');
     nextParams.set('type', audioFilter);
     setSearchParams(nextParams);
   };
@@ -259,7 +267,6 @@ export default function AnimeDownloads() {
     setSourceFilter((preset.sourceFilter || '') as TorrentSourceFilter);
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('type', preset.type);
-    if (preset.sourceFilter === 'batch') nextParams.delete('ep');
     setSearchParams(nextParams);
   };
   const recordDownloadAction = (torrent: any, action: 'copy' | 'open') => {
@@ -267,12 +274,34 @@ export default function AnimeDownloads() {
       title: torrent.title,
       magnet: torrent.magnet,
       animeTitle: anime.title,
-      animeId: anime.mal_id,
-      episode: selectedEpisodeNumber || (downloadFilter === '[Batch]' ? 'batch' : null),
+      animeId: anime.mal_id || anime.id,
+      episode: resolvedEpisodeNumber,
       action,
       size: torrent.size,
       seeders: torrent.seeders,
     }, session);
+  };
+  const openDesktopPlayback = async (torrent: any) => {
+    setDesktopNotice({ tone: 'loading', text: 'Opening source in the desktop player...' });
+    recordDownloadAction(torrent, 'open');
+    const result = await openLocalSourceNow({
+      magnet: torrent.magnet,
+      infoHash: torrent.infoHash,
+      title: torrent.title,
+      animeTitle: anime.title,
+      animeId: anime.mal_id || anime.id,
+      episode: resolvedEpisodeNumber,
+      size: torrent.size,
+      seeders: torrent.seeders,
+      image: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url,
+      poster: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url,
+      banner: anime.banner_image || anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url,
+    });
+    if (!result.ok) {
+      throw new Error(result.message || 'Source link could not open.');
+    }
+    setDesktopNotice({ tone: 'success', text: 'Source opened in the desktop player.' });
+    return result;
   };
 
   return (
@@ -310,11 +339,11 @@ export default function AnimeDownloads() {
             <label className="flex flex-col gap-1.5 text-left">
               <span className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">Episode</span>
               <select
-                value={selectedEpisodeNumber ? String(selectedEpisodeNumber) : 'batch'}
+                value={resolvedEpisodeNumber ? String(resolvedEpisodeNumber) : ''}
                 onChange={(event) => updateEpisodeSelection(event.target.value)}
                 className="min-w-[220px] rounded-xl border border-border bg-background/70 px-3 py-2 text-sm font-bold text-foreground outline-none transition-colors focus:border-primary [&>option]:bg-background"
               >
-                <option value="batch">Batch / all available episodes</option>
+                <option value="">Any aired episode</option>
                 {airedEpisodeCount > 0
                   ? Array.from({ length: airedEpisodeCount }, (_, index) => {
                     const episodeNumber = index + 1;
@@ -330,7 +359,7 @@ export default function AnimeDownloads() {
               </select>
             </label>
             <div className="flex flex-wrap gap-2">
-              {['[Batch]', '1080p', '720p', 'RAW'].map(filter => (
+              {['1080p', '720p', 'RAW'].map(filter => (
                 <button
                   key={filter}
                   onClick={() => {
@@ -339,9 +368,8 @@ export default function AnimeDownloads() {
                     setDownloadFilter(nextFilter);
                     if (nextFilter === '1080p') setSourceFilter('quality-1080p');
                     else if (nextFilter === '720p') setSourceFilter('quality-720p');
-                    else if (nextFilter === '[Batch]') setSourceFilter('batch');
                     else if (nextFilter === 'RAW') setSourceFilter('raw');
-                    else if (sourceFilter === 'quality-1080p' || sourceFilter === 'quality-720p' || sourceFilter === 'batch' || sourceFilter === 'raw') setSourceFilter('');
+                    else if (sourceFilter === 'quality-1080p' || sourceFilter === 'quality-720p' || sourceFilter === 'raw') setSourceFilter('');
                   }}
                   className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
                     downloadFilter === filter
@@ -349,12 +377,12 @@ export default function AnimeDownloads() {
                       : 'bg-secondary hover:bg-secondary/80 text-foreground'
                   }`}
                 >
-                  {filter === '[Batch]' ? 'Batch' : filter}
+                  {filter}
                 </button>
               ))}
             </div>
             <div className="flex flex-wrap gap-2">
-              {SOURCE_PRESETS.map((preset) => (
+              {DESKTOP_SOURCE_PRESETS.map((preset) => (
                 <button
                   key={preset.label}
                   type="button"
@@ -414,7 +442,7 @@ export default function AnimeDownloads() {
             ) : null}
           </div>
           <p className="text-xs text-muted-foreground text-left md:text-right">
-            {showAiringEpisodeResults ? 'Airing episode' : downloadFilter === '[Batch]' ? 'Batch' : 'Episode'} results are filtered for {audioFilter === 'dub' ? 'dubbed or dual-audio releases' : 'subbed releases'}.
+            Episode sources are filtered for {audioFilter === 'dub' ? 'dubbed or dual-audio releases' : 'subbed releases'}.
           </p>
         </div>
       </div>
@@ -452,7 +480,6 @@ export default function AnimeDownloads() {
             { value: 'high-seeders', label: 'High seeders' },
             { value: 'hevc', label: 'HEVC' },
             { value: 'dual-audio', label: 'Dual Audio' },
-            { value: 'batch', label: 'Batch' },
             { value: 'episode', label: 'Episode' },
           ].map((item) => (
             <button
@@ -473,20 +500,6 @@ export default function AnimeDownloads() {
         </div>
       </div>
 
-      {showAiringEpisodeResults ? (
-        <div className="mb-6 rounded-xl border border-primary/20 bg-primary/10 p-4 text-sm text-muted-foreground">
-          <div className="flex items-start gap-3">
-            <ListVideo className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-            <div>
-              <p className="font-semibold text-primary">Currently airing</p>
-              <p className="mt-1">
-                Full batch releases usually appear after a season finishes, so this section is showing available individual episode releases for now.
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <div className="mb-6 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-4 text-sm text-muted-foreground md:hidden">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-500" />
@@ -502,7 +515,7 @@ export default function AnimeDownloads() {
       {torrentsLoading ? (
         <div className="py-20 flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
-            <p className="text-muted-foreground font-medium">Searching sources for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {showAiringEpisodeResults ? 'episode releases' : downloadFilter ? downloadFilter.replace('[Batch]', 'batch') : 'releases'}...</p>
+            <p className="text-muted-foreground font-medium">Searching sources for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {downloadFilter || 'episode'} releases...</p>
         </div>
       ) : sortedTorrents.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-8 md:p-12 rounded-3xl text-center flex flex-col items-center">
@@ -517,12 +530,12 @@ export default function AnimeDownloads() {
                 Try alternate title: {anime.title_english || anime.title_romaji}
               </span>
             ) : null}
-            {selectedEpisodeNumber ? (
+            {resolvedEpisodeNumber ? (
               <button
                 type="button"
                 onClick={() => {
                   setShowAllSources(false);
-                  setSearchParams(new URLSearchParams({ ep: String(selectedEpisodeNumber), type: audioFilter }));
+                  setSearchParams(new URLSearchParams({ ep: String(resolvedEpisodeNumber), type: audioFilter }));
                   setDownloadFilter('');
                   setSourceFilter('');
                 }}
@@ -541,21 +554,21 @@ export default function AnimeDownloads() {
             >
               Try wider source search
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowAllSources(false);
-                setDownloadFilter('[Batch]');
-                setSourceFilter('batch');
-              }}
-              className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
-            >
-              Try batch search
-            </button>
           </div>
         </div>
       ) : (
         <div className="space-y-4">
+          {desktopNotice ? (
+            <div className={`rounded-2xl border p-4 text-sm font-bold ${
+              desktopNotice.tone === 'error'
+                ? 'border-red-400/25 bg-red-500/10 text-red-100'
+                : desktopNotice.tone === 'success'
+                  ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
+                  : 'border-primary/25 bg-primary/10 text-white/76'
+            }`}>
+              {desktopNotice.text}
+            </div>
+          ) : null}
           <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-secondary/20 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-black text-foreground">
@@ -641,15 +654,33 @@ export default function AnimeDownloads() {
                 </div>
                 
                 <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto shrink-0 mt-2 md:mt-0">
-                  <a
-                    href={torrent.magnet}
-                    onClick={() => recordDownloadAction(torrent, 'open')}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm"
-                    title="Open source link"
-                  >
-                    <Download className="w-4 h-4" />
-                    Open Link
-                  </a>
+                  {desktop ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void openDesktopPlayback(torrent).catch((error) => {
+                          const message = error instanceof Error ? error.message : String(error || 'Source link could not open.');
+                          console.warn(message);
+                          setDesktopNotice({ tone: 'error', text: message });
+                        });
+                      }}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25"
+                      title="Open source link"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      Open
+                    </button>
+                  ) : (
+                    <a
+                      href={torrent.magnet}
+                      onClick={() => recordDownloadAction(torrent, 'open')}
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm"
+                      title="Open source link"
+                    >
+                      <Download className="w-4 h-4" />
+                      Open Link
+                    </a>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

@@ -4,10 +4,12 @@ import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { Download, Plus, Check, Heart, Star, Calendar, Clock, Tv, Play, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { animePath, mangaPath } from '../lib/slug';
+import { animePath, mangaPath, watchPath } from '../lib/slug';
 import Seo from '../components/Seo';
 import RelatedBlogArticles from '../components/RelatedBlogArticles';
 import { saveRecentAnime } from '../lib/activity';
+import { isDesktopApp } from '../lib/desktop';
+import { animeIdentity } from '../lib/animeIdentity';
 
 function formatStatus(value?: string) {
   return value ? value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unknown';
@@ -31,12 +33,15 @@ function isNotYetAired(anime: any) {
 }
 
 function knownAiredEpisodeCount(anime: any, episodeItems: any[] = []) {
-  if (anime?.nextAiringEpisode?.episode) return Math.max(anime.nextAiringEpisode.episode - 1, 0);
-  if (String(anime?.status || '').toUpperCase() === 'FINISHED') return anime?.episodes || Math.max(episodeItems.length, 1);
-  if (String(anime?.status || '').toUpperCase() === 'RELEASING' && episodeItems.length) {
-    return Math.max(...episodeItems.map((episode: any) => Number(episode.mal_id) || 0));
+  const pageMax = episodeItems.length
+    ? Math.max(...episodeItems.map((episode: any) => Number(episode?.mal_id) || 0))
+    : 0;
+  if (anime?.nextAiringEpisode?.episode) return Math.max(anime.nextAiringEpisode.episode - 1, pageMax, 0);
+  if (String(anime?.status || '').toUpperCase() === 'FINISHED') return Math.max(anime?.episodes || 1, pageMax, 1);
+  if (String(anime?.status || '').toUpperCase() === 'RELEASING') {
+    return Math.max(anime?.episodes || 0, anime?.streamingEpisodes?.length || 0, pageMax, 1);
   }
-  return 0;
+  return Math.max(pageMax, anime?.episodes || 0, 0);
 }
 
 function canShowDownloadOptions(anime: any, episodeItems: any[] = []) {
@@ -74,6 +79,7 @@ export default function AnimeDetails() {
   });
 
   const anime = data?.data;
+  const desktop = isDesktopApp();
 
   useEffect(() => {
     if (!anime || !id) return;
@@ -106,8 +112,9 @@ export default function AnimeDetails() {
 
   if (!anime) return <div className="text-center py-20">Anime not found</div>;
 
-  const inList = isInMyList(anime.mal_id);
-  const liked = isLiked(anime.mal_id);
+  const animeId = animeIdentity(anime);
+  const inList = isInMyList(animeId);
+  const liked = isLiked(animeId);
   const genres = anime.genres?.map((genre: any) => genre.name).filter(Boolean) || [];
   const studios = anime.studios?.map((studio: any) => studio.name).filter(Boolean) || [];
   const statusLabel = formatStatus(anime.status);
@@ -184,7 +191,7 @@ export default function AnimeDetails() {
   ];
 
   const handleListToggle = () => {
-    if (inList) removeFromMyList(anime.mal_id);
+    if (inList) removeFromMyList(animeId);
     else addToMyList(anime);
   };
 
@@ -202,7 +209,7 @@ export default function AnimeDetails() {
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-transparent z-10" />
         <div className="absolute inset-0 bg-black/40 z-10" />
         <img
-          src={anime.images.jpg.large_image_url}
+          src={animeImage}
           alt={anime.title}
           className="w-full h-full object-cover blur-sm scale-105"
           referrerPolicy="no-referrer"
@@ -214,7 +221,7 @@ export default function AnimeDetails() {
         <div className="w-48 md:w-64 shrink-0 mx-auto md:mx-0">
           <div className="aspect-[3/4] rounded-xl overflow-hidden shadow-2xl border-4 border-background bg-secondary">
             <img
-              src={anime.images.jpg.large_image_url}
+              src={animeImage}
               alt={anime.title}
               className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
@@ -254,13 +261,24 @@ export default function AnimeDetails() {
 
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 mb-8">
             {downloadOptionsAvailable ? (
-              <Link
-                to={animePath(anime, '/downloads')}
-                className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
-              >
-                <Download className="w-5 h-5" />
-                Downloads
-              </Link>
+              <>
+                {desktop ? (
+                  <Link
+                    to={`${watchPath(anime)}?${new URLSearchParams({ ...(latestAiredEpisode ? { ep: String(latestAiredEpisode) } : {}), type: 'sub' }).toString()}`}
+                    className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
+                  >
+                    <Play className="w-5 h-5 fill-current" />
+                    Watch
+                  </Link>
+                ) : null}
+                <Link
+                  to={animePath(anime, '/downloads')}
+                  className={`${desktop ? 'bg-secondary hover:bg-secondary/80 text-foreground' : 'bg-primary hover:bg-primary/90 text-primary-foreground'} flex items-center gap-2 px-8 py-3 rounded-full font-bold transition-transform hover:scale-105`}
+                >
+                  <Download className="w-5 h-5" />
+                  Downloads
+                </Link>
+              </>
             ) : (
               <span className="flex items-center gap-2 rounded-full border border-border bg-secondary/70 px-6 py-3 font-bold text-muted-foreground">
                 <Calendar className="h-5 w-5" />
@@ -432,13 +450,15 @@ export default function AnimeDetails() {
               </div>
             </section>
 
-            <RelatedBlogArticles
-              title={`Articles related to ${anime.title}`}
-              animeTitle={anime.title}
-              malId={anime.mal_id}
-              genres={genres}
-              className="mt-8 pt-6 border-t border-[var(--glass-border)]"
-            />
+            {!desktop ? (
+              <RelatedBlogArticles
+                title={`Articles related to ${anime.title}`}
+                animeTitle={anime.title}
+                malId={anime.mal_id}
+                genres={genres}
+                className="mt-8 pt-6 border-t border-[var(--glass-border)]"
+              />
+            ) : null}
 
             {anime.relations && anime.relations.length > 0 && (
               <div className="relative group/carousel">
@@ -620,12 +640,19 @@ export default function AnimeDetails() {
                   },
                   {
                     question: `Can I find ${anime.title} episode downloads?`,
-                    answer: `Yes. Open the downloads page to search source metadata for ${anime.title}, including episode results, batch results, file sizes, seed counts, and sub or dub filters.`,
+                    answer: `Yes. Open the downloads page to search source metadata for ${anime.title}, including episode results, file sizes, seed counts, and sub or dub filters.`,
                   },
                 ].map((item) => (
-                  <div key={item.question} className="rounded-xl border border-[var(--glass-border)] bg-secondary/20 p-4">
-                    <h4 className="font-bold text-foreground">{item.question}</h4>
-                    <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{item.answer}</p>
+                  <div
+                    key={item.question}
+                    className={`rounded-xl p-4 ${
+                      desktop
+                        ? 'border border-white/8 bg-white/[0.045]'
+                        : 'border border-[var(--glass-border)] bg-secondary/20'
+                    }`}
+                  >
+                    <h4 className={`font-bold ${desktop ? 'text-white' : 'text-foreground'}`}>{item.question}</h4>
+                    <p className={`mt-2 text-sm leading-relaxed ${desktop ? 'text-white/56' : 'text-muted-foreground'}`}>{item.answer}</p>
                   </div>
                 ))}
               </div>

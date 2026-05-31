@@ -24,6 +24,8 @@ import {
   type DownloadHistoryEntry,
 } from '../lib/activity';
 import { useStore } from '../store/useStore';
+import { animeIdentity } from '../lib/animeIdentity';
+import { animePath } from '../lib/slug';
 
 const DASHBOARD_FALLBACK_IMAGES = [
   'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx147105-rwOX8qyUy8gV.jpg',
@@ -106,9 +108,9 @@ export default function Dashboard() {
   const joinedDate = user.created_at
     ? new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(user.created_at))
     : 'Recently';
-  const combinedMap = new Map<number, typeof myList[number]>();
-  myList.forEach((anime) => combinedMap.set(anime.mal_id, anime));
-  (likedAnimes || []).forEach((anime) => combinedMap.set(anime.mal_id, anime));
+  const combinedMap = new Map<string, typeof myList[number]>();
+  myList.forEach((anime) => combinedMap.set(animeIdentity(anime), anime));
+  (likedAnimes || []).forEach((anime) => combinedMap.set(animeIdentity(anime), anime));
   const collection = Array.from(combinedMap.values());
   const recentCollection = collection.slice(-5).reverse();
   const displayName = shortName(user.email);
@@ -245,7 +247,7 @@ export default function Dashboard() {
             {recentCollection.length ? (
               <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
                 {recentCollection.map((anime) => (
-                  <Link key={anime.mal_id} to={`/anime/${anime.mal_id}`} className="grid grid-cols-[52px_1fr_auto] items-center gap-3 bg-background/45 p-3 transition-colors hover:bg-primary/5">
+                  <Link key={animeIdentity(anime)} to={animePath(anime)} className="grid grid-cols-[52px_1fr_auto] items-center gap-3 bg-background/45 p-3 transition-colors hover:bg-primary/5">
                     {anime.images?.jpg?.image_url || anime.images?.jpg?.large_image_url ? (
                       <img src={anime.images?.jpg?.image_url || anime.images?.jpg?.large_image_url} alt={anime.title} className="h-[72px] w-[52px] rounded-md object-cover" loading="lazy" referrerPolicy="no-referrer" />
                     ) : (

@@ -1,14 +1,13 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import ScrollToTop from './components/ScrollToTop';
 import { AuthProvider } from './context/AuthContext';
-import { isDesktopApp } from './lib/desktop';
+import { createAppQueryClient } from './lib/queryClient';
 
 const Search = lazy(() => import('./pages/Search'));
-const DesktopHome = lazy(() => import('./pages/DesktopHome'));
 const Schedule = lazy(() => import('./pages/Schedule'));
 const AnimeDetails = lazy(() => import('./pages/AnimeDetails'));
 const AnimeLanding = lazy(() => import('./pages/AnimeLanding'));
@@ -29,29 +28,7 @@ const PrivacyPolicy = lazy(() => import('./pages/InfoPages').then((module) => ({
 const Terms = lazy(() => import('./pages/InfoPages').then((module) => ({ default: module.Terms })));
 const Disclaimer = lazy(() => import('./pages/InfoPages').then((module) => ({ default: module.Disclaimer })));
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-      staleTime: 1000 * 60 * 12,
-      gcTime: 1000 * 60 * 45,
-    },
-  },
-});
-
-queryClient.setQueryDefaults(['seasonalAnime'], { staleTime: 1000 * 60 * 20, gcTime: 1000 * 60 * 60 });
-queryClient.setQueryDefaults(['recentEpisodes'], { staleTime: 1000 * 60 * 8, gcTime: 1000 * 60 * 30 });
-queryClient.setQueryDefaults(['upcomingAnime'], { staleTime: 1000 * 60 * 30, gcTime: 1000 * 60 * 90 });
-queryClient.setQueryDefaults(['todaySchedule'], { staleTime: 1000 * 60 * 3, gcTime: 1000 * 60 * 15 });
-queryClient.setQueryDefaults(['genres'], { staleTime: 1000 * 60 * 60 * 6, gcTime: 1000 * 60 * 60 * 12 });
-queryClient.setQueryDefaults(['anime'], { staleTime: 1000 * 60 * 30, gcTime: 1000 * 60 * 90 });
-queryClient.setQueryDefaults(['episodes'], { staleTime: 1000 * 60 * 30, gcTime: 1000 * 60 * 90 });
-queryClient.setQueryDefaults(['anime-download-episodes'], { staleTime: 1000 * 60 * 30, gcTime: 1000 * 60 * 90 });
-queryClient.setQueryDefaults(['nyaa'], { staleTime: 1000 * 60 * 2, gcTime: 1000 * 60 * 8 });
-queryClient.setQueryDefaults(['nyaaSearch'], { staleTime: 1000 * 60 * 2, gcTime: 1000 * 60 * 8 });
-queryClient.setQueryDefaults(['nyaa-download'], { staleTime: 1000 * 60 * 2, gcTime: 1000 * 60 * 8 });
-queryClient.setQueryDefaults(['blog'], { staleTime: 1000 * 60 * 20, gcTime: 1000 * 60 * 60 });
+const queryClient = createAppQueryClient();
 
 function RouteFallback() {
   return (
@@ -62,8 +39,6 @@ function RouteFallback() {
 }
 
 export default function App() {
-  const desktop = isDesktopApp();
-
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
@@ -72,7 +47,7 @@ export default function App() {
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<Layout />}>
-                <Route index element={desktop ? <DesktopHome /> : <Home />} />
+                <Route index element={<Home />} />
                 <Route path="search" element={<Search />} />
                 <Route path="schedule" element={<Schedule />} />
                 <Route path="anime/popular" element={<AnimeLanding />} />

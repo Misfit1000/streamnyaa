@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { searchNyaa } from '../api/nyaa';
 import { fetchAnimeDetails, fetchAnimeEpisodes, searchAnime } from '../api/jikan';
@@ -9,11 +9,18 @@ import type { TorrentSourceFilter } from '../lib/torrentBadges';
 import { useAuth } from '../context/AuthContext';
 import { saveDownloadHistory } from '../lib/activity';
 import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQualityScore } from '../lib/sourceQuality';
+import { isDesktopApp } from '../lib/desktop';
+
+const DESKTOP_SOURCE_PRESETS = SOURCE_PRESETS.filter((preset) => preset.sourceFilter !== 'batch');
+
+function isBatchSource(title = '') {
+  return /\b(batch|complete|season pack|complete season|collection)\b/i.test(title);
+}
 
 function releaseTrackerText(anime: any, selectedEpisode?: string) {
   const nextEpisode = anime?.nextAiringEpisode?.episode;
   const nextAiringAt = anime?.nextAiringEpisode?.airingAt;
-  if (selectedEpisode && selectedEpisode !== 'batch') return `Episode ${selectedEpisode} selected`;
+  if (selectedEpisode) return `Episode ${selectedEpisode} selected`;
   if (!nextEpisode || !nextAiringAt) return anime?.status ? `${anime.status.replace(/_/g, ' ')} status` : 'Release timing updates when available';
   const diffMs = nextAiringAt * 1000 - Date.now();
   const hours = Math.round(Math.abs(diffMs) / 36e5);
@@ -23,6 +30,7 @@ function releaseTrackerText(anime: any, selectedEpisode?: string) {
 
 export default function NyaaSearchPage() {
   const { session, user } = useAuth();
+  const desktop = isDesktopApp();
   const [query, setQuery] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [category, setCategory] = useState('1_0');
@@ -32,12 +40,12 @@ export default function NyaaSearchPage() {
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
   const [showAllSources, setShowAllSources] = useState(false);
   const [animeLookupQuery, setAnimeLookupQuery] = useState('');
-  const [selectedEpisode, setSelectedEpisode] = useState('batch');
+  const [selectedEpisode, setSelectedEpisode] = useState('');
 
   const { data: torrents, isLoading } = useQuery({
     queryKey: ['nyaaSearch', query, category, filter, showAllSources],
     queryFn: () => searchNyaa(query, category, filter, '1', { pages: showAllSources ? 3 : 1, wide: showAllSources }),
-    enabled: true, // we fetch default category even without query
+    enabled: query.trim().length >= 2,
   });
 
   const { data: animeMatchData } = useQuery({
@@ -55,7 +63,7 @@ export default function NyaaSearchPage() {
   const availableEpisodeCount = matchedAnimeFull?.nextAiringEpisode?.episode
     ? Math.max(matchedAnimeFull.nextAiringEpisode.episode - 1, 0)
     : (matchedAnimeFull?.episodes || 0);
-  const selectedEpisodeNumber = selectedEpisode !== 'batch' ? parseInt(selectedEpisode, 10) : null;
+  const selectedEpisodeNumber = selectedEpisode ? parseInt(selectedEpisode, 10) : null;
   const episodePage = selectedEpisodeNumber ? Math.max(1, Math.ceil(selectedEpisodeNumber / 100)) : 1;
   const { data: matchedEpisodeData } = useQuery({
     queryKey: ['download-search-episodes', matchedAnimeFull?.mal_id, episodePage],
@@ -66,7 +74,7 @@ export default function NyaaSearchPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setShowAllSources(false);
-    setSelectedEpisode('batch');
+    setSelectedEpisode('');
     setAnimeLookupQuery(searchInput.trim());
     setQuery(searchInput);
   };
@@ -75,12 +83,12 @@ export default function NyaaSearchPage() {
     setShowAllSources(false);
     setSelectedEpisode(value);
     const baseTitle = matchedAnimeFull?.title_english || matchedAnimeFull?.title_romaji || matchedAnimeFull?.title || animeLookupQuery || searchInput;
-    setQuery(value === 'batch' ? baseTitle : `${baseTitle} ${value.padStart(2, '0')}`);
+    setQuery(value ? `${baseTitle} ${value.padStart(2, '0')}` : baseTitle);
   };
 
   const applyPreset = (preset: typeof SOURCE_PRESETS[number]) => {
     const baseTitle = matchedAnimeFull?.title_english || matchedAnimeFull?.title_romaji || matchedAnimeFull?.title || animeLookupQuery || searchInput;
-    const episodePart = selectedEpisode !== 'batch' ? ` ${selectedEpisode.padStart(2, '0')}` : '';
+    const episodePart = selectedEpisode ? ` ${selectedEpisode.padStart(2, '0')}` : '';
     const nextQuery = `${baseTitle}${episodePart} ${preset.query}`.trim();
     setSearchInput(nextQuery);
     setQuery(nextQuery);
@@ -95,15 +103,15 @@ export default function NyaaSearchPage() {
       title: torrent.title,
       magnet: torrent.magnet,
       animeTitle: matchedAnimeFull?.title || animeLookupQuery || searchInput || undefined,
-      animeId: matchedAnimeFull?.mal_id,
-      episode: selectedEpisode === 'batch' ? 'batch' : selectedEpisode,
+      animeId: matchedAnimeFull?.mal_id || matchedAnimeFull?.id,
+      episode: selectedEpisode || null,
       action,
       size: torrent.size,
       seeders: torrent.seeders,
     }, session);
   };
 
-  const filteredTorrents = [...(torrents || [])].filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
+  const filteredTorrents = useMemo(() => [...(torrents || [])].filter((torrent) => !isBatchSource(torrent.title)).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
     if (sortBy === 'best') {
       if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
       if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
@@ -120,17 +128,17 @@ export default function NyaaSearchPage() {
     const aTime = Date.parse(a.pubDate || '0') || 0;
     const bTime = Date.parse(b.pubDate || '0') || 0;
     return sortDirection === 'asc' ? aTime - bTime : bTime - aTime;
-  });
-  const visibleTorrents = showAllSources ? filteredTorrents : filteredTorrents.slice(0, 5);
+  }), [filter, showAllSources, sortBy, sortDirection, sourceFilter, torrents]);
+  const visibleTorrents = useMemo(() => showAllSources ? filteredTorrents : filteredTorrents.slice(0, 5), [filteredTorrents, showAllSources]);
   const hiddenSourceCount = Math.max(filteredTorrents.length - visibleTorrents.length, 0);
   const faqItems = [
     {
       question: 'What do the source badges mean?',
-      answer: 'Badges summarize visible source details such as trusted release groups, high seed counts, HEVC/x265 encodes, dual audio, batch packs, and individual episodes.',
+      answer: 'Badges summarize visible source details such as trusted release groups, high seed counts, HEVC/x265 encodes, dual audio, and individual episode releases.',
     },
     {
       question: 'How should I pick a source?',
-      answer: 'Start with trusted groups and high seeders when available, then choose the quality, codec, audio, and batch or episode format that matches what you need.',
+      answer: 'Start with trusted groups and high seeders when available, then choose the quality, codec, audio, and episode release that matches what you need.',
     },
     {
       question: 'Does StreamNyaa host these files?',
@@ -142,7 +150,7 @@ export default function NyaaSearchPage() {
     <div className="container mx-auto px-4 py-8">
       <Seo
         title="Anime Download Source Search | StreamNyaa"
-        description="Search anime download source metadata, compare quality badges, filter by trusted releases, high seed counts, HEVC, dual audio, batch, or episode results."
+        description="Search anime download source metadata, compare quality badges, and filter by trusted releases, high seed counts, HEVC, dual audio, or episode results."
         canonicalPath="/nyaa"
         jsonLd={{
           '@context': 'https://schema.org',
@@ -155,7 +163,7 @@ export default function NyaaSearchPage() {
             <HardDrive className="w-8 h-8 text-primary" />
             Anime Download Search
         </h1>
-        <p className="text-muted-foreground mb-8 text-center max-w-xl">
+        <p className={`${desktop ? 'text-white/56' : 'text-muted-foreground'} mb-8 text-center max-w-xl`}>
           Search anime source metadata, open compatible source links in your preferred client, or copy source links for later.
         </p>
 
@@ -165,10 +173,14 @@ export default function NyaaSearchPage() {
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search anime, episodes, movies, or batches..."
-              className="w-full bg-secondary/50 border border-border px-6 py-4 pl-12 rounded-xl text-foreground focus:outline-none focus:border-primary transition-colors"
+              placeholder="Search anime, episodes, or movies..."
+              className={`w-full px-6 py-4 pl-12 rounded-xl transition-colors focus:outline-none ${
+                desktop
+                  ? 'border border-white/12 bg-black/35 text-white placeholder:text-white/34 focus:border-primary/60'
+                  : 'bg-secondary/50 border border-border text-foreground focus:border-primary'
+              }`}
             />
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+            <Search className={`absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 ${desktop ? 'text-white/34' : 'text-muted-foreground'}`} />
           </div>
           <button
             type="submit"
@@ -179,14 +191,14 @@ export default function NyaaSearchPage() {
         </form>
 
         <div className="flex flex-wrap items-center justify-center gap-4 w-full max-w-3xl">
-          <div className="flex items-center gap-2 bg-secondary/30 p-1 rounded-lg">
+          <div className={`flex items-center gap-2 p-1 rounded-lg ${desktop ? 'border border-white/10 bg-white/[0.04]' : 'bg-secondary/30'}`}>
             <select
               value={category}
               onChange={(e) => {
                 setShowAllSources(false);
                 setCategory(e.target.value);
               }}
-              className="bg-transparent text-sm text-foreground focus:outline-none p-2 rounded-md font-medium [&>option]:bg-background"
+              className={`bg-transparent text-sm focus:outline-none p-2 rounded-md font-medium [&>option]:bg-background ${desktop ? 'text-white/72' : 'text-foreground'}`}
             >
               <option value="0_0">All Categories</option>
               <option value="1_0">Anime (All)</option>
@@ -201,14 +213,14 @@ export default function NyaaSearchPage() {
             </select>
           </div>
 
-          <div className="flex items-center gap-2 bg-secondary/30 p-1 rounded-lg">
+          <div className={`flex items-center gap-2 p-1 rounded-lg ${desktop ? 'border border-white/10 bg-white/[0.04]' : 'bg-secondary/30'}`}>
             <select
               value={filter}
               onChange={(e) => {
                 setShowAllSources(false);
                 setFilter(e.target.value);
               }}
-              className="bg-transparent text-sm text-foreground focus:outline-none p-2 rounded-md font-medium [&>option]:bg-background"
+              className={`bg-transparent text-sm focus:outline-none p-2 rounded-md font-medium [&>option]:bg-background ${desktop ? 'text-white/72' : 'text-foreground'}`}
             >
               <option value="0">No Filter</option>
               <option value="1">No Remakes</option>
@@ -230,10 +242,10 @@ export default function NyaaSearchPage() {
         </div>
       </div>
 
-      <div className="mx-auto mb-6 max-w-5xl rounded-2xl border border-border bg-secondary/20 p-4">
+      <div className={`mx-auto mb-6 max-w-5xl rounded-2xl p-4 ${desktop ? 'border border-white/8 bg-white/[0.045] backdrop-blur-xl' : 'border border-border bg-secondary/20'}`}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Smart presets</span>
-          {SOURCE_PRESETS.map((preset) => (
+          <span className={`text-xs font-black uppercase tracking-wider ${desktop ? 'text-white/36' : 'text-muted-foreground'}`}>Smart presets</span>
+          {DESKTOP_SOURCE_PRESETS.map((preset) => (
             <button
               key={preset.label}
               type="button"
@@ -245,7 +257,7 @@ export default function NyaaSearchPage() {
           ))}
         </div>
         {matchedAnimeFull ? (
-          <div className="mb-4 grid gap-4 rounded-2xl border border-border/70 bg-background/45 p-4 sm:grid-cols-[82px_1fr]">
+          <div className={`mb-4 grid gap-4 rounded-2xl p-4 sm:grid-cols-[82px_1fr] ${desktop ? 'border border-white/8 bg-black/30' : 'border border-border/70 bg-background/45'}`}>
             <img
               src={matchedAnimeFull.images?.jpg?.image_url || matchedAnimeFull.images?.jpg?.large_image_url}
               alt={matchedAnimeFull.title}
@@ -256,21 +268,25 @@ export default function NyaaSearchPage() {
             <div className="min-w-0">
               <p className="text-xs font-black uppercase tracking-wider text-primary">Matched anime</p>
               <h2 className="mt-1 line-clamp-1 text-xl font-black text-foreground">{matchedAnimeFull.title}</h2>
-              <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold text-muted-foreground">
-                <span className="rounded-full bg-secondary px-2.5 py-1">Score {matchedAnimeFull.score || 'N/A'}</span>
-                <span className="rounded-full bg-secondary px-2.5 py-1">{matchedAnimeFull.status || 'Unknown status'}</span>
-                <span className="rounded-full bg-secondary px-2.5 py-1">{availableEpisodeCount || matchedAnimeFull.episodes || 'TBA'} episodes</span>
+              <div className={`mt-2 flex flex-wrap gap-2 text-xs font-bold ${desktop ? 'text-white/52' : 'text-muted-foreground'}`}>
+                <span className={`rounded-full px-2.5 py-1 ${desktop ? 'border border-white/10 bg-white/[0.05]' : 'bg-secondary'}`}>Score {matchedAnimeFull.score || 'N/A'}</span>
+                <span className={`rounded-full px-2.5 py-1 ${desktop ? 'border border-white/10 bg-white/[0.05]' : 'bg-secondary'}`}>{matchedAnimeFull.status || 'Unknown status'}</span>
+                <span className={`rounded-full px-2.5 py-1 ${desktop ? 'border border-white/10 bg-white/[0.05]' : 'bg-secondary'}`}>{availableEpisodeCount || matchedAnimeFull.episodes || 'TBA'} episodes</span>
                 <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary">{releaseTrackerText(matchedAnimeFull, selectedEpisode)}</span>
               </div>
               {availableEpisodeCount > 0 ? (
                 <label className="mt-3 block max-w-xl">
-                  <span className="mb-1 block text-[11px] font-black uppercase tracking-wider text-muted-foreground">Episode selector</span>
+                  <span className={`mb-1 block text-[11px] font-black uppercase tracking-wider ${desktop ? 'text-white/36' : 'text-muted-foreground'}`}>Episode selector</span>
                   <select
                     value={selectedEpisode}
                     onChange={(e) => handleEpisodeChange(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background/70 px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary [&>option]:bg-background"
+                    className={`w-full rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-primary [&>option]:bg-background ${
+                      desktop
+                        ? 'border border-white/10 bg-black/35 text-white'
+                        : 'border border-border bg-background/70 text-foreground'
+                    }`}
                   >
-                    <option value="batch">Batch / all available episodes</option>
+                    <option value="">Any aired episode</option>
                     {Array.from({ length: availableEpisodeCount }, (_, index) => {
                       const episodeNumber = index + 1;
                       const episodeInfo = matchedEpisodeData?.data?.find((episode: any) => episode.mal_id === episodeNumber);
@@ -289,15 +305,19 @@ export default function NyaaSearchPage() {
         ) : null}
         <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Source filters</span>
+            <span className={`text-xs font-black uppercase tracking-wider ${desktop ? 'text-white/36' : 'text-muted-foreground'}`}>Source filters</span>
             {sourceFilter ? <button onClick={() => { setShowAllSources(false); setSourceFilter(''); }} className="text-xs font-bold text-primary hover:underline">Clear</button> : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-black uppercase tracking-wider text-muted-foreground">Sort</span>
+            <span className={`text-xs font-black uppercase tracking-wider ${desktop ? 'text-white/36' : 'text-muted-foreground'}`}>Sort</span>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as 'best' | 'seeders' | 'size' | 'date')}
-              className="rounded-lg border border-border bg-background/70 px-3 py-1.5 text-sm font-bold text-foreground outline-none focus:border-primary [&>option]:bg-background"
+              className={`rounded-lg px-3 py-1.5 text-sm font-bold outline-none focus:border-primary [&>option]:bg-background ${
+                desktop
+                  ? 'border border-white/10 bg-black/35 text-white'
+                  : 'border border-border bg-background/70 text-foreground'
+              }`}
             >
               <option value="best">Best</option>
               <option value="seeders">Seeders</option>
@@ -308,7 +328,11 @@ export default function NyaaSearchPage() {
               <button
                 type="button"
                 onClick={() => setSortDirection((value) => value === 'desc' ? 'asc' : 'desc')}
-                className="rounded-lg border border-border bg-background/60 px-3 py-1.5 text-sm font-bold text-foreground transition-colors hover:border-primary/50 hover:text-primary"
+                className={`rounded-lg px-3 py-1.5 text-sm font-bold transition-colors ${
+                  desktop
+                    ? 'border border-white/10 bg-black/35 text-white hover:border-primary/50 hover:text-primary'
+                    : 'border border-border bg-background/60 text-foreground hover:border-primary/50 hover:text-primary'
+                }`}
               >
                 {sortDirection === 'desc' ? 'High to low' : 'Low to high'}
               </button>
@@ -324,7 +348,6 @@ export default function NyaaSearchPage() {
             { value: 'high-seeders', label: 'High seeders' },
             { value: 'hevc', label: 'HEVC' },
             { value: 'dual-audio', label: 'Dual Audio' },
-            { value: 'batch', label: 'Batch' },
             { value: 'episode', label: 'Episode' },
           ].map((item) => (
             <button
@@ -336,7 +359,9 @@ export default function NyaaSearchPage() {
               className={`rounded-full border px-3 py-1.5 text-sm font-bold transition-colors ${
                 sourceFilter === item.value
                   ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border bg-background/60 text-foreground hover:border-primary/40 hover:text-primary'
+                  : desktop
+                    ? 'border-white/10 bg-black/35 text-white/78 hover:border-primary/40 hover:text-white'
+                    : 'border-border bg-background/60 text-foreground hover:border-primary/40 hover:text-primary'
               }`}
             >
               {item.label}
@@ -349,12 +374,20 @@ export default function NyaaSearchPage() {
         <div className="flex justify-center py-20">
           <Loader2 className="w-10 h-10 text-primary animate-spin" />
         </div>
+      ) : query.trim().length < 2 ? (
+        <div className="mx-auto max-w-3xl rounded-3xl border border-border bg-[#111318] px-6 py-14 text-center">
+          <Search className="mx-auto mb-4 h-14 w-14 text-white/28" />
+          <p className="text-xl font-black text-white">Search sources by anime title</p>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">
+            Enter an anime title or episode number to search source metadata. The desktop app will stay idle until you search.
+          </p>
+        </div>
       ) : filteredTorrents.length === 0 ? (
-        <div className="mx-auto max-w-3xl rounded-3xl border border-border bg-secondary/25 px-6 py-14 text-center">
-          <HardDrive className="mx-auto mb-4 h-14 w-14 text-muted-foreground" />
-          <p className="text-xl font-black text-foreground">No matching sources found</p>
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-            Try the romanized or English title, remove strict quality filters, search the episode number without a leading zero, or switch to batch search if you are looking for a full-season result.
+          <div className={`mx-auto max-w-3xl rounded-3xl px-6 py-14 text-center ${desktop ? 'border border-white/8 bg-white/[0.04]' : 'border border-border bg-secondary/25'}`}>
+          <HardDrive className={`mx-auto mb-4 h-14 w-14 ${desktop ? 'text-white/30' : 'text-muted-foreground'}`} />
+          <p className={`text-xl font-black ${desktop ? 'text-white' : 'text-foreground'}`}>No matching sources found</p>
+          <p className={`mx-auto mt-2 max-w-xl text-sm leading-6 ${desktop ? 'text-white/52' : 'text-muted-foreground'}`}>
+            Try the romanized or English title, remove strict quality filters, or search the episode number without a leading zero.
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             {sourceFilter ? (
@@ -366,11 +399,15 @@ export default function NyaaSearchPage() {
                 Clear source filter
               </button>
             ) : null}
-            {selectedEpisode !== 'batch' ? (
+            {selectedEpisode ? (
               <button
                 type="button"
                 onClick={() => handleEpisodeChange(String(parseInt(selectedEpisode, 10)))}
-                className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+                className={`rounded-full px-3 py-1.5 text-xs font-black ${
+                  desktop
+                    ? 'border border-white/10 bg-black/35 text-white/78 hover:border-primary/40 hover:text-white'
+                    : 'border border-border bg-background/60 text-foreground hover:border-primary/40 hover:text-primary'
+                }`}
               >
                 Try episode without leading zero
               </button>
@@ -378,7 +415,11 @@ export default function NyaaSearchPage() {
             <button
               type="button"
               onClick={() => setShowAllSources(true)}
-              className="rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs font-black text-foreground hover:border-primary/40 hover:text-primary"
+              className={`rounded-full px-3 py-1.5 text-xs font-black ${
+                desktop
+                  ? 'border border-white/10 bg-black/35 text-white/78 hover:border-primary/40 hover:text-white'
+                  : 'border border-border bg-background/60 text-foreground hover:border-primary/40 hover:text-primary'
+              }`}
             >
               Try wider source search
             </button>
@@ -386,12 +427,14 @@ export default function NyaaSearchPage() {
         </div>
       ) : (
         <div className="space-y-4 max-w-5xl mx-auto">
-          <div className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-secondary/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className={`flex flex-col gap-3 rounded-2xl p-4 sm:flex-row sm:items-center sm:justify-between ${
+            desktop ? 'border border-white/8 bg-white/[0.04]' : 'border border-border/60 bg-secondary/20'
+          }`}>
             <div>
-              <p className="text-sm font-black text-foreground">
+              <p className={`text-sm font-black ${desktop ? 'text-white' : 'text-foreground'}`}>
                 {showAllSources ? 'All source files are visible' : 'Showing the best source files first'}
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className={`mt-1 text-xs ${desktop ? 'text-white/48' : 'text-muted-foreground'}`}>
                 {showAllSources
                   ? `${filteredTorrents.length} matching files are listed below.`
                   : hiddenSourceCount
@@ -411,7 +454,11 @@ export default function NyaaSearchPage() {
           </div>
 
           {visibleTorrents.map((torrent, idx) => (
-            <div key={idx} className="bg-secondary/20 hover:bg-secondary/40 border border-border/50 hover:border-primary/50 transition-all p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group">
+            <div key={idx} className={`transition-all p-4 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group ${
+              desktop
+                ? 'border border-white/8 bg-white/[0.04] hover:border-primary/40 hover:bg-white/[0.06]'
+                : 'bg-secondary/20 hover:bg-secondary/40 border border-border/50 hover:border-primary/50'
+            }`}>
                 <div className="flex-1 min-w-0">
                   <div className="mb-2 flex flex-wrap gap-2">
                     {(() => {
@@ -422,15 +469,19 @@ export default function NyaaSearchPage() {
                         </span>
                       );
                     })()}
-                    <span className="rounded-full border border-border bg-background/60 px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-muted-foreground">
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-black uppercase tracking-wide ${
+                      desktop ? 'border border-white/10 bg-black/35 text-white/44' : 'border border-border bg-background/60 text-muted-foreground'
+                    }`}>
                       {sourceFreshnessLabel(torrent)}
                     </span>
                   </div>
-                  <h4 className="text-[15px] font-bold text-foreground break-all leading-tight mb-3 group-hover:text-primary transition-colors">
+                  <h4 className={`text-[15px] font-bold break-all leading-tight mb-3 transition-colors ${
+                    desktop ? 'text-white group-hover:text-primary' : 'text-foreground group-hover:text-primary'
+                  }`}>
                     {torrent.title}
                   </h4>
-                  <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-muted-foreground">
-                    <span className="text-secondary-foreground">{torrent.size}</span>
+                  <div className={`flex flex-wrap items-center gap-4 text-xs font-semibold ${desktop ? 'text-white/48' : 'text-muted-foreground'}`}>
+                    <span className={desktop ? 'text-white/72' : 'text-secondary-foreground'}>{torrent.size}</span>
                     <span className="flex items-center gap-1.5 text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                       {torrent.seeders} SE
@@ -439,7 +490,7 @@ export default function NyaaSearchPage() {
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                       {torrent.leechers} LE
                     </span>
-                    <span className="bg-background px-2 py-0.5 rounded-full border border-border">{torrent.category}</span>
+                    <span className={`px-2 py-0.5 rounded-full ${desktop ? 'border border-white/10 bg-black/35 text-white/52' : 'bg-background border border-border'}`}>{torrent.category}</span>
                     <span className="opacity-70">{new Date(torrent.pubDate).toLocaleDateString()}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -455,7 +506,9 @@ export default function NyaaSearchPage() {
                   <a
                     href={torrent.magnet}
                     onClick={() => recordDownloadAction(torrent, 'open')}
-                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-secondary hover:bg-secondary/80 text-foreground px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm"
+                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm ${
+                      desktop ? 'border border-white/10 bg-black/35 text-white hover:border-primary/40 hover:text-primary' : 'bg-secondary hover:bg-secondary/80 text-foreground'
+                    }`}
                     title="Open source link"
                   >
                     <Download className="w-4 h-4" />
@@ -475,20 +528,20 @@ export default function NyaaSearchPage() {
             </div>
           ))}
           {!user ? (
-            <p className="rounded-2xl border border-border bg-background/45 p-4 text-sm text-muted-foreground">
+            <p className={`rounded-2xl p-4 text-sm ${desktop ? 'border border-white/8 bg-black/25 text-white/52' : 'border border-border bg-background/45 text-muted-foreground'}`}>
               Your download history is saved on this device. Sign in to keep future activity connected to your account.
             </p>
           ) : null}
         </div>
       )}
 
-      <section className="mx-auto mt-12 max-w-5xl border-t border-border pt-8">
-        <h2 className="text-2xl font-black text-foreground">Anime download search FAQ</h2>
+      <section className={`mx-auto mt-12 max-w-5xl pt-8 ${desktop ? 'border-t border-white/8' : 'border-t border-border'}`}>
+        <h2 className={`text-2xl font-black ${desktop ? 'text-white' : 'text-foreground'}`}>Anime download search FAQ</h2>
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           {faqItems.map((item) => (
-            <div key={item.question} className="rounded-2xl border border-border bg-secondary/20 p-4">
-              <h3 className="font-bold text-foreground">{item.question}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{item.answer}</p>
+            <div key={item.question} className={`rounded-2xl p-4 ${desktop ? 'border border-white/8 bg-white/[0.045]' : 'border border-border bg-secondary/20'}`}>
+              <h3 className={`font-bold ${desktop ? 'text-white' : 'text-foreground'}`}>{item.question}</h3>
+              <p className={`mt-2 text-sm leading-relaxed ${desktop ? 'text-white/56' : 'text-muted-foreground'}`}>{item.answer}</p>
             </div>
           ))}
         </div>

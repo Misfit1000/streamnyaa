@@ -1,5 +1,6 @@
 export type LocalPlaybackSource = {
   magnet: string;
+  torrentUrl?: string;
   infoHash?: string;
   title: string;
   animeTitle?: string;
@@ -7,7 +8,12 @@ export type LocalPlaybackSource = {
   episode?: string | number | null;
   size?: string;
   seeders?: string | number;
+  image?: string;
+  poster?: string;
+  banner?: string;
   savedAt?: number;
+  progressPercent?: number;
+  progressUpdatedAt?: number;
 };
 
 export type DesktopRuntimeStatus = {
@@ -29,6 +35,7 @@ export type DesktopPlaybackStatus = {
   title: string;
   torrent_id?: string | null;
   playlist_url?: string | null;
+  media_url?: string | null;
 };
 
 export type DesktopPlaybackProgress = {
@@ -42,18 +49,19 @@ export type DesktopPlaybackProgress = {
   peers?: number | null;
   download_speed?: number | null;
   playlist_url: string;
-};
-
-export type DesktopToolTestStatus = {
-  ok: boolean;
-  message: string;
-  path?: string | null;
-  version?: string | null;
+  media_url?: string | null;
 };
 
 export type DesktopSourceApiResponse = {
   data: unknown;
   fetched_at: number;
+};
+
+export type DesktopMetadataApiRequest = {
+  provider: 'anilist' | 'jikan';
+  path?: string;
+  body?: Record<string, unknown>;
+  ttl_seconds?: number;
 };
 
 export type DesktopCacheEntry = {
@@ -69,7 +77,7 @@ export type DesktopCacheStatus = {
   file_count: number;
   max_bytes: number;
   free_bytes?: number | null;
-  pressure: 'normal' | 'guarded' | 'low' | 'critical' | 'unknown';
+  pressure: 'normal' | 'guarded' | 'low' | 'critical' | 'unknown' | 'removed';
   entries: DesktopCacheEntry[];
 };
 
@@ -78,13 +86,19 @@ export type DesktopDiagnosticsStatus = {
   runtime: DesktopRuntimeStatus;
   cache: DesktopCacheStatus;
   recent_errors: string[];
+  logs_dir: string;
+  active_session?: {
+    torrent_id: string;
+    session_dir: string;
+    cache_bytes: number;
+    media_url?: string | null;
+  } | null;
 };
 
 export type DesktopPlaybackSettings = {
   torrent_engine_path: string;
-  vlc_path: string;
+  player_path: string;
   cache_dir: string;
-  player_mode: 'vlc';
 };
 
 const LOCAL_PLAYBACK_KEY = 'streamnyaa.localPlayback';
@@ -93,12 +107,10 @@ const DESKTOP_SETTINGS_KEY = 'streamnyaa.desktopSettings';
 const DESKTOP_RUNTIME_STATUS_KEY = 'streamnyaa.desktopRuntimeStatus';
 const LOCAL_PLAYBACK_HISTORY_LIMIT = 18;
 
-export const DESKTOP_RELEASES_URL = 'https://github.com/Misfit1000/streamnyaa/releases';
 export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
-  torrent_engine_path: 'rqbit',
-  vlc_path: 'vlc',
+  torrent_engine_path: '',
+  player_path: '',
   cache_dir: '',
-  player_mode: 'vlc',
 };
 
 type TauriGlobal = {
@@ -112,16 +124,14 @@ declare global {
   interface Window {
     __TAURI__?: TauriGlobal;
     __TAURI_INTERNALS__?: unknown;
+    __STREAMNYAA_DESKTOP__?: boolean;
   }
 }
 
 export function isDesktopApp() {
   if (typeof window === 'undefined') return false;
-  const params = new URLSearchParams(window.location.search);
   return Boolean(
-    import.meta.env.VITE_STREAMNYAA_APP_TARGET === 'desktop'
-    || params.get('desktop') === '1'
-    || window.localStorage.getItem('streamnyaa.desktopMode') === '1'
+    window.__STREAMNYAA_DESKTOP__
     || window.__TAURI__
     || window.__TAURI_INTERNALS__,
   );
@@ -133,16 +143,7 @@ export function saveLocalPlaybackSource(source: LocalPlaybackSource) {
     sessionStorage.setItem(LOCAL_PLAYBACK_KEY, JSON.stringify(normalized));
     saveLocalPlaybackHistoryItem(normalized);
   } catch {
-    // The local player can still open, but it will ask the user to select a source again.
-  }
-}
-
-export function loadLocalPlaybackSource(): LocalPlaybackSource | null {
-  try {
-    const raw = sessionStorage.getItem(LOCAL_PLAYBACK_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
+    // Local streaming can continue even if history storage is unavailable.
   }
 }
 
@@ -154,6 +155,7 @@ export function loadLocalPlaybackHistory(): LocalPlaybackSource[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((item): item is LocalPlaybackSource => Boolean(item?.magnet && item?.title))
+      .filter((item) => Number(item.progressPercent || 0) > 0)
       .slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
   } catch {
     return [];
@@ -173,41 +175,16 @@ export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
   }
 }
 
-export function clearLocalPlaybackHistory() {
-  try {
-    localStorage.removeItem(LOCAL_PLAYBACK_HISTORY_KEY);
-    sessionStorage.removeItem(LOCAL_PLAYBACK_KEY);
-  } catch {
-    // Ignore storage cleanup failures.
-  }
-}
-
-export async function startLocalPlayback(source: LocalPlaybackSource) {
-  return startLocalPlaybackWithSettings(source, loadDesktopPlaybackSettings());
-}
-
 export async function openLocalSourceNow(source: LocalPlaybackSource, settings = loadDesktopPlaybackSettings()) {
-  saveLocalPlaybackSource(source);
-  return startLocalPlaybackWithSettings(source, settings);
-}
-
-export async function startLocalDownloadWithSettings(source: LocalPlaybackSource, settings: DesktopPlaybackSettings) {
-  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-  if (!invoke) {
-    throw new Error('Local download is only available inside the StreamNyaa desktop app.');
+  const result = await startLocalPlaybackWithSettings(source, settings);
+  if (result?.ok) {
+    saveLocalPlaybackSource({
+      ...source,
+      progressPercent: source.progressPercent ?? 0,
+      progressUpdatedAt: Date.now(),
+    });
   }
-
-  return invoke<DesktopPlaybackStatus>('download_local_torrent', {
-    request: {
-      magnet: source.magnet,
-      info_hash: source.infoHash || '',
-      title: source.title,
-      anime_title: source.animeTitle || '',
-      episode: source.episode ? String(source.episode) : '',
-      size: source.size || '',
-      settings,
-    },
-  });
+  return result;
 }
 
 export function loadDesktopPlaybackSettings(): DesktopPlaybackSettings {
@@ -215,16 +192,19 @@ export function loadDesktopPlaybackSettings(): DesktopPlaybackSettings {
     const raw = localStorage.getItem(DESKTOP_SETTINGS_KEY);
     if (!raw) return DEFAULT_DESKTOP_SETTINGS;
     const parsed = JSON.parse(raw);
-    const settings = { ...DEFAULT_DESKTOP_SETTINGS, ...parsed };
-    const legacyPath = parsed?.[`m${'pv'}_path`];
-    if (!settings.vlc_path && legacyPath) {
-      settings.vlc_path = legacyPath;
-    }
-    settings.player_mode = 'vlc';
-    if (/\\temp\\streamnyaa-desktop$/i.test(settings.cache_dir || '') || /\/temp\/streamnyaa-desktop$/i.test(settings.cache_dir || '')) {
-      settings.cache_dir = '';
-      localStorage.setItem(DESKTOP_SETTINGS_KEY, JSON.stringify(settings));
-    }
+    const parsedCacheDir = typeof parsed?.cache_dir === 'string' ? parsed.cache_dir : '';
+    const cacheDir = /[\\/]temp[\\/]/i.test(parsedCacheDir) ? parsedCacheDir : DEFAULT_DESKTOP_SETTINGS.cache_dir;
+    const playerPath = typeof parsed?.player_path === 'string'
+      ? parsed.player_path
+      : typeof parsed?.mpv_path === 'string'
+        ? parsed.mpv_path
+        : DEFAULT_DESKTOP_SETTINGS.player_path;
+    const settings: DesktopPlaybackSettings = {
+      torrent_engine_path: typeof parsed?.torrent_engine_path === 'string' ? parsed.torrent_engine_path : DEFAULT_DESKTOP_SETTINGS.torrent_engine_path,
+      player_path: playerPath,
+      cache_dir: cacheDir,
+    };
+    localStorage.setItem(DESKTOP_SETTINGS_KEY, JSON.stringify(settings));
     return settings;
   } catch {
     return DEFAULT_DESKTOP_SETTINGS;
@@ -232,7 +212,12 @@ export function loadDesktopPlaybackSettings(): DesktopPlaybackSettings {
 }
 
 export function saveDesktopPlaybackSettings(settings: DesktopPlaybackSettings) {
-  localStorage.setItem(DESKTOP_SETTINGS_KEY, JSON.stringify(settings));
+  const cleanSettings: DesktopPlaybackSettings = {
+    torrent_engine_path: settings.torrent_engine_path || DEFAULT_DESKTOP_SETTINGS.torrent_engine_path,
+    player_path: settings.player_path || DEFAULT_DESKTOP_SETTINGS.player_path,
+    cache_dir: settings.cache_dir || DEFAULT_DESKTOP_SETTINGS.cache_dir,
+  };
+  localStorage.setItem(DESKTOP_SETTINGS_KEY, JSON.stringify(cleanSettings));
 }
 
 export function loadCachedDesktopRuntimeStatus(): DesktopRuntimeStatus | null {
@@ -259,12 +244,13 @@ function saveCachedDesktopRuntimeStatus(status: DesktopRuntimeStatus | null) {
 export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource, settings: DesktopPlaybackSettings) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
-    throw new Error('Local playback is only available inside the StreamNyaa desktop app.');
+    throw new Error('Desktop streaming is only available inside the StreamNyaa desktop app.');
   }
 
   return invoke<DesktopPlaybackStatus>('play_local_torrent', {
     request: {
       magnet: source.magnet,
+      torrent_url: source.torrentUrl || '',
       info_hash: source.infoHash || '',
       title: source.title,
       anime_title: source.animeTitle || '',
@@ -286,42 +272,22 @@ export async function getDesktopRuntimeStatus(settings = loadDesktopPlaybackSett
   return status;
 }
 
-export async function prepareLocalPlayback(settings = loadDesktopPlaybackSettings()) {
-  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-  if (!invoke) {
-    return null;
-  }
-
-  const status = await invoke<DesktopRuntimeStatus>('prepare_local_playback', { settings });
-  saveCachedDesktopRuntimeStatus(status);
-  return status;
-}
-
-export async function openDesktopCacheFolder(settings = loadDesktopPlaybackSettings()) {
-  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-  if (!invoke) {
-    throw new Error('Cache folder can only be opened inside the StreamNyaa desktop app.');
-  }
-
-  return invoke<void>('open_cache_folder', { settings });
-}
-
-export async function getDesktopCacheStatus(settings = loadDesktopPlaybackSettings()) {
-  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-  if (!invoke) {
-    return null;
-  }
-
-  return invoke<DesktopCacheStatus>('get_cache_status', { settings });
-}
-
 export async function clearDesktopPlaybackCache(settings = loadDesktopPlaybackSettings()) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
-    throw new Error('Playback storage can only be cleared inside the StreamNyaa desktop app.');
+    throw new Error('Playback cache cleanup is only available inside the StreamNyaa desktop app.');
   }
 
   return invoke<DesktopCacheStatus>('clear_playback_cache', { settings });
+}
+
+export async function stopDesktopPlayback(settings = loadDesktopPlaybackSettings()) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Stopping playback is only available inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<DesktopPlaybackStatus>('stop_local_playback', { settings });
 }
 
 export async function getDesktopDiagnostics(settings = loadDesktopPlaybackSettings()) {
@@ -331,6 +297,47 @@ export async function getDesktopDiagnostics(settings = loadDesktopPlaybackSettin
   }
 
   return invoke<DesktopDiagnosticsStatus>('get_desktop_diagnostics', { settings });
+}
+
+export function buildDesktopDiagnosticsReport(diagnostics: DesktopDiagnosticsStatus | null) {
+  if (!diagnostics) {
+    return 'StreamNyaa desktop diagnostics are unavailable.';
+  }
+
+  const activeSession = diagnostics.active_session
+    ? `Active session: ${diagnostics.active_session.torrent_id} (${diagnostics.active_session.session_dir}, ${diagnostics.active_session.cache_bytes} bytes${diagnostics.active_session.media_url ? `, ${diagnostics.active_session.media_url}` : ''})`
+    : 'Active session: none';
+
+  return [
+    `StreamNyaa desktop v${diagnostics.app_version}`,
+    `Runtime ready: ${diagnostics.runtime.ready ? 'yes' : 'no'}`,
+    `Engine path: ${diagnostics.runtime.torrent_engine_path || 'auto bundled lookup'}`,
+    `Native player path: ${diagnostics.runtime.player_path || 'auto bundled lookup'}`,
+    `Cache dir: ${diagnostics.cache.cache_dir}`,
+    `Cache usage: ${diagnostics.cache.total_bytes}/${diagnostics.cache.max_bytes}`,
+    `Cache pressure: ${diagnostics.cache.pressure}`,
+    `Logs dir: ${diagnostics.logs_dir}`,
+    activeSession,
+    diagnostics.recent_errors?.length ? `Recent error: ${diagnostics.recent_errors[0]}` : 'Recent error: none',
+  ].join('\n');
+}
+
+export async function copyDesktopDiagnosticsReport(diagnostics: DesktopDiagnosticsStatus | null) {
+  const text = buildDesktopDiagnosticsReport(diagnostics);
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return text;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+  return text;
 }
 
 export async function getLocalPlaybackProgress(torrentId: string) {
@@ -346,48 +353,29 @@ export async function getLocalPlaybackProgress(torrentId: string) {
   });
 }
 
-export async function stopLocalPlayback(torrentId: string) {
-  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-  if (!invoke) {
-    throw new Error('Local playback can only be stopped inside the StreamNyaa desktop app.');
-  }
-
-  return invoke<void>('stop_local_playback', {
-    request: {
-      torrent_id: torrentId,
-    },
-  });
-}
-
-export async function openLocalTorrentPlayer(torrentId: string, title = 'Local stream', settings = loadDesktopPlaybackSettings()) {
-  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-  if (!invoke) {
-    throw new Error('Local playback is only available inside the StreamNyaa desktop app.');
-  }
-
-  return invoke<DesktopPlaybackStatus>('open_local_torrent_player', {
-    request: {
-      torrent_id: torrentId,
-      title,
-      settings,
-    },
-  });
-}
-
-export async function testDesktopVlc(settings = loadDesktopPlaybackSettings()) {
-  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-  if (!invoke) {
-    throw new Error('VLC can only be tested inside the StreamNyaa desktop app.');
-  }
-
-  return invoke<DesktopToolTestStatus>('test_vlc_player', { settings });
-}
-
 export async function fetchDesktopSourceApi(url: string) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
-  if (!invoke) {
-    throw new Error('Desktop source search is only available inside the StreamNyaa desktop app.');
+  if (invoke) {
+    try {
+      return await invoke<DesktopSourceApiResponse>('fetch_desktop_source_api', { url });
+    } catch {
+      // Fall through to the browser fetch path. Some dev or installed builds can briefly
+      // miss the bridge during startup, but source search should not leave the UI blank.
+    }
   }
 
-  return invoke<DesktopSourceApiResponse>('fetch_desktop_source_api', { url });
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Source search failed with status ${response.status}`);
+  }
+  return { data: await response.json(), fetched_at: Date.now() };
+}
+
+export async function fetchDesktopMetadataApi(request: DesktopMetadataApiRequest) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Desktop metadata requests are only available inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<DesktopSourceApiResponse>('fetch_desktop_metadata_api', { request });
 }

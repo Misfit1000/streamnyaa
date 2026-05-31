@@ -1,8 +1,10 @@
 import { useStore } from '../store/useStore';
 import { extractNumericId } from '../lib/slug';
+import { fetchDesktopMetadataApi, isDesktopApp } from '../lib/desktop';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
-const LOCAL_METADATA_PREFIX = 'streamnyaa.metadataCache.';
+const LOCAL_METADATA_PREFIX = 'streamnyaa.metadataCache.v2.';
+const LEGACY_METADATA_PREFIXES = ['streamnyaa.metadataCache.'];
 const LOCAL_METADATA_LIMIT = 90;
 
 type MetadataCacheEntry = {
@@ -37,6 +39,10 @@ const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale') =
 const pruneLocalMetadataCache = () => {
   if (typeof window === 'undefined') return;
   try {
+    Object.keys(localStorage)
+      .filter((key) => LEGACY_METADATA_PREFIXES.some((prefix) => key.startsWith(prefix)))
+      .forEach((key) => localStorage.removeItem(key));
+
     const entries = Object.keys(localStorage)
       .filter((key) => key.startsWith(LOCAL_METADATA_PREFIX))
       .map((key) => {
@@ -56,6 +62,14 @@ const pruneLocalMetadataCache = () => {
   } catch {
     // Cache pruning is best-effort only.
   }
+};
+
+const titleHintFromRoute = (id: string) => {
+  const hint = String(id || '')
+    .replace(/^\d+-?/, '')
+    .replace(/-/g, ' ')
+    .trim();
+  return hint || '';
 };
 
 const readLocalMetadata = (key: string, allowStale = false) => {
@@ -134,6 +148,25 @@ const fetchAniListDirect = (body: Record<string, unknown>) => fetch(ANILIST_URL,
 const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600) => {
   const cacheKey = cacheKeyFor('anilist', body);
   return fetchWithLocalMetadataCache(cacheKey, ttlSeconds, async () => {
+    if (isDesktopApp()) {
+      try {
+        const desktopResponse = await fetchDesktopMetadataApi({
+          provider: 'anilist',
+          body,
+          ttl_seconds: ttlSeconds,
+        });
+        return new Response(JSON.stringify(desktopResponse.data), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-StreamNyaa-Desktop-Cache': 'bridge',
+          },
+        });
+      } catch {
+        return fetchAniListDirect(body);
+      }
+    }
+
     const gatewayResponse = await fetch(`/api/stream-sources?provider=anilist&ttl=${ttlSeconds}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -150,6 +183,25 @@ const fetchJikanPathDirect = (path: string) => fetch(`https://api.jikan.moe/v4${
 const fetchJikanPath = async (path: string, ttlSeconds = 21600) => {
   const cacheKey = cacheKeyFor('jikan', path);
   return fetchWithLocalMetadataCache(cacheKey, ttlSeconds, async () => {
+    if (isDesktopApp()) {
+      try {
+        const desktopResponse = await fetchDesktopMetadataApi({
+          provider: 'jikan',
+          path,
+          ttl_seconds: ttlSeconds,
+        });
+        return new Response(JSON.stringify(desktopResponse.data), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-StreamNyaa-Desktop-Cache': 'bridge',
+          },
+        });
+      } catch {
+        return fetchJikanPathDirect(path);
+      }
+    }
+
     const gatewayResponse = await fetch(`/api/stream-sources?provider=jikan&ttl=${ttlSeconds}&path=${encodeURIComponent(path)}`).catch(() => null);
     if (gatewayResponse?.ok) return gatewayResponse;
     return fetchJikanPathDirect(path);
@@ -157,7 +209,9 @@ const fetchJikanPath = async (path: string, ttlSeconds = 21600) => {
 };
 
 const mapAnilistToJikan = (m: any) => ({
+  id: m.id,
   mal_id: m.idMal || m.id,
+  anilist_id: m.id,
   title: m.title.english || m.title.romaji || m.title.native,
   title_romaji: m.title.romaji,
   title_english: m.title.english,
@@ -227,6 +281,38 @@ const mapAnilistToJikan = (m: any) => ({
   }).filter((x: any) => x) || []
 });
 
+const mapJikanDetailToAnime = (item: any) => ({
+  id: item.mal_id,
+  mal_id: item.mal_id,
+  title: item.title_english || item.title || item.title_japanese,
+  title_romaji: item.title,
+  title_english: item.title_english,
+  images: item.images || {
+    jpg: {
+      image_url: item.image_url || '',
+      large_image_url: item.image_url || '',
+    },
+  },
+  banner_image: item.trailer?.images?.maximum_image_url || item.images?.jpg?.large_image_url || item.images?.webp?.large_image_url,
+  synopsis: item.synopsis || '',
+  episodes: item.episodes,
+  status: item.status,
+  score: item.score || 0,
+  popularity: item.popularity || null,
+  rank: item.rank || null,
+  scored_by: item.scored_by || null,
+  type: item.type || 'TV',
+  year: item.year || item.aired?.prop?.from?.year,
+  genres: item.genres || [],
+  trailer: item.trailer || null,
+  studios: item.studios || [],
+  isAdult: String(item.rating || '').toLowerCase().includes('hentai'),
+  streamingEpisodes: [],
+  nextAiringEpisode: null,
+  relations: item.relations || [],
+  recommendations: [],
+});
+
 const fetchJikanAnimeStats = async (malId: number) => {
   try {
     const res = await fetchJikanPath(`/anime/${malId}`, 21600);
@@ -261,6 +347,7 @@ export const fetchTopAiring = async () => {
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
+          popularity
           isAdult
         }
       }
@@ -326,7 +413,7 @@ export const fetchUpcomingAnime = async () => {
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
   const query = `
     query {
-      Page(page: 1, perPage: 10) {
+      Page(page: 1, perPage: 18) {
         media(type: ANIME, sort: TRENDING_DESC, status: NOT_YET_RELEASED${isAdultArg}) {
           id
           idMal
@@ -338,6 +425,7 @@ export const fetchUpcomingAnime = async () => {
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
+          popularity
           isAdult
         }
       }
@@ -354,7 +442,7 @@ export const fetchPopularAnime = async () => {
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
   const query = `
     query {
-      Page(page: 1, perPage: 10) {
+      Page(page: 1, perPage: 18) {
         media(type: ANIME, sort: POPULARITY_DESC${isAdultArg}) {
           id
           idMal
@@ -366,6 +454,7 @@ export const fetchPopularAnime = async () => {
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
+          popularity
           isAdult
         }
       }
@@ -382,7 +471,7 @@ export const fetchSeasonalAnime = async () => {
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
   const query = `
     query {
-      Page(page: 1, perPage: 10) {
+      Page(page: 1, perPage: 18) {
         media(type: ANIME, sort: TRENDING_DESC, status: RELEASING${isAdultArg}) {
           id
           idMal
@@ -394,6 +483,7 @@ export const fetchSeasonalAnime = async () => {
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
+          popularity
           isAdult
         }
       }
@@ -459,27 +549,110 @@ export const fetchAnimeDetails = async (id: string) => {
       }
     }
   `;
-  // Fallback if querying by idMal fails, try grabbing by id (Anilist ID) directly 
-  // since some components might pass anilist ID if Mal ID is missing
-  let res = await fetchAniList({ query, variables: { id: parseInt(extractNumericId(id)) } }, 21600);
+  const numericId = parseInt(extractNumericId(id), 10);
+  let res = await fetchAniList({ query, variables: { id: numericId } }, 21600);
   
   let data = await res.json();
   
-  if (data.errors) {
+  if (data.errors || !data?.data?.Media) {
     const fallbackQuery = query.replace('idMal: $id', 'id: $id');
-    res = await fetchAniList({ query: fallbackQuery, variables: { id: parseInt(extractNumericId(id)) } }, 21600);
+    res = await fetchAniList({ query: fallbackQuery, variables: { id: numericId } }, 21600);
     data = await res.json();
   }
 
-  if (!res.ok || data.errors) throw new Error('Failed to fetch anime details');
+  if (data.errors || !data?.data?.Media) {
+    const titleHint = titleHintFromRoute(id);
+    if (titleHint) {
+      const searchQuery = `
+        query($search: String) {
+          Page(page: 1, perPage: 5) {
+            media(type: ANIME, search: $search, sort: SEARCH_MATCH) {
+              id
+              idMal
+              title { romaji english native }
+              description
+              episodes
+              status
+              format
+              seasonYear
+              coverImage { extraLarge large color } bannerImage
+              genres
+              averageScore
+              trailer { id site thumbnail }
+              studios { nodes { name } }
+              isAdult
+              nextAiringEpisode { episode airingAt }
+              streamingEpisodes {
+                title
+                thumbnail
+                url
+                site
+              }
+              relations {
+                edges {
+                  relationType
+                  node {
+                    id
+                    idMal
+                    type
+                    title { romaji english native }
+                    coverImage { extraLarge large color }
+                    bannerImage
+                  }
+                }
+              }
+              recommendations(sort: RATING_DESC) {
+                nodes {
+                  mediaRecommendation {
+                    id
+                    idMal
+                    type
+                    title { romaji english native }
+                    coverImage { extraLarge large color }
+                    bannerImage
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+      res = await fetchAniList({ query: searchQuery, variables: { search: titleHint } }, 21600);
+      data = await res.json();
+      const fallbackMedia = data?.data?.Page?.media?.[0];
+      if (fallbackMedia) {
+        data = { data: { Media: fallbackMedia } };
+      }
+    }
+  }
+
+  if (!res.ok || data.errors || !data?.data?.Media) {
+    try {
+      const jikanRes = await fetchJikanPath(`/anime/${numericId}/full`, 21600);
+      if (jikanRes.ok) {
+        const jikanJson = await jikanRes.json();
+        if (jikanJson?.data) {
+          const mapped = mapJikanDetailToAnime(jikanJson.data);
+          if (!useStore.getState().nsfwMode && mapped.isAdult) {
+            throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
+          }
+          return { data: mapped };
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('NSFW')) throw error;
+    }
+    throw new Error('Failed to fetch anime details');
+  }
   
   const nsfwMode = useStore.getState().nsfwMode;
   if (!nsfwMode && data.data.Media.isAdult) {
     throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
   }
 
-  const mappedAnime = mapAnilistToJikan(data.data.Media);
-  const jikanStats = mappedAnime.mal_id ? await fetchJikanAnimeStats(mappedAnime.mal_id) : null;
+  const media = data.data.Media;
+  const mappedAnime = mapAnilistToJikan(media);
+  const jikanStats = media.idMal ? await fetchJikanAnimeStats(media.idMal) : null;
 
   return {
     data: {
@@ -521,17 +694,63 @@ export const fetchMangaDetails = async (id: string) => {
       }
     }
   `;
-  let res = await fetchAniList({ query, variables: { id: parseInt(extractNumericId(id)) } }, 21600);
+  const numericId = parseInt(extractNumericId(id), 10);
+  let res = await fetchAniList({ query, variables: { id: numericId } }, 21600);
   
   let data = await res.json();
   
-  if (data.errors) {
+  if (data.errors || !data?.data?.Media) {
     const fallbackQuery = query.replace('idMal: $id', 'id: $id');
-    res = await fetchAniList({ query: fallbackQuery, variables: { id: parseInt(extractNumericId(id)) } }, 21600);
+    res = await fetchAniList({ query: fallbackQuery, variables: { id: numericId } }, 21600);
     data = await res.json();
   }
 
-  if (!res.ok || data.errors) throw new Error('Failed to fetch manga details');
+  if (data.errors || !data?.data?.Media) {
+    const titleHint = titleHintFromRoute(id);
+    if (titleHint) {
+      const searchQuery = `
+        query($search: String) {
+          Page(page: 1, perPage: 5) {
+            media(type: MANGA, search: $search, sort: SEARCH_MATCH) {
+              id
+              idMal
+              title { romaji english native }
+              description
+              status
+              format
+              coverImage { extraLarge large color } bannerImage
+              genres
+              averageScore
+              isAdult
+              chapters
+              volumes
+              relations {
+                edges {
+                  relationType
+                  node {
+                    id
+                    idMal
+                    type
+                    title { romaji english native }
+                    coverImage { extraLarge large color }
+                    bannerImage
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+      res = await fetchAniList({ query: searchQuery, variables: { search: titleHint } }, 21600);
+      data = await res.json();
+      const fallbackMedia = data?.data?.Page?.media?.[0];
+      if (fallbackMedia) {
+        data = { data: { Media: fallbackMedia } };
+      }
+    }
+  }
+
+  if (!res.ok || data.errors || !data?.data?.Media) throw new Error('Failed to fetch manga details');
   
   const nsfwMode = useStore.getState().nsfwMode;
   if (!nsfwMode && data.data.Media.isAdult) {
@@ -615,6 +834,7 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
+          popularity
           isAdult
         }
       }
@@ -640,6 +860,7 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
+          popularity
           isAdult
         }
       }
@@ -660,6 +881,38 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
       last_visible_page: data.data.Page.pageInfo.lastPage
     }
   };
+};
+
+export const fetchTopAnimeByYear = async (year: number) => {
+  const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
+  const gqlQuery = `
+    query($seasonYear: Int) {
+      Page(page: 1, perPage: 18) {
+        media(type: ANIME, seasonYear: $seasonYear, sort: SCORE_DESC${isAdultArg}) {
+          id
+          idMal
+          title { romaji english native }
+          description
+          episodes
+          status
+          format
+          seasonYear
+          coverImage { extraLarge large color } bannerImage
+          genres
+          averageScore
+          popularity
+          isAdult
+        }
+      }
+    }
+  `;
+
+  const res = await fetchAniList({ query: gqlQuery, variables: { seasonYear: year } }, 21600);
+  if (!res.ok) throw new Error('Failed to fetch yearly top anime');
+  const data = await res.json();
+  if (data.errors) throw new Error('Failed to fetch yearly top anime');
+  const rawData = (data.data.Page.media || []).map(mapAnilistToJikan);
+  return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.mal_id === anime.mal_id)) };
 };
 
 export const fetchAnimeSeason = async (season: string, year: number, page = 1) => {

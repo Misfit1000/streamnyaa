@@ -1,3 +1,5 @@
+import { fetchDesktopSourceApi, isDesktopApp } from '../lib/desktop';
+
 export interface NyaaItem {
   title: string;
   link: string;
@@ -25,6 +27,21 @@ export interface NyaaItem {
   sourceCacheStatus?: string;
 }
 
+type SearchCacheEntry = {
+  items: NyaaItem[];
+  savedAt: number;
+};
+
+const SEARCH_CACHE_TTL = 1000 * 60 * 3;
+const inMemorySearchCache = new Map<string, SearchCacheEntry>();
+const DEFAULT_TRACKERS = [
+  'http://nyaa.tracker.wf:7777/announce',
+  'udp://open.stealth.si:80/announce',
+  'udp://tracker.opentrackr.org:1337/announce',
+  'udp://exodus.desync.com:6969/announce',
+  'udp://tracker.torrent.eu.org:451/announce',
+];
+
 function parseSize(sizeStr: string): number {
   if (!sizeStr) return 0;
   const match = sizeStr.match(/([\d.]+)\s*(GiB|MiB|KiB|Bytes)/i);
@@ -38,6 +55,23 @@ function parseSize(sizeStr: string): number {
     case 'bytes': return val;
     default: return val;
   }
+}
+
+function normalizeInfoHash(value: unknown): string {
+  const trimmed = String(value || '').trim();
+  if (trimmed.length === 40 && /^[a-f0-9]+$/i.test(trimmed)) return trimmed.toLowerCase();
+  const upper = trimmed.toUpperCase();
+  if (upper.length === 32 && /^[A-Z2-7]+$/.test(upper)) return upper;
+  return '';
+}
+
+function buildMagnetLink(infoHash: string, title: string) {
+  if (!infoHash) return '';
+  let magnet = `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(title)}`;
+  DEFAULT_TRACKERS.forEach((tracker) => {
+    magnet += `&tr=${encodeURIComponent(tracker)}`;
+  });
+  return magnet;
 }
 
 export function dedupeNyaaItems(items: NyaaItem[]): NyaaItem[] {
@@ -70,7 +104,14 @@ export async function searchNyaa(
   options: { deep?: boolean; pages?: number; wide?: boolean } = {}
 ): Promise<NyaaItem[]> {
   try {
-    const url = new URL('/api/nyaa', window.location.origin);
+    const cacheKey = JSON.stringify({ query, category, filter, page, options });
+    const cached = inMemorySearchCache.get(cacheKey);
+    if (cached && Date.now() - cached.savedAt < SEARCH_CACHE_TTL) {
+      return cached.items;
+    }
+
+    const desktop = isDesktopApp();
+    const url = new URL('/api/nyaa', desktop ? 'https://www.streamnyaa.xyz' : window.location.origin);
     if (query) url.searchParams.append('q', query);
     if (category) url.searchParams.append('c', category);
     if (filter) url.searchParams.append('f', filter);
@@ -78,70 +119,75 @@ export async function searchNyaa(
     if (query && options.deep !== false) url.searchParams.append('deep', '1');
     if (query) url.searchParams.append('pages', String(options.pages || 3));
     if (query && options.wide) url.searchParams.append('wide', '1');
-    
-    const response = await fetch(url.toString());
-    if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
-    
-    const sourceCacheStatus = response.headers.get('X-Source-Cache') || '';
-    const sourceQueryCount = Number(response.headers.get('X-Source-Query-Count') || 1);
-    const fetchedAtHeader = response.headers.get('X-Source-Fetched-At');
-    const sourceFetchedAt = fetchedAtHeader ? Number(fetchedAtHeader) : Date.now();
-    const data = await response.json();
+
+    let data: unknown;
+    let sourceCacheStatus = '';
+    let sourceQueryCount = 1;
+    let sourceFetchedAt = Date.now();
+
+    if (desktop) {
+      const desktopResponse = await fetchDesktopSourceApi(url.toString());
+      data = desktopResponse.data;
+      sourceFetchedAt = desktopResponse.fetched_at || Date.now();
+      sourceCacheStatus = 'DESKTOP';
+    } else {
+      const response = await fetch(url.toString());
+      if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
+
+      sourceCacheStatus = response.headers.get('X-Source-Cache') || '';
+      sourceQueryCount = Number(response.headers.get('X-Source-Query-Count') || 1);
+      const fetchedAtHeader = response.headers.get('X-Source-Fetched-At');
+      sourceFetchedAt = fetchedAtHeader ? Number(fetchedAtHeader) : Date.now();
+      data = await response.json();
+    }
+
     if (!Array.isArray(data)) {
-        console.error("Source search did not return an array:", data);
-        return [];
+      console.error('Source search did not return an array:', data);
+      return [];
     }
 
     const results: NyaaItem[] = [];
-    
-    for (const item of data) {
-        const title = item.title || '';
-        
-        // Generate magnet URI from infohash
-        const trackers = [
-          'http://nyaa.tracker.wf:7777/announce',
-          'udp://open.stealth.si:80/announce',
-          'udp://tracker.opentrackr.org:1337/announce',
-          'udp://exodus.desync.com:6969/announce',
-          'udp://tracker.torrent.eu.org:451/announce'
-        ];
-        
-        let magnet = `magnet:?xt=urn:btih:${item.infoHash}&dn=${encodeURIComponent(title)}`;
-        trackers.forEach(tr => {
-            magnet += `&tr=${encodeURIComponent(tr)}`;
-        });
 
-        results.push({
-            title: title,
-            link: item.link || '',
-            infoHash: item.infoHash || '',
-            size: item.size || '0 Bytes',
-            rawSize: parseSize(item.size),
-            seeders: (item.seeders || 0).toString(),
-            rawSeeders: parseInt(item.seeders) || 0,
-            leechers: (item.leechers || 0).toString(),
-            magnet: magnet,
-            category: item.category,
-            categoryId: item.categoryId,
-            pubDate: item.pubDate,
-            trusted: item.trusted || '',
-            remake: item.remake || '',
-            downloads: (item.downloads || 0).toString(),
-            comments: (item.comments || 0).toString(),
-            matchedQuery: item.matchedQuery || '',
-            matchedCategory: item.matchedCategory || '',
-            matchedPage: Number(item.matchedPage || 1),
-            sourceScore: Number(item.sourceScore || 0),
-            matchScore: Number(item.matchScore || 0),
-            sourceQueryCount: Number(item.sourceQueryCount || sourceQueryCount),
-            sourceFetchedAt,
-            sourceCacheStatus
-        });
+    for (const item of data) {
+      const title = String(item.title || '').trim();
+      const link = String(item.link || '').trim();
+      const infoHash = normalizeInfoHash(item.infoHash);
+      const magnet = buildMagnetLink(infoHash, title);
+
+      if (!title || (!link && !magnet)) continue;
+
+      results.push({
+        title,
+        link,
+        infoHash,
+        size: item.size || '0 Bytes',
+        rawSize: parseSize(item.size),
+        seeders: (item.seeders || 0).toString(),
+        rawSeeders: parseInt(item.seeders) || 0,
+        leechers: (item.leechers || 0).toString(),
+        magnet,
+        category: item.category,
+        categoryId: item.categoryId,
+        pubDate: item.pubDate,
+        trusted: item.trusted || '',
+        remake: item.remake || '',
+        downloads: (item.downloads || 0).toString(),
+        comments: (item.comments || 0).toString(),
+        matchedQuery: item.matchedQuery || '',
+        matchedCategory: item.matchedCategory || '',
+        matchedPage: Number(item.matchedPage || 1),
+        sourceScore: Number(item.sourceScore || 0),
+        matchScore: Number(item.matchScore || 0),
+        sourceQueryCount: Number(item.sourceQueryCount || sourceQueryCount),
+        sourceFetchedAt,
+        sourceCacheStatus,
+      });
     }
 
+    inMemorySearchCache.set(cacheKey, { items: results, savedAt: Date.now() });
     return results;
   } catch (error) {
-    console.error("Source search error:", error);
+    console.error('Source search error:', error);
     return [];
   }
 }

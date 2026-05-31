@@ -4,6 +4,9 @@ dist/
 coverage/
 target/
 desktop/src-tauri/target/
+desktop/src-tauri/bin/
+desktop/src-tauri/target-check/
+desktop/releases/
 .DS_Store
 *.log
 .env*

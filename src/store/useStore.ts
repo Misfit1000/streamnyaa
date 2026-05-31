@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 interface Anime {
-  mal_id: number;
+  mal_id: number | string;
+  id?: number | string;
   title: string;
   images: {
     jpg: {
@@ -24,13 +25,18 @@ interface StoreState {
   toggleNsfwMode: () => void;
   myList: Anime[];
   addToMyList: (anime: Anime) => void;
-  removeFromMyList: (id: number) => void;
+  removeFromMyList: (id: number | string) => void;
   clearMyList: () => void;
-  isInMyList: (id: number) => boolean;
-  likes: number[];
+  isInMyList: (id: number | string) => boolean;
+  likes: Array<number | string>;
   likedAnimes: Anime[];
-  toggleLike: (anime: Anime | number) => void;
-  isLiked: (id: number) => boolean;
+  toggleLike: (anime: Anime | number | string) => void;
+  isLiked: (id: number | string) => boolean;
+}
+
+function animeStoreId(animeOrId: Anime | number | string) {
+  if (typeof animeOrId === 'number' || typeof animeOrId === 'string') return String(animeOrId);
+  return String(animeOrId?.mal_id ?? animeOrId?.id ?? animeOrId?.title ?? '');
 }
 
 export const useStore = create<StoreState>()(
@@ -41,26 +47,30 @@ export const useStore = create<StoreState>()(
       nsfwMode: false,
       toggleNsfwMode: () => set((state) => ({ nsfwMode: !state.nsfwMode })),
       myList: [],
-      addToMyList: (anime) => set((state) => ({ myList: [...state.myList, anime] })),
-      removeFromMyList: (id) => set((state) => ({ myList: state.myList.filter((a) => a.mal_id !== id) })),
+      addToMyList: (anime) => set((state) => {
+        const nextId = animeStoreId(anime);
+        const withoutExisting = state.myList.filter((entry) => animeStoreId(entry) !== nextId);
+        return { myList: [...withoutExisting, anime] };
+      }),
+      removeFromMyList: (id) => set((state) => ({ myList: state.myList.filter((a) => animeStoreId(a) !== animeStoreId(id)) })),
       clearMyList: () => set({ myList: [], likes: [], likedAnimes: [] }),
-      isInMyList: (id) => get().myList.some((a) => a.mal_id === id),
+      isInMyList: (id) => get().myList.some((a) => animeStoreId(a) === animeStoreId(id)),
       likes: [],
       likedAnimes: [],
       toggleLike: (animeOrId) => set((state) => {
-        const id = typeof animeOrId === 'number' ? animeOrId : animeOrId.mal_id;
-        const isCurrentlyLiked = state.likes.includes(id);
+        const id = animeStoreId(animeOrId);
+        const isCurrentlyLiked = state.likes.some((entry) => animeStoreId(entry) === id);
         
         let newLikes = state.likes;
         let newLikedAnimes = state.likedAnimes || [];
         
         if (isCurrentlyLiked) {
-          newLikes = state.likes.filter(l => l !== id);
-          newLikedAnimes = newLikedAnimes.filter(a => a.mal_id !== id);
+          newLikes = state.likes.filter((entry) => animeStoreId(entry) !== id);
+          newLikedAnimes = newLikedAnimes.filter((entry) => animeStoreId(entry) !== id);
         } else {
           newLikes = [...state.likes, id];
-          if (typeof animeOrId !== 'number') {
-            newLikedAnimes = [...newLikedAnimes, animeOrId];
+          if (typeof animeOrId !== 'number' && typeof animeOrId !== 'string') {
+            newLikedAnimes = [...newLikedAnimes.filter((entry) => animeStoreId(entry) !== id), animeOrId];
           }
         }
         
@@ -69,7 +79,7 @@ export const useStore = create<StoreState>()(
           likedAnimes: newLikedAnimes
         };
       }),
-      isLiked: (id) => get().likes.includes(id),
+      isLiked: (id) => get().likes.some((entry) => animeStoreId(entry) === animeStoreId(id)),
     }),
     {
       name: 'shanks-storage',

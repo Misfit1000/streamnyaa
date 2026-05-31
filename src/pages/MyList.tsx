@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useStore } from '../store/useStore';
 import AnimeCard from '../components/AnimeCard';
 import { Bookmark, Trash2, SlidersHorizontal, AlertTriangle, Heart } from 'lucide-react';
+import { animeIdentity } from '../lib/animeIdentity';
 
 export default function MyList() {
   const { myList, likedAnimes, clearMyList, isLiked, isInMyList } = useStore();
@@ -11,18 +12,18 @@ export default function MyList() {
   const [filterBookmarks, setFilterBookmarks] = useState(true);
 
   const combinedMap = new Map();
-  myList.forEach(anime => combinedMap.set(anime.mal_id, anime));
-  (likedAnimes || []).forEach(anime => combinedMap.set(anime.mal_id, anime));
+  myList.forEach((anime) => combinedMap.set(animeIdentity(anime), anime));
+  (likedAnimes || []).forEach((anime) => combinedMap.set(animeIdentity(anime), anime));
   const combinedList = Array.from(combinedMap.values());
 
   const getSortedList = () => {
     let filteredList = combinedList;
     
     if (filterFavorites) {
-      filteredList = filteredList.filter(anime => isLiked(anime.mal_id));
+      filteredList = filteredList.filter((anime) => isLiked(animeIdentity(anime)));
     }
     if (filterBookmarks) {
-      filteredList = filteredList.filter(anime => isInMyList(anime.mal_id));
+      filteredList = filteredList.filter((anime) => isInMyList(animeIdentity(anime)));
     }
     
     // Add indices so we have stable 'date added' sorting
@@ -148,7 +149,7 @@ export default function MyList() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5">
           {sortedList.map((anime) => (
-            <AnimeCard key={`list-${anime.mal_id}`} anime={anime as any} />
+            <AnimeCard key={`list-${animeIdentity(anime)}`} anime={anime as any} />
           ))}
         </div>
       )}

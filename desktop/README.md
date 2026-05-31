@@ -1,60 +1,62 @@
 # StreamNyaa Desktop
 
-The desktop app shares the StreamNyaa React UI with the web app and adds desktop-only local playback controls.
+StreamNyaa Desktop shares the React UI with the web app and adds a desktop shell for anime discovery, source browsing, and local torrent playback.
 
-## Commands
+## Current Desktop Behavior
+
+- One persistent player process is reused for stream switching.
+- Each source starts an isolated session under the OS Temp folder.
+- Old and abandoned session folders are cleared on startup, source switch, app exit, and from Settings.
+- Cache is guarded with a 3 GB per-session target and 6 GB global limit.
+- Playback expects bundled `rqbit.exe` for the local torrent engine and bundled `mpv.exe` for the player.
+- Runtime failures are written to `%LOCALAPPDATA%\StreamNyaa\logs`.
+
+The desktop app never stores temporary torrent pieces beside application files. Runtime playback cache belongs under `%TEMP%\StreamNyaa` by default and old AppData cache folders are treated as legacy cleanup targets.
+
+## Runtime Requirements
+
+Bundle or stage these binaries before a release build:
+
+```bash
+npm run prepare:desktop-binaries
+```
+
+That script prefers known local install locations and places the binaries under `desktop/src-tauri/bin` so the Tauri bundle can ship them as resources. Manual override paths remain available in Desktop Settings for advanced debugging only.
+
+StreamNyaa starts the torrent engine only when preparing or opening a stream. It stops the previous active session before switching sources and keeps the same player window alive for smoother binge-watching.
+
+## Development
+
+From the repository root:
 
 ```bash
 npm run desktop:dev
+```
+
+This expects `cargo tauri` to be installed locally.
+
+For a production desktop build:
+
+```bash
 npm run desktop:build
+npm run prepare:desktop-release
 ```
 
-The desktop build uses `VITE_STREAMNYAA_APP_TARGET=desktop`, skips sitemap generation, and avoids web-only SEO, analytics, and ad scripts inside the Tauri shell.
-The native release profile is tuned for smaller Windows installers with stripping, LTO, size-oriented optimization, and a single codegen unit.
-
-For Windows development, the project root also includes `desktop-dev.cmd` and `desktop-dev.ps1` launchers. Run either one from the StreamNyaa project folder to start the desktop app without typing the full npm command.
-
-For a production Windows installer, run `desktop-build.cmd` or `desktop-build.ps1` from the project root. The finished installer is created under:
-
-```text
-desktop\src-tauri\target\release\bundle\nsis
-```
-
-The production desktop window disables devtools and keeps web-only scripts such as analytics, ads, and SEO helpers out of the Tauri shell.
-
-## Platform target
-
-This desktop package is optimized for Windows. The current local playback design expects Windows desktop tools such as rqbit and MPV, then launches MPV from the Tauri app.
-
-It is not compatible with mobile as-is. The shared web UI is responsive on phones, but the desktop local playback layer depends on desktop executables and local torrent streaming, which Android and iOS do not allow in the same way.
-
-## Current Playback Bridge
-
-The Tauri command layer accepts a selected source from the React UI, checks the local rqbit and MPV commands, starts a local rqbit server, adds the selected magnet, then opens rqbit's local playlist URL in MPV. The web version stays download-only and does not load a web streaming provider.
-
-Install or configure these local tools:
-
-- rqbit: `rqbit`
-- MPV player: `mpv`
-
-With Rust installed, rqbit can be installed with:
+For the full local release flow with proxy cleanup included:
 
 ```bash
-cargo install rqbit
+npm run release:desktop
 ```
 
-On Windows, StreamNyaa auto-detects MPV at common install paths such as `C:\Program Files\MPV Player\mpv.exe`, even when `mpv` is not available in PATH.
-
-The desktop player screen lets users save command names or full executable paths. For development, the native bridge also reads these optional environment variables:
+For the desktop verification suite:
 
 ```bash
-STREAMNYAA_TORRENT_ENGINE_PATH=
-STREAMNYAA_MPV_PATH=
-STREAMNYAA_CACHE_DIR=
+npm run verify:desktop
 ```
 
-When both commands are available, clicking `Play locally` starts the local rqbit server, adds the selected magnet source, opens the local playlist in MPV, and keeps the StreamNyaa player screen updated with torrent readiness, peers, speed, progress, and cache folder status.
+Release and rollback runbooks:
 
-The local player keeps a small source selector on the device, so users can switch between recently chosen sources without repeating the download search.
+- [desktop/RELEASE_CHECKLIST.md](</C:/Users/HP/Documents/New project 2/StreamNyaa-desktop/desktop/RELEASE_CHECKLIST.md>)
+- [desktop/ROLLBACK.md](</C:/Users/HP/Documents/New project 2/StreamNyaa-desktop/desktop/ROLLBACK.md>)
 
-Desktop source search uses the StreamNyaa production source API through the native Tauri bridge. This keeps download/source results working in the packaged app even though the desktop shell does not run Vercel serverless routes locally.
+The desktop app still uses the StreamNyaa production source API for source search results through the Tauri bridge. It does not run Vercel serverless routes locally.

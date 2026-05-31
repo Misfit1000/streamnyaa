@@ -49,6 +49,7 @@ export default function MangaDetails() {
   if (!data?.data) return <div className="text-center py-20 font-bold">Manga not found</div>;
 
   const manga = data.data;
+  const image = manga.images?.jpg?.large_image_url || manga.images?.jpg?.image_url;
   const inList = isInMyList(manga.mal_id);
 
   const handleListToggle = () => {
@@ -73,7 +74,7 @@ export default function MangaDetails() {
       <div className="absolute top-0 left-0 w-full h-[500px] z-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/80 to-background z-10" />
         <img 
-          src={manga.banner_image || manga.images.jpg.large_image_url} 
+          src={manga.banner_image || image} 
           alt={manga.title}
           className="w-full h-full object-cover opacity-20 blur-sm"
           referrerPolicy="no-referrer"
@@ -94,7 +95,7 @@ export default function MangaDetails() {
               className="rounded-2xl overflow-hidden shadow-2xl relative bg-secondary border border-[var(--glass-border)]"
             >
               <img 
-                src={manga.images.jpg.large_image_url} 
+                src={image} 
                 alt={manga.title}
                 className="w-full h-auto object-cover"
                 referrerPolicy="no-referrer"
