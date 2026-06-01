@@ -17,20 +17,34 @@ const desktopLibrary = [
   { to: '/desktop-settings', label: 'Settings', icon: Settings },
 ];
 
-const DesktopNavItem = memo(function DesktopNavItem({ to, label, icon: Icon }: { to: string; label: string; icon: typeof Home }) {
+const SIDEBAR_STORAGE_KEY = 'streamnyaa.desktop.sidebarCollapsed';
+
+const DesktopNavItem = memo(function DesktopNavItem({
+  to,
+  label,
+  icon: Icon,
+  collapsed,
+}: {
+  to: string;
+  label: string;
+  icon: typeof Home;
+  collapsed: boolean;
+}) {
   return (
     <NavLink
       to={to}
       end={to === '/'}
+      title={collapsed ? label : undefined}
       className={({ isActive }) => [
-        'group flex h-11 items-center gap-3 rounded-md px-4 text-[15px] font-medium transition-all',
+        'group flex h-11 items-center rounded-md text-[15px] font-medium transition-all',
+        collapsed ? 'justify-center px-0' : 'gap-3 px-4',
         isActive
           ? 'bg-primary/22 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]'
           : 'text-white/62 hover:bg-white/[0.06] hover:text-white',
       ].join(' ')}
     >
       <Icon className="h-5 w-5 shrink-0" />
-      <span>{label}</span>
+      {!collapsed ? <span>{label}</span> : null}
     </NavLink>
   );
 });
@@ -39,6 +53,14 @@ export default function DesktopShell() {
   const location = useLocation();
   const isWatch = location.pathname.startsWith('/watch/');
   const [logoFailed, setLogoFailed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
 
   if (isWatch) {
     return (
@@ -51,9 +73,9 @@ export default function DesktopShell() {
   return (
     <div className="min-h-screen overflow-hidden bg-[#07080c] text-white">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_62%_10%,rgba(225,29,72,0.16),transparent_28%),radial-gradient(circle_at_18%_0%,rgba(59,130,246,0.10),transparent_26%)]" />
-      <div className="relative grid min-h-screen w-screen grid-cols-[250px_minmax(0,1fr)] overflow-hidden bg-black/20 shadow-2xl shadow-black/40">
-        <aside className="border-r border-white/8 bg-[#0b0c11]/88 px-5 py-5 backdrop-blur-2xl">
-          <Link to="/" className="flex items-center gap-3 px-3">
+      <div className={`relative grid min-h-screen w-screen overflow-hidden bg-black/20 shadow-2xl shadow-black/40 ${sidebarCollapsed ? 'grid-cols-[88px_minmax(0,1fr)]' : 'grid-cols-[250px_minmax(0,1fr)]'}`}>
+        <aside className={`border-r border-white/8 bg-[#0b0c11]/88 py-5 backdrop-blur-2xl ${sidebarCollapsed ? 'px-3' : 'px-5'}`}>
+          <Link to="/" className={`flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'}`}>
             {logoFailed ? (
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary text-[22px] font-black text-white">S</span>
             ) : (
@@ -66,27 +88,42 @@ export default function DesktopShell() {
                 onError={() => setLogoFailed(true)}
               />
             )}
-            <span className="min-w-0">
+            {!sidebarCollapsed ? <span className="min-w-0">
               <span className="block text-[23px] font-black tracking-[-0.04em] text-white">StreamNyaa</span>
               <span className="mt-1 block text-[12px] font-semibold uppercase tracking-[0.34em] text-white/48">Desktop Cinema</span>
-            </span>
+            </span> : null}
           </Link>
 
           <nav className="mt-8 space-y-2">
-            {desktopNav.map((item) => <DesktopNavItem key={item.to} {...item} />)}
+            {desktopNav.map((item) => <DesktopNavItem key={item.to} {...item} collapsed={sidebarCollapsed} />)}
           </nav>
 
           <div className="mt-8 border-t border-white/8 pt-5">
-            <p className="mb-3 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/38">Library</p>
+            {!sidebarCollapsed ? <p className="mb-3 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/38">Library</p> : null}
             <nav className="space-y-2">
-              {desktopLibrary.map((item) => <DesktopNavItem key={`${item.to}-${item.label}`} {...item} />)}
+              {desktopLibrary.map((item) => <DesktopNavItem key={`${item.to}-${item.label}`} {...item} collapsed={sidebarCollapsed} />)}
             </nav>
           </div>
         </aside>
 
         <div className="min-w-0">
           <header className="sticky top-0 z-30 flex h-[70px] items-center gap-4 border-b border-white/8 bg-[#0b0c11]/76 px-6 backdrop-blur-2xl">
-            <button type="button" className="grid h-11 w-11 place-items-center rounded-md border border-white/8 bg-white/[0.04] text-white/80">
+            <button
+              type="button"
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              onClick={() => {
+                setSidebarCollapsed((value) => {
+                  const next = !value;
+                  try {
+                    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, next ? '1' : '0');
+                  } catch {
+                    // Best-effort only.
+                  }
+                  return next;
+                });
+              }}
+              className="grid h-11 w-11 place-items-center rounded-md border border-white/8 bg-white/[0.04] text-white/80 hover:border-white/16 hover:text-white"
+            >
               <Menu className="h-5 w-5" />
             </button>
             <Link to="/search" className="flex h-11 min-w-[360px] max-w-[520px] flex-1 items-center gap-3 rounded-md border border-white/8 bg-black/24 px-4 text-sm text-white/48 hover:border-white/16 hover:text-white/72">

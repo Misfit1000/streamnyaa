@@ -1,10 +1,15 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Loader2, Play, Search, SlidersHorizontal } from 'lucide-react';
 import { searchNyaa, type NyaaItem } from '../api/nyaa';
 import Seo from '../components/Seo';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter, type TorrentSourceFilter } from '../lib/torrentBadges';
-import { openLocalSourceNow } from '../lib/desktop';
+import {
+  loadDesktopAudioPreference,
+  openLocalSourceNow,
+  saveDesktopAudioPreference,
+  subscribeDesktopAudioPreference,
+} from '../lib/desktop';
 import { sourceFreshnessLabel, sourceQualityLabel, sourceQualityScore } from '../lib/sourceQuality';
 
 function isBatchSource(title = '') {
@@ -98,10 +103,16 @@ function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle
 export default function DesktopSources() {
   const [input, setInput] = useState('');
   const [query, setQuery] = useState('');
-  const [audioMode, setAudioMode] = useState<'sub' | 'dual'>('sub');
+  const [audioMode, setAudioMode] = useState<'sub' | 'dual'>(() => (
+    loadDesktopAudioPreference() === 'sub-preferred' ? 'sub' : 'dual'
+  ));
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
   const [sort, setSort] = useState<'best' | 'seeders' | 'size'>('best');
   const [status, setStatus] = useState('');
+
+  useEffect(() => subscribeDesktopAudioPreference(() => {
+    setAudioMode(loadDesktopAudioPreference() === 'sub-preferred' ? 'sub' : 'dual');
+  }), []);
 
   const searchQuery = useQuery({
     queryKey: ['desktop-sources', query, audioMode],
@@ -163,7 +174,10 @@ export default function DesktopSources() {
             <button
               key={item}
               type="button"
-              onClick={() => setAudioMode(item)}
+              onClick={() => {
+                setAudioMode(item);
+                saveDesktopAudioPreference(item === 'sub' ? 'sub-preferred' : 'dual-preferred');
+              }}
               className={`rounded-full border px-4 py-2 text-sm font-black ${audioMode === item ? 'border-primary bg-primary text-white' : 'border-white/10 bg-white/[0.045] text-white/64 hover:border-primary/50 hover:text-white'}`}
             >
               {item === 'dual' ? 'Dual Audio' : 'Sub'}

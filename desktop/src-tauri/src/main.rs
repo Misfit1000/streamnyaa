@@ -52,6 +52,8 @@ struct LocalPlaybackProgress {
     state: String,
     message: String,
     progress: Option<f64>,
+    current_seconds: Option<f64>,
+    duration_seconds: Option<f64>,
     downloaded_bytes: Option<u64>,
     total_bytes: Option<u64>,
     peers: Option<u64>,
@@ -141,6 +143,9 @@ struct PlaybackRequest {
     anime_title: String,
     episode: String,
     size: Option<String>,
+    poster: Option<String>,
+    banner: Option<String>,
+    resume_seconds: Option<f64>,
     settings: Option<DesktopSettings>,
 }
 
@@ -938,6 +943,18 @@ fn xml_escape(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
+fn trim_for_display(value: &str, max_chars: usize) -> String {
+    let mut output = String::new();
+    for (index, ch) in value.trim().chars().enumerate() {
+        if index >= max_chars {
+            output.push_str("...");
+            break;
+        }
+        output.push(ch);
+    }
+    output
+}
+
 fn html_entity_decode(value: &str) -> String {
     value
         .replace("&lt;", "<")
@@ -1516,6 +1533,16 @@ fn extension_from_name(value: &str) -> String {
         .to_ascii_lowercase()
 }
 
+fn infer_extension_from_label(value: &str) -> String {
+    let lower = value.to_ascii_lowercase();
+    for extension in ["mkv", "mp4", "webm", "avi", "m4v", "mov", "ts", "ass", "ssa", "srt", "vtt"] {
+        if lower.contains(&format!(".{}", extension)) {
+            return extension.to_string();
+        }
+    }
+    String::new()
+}
+
 fn is_video_extension(value: &str) -> bool {
     matches!(
         value,
@@ -1560,9 +1587,28 @@ fn parse_playlist_entries(playlist_url: &str, content: &str) -> Vec<PlaylistEntr
         }
 
         let url = normalize_playlist_url(playlist_url, line);
-        let file_name = last_url_segment(&url);
-        let file_stem = stem_from_name(&file_name);
-        let extension = extension_from_name(&file_name);
+        let raw_file_name = last_url_segment(&url);
+        let label = label_hint
+            .take()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| raw_file_name.clone());
+        let label_name = last_url_segment(&label);
+        let label_extension = extension_from_name(&label_name);
+        let fallback_extension = infer_extension_from_label(&label);
+        let extension = extension_from_name(&raw_file_name);
+        let extension = if !extension.is_empty() {
+            extension
+        } else if !label_extension.is_empty() {
+            label_extension
+        } else {
+            fallback_extension
+        };
+        let file_name = if !label_name.is_empty() && label_name.contains('.') {
+            label_name.clone()
+        } else {
+            raw_file_name.clone()
+        };
+        let file_stem = stem_from_name(if !label_name.is_empty() { &label_name } else { &file_name });
         let kind = if is_video_extension(&extension) {
             PlaylistKind::Video
         } else if is_subtitle_extension(&extension) {
@@ -1570,10 +1616,6 @@ fn parse_playlist_entries(playlist_url: &str, content: &str) -> Vec<PlaylistEntr
         } else {
             PlaylistKind::Other
         };
-        let label = label_hint
-            .take()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| file_name.clone());
 
         entries.push(PlaylistEntry {
             url,
@@ -1692,8 +1734,15 @@ fn select_stream_target(entries: &[PlaylistEntry], request: &PlaybackRequest) ->
     let media = entries
         .iter()
         .filter(|entry| entry.kind == PlaylistKind::Video)
-        .max_by_key(|entry| playlist_video_score(entry, request))?
-        .clone();
+        .max_by_key(|entry| playlist_video_score(entry, request))
+        .cloned()
+        .or_else(|| {
+            entries
+                .iter()
+                .filter(|entry| entry.kind != PlaylistKind::Subtitle)
+                .max_by_key(|entry| playlist_video_score(entry, request))
+                .cloned()
+        })?;
 
     let subtitle_urls = entries
         .iter()
@@ -1727,44 +1776,140 @@ fn playlist_target(torrent_id: &str, request: &PlaybackRequest) -> Result<Option
     Ok(select_stream_target(&entries, request))
 }
 
-fn loading_svg(cache_dir: &Path, title: &str) -> Result<PathBuf, String> {
+fn loading_artwork_url(request: &PlaybackRequest) -> Option<String> {
+    [request.banner.as_deref(), request.poster.as_deref()]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|value| value.starts_with("https://") || value.starts_with("http://"))
+        .map(str::to_string)
+}
+
+fn loading_palette_seed(value: &str) -> usize {
+    value
+        .bytes()
+        .fold(0usize, |sum, item| sum.wrapping_add(item as usize))
+        % 4
+}
+
+fn loading_palette(value: &str) -> (&'static str, &'static str, &'static str, &'static str) {
+    match loading_palette_seed(value) {
+        0 => ("#e11d48", "#7c3aed", "#241018", "#0a0a0f"),
+        1 => ("#fb7185", "#2563eb", "#201018", "#090b12"),
+        2 => ("#a855f7", "#ec4899", "#1a0d17", "#08070d"),
+        _ => ("#f43f5e", "#0ea5e9", "#1f1016", "#07090d"),
+    }
+}
+
+fn loading_stage_markup(step: usize, label: &str) -> String {
+    let active = step.min(4);
+    let marks = (0..4)
+        .map(|index| if index < active { "[####]" } else { "[----]" })
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!(
+        "{{\\fs14\\b1}}{}\\N{{\\fs16\\b1}}STEP {} OF 4  {}",
+        ass_escape(label),
+        active.max(1),
+        marks
+    )
+}
+
+fn loading_svg(cache_dir: &Path, request: &PlaybackRequest, title: &str) -> Result<PathBuf, String> {
     let path = cache_dir.join("streamnyaa-loading.svg");
-    let title = xml_escape(title);
+    let display_title = trim_for_display(title, 42);
+    let display_anime_title = if request.anime_title.trim().is_empty() {
+        display_title.clone()
+    } else {
+        trim_for_display(request.anime_title.trim(), 40)
+    };
+    let display_source_title = trim_for_display(request.title.trim(), 64);
+    let title = xml_escape(&display_title);
+    let anime_title = xml_escape(&display_anime_title);
+    let source_title = xml_escape(&display_source_title);
+    let episode = xml_escape(request.episode.trim());
+    let artwork = loading_artwork_url(request)
+        .map(|value| {
+            format!(
+                r#"<image href="{}" x="704" y="78" width="510" height="564" preserveAspectRatio="xMidYMid slice" clip-path="url(#artClip)" opacity="0.92"/>"#,
+                xml_escape(&value)
+            )
+        })
+        .unwrap_or_else(|| {
+            r#"<rect x="704" y="78" width="510" height="564" rx="28" fill="url(#artFallback)"/>"#.to_string()
+        });
+    let (accent, accent_secondary, panel_top, panel_bottom) = loading_palette(&format!(
+        "{}|{}|{}",
+        request.anime_title, request.episode, request.title
+    ));
     let svg = format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
 <defs>
 <radialGradient id="g" cx="52%" cy="40%" r="78%">
-<stop offset="0" stop-color="#33101a"/>
-<stop offset="0.38" stop-color="#14090d"/>
+<stop offset="0" stop-color="{2}" stop-opacity="0.78"/>
+<stop offset="0.38" stop-color="{3}"/>
 <stop offset="1" stop-color="#040405"/>
 </radialGradient>
 <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
 <stop offset="0" stop-color="#17171d" stop-opacity="0.92"/>
 <stop offset="1" stop-color="#09090d" stop-opacity="0.84"/>
 </linearGradient>
+<linearGradient id="artFallback" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="{2}" stop-opacity="0.92"/>
+<stop offset="1" stop-color="{3}" stop-opacity="0.78"/>
+</linearGradient>
+<linearGradient id="accentGlow" x1="0" y1="0" x2="1" y2="0">
+<stop offset="0" stop-color="{0}"/>
+<stop offset="1" stop-color="{1}"/>
+</linearGradient>
+<clipPath id="artClip">
+  <rect x="704" y="78" width="510" height="564" rx="28"/>
+</clipPath>
 </defs>
 <rect width="1280" height="720" fill="url(#g)"/>
-<circle cx="924" cy="122" r="210" fill="#5f1326" fill-opacity="0.28"/>
-<circle cx="960" cy="146" r="148" fill="#e11d48" fill-opacity="0.10"/>
-<rect x="84" y="88" width="636" height="544" rx="28" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.09"/>
-<text x="126" y="148" fill="#e11d48" font-family="Segoe UI,Arial" font-size="16" font-weight="800" letter-spacing="4">STREAMNYAA</text>
-<text x="126" y="218" fill="#ffffff" font-family="Segoe UI,Arial" font-size="46" font-weight="800">Preparing local stream</text>
-<text x="126" y="268" fill="#c4c7cf" font-family="Segoe UI,Arial" font-size="24">{}</text>
-<text x="126" y="328" fill="#9ca3af" font-family="Segoe UI,Arial" font-size="20">The player stays open while metadata, peers, and the first video pieces arrive.</text>
-<circle cx="126" cy="406" r="12" fill="#e11d48"/>
-<text x="154" y="414" fill="#ffffff" font-family="Segoe UI,Arial" font-size="20" font-weight="700">Fetching torrent metadata</text>
-<circle cx="126" cy="460" r="12" fill="#ffffff" fill-opacity="0.18"/>
-<text x="154" y="468" fill="#d2d6dd" font-family="Segoe UI,Arial" font-size="20" font-weight="700">Connecting to responsive peers</text>
-<circle cx="126" cy="514" r="12" fill="#ffffff" fill-opacity="0.18"/>
-<text x="154" y="522" fill="#d2d6dd" font-family="Segoe UI,Arial" font-size="20" font-weight="700">Buffering the selected episode</text>
-<rect x="126" y="564" width="470" height="12" rx="6" fill="#ffffff" fill-opacity="0.08"/>
-<rect x="126" y="564" width="162" height="12" rx="6" fill="#e11d48"/>
-<circle cx="932" cy="366" r="72" fill="#e11d48"/>
+<circle cx="950" cy="112" r="236" fill="{0}" fill-opacity="0.16"/>
+<circle cx="1028" cy="158" r="172" fill="{1}" fill-opacity="0.12"/>
+<rect x="84" y="88" width="580" height="544" rx="28" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.09"/>
+<rect x="84" y="88" width="580" height="544" rx="28" fill="url(#g)" fill-opacity="0.10"/>
+<rect x="704" y="78" width="510" height="564" rx="28" fill="#0b0b10" stroke="#ffffff" stroke-opacity="0.08"/>
+{4}
+<rect x="704" y="78" width="510" height="564" rx="28" fill="url(#panel)" fill-opacity="0.20"/>
+<rect x="704" y="78" width="510" height="564" rx="28" fill="url(#g)" fill-opacity="0.42"/>
+<text x="126" y="146" fill="{0}" font-family="Segoe UI,Arial" font-size="16" font-weight="800" letter-spacing="4">STREAMNYAA</text>
+<text x="126" y="194" fill="#8f96a3" font-family="Segoe UI,Arial" font-size="16" font-weight="700" letter-spacing="3">LOCAL CINEMA</text>
+<text x="126" y="252" fill="#ffffff" font-family="Segoe UI,Arial" font-size="18" font-weight="700">Selected anime</text>
+<text x="126" y="306" fill="#ffffff" font-family="Segoe UI,Arial" font-size="48" font-weight="800">{5}</text>
+<text x="126" y="344" fill="#c4c7cf" font-family="Segoe UI,Arial" font-size="24">{6}</text>
+<rect x="126" y="378" width="134" height="40" rx="20" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.08"/>
+<text x="152" y="403" fill="#ffffff" font-family="Segoe UI,Arial" font-size="15" font-weight="700">Episode {7}</text>
+<rect x="274" y="378" width="154" height="40" rx="20" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.08"/>
+<text x="300" y="403" fill="#ffffff" font-family="Segoe UI,Arial" font-size="15" font-weight="700">Local player</text>
+<text x="126" y="452" fill="#9ca3af" font-family="Segoe UI,Arial" font-size="18">Selected release</text>
+<text x="126" y="486" fill="#ffffff" font-family="Segoe UI,Arial" font-size="22" font-weight="700">{8}</text>
+<text x="126" y="528" fill="#9ca3af" font-family="Segoe UI,Arial" font-size="18">The player stays open while metadata, peers, and the first video pieces arrive.</text>
+<rect x="126" y="564" width="104" height="42" rx="21" fill="url(#accentGlow)"/>
+<text x="146" y="590" fill="#ffffff" font-family="Segoe UI,Arial" font-size="15" font-weight="800">METADATA</text>
+<rect x="242" y="564" width="88" height="42" rx="21" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.08"/>
+<text x="265" y="590" fill="#ffffff" fill-opacity="0.78" font-family="Segoe UI,Arial" font-size="15" font-weight="800">PEERS</text>
+<rect x="342" y="564" width="104" height="42" rx="21" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.08"/>
+<text x="368" y="590" fill="#ffffff" fill-opacity="0.78" font-family="Segoe UI,Arial" font-size="15" font-weight="800">BUFFER</text>
+<rect x="458" y="564" width="86" height="42" rx="21" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.08"/>
+<text x="486" y="590" fill="#ffffff" fill-opacity="0.78" font-family="Segoe UI,Arial" font-size="15" font-weight="800">PLAY</text>
+<text x="126" y="636" fill="#c9ced9" font-family="Segoe UI,Arial" font-size="16">Preparing the first playback buffer. StreamNyaa keeps this source locked to the same player window.</text>
+<circle cx="955" cy="378" r="72" fill="{0}"/>
 <polygon points="908,330 908,402 972,366" fill="white"/>
 <text x="932" y="482" text-anchor="middle" fill="#ffffff" font-family="Segoe UI,Arial" font-size="28" font-weight="800">Opening player</text>
 <text x="932" y="520" text-anchor="middle" fill="#9ca3af" font-family="Segoe UI,Arial" font-size="18">Selected source remains active while playback initializes</text>
 </svg>"##,
-        title
+        accent,
+        accent_secondary,
+        panel_top,
+        panel_bottom,
+        artwork,
+        if anime_title.is_empty() { title.clone() } else { anime_title },
+        title,
+        if episode.is_empty() { "Current".to_string() } else { episode },
+        source_title,
     );
     fs::write(&path, svg).map_err(|error| format!("Could not prepare loading screen: {}", error))?;
     Ok(path)
@@ -1802,6 +1947,56 @@ fn send_mpv(ipc: &str, command: &str) -> bool {
     }
 }
 
+fn send_mpv_request(ipc: &str, command: &str) -> Option<serde_json::Value> {
+    #[cfg(windows)]
+    {
+        use std::io::{BufRead, BufReader};
+        let mut stream = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(ipc)
+            .ok()?;
+        stream.write_all(command.as_bytes()).ok()?;
+        stream.write_all(b"\n").ok()?;
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        for _ in 0..6 {
+            line.clear();
+            if reader.read_line(&mut line).ok()? == 0 {
+                break;
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line.trim()) {
+                if json.get("request_id").is_some() || json.get("data").is_some() {
+                    return Some(json);
+                }
+            }
+        }
+        None
+    }
+    #[cfg(not(windows))]
+    {
+        use std::io::{BufRead, BufReader};
+        use std::os::unix::net::UnixStream;
+        let mut stream = UnixStream::connect(ipc).ok()?;
+        stream.write_all(command.as_bytes()).ok()?;
+        stream.write_all(b"\n").ok()?;
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        for _ in 0..6 {
+            line.clear();
+            if reader.read_line(&mut line).ok()? == 0 {
+                break;
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line.trim()) {
+                if json.get("request_id").is_some() || json.get("data").is_some() {
+                    return Some(json);
+                }
+            }
+        }
+        None
+    }
+}
+
 fn player_ipc_ready(ipc: &str, retries: usize, delay_ms: u64) -> bool {
     for _ in 0..retries {
         if send_mpv(ipc, r#"{"command":["get_property","idle-active"],"request_id":1}"#) {
@@ -1812,6 +2007,17 @@ fn player_ipc_ready(ipc: &str, retries: usize, delay_ms: u64) -> bool {
     false
 }
 
+fn get_player_property_f64(ipc: &str, property: &str) -> Option<f64> {
+    let command = format!(
+        r#"{{"command":["get_property",{}],"request_id":41}}"#,
+        json_string(property)
+    );
+    let response = send_mpv_request(ipc, &command)?;
+    response
+        .get("data")
+        .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|item| item as f64)))
+}
+
 fn ass_escape(value: &str) -> String {
     value
         .replace('\\', r"\\")
@@ -1820,33 +2026,78 @@ fn ass_escape(value: &str) -> String {
         .replace('\n', r"\N")
 }
 
-fn player_overlay_message(status: &str) -> String {
-    let detail = if status.contains("Fetching torrent metadata") {
-        "Resolving the torrent and checking the first peer responses."
-    } else if status.contains("Waiting for a playable stream") {
-        "The source is selected. The player stays open while the first pieces arrive."
-    } else if status.contains("Opening player while the stream connects") {
-        "The selected source stays active while buffering catches up."
-    } else if status.contains("Starting playback") {
-        "The episode is ready. Audio tracks and subtitles keep attaching in the same window."
-    } else if status.contains("Opening stream") {
-        "Switching from the loading slate into the episode stream."
-    } else if status.contains("Stopping previous stream") {
-        "Closing the old session and reusing the same player window."
-    } else if status.contains("Stopping stream") {
-        "Cleaning the active torrent session and temporary files."
+fn player_overlay_copy(status: &str) -> (&'static str, String, usize) {
+    if status.contains("Preparing torrent session") || status.contains("Fetching torrent metadata") || status.contains("Fetching metadata and peers") {
+        (
+            "Preparing stream session",
+            "Reading torrent metadata, validating the release, and waiting for the first peer responses.".to_string(),
+            1,
+        )
+    } else if status.contains("Looking for the episode file") || status.contains("Matching the correct episode file") {
+        (
+            "Selecting the episode file",
+            "The torrent is ready. StreamNyaa is matching the exact video file for this episode.".to_string(),
+            2,
+        )
+    } else if status.contains("connecting") || status.contains("responsive peers") || status.contains("Connecting peers") {
+        (
+            "Connecting to peers",
+            "Peers are responding. StreamNyaa is building a stable session before playback begins.".to_string(),
+            2,
+        )
+    } else if status.contains("Buffering") || status.contains("buffering") || status.contains("Opening the player while the first buffer fills") || status.contains("Preparing the player handoff") {
+        (
+            "Building the playback buffer",
+            "The player is open. StreamNyaa is filling the first playback buffer for a smooth start.".to_string(),
+            3,
+        )
+    } else if status.contains("Starting playback") || status.contains("Opening stream") || status.contains("Opening the stream in the current player") {
+        (
+            "Starting the episode",
+            "The selected release is now entering playback in the same player window.".to_string(),
+            4,
+        )
     } else if status.contains("Switching episode") {
-        "Keeping the same player window while the next episode takes over."
-    } else if status.contains("Retrying playback") {
-        "Reopening the player target after a handoff retry."
+        (
+            "Switching episode",
+            "Reusing the current player window and handing the next episode over cleanly.".to_string(),
+            1,
+        )
+    } else if status.contains("Stopping previous stream") {
+        (
+            "Cleaning the previous stream",
+            "Stopping the old torrent session before the next episode takes over.".to_string(),
+            1,
+        )
+    } else if status.contains("Stopping stream") {
+        (
+            "Closing the playback session",
+            "Cleaning temporary files and releasing the local stream session.".to_string(),
+            4,
+        )
+    } else if status.contains("Retrying") {
+        (
+            "Retrying the player handoff",
+            "Reopening the selected stream after a player handoff retry.".to_string(),
+            3,
+        )
     } else {
-        "StreamNyaa keeps the selected source active while the local player prepares playback."
-    };
+        (
+            "Preparing local playback",
+            "StreamNyaa keeps the selected source active while the local player prepares playback.".to_string(),
+            1,
+        )
+    }
+}
 
+fn player_overlay_message(status: &str) -> String {
+    let (headline, detail, stage_number) = player_overlay_copy(status);
+    let stage = loading_stage_markup(stage_number, headline);
     format!(
-        "{{\\an7\\fs15\\b1}}STREAMNYAA\\N{{\\fs28\\b1}}{}\\N{{\\fs17\\b0}}{}",
-        ass_escape(status),
-        ass_escape(detail)
+        "{{\\an7\\fs14\\bord2.4\\shad0\\b1}}STREAMNYAA LOCAL PLAYER\\N{{\\fs28\\b1}}{}\\N{{\\fs17\\b0}}{}\\N{}",
+        ass_escape(headline),
+        ass_escape(&detail),
+        stage
     )
 }
 
@@ -1882,7 +2133,23 @@ fn add_player_subtitle(ipc: &str, url: &str) {
     let _ = send_mpv(ipc, &command);
 }
 
-fn load_player_target(ipc: &str, title: &str, target: &ResolvedStreamTarget) -> bool {
+fn seek_player_resume(ipc: &str, resume_seconds: f64) {
+    if !resume_seconds.is_finite() || resume_seconds < 5.0 {
+        return;
+    }
+    let command = format!(
+        r#"{{"command":["seek",{},"absolute+exact"],"request_id":34}}"#,
+        resume_seconds.max(0.0)
+    );
+    let _ = send_mpv(ipc, &command);
+}
+
+fn load_player_target(
+    ipc: &str,
+    title: &str,
+    target: &ResolvedStreamTarget,
+    resume_seconds: Option<f64>,
+) -> bool {
     if !load_player_file(ipc, &target.media_url) {
         return false;
     }
@@ -1893,6 +2160,10 @@ fn load_player_target(ipc: &str, title: &str, target: &ResolvedStreamTarget) -> 
             add_player_subtitle(ipc, subtitle);
         }
     }
+    if let Some(resume_seconds) = resume_seconds {
+        thread::sleep(Duration::from_millis(280));
+        seek_player_resume(ipc, resume_seconds);
+    }
     true
 }
 
@@ -1900,7 +2171,7 @@ fn stop_player_stream_only(ipc: &str) {
     let _ = send_mpv(ipc, r#"{"command":["stop"],"request_id":33}"#);
 }
 
-fn launch_or_reuse_player(player_path: &str, cache_dir: &Path, title: &str) -> Result<String, String> {
+fn launch_or_reuse_player(player_path: &str, cache_dir: &Path, request: &PlaybackRequest, title: &str) -> Result<String, String> {
     let stale_player = {
         let mut guard = manager()
             .lock()
@@ -1925,7 +2196,7 @@ fn launch_or_reuse_player(player_path: &str, cache_dir: &Path, title: &str) -> R
     }
 
     let ipc = mpv_ipc_path();
-    let loading = loading_svg(cache_dir, title)?;
+    let loading = loading_svg(cache_dir, request, title)?;
     let child = prepared_command(player_path)
         .arg("--no-config")
         .arg("--force-window=yes")
@@ -1933,6 +2204,10 @@ fn launch_or_reuse_player(player_path: &str, cache_dir: &Path, title: &str) -> R
         .arg("--keep-open=yes")
         .arg("--osc=yes")
         .arg("--osd-bar=yes")
+        .arg("--osd-level=1")
+        .arg("--cursor-autohide=700")
+        .arg("--input-default-bindings=yes")
+        .arg("--background-color=#050508")
         .arg("--hwdec=auto-safe")
         .arg("--cache=yes")
         .arg("--cache-on-disk=no")
@@ -1943,6 +2218,24 @@ fn launch_or_reuse_player(player_path: &str, cache_dir: &Path, title: &str) -> R
         .arg("--demuxer-readahead-secs=45")
         .arg("--save-position-on-quit=no")
         .arg("--sub-auto=fuzzy")
+        .arg("--sub-ass-override=no")
+        .arg("--sub-scale=0.92")
+        .arg("--sub-pos=90")
+        .arg("--sub-scale-by-window=yes")
+        .arg("--sub-use-margins=yes")
+        .arg("--osd-font=Segoe UI Semibold")
+        .arg("--osd-font-size=24")
+        .arg("--osd-color=#FFFFFFFF")
+        .arg("--osd-border-color=#09090D")
+        .arg("--osd-border-size=2.2")
+        .arg("--osd-shadow-offset=0")
+        .arg("--sub-font=Segoe UI Semibold")
+        .arg("--sub-font-size=42")
+        .arg("--sub-color=#FFF8F7")
+        .arg("--sub-border-color=#06070A")
+        .arg("--sub-border-size=2.5")
+        .arg("--sub-shadow-offset=0")
+        .arg("--sub-back-color=#00000022")
         .arg(format!("--input-ipc-server={}", ipc))
         .arg(format!("--title=StreamNyaa - {}", title))
         .arg(loading)
@@ -1961,7 +2254,7 @@ fn launch_or_reuse_player(player_path: &str, cache_dir: &Path, title: &str) -> R
     }
 
     if player_ipc_ready(&ipc, 35, 100) {
-        show_player_text(&ipc, "Fetching torrent metadata...");
+        show_player_text(&ipc, "Preparing torrent session...");
         return Ok(ipc);
     }
 
@@ -1972,13 +2265,14 @@ fn launch_or_reuse_player(player_path: &str, cache_dir: &Path, title: &str) -> R
 fn relaunch_player_and_load_target(
     player_path: &str,
     cache_dir: &Path,
+    request: &PlaybackRequest,
     title: &str,
     target: &ResolvedStreamTarget,
 ) -> Result<String, String> {
     close_player_if_needed();
-    let ipc = launch_or_reuse_player(player_path, cache_dir, title)?;
-    show_player_text(&ipc, "Retrying playback...");
-    if !load_player_target(&ipc, title, target) {
+    let ipc = launch_or_reuse_player(player_path, cache_dir, request, title)?;
+    show_player_text(&ipc, "Retrying the player handoff...");
+    if !load_player_target(&ipc, title, target, request.resume_seconds) {
         close_player_if_needed();
         return Err("The native player could not load the stream after retrying.".to_string());
     }
@@ -2238,7 +2532,7 @@ fn wait_for_stream_with_session_guard(
                     if downloaded_bytes >= MIN_INITIAL_PLAYBACK_BUFFER_BYTES || saw_peer {
                         show_player_text(ipc, "Starting playback...");
                     } else {
-                        show_player_text(ipc, "Opening player while the stream connects...");
+                        show_player_text(ipc, "Opening the player while the first buffer fills...");
                     }
                 }
                 return Ok(target);
@@ -2246,23 +2540,23 @@ fn wait_for_stream_with_session_guard(
         }
 
         let status_text = if selected_target.is_none() && peers == 0 {
-            "Fetching torrent metadata and looking for peers...".to_string()
+            "Preparing torrent session. Reading metadata and waiting for the first peers...".to_string()
         } else if selected_target.is_none() {
             format!(
-                "Metadata ready. Looking for the episode file... {} MB cached from {} peer{}",
+                "Torrent ready. Matching the correct episode file... {} MB cached from {} peer{}",
                 downloaded_bytes / 1024 / 1024,
                 peers,
                 if peers == 1 { "" } else { "s" }
             )
         } else if peers > 0 {
             format!(
-                "Buffering stream... {} MB cached from {} peer{}",
+                "Buffering the episode... {} MB cached from {} peer{}",
                 downloaded_bytes / 1024 / 1024,
                 peers,
                 if peers == 1 { "" } else { "s" }
             )
         } else {
-            format!("Preparing playback... {} MB cached", downloaded_bytes / 1024 / 1024)
+            format!("Preparing the player handoff... {} MB cached", downloaded_bytes / 1024 / 1024)
         };
         if let Some(ipc) = player_ipc {
             show_player_text(ipc, &status_text);
@@ -2505,7 +2799,7 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             .ok_or_else(|| "Torrent engine path is missing.".to_string())?;
         start_rqbit(engine_path, &engine_dir)?;
         if let Some(ipc) = existing_player_ipc.as_deref() {
-            show_player_text(ipc, "Fetching metadata and peers...");
+            show_player_text(ipc, "Preparing torrent session...");
         }
 
         let add_path = format!(
@@ -2557,8 +2851,8 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             });
         }
 
-        let player_ipc = launch_or_reuse_player(player_path, &cache_dir, &title)?;
-        show_player_text(&player_ipc, "Fetching metadata and peers...");
+        let player_ipc = launch_or_reuse_player(player_path, &cache_dir, &request, &title)?;
+        show_player_text(&player_ipc, "Preparing torrent session...");
         let target = wait_for_stream_with_session_guard(
             &torrent_id,
             &request,
@@ -2576,9 +2870,9 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             }
         }
 
-        show_player_text(&player_ipc, "Opening stream...");
-        if !load_player_target(&player_ipc, &title, &target) {
-            let _ = relaunch_player_and_load_target(player_path, &cache_dir, &title, &target)?;
+        show_player_text(&player_ipc, "Opening the stream in the current player...");
+        if !load_player_target(&player_ipc, &title, &target, request.resume_seconds) {
+            let _ = relaunch_player_and_load_target(player_path, &cache_dir, &request, &title, &target)?;
         }
 
         log_info(format!("Playback handed off to player for torrent {}", torrent_id));
@@ -2625,28 +2919,30 @@ async fn get_local_playback_progress(
             return Err("Torrent id is missing.".to_string());
         }
         let playlist_url = format!("{}/torrents/{}/playlist", RQBIT_URL, percent_encode(&torrent_id));
-        let media_url = manager()
+        let (media_url, player_ipc, still_active) = manager()
             .lock()
             .ok()
-            .and_then(|guard| {
-                guard
+            .map(|guard| {
+                if let Some(active) = guard
                     .active
                     .as_ref()
                     .filter(|active| active.torrent_id == torrent_id)
-                    .map(|active| active.media_url.clone())
+                {
+                    (
+                        Some(active.media_url.clone()).filter(|value| !value.trim().is_empty()),
+                        guard.player_ipc.clone(),
+                        true,
+                    )
+                } else {
+                    (None, guard.player_ipc.clone(), false)
+                }
             })
-            .filter(|value| !value.trim().is_empty());
+            .unwrap_or((None, None, false));
         let payload = match rqbit_get(&format!("/torrents/{}/stats/v1", percent_encode(&torrent_id)))
             .or_else(|_| rqbit_get(&format!("/torrents/{}", percent_encode(&torrent_id))))
         {
             Ok(payload) => payload,
             Err(error) => {
-                let still_active = manager()
-                    .lock()
-                    .ok()
-                    .and_then(|guard| guard.active.clone())
-                    .map(|active| active.torrent_id == torrent_id)
-                    .unwrap_or(false);
                 if !still_active {
                     return Ok(LocalPlaybackProgress {
                         ok: false,
@@ -2654,6 +2950,8 @@ async fn get_local_playback_progress(
                         state: "stopped".to_string(),
                         message: "The local playback session ended and its temporary files were cleaned.".to_string(),
                         progress: Some(100.0),
+                        current_seconds: None,
+                        duration_seconds: None,
                         downloaded_bytes: None,
                         total_bytes: None,
                         peers: None,
@@ -2677,6 +2975,12 @@ async fn get_local_playback_progress(
         });
         let peers = find_number(&json, &["peers", "num_peers", "live_peers", "peer_count"]).map(|value| value as u64);
         let download_speed = find_number(&json, &["download_speed", "download_rate", "down_rate"]);
+        let current_seconds = player_ipc
+            .as_deref()
+            .and_then(|ipc| get_player_property_f64(ipc, "time-pos"));
+        let duration_seconds = player_ipc
+            .as_deref()
+            .and_then(|ipc| get_player_property_f64(ipc, "duration"));
         let state = if progress.unwrap_or(0.0) > 2.0 {
             "ready"
         } else if downloaded_bytes.unwrap_or(0) >= MIN_INITIAL_PLAYBACK_BUFFER_BYTES {
@@ -2691,12 +2995,14 @@ async fn get_local_playback_progress(
             torrent_id,
             state: state.to_string(),
             message: match state {
-                "ready" => "The stream has enough buffer for playback.".to_string(),
-                "buffering" => "Buffering pieces for playback.".to_string(),
-                "connecting" => "Connected to peers and fetching metadata.".to_string(),
-                _ => "Fetching torrent metadata.".to_string(),
+                "ready" => "Playback is active. The selected episode has enough buffer to keep going.".to_string(),
+                "buffering" => "The player is open. StreamNyaa is still filling the playback buffer.".to_string(),
+                "connecting" => "Peers are responding. StreamNyaa is building the first playback buffer.".to_string(),
+                _ => "Reading torrent metadata and waiting for the first peers.".to_string(),
             },
             progress,
+            current_seconds,
+            duration_seconds,
             downloaded_bytes,
             total_bytes,
             peers,
@@ -2988,6 +3294,9 @@ mod tests {
             anime_title: "Anime".to_string(),
             episode: "1".to_string(),
             size: None,
+            poster: None,
+            banner: None,
+            resume_seconds: None,
             settings: None,
         };
 
@@ -3006,6 +3315,9 @@ mod tests {
             anime_title: "Anime".to_string(),
             episode: "1".to_string(),
             size: None,
+            poster: None,
+            banner: None,
+            resume_seconds: None,
             settings: None,
         };
 
@@ -3023,6 +3335,9 @@ mod tests {
             anime_title: "Anime".to_string(),
             episode: "7".to_string(),
             size: None,
+            poster: None,
+            banner: None,
+            resume_seconds: None,
             settings: None,
         };
 
@@ -3041,6 +3356,9 @@ mod tests {
             anime_title: "Anime".to_string(),
             episode: "7".to_string(),
             size: None,
+            poster: None,
+            banner: None,
+            resume_seconds: None,
             settings: None,
         };
 

@@ -5,12 +5,16 @@ import {
   buildDesktopDiagnosticsReport,
   clearDesktopPlaybackCache,
   copyDesktopDiagnosticsReport,
+  DEFAULT_DESKTOP_AUDIO_PREFERENCE,
   getDesktopDiagnostics,
   getDesktopRuntimeStatus,
   loadCachedDesktopRuntimeStatus,
+  loadDesktopAudioPreference,
   loadDesktopPlaybackSettings,
+  saveDesktopAudioPreference,
   saveDesktopPlaybackSettings,
   stopDesktopPlayback,
+  type DesktopAudioPreference,
   type DesktopDiagnosticsStatus,
   type DesktopPlaybackSettings,
   type DesktopRuntimeStatus,
@@ -30,6 +34,7 @@ function formatBytes(bytes?: number | null) {
 
 export default function DesktopSettings() {
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
+  const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(() => loadCachedDesktopRuntimeStatus());
   const [diagnostics, setDiagnostics] = useState<DesktopDiagnosticsStatus | null>(null);
   const [message, setMessage] = useState<{ tone: 'neutral' | 'success' | 'error'; text: string } | null>(null);
@@ -56,6 +61,12 @@ export default function DesktopSettings() {
     const next = { ...settings, [key]: value };
     setSettings(next);
     saveDesktopPlaybackSettings(next);
+  };
+
+  const updateAudioPreference = (nextPreference: DesktopAudioPreference) => {
+    setAudioPreference(nextPreference);
+    saveDesktopAudioPreference(nextPreference);
+    setMessage({ tone: 'success', text: 'Audio preference saved for new watch sessions.' });
   };
 
   const clearStorage = async () => {
@@ -153,6 +164,40 @@ export default function DesktopSettings() {
                 <span className="mt-1 block text-sm font-black text-white">{value}</span>
               </div>
             ))}
+          </div>
+
+          <div className="mt-6 rounded-[1.4rem] border border-white/10 bg-black/25 p-4">
+            <p className="text-[11px] font-black uppercase tracking-wider text-white/34">Pinned audio preference</p>
+            <p className="mt-2 text-sm leading-6 text-white/54">
+              New watch sessions start with this audio preference unless a specific watch link overrides it.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              {([
+                ['sub-preferred', 'Sub preferred'],
+                ['dual-preferred', 'Dual Audio preferred'],
+                ['dub-only', 'Dub only'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => updateAudioPreference(value)}
+                  className={`rounded-2xl border px-4 py-3 text-sm font-black transition-colors ${
+                    audioPreference === value
+                      ? 'border-primary/60 bg-primary text-white'
+                      : 'border-white/10 bg-black/35 text-white/70 hover:border-primary/40 hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => updateAudioPreference(DEFAULT_DESKTOP_AUDIO_PREFERENCE)}
+                className="rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm font-black text-white/52 transition-colors hover:border-primary/40 hover:text-white"
+              >
+                Reset
+              </button>
+            </div>
           </div>
 
           <div className="mt-6 rounded-[1.4rem] border border-primary/25 bg-primary/10 p-4">

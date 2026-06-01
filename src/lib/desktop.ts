@@ -1,3 +1,5 @@
+import { animeIdentity, animeTitleKey } from './animeIdentity';
+
 export type LocalPlaybackSource = {
   magnet: string;
   torrentUrl?: string;
@@ -14,6 +16,8 @@ export type LocalPlaybackSource = {
   savedAt?: number;
   progressPercent?: number;
   progressUpdatedAt?: number;
+  resumeSeconds?: number;
+  durationSeconds?: number;
 };
 
 export type DesktopRuntimeStatus = {
@@ -44,6 +48,8 @@ export type DesktopPlaybackProgress = {
   state: string;
   message: string;
   progress?: number | null;
+  current_seconds?: number | null;
+  duration_seconds?: number | null;
   downloaded_bytes?: number | null;
   total_bytes?: number | null;
   peers?: number | null;
@@ -101,17 +107,44 @@ export type DesktopPlaybackSettings = {
   cache_dir: string;
 };
 
+export type DesktopAudioPreference = 'sub-preferred' | 'dual-preferred' | 'dub-only';
+
 const LOCAL_PLAYBACK_KEY = 'streamnyaa.localPlayback';
 const LOCAL_PLAYBACK_HISTORY_KEY = 'streamnyaa.localPlaybackHistory';
 const DESKTOP_SETTINGS_KEY = 'streamnyaa.desktopSettings';
 const DESKTOP_RUNTIME_STATUS_KEY = 'streamnyaa.desktopRuntimeStatus';
+const DESKTOP_AUDIO_PREFERENCE_KEY = 'streamnyaa.desktopAudioPreference';
+const DESKTOP_AUDIO_PREFERENCE_EVENT = 'streamnyaa:desktop-audio-preference';
+const LOCAL_PLAYBACK_HISTORY_EVENT = 'streamnyaa:local-playback-history';
 const LOCAL_PLAYBACK_HISTORY_LIMIT = 18;
+const COMPLETION_PERCENT_THRESHOLD = 92;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
   torrent_engine_path: '',
   player_path: '',
   cache_dir: '',
 };
+
+export const DEFAULT_DESKTOP_AUDIO_PREFERENCE: DesktopAudioPreference = 'sub-preferred';
+
+function emitDesktopEvent(eventName: string) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(eventName));
+}
+
+export function subscribeDesktopAudioPreference(listener: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const wrapped = () => listener();
+  window.addEventListener(DESKTOP_AUDIO_PREFERENCE_EVENT, wrapped);
+  return () => window.removeEventListener(DESKTOP_AUDIO_PREFERENCE_EVENT, wrapped);
+}
+
+export function subscribeLocalPlaybackHistory(listener: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const wrapped = () => listener();
+  window.addEventListener(LOCAL_PLAYBACK_HISTORY_EVENT, wrapped);
+  return () => window.removeEventListener(LOCAL_PLAYBACK_HISTORY_EVENT, wrapped);
+}
 
 type TauriGlobal = {
   core?: {
@@ -147,6 +180,53 @@ export function saveLocalPlaybackSource(source: LocalPlaybackSource) {
   }
 }
 
+function playbackHistoryKey(source: Partial<LocalPlaybackSource>) {
+  const animeKey = String(source.animeId || source.animeTitle || source.title || '').trim().toLowerCase();
+  const episodeKey = String(source.episode || '').trim();
+  return `${animeKey}::${episodeKey}`;
+}
+
+function normalizedEpisodeNumber(value: unknown) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
+}
+
+function playbackProgressPercent(source: Partial<LocalPlaybackSource>) {
+  const explicitPercent = Number(source.progressPercent || 0);
+  if (Number.isFinite(explicitPercent) && explicitPercent > 0) {
+    return Math.max(0, Math.min(100, explicitPercent));
+  }
+  const duration = Number(source.durationSeconds || 0);
+  const resume = Number(source.resumeSeconds || 0);
+  if (duration > 0 && resume > 0) {
+    return Math.max(0, Math.min(100, (resume / duration) * 100));
+  }
+  return 0;
+}
+
+function isPlaybackEntryComplete(source: Partial<LocalPlaybackSource>) {
+  const percent = playbackProgressPercent(source);
+  const duration = Number(source.durationSeconds || 0);
+  const resume = Number(source.resumeSeconds || 0);
+  const remainingSeconds = duration > 0 ? Math.max(0, duration - resume) : Number.POSITIVE_INFINITY;
+  return percent >= COMPLETION_PERCENT_THRESHOLD || (duration > 0 && remainingSeconds <= 90);
+}
+
+function playbackHistoryMatchesAnime(source: Partial<LocalPlaybackSource>, anime: any) {
+  const sourceAnimeId = String(source.animeId || '').trim();
+  const sourceAnimeTitle = animeTitleKey(source.animeTitle || source.title || '');
+  const targetAnimeId = animeIdentity(anime);
+  const targetAnimeTitle = animeTitleKey(anime?.title || anime?.title_english || anime?.title_romaji || '');
+  if (sourceAnimeId && targetAnimeId && sourceAnimeId === targetAnimeId) return true;
+  if (sourceAnimeTitle && targetAnimeTitle && sourceAnimeTitle === targetAnimeTitle) return true;
+  return false;
+}
+
+export function findLocalPlaybackHistoryItem(source: Partial<LocalPlaybackSource>) {
+  const key = playbackHistoryKey(source);
+  return loadLocalPlaybackHistory().find((item) => playbackHistoryKey(item) === key) || null;
+}
+
 export function loadLocalPlaybackHistory(): LocalPlaybackSource[] {
   try {
     const raw = localStorage.getItem(LOCAL_PLAYBACK_HISTORY_KEY);
@@ -155,7 +235,7 @@ export function loadLocalPlaybackHistory(): LocalPlaybackSource[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((item): item is LocalPlaybackSource => Boolean(item?.magnet && item?.title))
-      .filter((item) => Number(item.progressPercent || 0) > 0)
+      .filter((item) => Number(item.progressPercent || 0) > 0 || Number(item.resumeSeconds || 0) > 0)
       .slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
   } catch {
     return [];
@@ -165,26 +245,143 @@ export function loadLocalPlaybackHistory(): LocalPlaybackSource[] {
 export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
   try {
     const normalized = { ...source, savedAt: source.savedAt || Date.now() };
+    const key = playbackHistoryKey(normalized);
     const next = [
       normalized,
-      ...loadLocalPlaybackHistory().filter((item) => item.magnet !== normalized.magnet),
+      ...loadLocalPlaybackHistory().filter((item) => playbackHistoryKey(item) !== key),
     ].slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
     localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
+    emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
   } catch {
     // Playback history is a convenience feature. Failing to persist it should not block playback.
   }
 }
 
 export async function openLocalSourceNow(source: LocalPlaybackSource, settings = loadDesktopPlaybackSettings()) {
-  const result = await startLocalPlaybackWithSettings(source, settings);
+  const existing = findLocalPlaybackHistoryItem(source);
+  const preparedSource: LocalPlaybackSource = {
+    ...(existing || {}),
+    ...source,
+    progressPercent: source.progressPercent ?? existing?.progressPercent ?? 0,
+    resumeSeconds: source.resumeSeconds ?? existing?.resumeSeconds ?? 0,
+    durationSeconds: source.durationSeconds ?? existing?.durationSeconds ?? 0,
+  };
+  const result = await startLocalPlaybackWithSettings(preparedSource, settings);
   if (result?.ok) {
     saveLocalPlaybackSource({
-      ...source,
-      progressPercent: source.progressPercent ?? 0,
+      ...preparedSource,
+      progressPercent: preparedSource.progressPercent ?? 0,
       progressUpdatedAt: Date.now(),
+      resumeSeconds: preparedSource.resumeSeconds ?? 0,
+      durationSeconds: preparedSource.durationSeconds ?? 0,
     });
   }
   return result;
+}
+
+export function updateLocalPlaybackHistoryProgress(
+  source: Partial<LocalPlaybackSource>,
+  progress: {
+    currentSeconds?: number | null;
+    durationSeconds?: number | null;
+    progressPercent?: number | null;
+  },
+) {
+  const existing = findLocalPlaybackHistoryItem(source);
+  if (!existing) return;
+
+  const currentSeconds = Math.max(0, Number(progress.currentSeconds || 0));
+  const durationSeconds = Math.max(0, Number(progress.durationSeconds || existing.durationSeconds || 0));
+  const percent = Number.isFinite(Number(progress.progressPercent))
+    ? Math.max(0, Math.min(100, Number(progress.progressPercent || 0)))
+    : durationSeconds > 0
+      ? Math.max(0, Math.min(100, (currentSeconds / durationSeconds) * 100))
+      : Number(existing.progressPercent || 0);
+
+  const priorSeconds = Math.max(0, Number(existing.resumeSeconds || 0));
+  const priorPercent = Math.max(0, Number(existing.progressPercent || 0));
+  if (Math.abs(currentSeconds - priorSeconds) < 5 && Math.abs(percent - priorPercent) < 1) {
+    return;
+  }
+
+  saveLocalPlaybackHistoryItem({
+    ...existing,
+    ...source,
+    progressPercent: percent,
+    progressUpdatedAt: Date.now(),
+    resumeSeconds: currentSeconds,
+    durationSeconds,
+  });
+}
+
+export function formatPlaybackTime(seconds?: number | null) {
+  const total = Math.max(0, Math.floor(Number(seconds || 0)));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+export function loadDesktopAudioPreference(): DesktopAudioPreference {
+  try {
+    const value = String(localStorage.getItem(DESKTOP_AUDIO_PREFERENCE_KEY) || '').trim();
+    if (value === 'sub-preferred' || value === 'dual-preferred' || value === 'dub-only') {
+      return value;
+    }
+  } catch {
+    // Preference falls back to the default desktop behavior.
+  }
+  return DEFAULT_DESKTOP_AUDIO_PREFERENCE;
+}
+
+export function saveDesktopAudioPreference(preference: DesktopAudioPreference) {
+  localStorage.setItem(DESKTOP_AUDIO_PREFERENCE_KEY, preference);
+  emitDesktopEvent(DESKTOP_AUDIO_PREFERENCE_EVENT);
+}
+
+export function watchTypeForAudioPreference(preference: DesktopAudioPreference) {
+  return preference === 'sub-preferred' ? 'sub' : 'dub';
+}
+
+export function playbackHistoryForAnime(anime: any, history = loadLocalPlaybackHistory()) {
+  return history
+    .filter((item) => playbackHistoryMatchesAnime(item, anime))
+    .sort((left, right) => {
+      const episodeDelta = normalizedEpisodeNumber(right.episode) - normalizedEpisodeNumber(left.episode);
+      if (episodeDelta !== 0) return episodeDelta;
+      return Number(right.progressUpdatedAt || right.savedAt || 0) - Number(left.progressUpdatedAt || left.savedAt || 0);
+    });
+}
+
+export function latestUnwatchedEpisodeForAnime(
+  anime: any,
+  history = loadLocalPlaybackHistory(),
+  fallbackEpisode = 1,
+  maxEpisode?: number | null,
+) {
+  const animeHistory = playbackHistoryForAnime(anime, history)
+    .filter((item) => normalizedEpisodeNumber(item.episode) > 0);
+  if (!animeHistory.length) return Math.max(1, Number(fallbackEpisode || 1));
+
+  const unfinished = animeHistory.find((item) => !isPlaybackEntryComplete(item));
+  if (unfinished) {
+    return Math.max(1, normalizedEpisodeNumber(unfinished.episode) || Number(fallbackEpisode || 1));
+  }
+
+  const highestFinishedEpisode = animeHistory.reduce((current, item) => {
+    if (!isPlaybackEntryComplete(item)) return current;
+    return Math.max(current, normalizedEpisodeNumber(item.episode));
+  }, 0);
+  if (highestFinishedEpisode <= 0) return Math.max(1, Number(fallbackEpisode || 1));
+
+  const cappedMax = Number(maxEpisode || anime?.episodes || 0);
+  if (cappedMax > 0) {
+    return Math.min(cappedMax, highestFinishedEpisode + 1);
+  }
+  return highestFinishedEpisode + 1;
 }
 
 export function loadDesktopPlaybackSettings(): DesktopPlaybackSettings {
@@ -256,6 +453,9 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
       anime_title: source.animeTitle || '',
       episode: source.episode ? String(source.episode) : '',
       size: source.size || '',
+      poster: source.poster || source.image || '',
+      banner: source.banner || '',
+      resume_seconds: Number(source.resumeSeconds || 0),
       settings,
     },
   });

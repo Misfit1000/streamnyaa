@@ -1,4 +1,4 @@
-import { watchPath } from './slug';
+import { extractNumericId, watchPath } from './slug';
 
 function normalizedStatus(anime: any) {
   return String(anime?.status || '').trim().toUpperCase();
@@ -23,6 +23,27 @@ export function desktopUpcomingPath(anime?: any) {
   return `/search?${params.toString()}`;
 }
 
+export function desktopWatchPath(
+  anime: any,
+  extras?: Record<string, string | number | null | undefined>,
+) {
+  const params = new URLSearchParams();
+  const anilistId = extractNumericId(anime?.anilist_id ?? anime?.id ?? '');
+  const malId = extractNumericId(anime?.mal_id ?? '');
+
+  if (anilistId) params.set('aid', anilistId);
+  if (malId) params.set('mid', malId);
+
+  Object.entries(extras || {}).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === '') return;
+    params.set(key, String(value));
+  });
+
+  const base = watchPath(anime);
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
+}
+
 export function desktopWatchOrBrowsePath(anime: any) {
-  return isUpcomingAnime(anime) ? desktopUpcomingPath(anime) : watchPath(anime);
+  return isUpcomingAnime(anime) ? desktopUpcomingPath(anime) : desktopWatchPath(anime);
 }

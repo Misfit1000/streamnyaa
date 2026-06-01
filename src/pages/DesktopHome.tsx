@@ -4,11 +4,21 @@ import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Info, Play } from 'lucide-react';
 import Seo from '../components/Seo';
 import { fetchAnimeSeason, fetchPopularAnime, fetchRecentEpisodes, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
-import { watchPath } from '../lib/slug';
-import { loadLocalPlaybackHistory, openLocalSourceNow, type LocalPlaybackSource } from '../lib/desktop';
+import {
+  formatPlaybackTime,
+  latestUnwatchedEpisodeForAnime,
+  loadDesktopAudioPreference,
+  loadLocalPlaybackHistory,
+  openLocalSourceNow,
+  subscribeDesktopAudioPreference,
+  subscribeLocalPlaybackHistory,
+  type DesktopAudioPreference,
+  type LocalPlaybackSource,
+  watchTypeForAudioPreference,
+} from '../lib/desktop';
 import { animeIdentity, animeTitleKey } from '../lib/animeIdentity';
 import { getCurrentAnimeSeason } from '../lib/currentSeason';
-import { desktopUpcomingPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
+import { desktopUpcomingPath, desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 
 function fallbackCover(anilistId: number) {
   return `https://img.anili.st/media/${anilistId}`;
@@ -357,13 +367,29 @@ function preferredEpisodeFor(anime: any, fallback = 1) {
   return fallback;
 }
 
-function watchPathFor(anime: any, episode?: string | number) {
+function watchEpisodeFor(
+  anime: any,
+  history: LocalPlaybackSource[],
+  fallbackEpisode = 1,
+) {
+  const preferredEpisode = preferredEpisodeFor(anime, fallbackEpisode);
+  const maxEpisode = Number(anime?.latestEpisode || anime?.episodes || preferredEpisode || 1);
+  return latestUnwatchedEpisodeForAnime(anime, history, preferredEpisode, maxEpisode);
+}
+
+function watchPathFor(
+  anime: any,
+  history: LocalPlaybackSource[],
+  audioPreference: DesktopAudioPreference,
+  fallbackEpisode?: string | number,
+) {
   if (!anime) return '/nyaa?desktop=1';
   if (isUpcomingAnime(anime)) return desktopUpcomingPath(anime);
-  const params = new URLSearchParams();
-  if (episode) params.set('ep', String(episode));
-  params.set('type', 'sub');
-  return `${watchPath(anime)}?${params.toString()}`;
+  const episode = watchEpisodeFor(anime, history, Number(fallbackEpisode || 1) || 1);
+  return desktopWatchPath(anime, {
+    ep: String(episode),
+    type: watchTypeForAudioPreference(audioPreference),
+  });
 }
 
 const RailHeader = memo(function RailHeader({ title, to }: { title: string; to?: string }) {
@@ -460,6 +486,12 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
       </div>
       <p className="mt-2 line-clamp-1 text-[15px] font-medium text-white">{source.animeTitle || source.title}</p>
       <p className="mt-1 text-[13px] text-white/50">{source.episode ? `Episode ${source.episode}` : source.size || 'Recent source'}</p>
+      {source.resumeSeconds ? (
+        <p className="mt-1 text-[12px] font-medium text-white/40">
+          Resume {formatPlaybackTime(source.resumeSeconds)}
+          {source.durationSeconds ? ` / ${formatPlaybackTime(source.durationSeconds)}` : ''}
+        </p>
+      ) : null}
       {progress > 0 ? (
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10">
           <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
@@ -490,7 +522,9 @@ function buildRailItems(liveItems: any[], fallbackItems: any[], count: number, u
 }
 
 export default function DesktopHome() {
-  const recentSources = useMemo(() => uniqueRecentSources(loadLocalPlaybackHistory()).slice(0, 5), []);
+  const [history, setHistory] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
+  const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
+  const recentSources = useMemo(() => uniqueRecentSources(history).slice(0, 5), [history]);
   const [heroIndex, setHeroIndex] = useState(0);
   const [latestRef] = useNearViewport<HTMLElement>();
   const [popularRef] = useNearViewport<HTMLElement>();
@@ -499,12 +533,16 @@ export default function DesktopHome() {
     queryKey: ['desktop-seasonal', currentSeason.season, currentSeason.year],
     queryFn: () => fetchAnimeSeason(currentSeason.season, currentSeason.year),
     retry: 1,
+    staleTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: false,
     select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
   });
   const { data: trendingData } = useQuery({
     queryKey: ['desktop-trending-airing'],
     queryFn: () => searchAnime('', 1, '', '', '', '', 'airing'),
     retry: 1,
+    staleTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: false,
     placeholderData: (previous) => previous,
     select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
   });
@@ -513,6 +551,8 @@ export default function DesktopHome() {
     queryFn: fetchRecentEpisodes,
     enabled: true,
     retry: 1,
+    staleTime: 1000 * 60 * 2,
+    refetchOnWindowFocus: false,
     placeholderData: (previous) => previous,
     select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 12) }),
   });
@@ -521,6 +561,8 @@ export default function DesktopHome() {
     queryFn: fetchPopularAnime,
     enabled: true,
     retry: 1,
+    staleTime: 1000 * 60 * 15,
+    refetchOnWindowFocus: false,
     placeholderData: (previous) => previous,
     select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
   });
@@ -529,6 +571,8 @@ export default function DesktopHome() {
     queryFn: fetchTopAiring,
     enabled: true,
     retry: 1,
+    staleTime: 1000 * 60 * 10,
+    refetchOnWindowFocus: false,
     placeholderData: (previous) => previous,
     select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
   });
@@ -537,6 +581,8 @@ export default function DesktopHome() {
     queryFn: fetchUpcomingAnime,
     enabled: true,
     retry: 1,
+    staleTime: 1000 * 60 * 30,
+    refetchOnWindowFocus: false,
     placeholderData: (previous) => previous,
     select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
   });
@@ -546,6 +592,8 @@ export default function DesktopHome() {
     queryFn: () => fetchTopAnimeByYear(topYear),
     enabled: true,
     retry: 1,
+    staleTime: 1000 * 60 * 60,
+    refetchOnWindowFocus: false,
     placeholderData: (previous) => previous,
     select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
   });
@@ -565,6 +613,8 @@ export default function DesktopHome() {
     return topSeasonal;
   }, [seasonalItems]);
   const hero = heroPool[heroIndex] || heroPool[0];
+  useEffect(() => subscribeLocalPlaybackHistory(() => setHistory(loadLocalPlaybackHistory())), []);
+  useEffect(() => subscribeDesktopAudioPreference(() => setAudioPreference(loadDesktopAudioPreference())), []);
   const rails = useMemo(() => {
     const used = new Set<string>();
     return {
@@ -638,14 +688,14 @@ export default function DesktopHome() {
               <p className="mt-5 max-w-[500px] text-[15px] leading-7 text-white/72">{heroDescription(hero)}</p>
               <div className="mt-7 flex gap-3">
                 <Link
-                  to={watchPathFor(hero, preferredEpisodeFor(hero))}
+                  to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))}
                   className="inline-flex h-11 items-center gap-3 rounded-md bg-primary px-6 text-[16px] font-medium text-white shadow-xl shadow-primary/20 hover:bg-primary/90"
                 >
                   <Play className="h-4 w-4 fill-current" />
                   Watch Now
                 </Link>
                 <Link
-                  to={hero ? watchPathFor(hero, preferredEpisodeFor(hero)) : '/search'}
+                  to={hero ? watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero)) : '/search'}
                   className="inline-flex h-11 items-center gap-3 rounded-md border border-white/13 bg-white/10 px-6 text-[16px] font-medium text-white shadow-xl shadow-black/20 backdrop-blur hover:bg-white/14"
                 >
                   <Info className="h-4 w-4" />
@@ -703,7 +753,12 @@ export default function DesktopHome() {
         <RailHeader title="New Episodes" to="/schedule" />
         <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
           {latestEpisodes.map((anime: any, index: number) => (
-            <ContinueCard key={`latest-${anime.mal_id || anime.id || index}`} anime={anime} to={watchPathFor(anime, preferredEpisodeFor(anime, index + 1))} episode={preferredEpisodeFor(anime, index + 1)} />
+            <ContinueCard
+              key={`latest-${anime.mal_id || anime.id || index}`}
+              anime={anime}
+              to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime, index + 1))}
+              episode={watchEpisodeFor(anime, history, index + 1)}
+            />
           ))}
           {!latestEpisodes.length ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 rounded-lg bg-white/[0.045]" />) : null}
         </div>
@@ -713,7 +768,12 @@ export default function DesktopHome() {
         <RailHeader title="Trending Now" to="/search?sort=trending&status=airing" />
         <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
           {trending.map((anime: any, index: number) => (
-            <ContinueCard key={`trending-${anime.mal_id || anime.id || index}`} anime={anime} to={watchPathFor(anime, preferredEpisodeFor(anime))} episode={preferredEpisodeFor(anime)} />
+            <ContinueCard
+              key={`trending-${anime.mal_id || anime.id || index}`}
+              anime={anime}
+              to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
+              episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
+            />
           ))}
           {!trending.length ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 rounded-lg bg-white/[0.045]" />) : null}
         </div>
@@ -723,7 +783,12 @@ export default function DesktopHome() {
         <RailHeader title="Top Airing Anime" to="/search?sort=score&status=airing" />
         <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
           {topAiring.map((anime: any, index: number) => (
-            <ContinueCard key={`top-airing-${anime.mal_id || anime.id || index}`} anime={anime} to={watchPathFor(anime, preferredEpisodeFor(anime))} episode={preferredEpisodeFor(anime)} />
+            <ContinueCard
+              key={`top-airing-${anime.mal_id || anime.id || index}`}
+              anime={anime}
+              to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
+              episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
+            />
           ))}
         </div>
       </section>
@@ -732,7 +797,12 @@ export default function DesktopHome() {
         <RailHeader title="Seasonal Anime" to="/search?status=airing" />
         <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
           {seasonalPicks.map((anime: any, index: number) => (
-            <ContinueCard key={`seasonal-${anime.mal_id || anime.id || index}`} anime={anime} to={watchPathFor(anime, preferredEpisodeFor(anime))} episode={preferredEpisodeFor(anime)} />
+            <ContinueCard
+              key={`seasonal-${anime.mal_id || anime.id || index}`}
+              anime={anime}
+              to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
+              episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
+            />
           ))}
         </div>
       </section>
@@ -752,7 +822,12 @@ export default function DesktopHome() {
         <RailHeader title="Popular Picks" to="/search?sort=popular" />
         <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
           {popular.map((anime: any, index: number) => (
-            <ContinueCard key={`popular-${anime.mal_id || anime.id || index}`} anime={anime} to={watchPathFor(anime, preferredEpisodeFor(anime))} episode={preferredEpisodeFor(anime)} />
+            <ContinueCard
+              key={`popular-${anime.mal_id || anime.id || index}`}
+              anime={anime}
+              to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
+              episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
+            />
           ))}
           {!popular.length ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 rounded-lg bg-white/[0.045]" />) : null}
         </div>
@@ -762,7 +837,12 @@ export default function DesktopHome() {
         <RailHeader title={`Top Anime From ${topYear}`} to={`/search?sort=score`} />
         <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
           {yearlyTop.map((anime: any, index: number) => (
-            <ContinueCard key={`yearly-${anime.mal_id || anime.id || index}`} anime={anime} to={watchPathFor(anime, preferredEpisodeFor(anime))} episode={preferredEpisodeFor(anime)} />
+            <ContinueCard
+              key={`yearly-${anime.mal_id || anime.id || index}`}
+              anime={anime}
+              to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
+              episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
+            />
           ))}
         </div>
       </section>

@@ -18,6 +18,7 @@ function Assert-Match {
 $desktopBridge = Get-Content -Raw (Join-Path $repo 'src\lib\desktop.ts')
 $watchPage = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopWatch.tsx')
 $appDesktop = Get-Content -Raw (Join-Path $repo 'src\AppDesktop.tsx')
+$desktopShell = Get-Content -Raw (Join-Path $repo 'src\components\DesktopShell.tsx')
 $mainDesktop = Get-Content -Raw (Join-Path $repo 'src\main.desktop.tsx')
 $animeCard = Get-Content -Raw (Join-Path $repo 'src\components\AnimeCard.tsx')
 $jikanApi = Get-Content -Raw (Join-Path $repo 'src\api\jikan.ts')
@@ -39,30 +40,43 @@ if ($desktopBridge -match 'VITE_STREAMNYAA_APP_TARGET') {
 }
 Assert-Match $mainDesktop 'window\.__STREAMNYAA_DESKTOP__\s*=\s*true' 'Desktop entry must set the explicit desktop runtime flag.'
 Assert-Match $desktopBridge 'buildDesktopDiagnosticsReport' 'Desktop diagnostics report helper is missing.'
+Assert-Match $desktopBridge 'loadDesktopAudioPreference' 'Desktop audio preference loader is missing.'
+Assert-Match $desktopBridge 'latestUnwatchedEpisodeForAnime' 'Desktop latest-unwatched helper is missing.'
 Assert-Match $appDesktop 'path="watch/:id"' 'Desktop route tree should own the watch route.'
 Assert-Match $appDesktop 'path="anime/:id"\s+element=\{<AnimeToDesktopWatch\s*/>\}' 'Desktop anime routes must redirect to the desktop watch page.'
+Assert-Match $desktopShell 'SIDEBAR_STORAGE_KEY' 'Desktop shell should persist sidebar collapse state.'
+Assert-Match $desktopShell 'setSidebarCollapsed' 'Desktop shell menu button should toggle the sidebar.'
 Assert-Match $appDesktop "path=`"search`" element=\{<DesktopExplore />\}" 'Desktop Explore must use the desktop-native page.'
 Assert-Match $appDesktop "path=`"nyaa`" element=\{<DesktopSources />\}" 'Desktop Sources must use the desktop-native page.'
 Assert-Match $appDesktop "path=`"schedule`" element=\{<DesktopSchedule />\}" 'Desktop Schedule must use the desktop-native page.'
 if ($appDesktop -match "import\\('./pages/AnimeDetails'\\)") {
   throw 'Desktop app must not mount the web anime details page.'
 }
-Assert-Match $animeCard 'isUpcomingAnime\(anime\)' 'Desktop anime cards must detect upcoming anime before routing.'
-Assert-Match $animeCard 'desktopUpcomingPath\(anime\)' 'Desktop upcoming anime cards must route into the desktop explore page.'
+Assert-Match $animeCard 'desktopWatchOrBrowsePath\(anime\)' 'Desktop anime cards must use the desktop-specific watch routing helper.'
+Assert-Match $desktopHome 'desktopWatchPath\(anime' 'Desktop home should build watch links through the desktop-specific route helper.'
+Assert-Match $desktopHome 'loadDesktopAudioPreference' 'Desktop home should respect the pinned audio preference.'
+Assert-Match $desktopHome 'watchEpisodeFor' 'Desktop home should open the latest unwatched episode when possible.'
 Assert-Match $watchPage 'Available Sources' 'Desktop watch page source section is missing.'
-Assert-Match $watchPage 'Open Source' 'Desktop watch page primary open action is missing.'
+Assert-Match $watchPage '(Open Source|Play Episode)' 'Desktop watch page primary open action is missing.'
+Assert-Match $watchPage 'saveDesktopAudioPreference' 'Desktop watch page should persist audio preference changes.'
 Assert-Match $watchPage 'fallbackAnimeFromRoute' 'Desktop watch page must fall back to a route title when metadata lookup fails.'
 Assert-Match $watchPage 'SafeImage' 'Desktop watch page must render fallback-safe images.'
 Assert-Match $watchPage 'episodeNumberFromTitle' 'Desktop watch page should avoid mismatching episode thumbnails and titles.'
 Assert-Match $watchPage 'selectedEpisode - Math\.floor\(maxVisible / 2\)' 'Desktop watch page should keep the selected long-running episode in the visible strip.'
 Assert-Match $watchPage 'sourceSearchTitleVariants' 'Desktop watch page should widen source title matching for alternate season naming.'
+Assert-Match $watchPage 'sourceMatchesInstallment' 'Desktop watch page should filter torrent sources by the selected installment.'
+Assert-Match $watchPage 'CORE_SEASON_RELATIONS' 'Desktop watch page should restrict season traversal to core sequel relations.'
+Assert-Match $watchPage 'isAncillarySource' 'Desktop watch page should reject OP/ED and other ancillary torrent files.'
 Assert-Match $watchPage 'selectedEpisode > 0 && !episodeMatches\.length' 'Desktop watch page should reject wrong-episode torrent sources.'
+Assert-Match $watchPage 'desktopWatchPath\(' 'Desktop watch page season switches should preserve the resolved desktop route identity.'
 if ($watchPage -match 'Anime not found') {
   throw 'Desktop watch page must not dead-end on "Anime not found".'
 }
 if ($jikanApi -match '(?m)^\s*rank\s*$') {
   throw 'AniList queries must not request unsupported rank fields.'
 }
+Assert-Match $jikanApi 'animeDetailsCandidateScore' 'Desktop metadata resolution should score AniList detail candidates instead of trusting one fallback path.'
+Assert-Match $jikanApi 'preferredAniListId' 'Desktop metadata resolution should preserve explicit AniList ids through watch-page routes.'
 if ($desktopHome -match 'bx145064-YspYpO4wXHNP') {
   throw 'Desktop fallback data still contains the broken Jujutsu Kaisen image URL.'
 }
@@ -73,6 +87,7 @@ Assert-Match $desktopHome 'fetchAnimeSeason' 'Desktop home should load the curre
 Assert-Match $desktopHome 'searchAnime\(' 'Desktop home should use a dedicated trending feed instead of reusing seasonal rows.'
 Assert-Match $desktopExplore 'fetchAnimeSeason' 'Desktop Explore should load the current anime season.'
 Assert-Match $desktopSources 'Batch sources hidden' 'Desktop Sources should hide batch files.'
+Assert-Match $desktopSources 'loadDesktopAudioPreference' 'Desktop Sources should start from the pinned audio preference.'
 Assert-Match $desktopSchedule 'fetchSchedule' 'Desktop Schedule should load live airing data.'
 Assert-Match $nyaaApi 'inMemorySearchCache' 'Desktop source fetch cache is missing.'
 Assert-Match $tauriMain 'fn get_desktop_diagnostics' 'Desktop diagnostics command is missing.'

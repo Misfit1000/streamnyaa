@@ -72,6 +72,84 @@ const titleHintFromRoute = (id: string) => {
   return hint || '';
 };
 
+const toPositiveInt = (value: unknown): number | null => {
+  const numeric = Number.parseInt(extractNumericId(String(value ?? '')), 10);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+};
+
+const cleanTitleForMatch = (value: string) => value
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/&/g, ' and ')
+  .replace(/[^a-zA-Z0-9 ]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase();
+
+const seasonNumberFromRouteTitle = (value = '') => {
+  const match = value.match(/\bseason\s+(\d{1,2})\b/i)
+    || value.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+season\b/i)
+    || value.match(/\bpart\s+(\d{1,2})\b/i)
+    || value.match(/\bcour\s+(\d{1,2})\b/i);
+  const number = Number(match?.[1] || 0);
+  return number > 0 ? number : null;
+};
+
+const stripSeasonDecoratorsForMatch = (value = '') => cleanTitleForMatch(
+  value
+    .replace(/\bseason\s+\d{1,2}\b/ig, ' ')
+    .replace(/\b\d{1,2}(?:st|nd|rd|th)\s+season\b/ig, ' ')
+    .replace(/\bpart\s+\d{1,2}\b/ig, ' ')
+    .replace(/\bcour\s+\d{1,2}\b/ig, ' ')
+    .replace(/\bfinal\s+season\b/ig, ' ')
+    .replace(/\(\d{4}\)/g, ' ')
+);
+
+const preferredFormatFromRouteTitle = (value = '') => {
+  if (/\bova\b/i.test(value)) return 'OVA';
+  if (/\bona\b/i.test(value)) return 'ONA';
+  if (/\bspecial\b/i.test(value)) return 'SPECIAL';
+  if (/\b(movie|film)\b/i.test(value)) return 'MOVIE';
+  return 'TV';
+};
+
+const titleMatchScore = (routeTitle: string, media: any) => {
+  const normalizedRoute = cleanTitleForMatch(routeTitle);
+  const strippedRoute = stripSeasonDecoratorsForMatch(routeTitle);
+  const routeTokens = strippedRoute.split(' ').filter((token) => token.length > 2);
+  const routeSeason = seasonNumberFromRouteTitle(routeTitle);
+  const preferredFormat = preferredFormatFromRouteTitle(routeTitle);
+  const titles = [
+    media?.title?.english,
+    media?.title?.romaji,
+    media?.title?.native,
+  ].filter(Boolean).map((title) => String(title));
+
+  let score = 0;
+  for (const title of titles) {
+    const normalizedTitle = cleanTitleForMatch(title);
+    const strippedTitle = stripSeasonDecoratorsForMatch(title);
+    if (normalizedTitle === normalizedRoute) score += 120;
+    if (strippedTitle === strippedRoute) score += 90;
+    if (normalizedTitle.includes(normalizedRoute) || normalizedRoute.includes(normalizedTitle)) score += 40;
+    if (strippedTitle.includes(strippedRoute) || strippedRoute.includes(strippedTitle)) score += 28;
+
+    if (routeTokens.length) {
+      const hits = routeTokens.filter((token) => strippedTitle.includes(token)).length;
+      score += Math.round((hits / routeTokens.length) * 36);
+    }
+
+    const titleSeason = seasonNumberFromRouteTitle(title);
+    if (routeSeason && titleSeason === routeSeason) score += 30;
+  }
+
+  if ((media?.format || '').toUpperCase() === preferredFormat) score += 20;
+  if (preferredFormat === 'TV' && (media?.format || '').toUpperCase() === 'TV_SHORT') score += 12;
+  if (media?.idMal) score += 6;
+  if (media?.popularity) score += Math.min(12, Math.round(Number(media.popularity) / 50000));
+  return score;
+};
+
 const readLocalMetadata = (key: string, allowStale = false) => {
   const now = Date.now();
   const memoryEntry = memoryMetadataCache.get(key);
@@ -250,8 +328,12 @@ const mapAnilistToJikan = (m: any) => ({
     relation: edge.relationType,
     entry: [
       {
+        id: edge.node.id,
+        anilist_id: edge.node.id,
         mal_id: edge.node.idMal || edge.node.id,
         type: edge.node.type,
+        format: edge.node.format,
+        year: edge.node.seasonYear,
         name: edge.node.title?.english || edge.node.title?.romaji || edge.node.title?.native,
         images: {
           jpg: {
@@ -266,6 +348,8 @@ const mapAnilistToJikan = (m: any) => ({
     const r = node.mediaRecommendation;
     if (!r) return null;
     return {
+      id: r.id,
+      anilist_id: r.id,
       mal_id: r.idMal || r.id,
       type: r.type,
       title: r.title?.english || r.title?.romaji || r.title?.native,
@@ -284,6 +368,7 @@ const mapAnilistToJikan = (m: any) => ({
 const mapJikanDetailToAnime = (item: any) => ({
   id: item.mal_id,
   mal_id: item.mal_id,
+  anilist_id: null,
   title: item.title_english || item.title || item.title_japanese,
   title_romaji: item.title,
   title_english: item.title_english,
@@ -496,161 +581,197 @@ export const fetchSeasonalAnime = async () => {
   return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.mal_id === anime.mal_id)) };
 };
 
-export const fetchAnimeDetails = async (id: string) => {
-  const query = `
-    query($id: Int) {
-      Media(idMal: $id, type: ANIME) {
+type AnimeDetailsLookupOptions = {
+  anilistId?: string | number | null;
+  malId?: string | number | null;
+  routeTitle?: string | null;
+};
+
+const ANIME_DETAIL_SELECTION = `
+  id
+  idMal
+  title { romaji english native }
+  description
+  episodes
+  status
+  format
+  seasonYear
+  coverImage { extraLarge large color } bannerImage
+  genres
+  averageScore
+  trailer { id site thumbnail }
+  studios { nodes { name } }
+  isAdult
+  nextAiringEpisode { episode airingAt }
+  streamingEpisodes {
+    title
+    thumbnail
+    url
+    site
+  }
+  relations {
+    edges {
+      relationType
+      node {
         id
         idMal
-        title { romaji english native }
-        description
-        episodes
-        status
+        type
         format
         seasonYear
-        coverImage { extraLarge large color } bannerImage
-        genres
-        averageScore
-        trailer { id site thumbnail }
-        studios { nodes { name } }
-        isAdult
-        nextAiringEpisode { episode airingAt }
-        streamingEpisodes {
-          title
-          thumbnail
-          url
-          site
-        }
-        relations {
-          edges {
-            relationType
-            node {
-              id
-              idMal
-              type
-              title { romaji english native }
-              coverImage { extraLarge large color }
-              bannerImage
-            }
-          }
-        }
-        recommendations(sort: RATING_DESC) {
-          nodes {
-            mediaRecommendation {
-              id
-              idMal
-              type
-              title { romaji english native }
-              coverImage { extraLarge large color }
-              bannerImage
-            }
-          }
-        }
-      }
-    }
-  `;
-  const numericId = parseInt(extractNumericId(id), 10);
-  let res = await fetchAniList({ query, variables: { id: numericId } }, 21600);
-  
-  let data = await res.json();
-  
-  if (data.errors || !data?.data?.Media) {
-    const fallbackQuery = query.replace('idMal: $id', 'id: $id');
-    res = await fetchAniList({ query: fallbackQuery, variables: { id: numericId } }, 21600);
-    data = await res.json();
-  }
-
-  if (data.errors || !data?.data?.Media) {
-    const titleHint = titleHintFromRoute(id);
-    if (titleHint) {
-      const searchQuery = `
-        query($search: String) {
-          Page(page: 1, perPage: 5) {
-            media(type: ANIME, search: $search, sort: SEARCH_MATCH) {
-              id
-              idMal
-              title { romaji english native }
-              description
-              episodes
-              status
-              format
-              seasonYear
-              coverImage { extraLarge large color } bannerImage
-              genres
-              averageScore
-              trailer { id site thumbnail }
-              studios { nodes { name } }
-              isAdult
-              nextAiringEpisode { episode airingAt }
-              streamingEpisodes {
-                title
-                thumbnail
-                url
-                site
-              }
-              relations {
-                edges {
-                  relationType
-                  node {
-                    id
-                    idMal
-                    type
-                    title { romaji english native }
-                    coverImage { extraLarge large color }
-                    bannerImage
-                  }
-                }
-              }
-              recommendations(sort: RATING_DESC) {
-                nodes {
-                  mediaRecommendation {
-                    id
-                    idMal
-                    type
-                    title { romaji english native }
-                    coverImage { extraLarge large color }
-                    bannerImage
-                  }
-                }
-              }
-            }
-          }
-        }
-      `;
-      res = await fetchAniList({ query: searchQuery, variables: { search: titleHint } }, 21600);
-      data = await res.json();
-      const fallbackMedia = data?.data?.Page?.media?.[0];
-      if (fallbackMedia) {
-        data = { data: { Media: fallbackMedia } };
+        title { romaji english native }
+        coverImage { extraLarge large color }
+        bannerImage
       }
     }
   }
-
-  if (!res.ok || data.errors || !data?.data?.Media) {
-    try {
-      const jikanRes = await fetchJikanPath(`/anime/${numericId}/full`, 21600);
-      if (jikanRes.ok) {
-        const jikanJson = await jikanRes.json();
-        if (jikanJson?.data) {
-          const mapped = mapJikanDetailToAnime(jikanJson.data);
-          if (!useStore.getState().nsfwMode && mapped.isAdult) {
-            throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
-          }
-          return { data: mapped };
-        }
+  recommendations(sort: RATING_DESC) {
+    nodes {
+      mediaRecommendation {
+        id
+        idMal
+        type
+        title { romaji english native }
+        coverImage { extraLarge large color }
+        bannerImage
       }
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('NSFW')) throw error;
+    }
+  }
+`;
+
+const ANIME_DETAIL_QUERY_BY_MAL = `
+  query($id: Int) {
+    Media(idMal: $id, type: ANIME) {
+      ${ANIME_DETAIL_SELECTION}
+    }
+  }
+`;
+
+const ANIME_DETAIL_QUERY_BY_ANILIST = `
+  query($id: Int) {
+    Media(id: $id, type: ANIME) {
+      ${ANIME_DETAIL_SELECTION}
+    }
+  }
+`;
+
+const ANIME_DETAIL_SEARCH_QUERY = `
+  query($search: String) {
+    Page(page: 1, perPage: 12) {
+      media(type: ANIME, search: $search, sort: SEARCH_MATCH) {
+        ${ANIME_DETAIL_SELECTION}
+      }
+    }
+  }
+`;
+
+const animeDetailsCandidateScore = (
+  media: any,
+  {
+    titleHint,
+    preferredMalId,
+    preferredAniListId,
+    routeNumericId,
+  }: {
+    titleHint: string;
+    preferredMalId: number | null;
+    preferredAniListId: number | null;
+    routeNumericId: number | null;
+  },
+) => {
+  let score = titleHint ? titleMatchScore(titleHint, media) : 0;
+  if (preferredMalId && Number(media?.idMal || 0) === preferredMalId) score += 420;
+  if (preferredAniListId && Number(media?.id || 0) === preferredAniListId) score += 420;
+  if (!preferredMalId && routeNumericId && Number(media?.idMal || 0) === routeNumericId) score += 48;
+  if (!preferredAniListId && routeNumericId && Number(media?.id || 0) === routeNumericId) score += 24;
+  if ((media?.format || '').toUpperCase() === preferredFormatFromRouteTitle(titleHint)) score += 12;
+  return score;
+};
+
+export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupOptions = {}) => {
+  const routeNumericId = toPositiveInt(id);
+  const preferredMalId = toPositiveInt(options.malId) || routeNumericId;
+  const preferredAniListId = toPositiveInt(options.anilistId);
+  const titleHint = String(options.routeTitle || titleHintFromRoute(id) || '').trim();
+
+  const candidates: any[] = [];
+  const seen = new Set<number>();
+
+  const pushCandidate = (media: any) => {
+    const mediaId = Number(media?.id || 0);
+    if (!mediaId || seen.has(mediaId)) return;
+    seen.add(mediaId);
+    candidates.push(media);
+  };
+
+  const loadSingle = async (query: string, variables: Record<string, unknown>) => {
+    const response = await fetchAniList({ query, variables }, 21600);
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (payload?.errors || !payload?.data?.Media) return;
+    pushCandidate(payload.data.Media);
+  };
+
+  if (preferredMalId) {
+    await loadSingle(ANIME_DETAIL_QUERY_BY_MAL, { id: preferredMalId });
+  }
+  if (preferredAniListId && preferredAniListId !== preferredMalId) {
+    await loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: preferredAniListId });
+  } else if (!preferredAniListId && routeNumericId && routeNumericId !== preferredMalId) {
+    await loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: routeNumericId });
+  }
+
+  if (titleHint) {
+    const searchResponse = await fetchAniList(
+      { query: ANIME_DETAIL_SEARCH_QUERY, variables: { search: titleHint } },
+      21600,
+    );
+    if (searchResponse.ok) {
+      const searchPayload = await searchResponse.json();
+      (searchPayload?.data?.Page?.media || []).forEach(pushCandidate);
+    }
+  }
+
+  const media = [...candidates].sort(
+    (left, right) => animeDetailsCandidateScore(right, {
+      titleHint,
+      preferredMalId,
+      preferredAniListId,
+      routeNumericId,
+    }) - animeDetailsCandidateScore(left, {
+      titleHint,
+      preferredMalId,
+      preferredAniListId,
+      routeNumericId,
+    }),
+  )[0];
+
+  if (!media) {
+    const fallbackMalId = preferredMalId || routeNumericId;
+    if (fallbackMalId) {
+      try {
+        const jikanRes = await fetchJikanPath(`/anime/${fallbackMalId}/full`, 21600);
+        if (jikanRes.ok) {
+          const jikanJson = await jikanRes.json();
+          if (jikanJson?.data) {
+            const mapped = mapJikanDetailToAnime(jikanJson.data);
+            if (!useStore.getState().nsfwMode && mapped.isAdult) {
+              throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
+            }
+            return { data: mapped };
+          }
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('NSFW')) throw error;
+      }
     }
     throw new Error('Failed to fetch anime details');
   }
-  
+
   const nsfwMode = useStore.getState().nsfwMode;
-  if (!nsfwMode && data.data.Media.isAdult) {
+  if (!nsfwMode && media.isAdult) {
     throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
   }
 
-  const media = data.data.Media;
   const mappedAnime = mapAnilistToJikan(media);
   const jikanStats = media.idMal ? await fetchJikanAnimeStats(media.idMal) : null;
 
@@ -658,7 +779,7 @@ export const fetchAnimeDetails = async (id: string) => {
     data: {
       ...mappedAnime,
       ...(jikanStats || {}),
-    }
+    },
   };
 };
 

@@ -3,11 +3,11 @@ import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Check, Heart, Plus, Star } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { animePath, watchPath } from '../lib/slug';
+import { animePath } from '../lib/slug';
 import { fetchAnimeDetails } from '../api/jikan';
 import { isDesktopApp } from '../lib/desktop';
 import { animeIdentity } from '../lib/animeIdentity';
-import { desktopUpcomingPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
+import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 
 interface AnimeCardProps {
   anime: any;
@@ -24,7 +24,9 @@ function imageCandidatesFor(anime: any) {
     anime?.images?.jpg?.image_url,
     fallbackCover,
     anime?.banner_image,
-  ].filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+  ]
+    .map((value) => String(value || '').trim())
+    .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
 }
 
 export default function AnimeCard({ anime }: AnimeCardProps) {
@@ -35,9 +37,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   const inList = isInMyList(animeId);
   const liked = isLiked(animeId);
   const detailPath = animePath(anime);
-  const cardPath = desktop
-    ? (isUpcomingAnime(anime) ? desktopUpcomingPath(anime) : watchPath(anime))
-    : detailPath;
+  const cardPath = desktop ? desktopWatchOrBrowsePath(anime) : detailPath;
   const routeId = detailPath.split('/').pop() || animeId;
   const imageCandidates = useMemo(() => imageCandidatesFor(anime), [anime]);
   const [imageIndex, setImageIndex] = useState(0);
