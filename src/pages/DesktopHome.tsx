@@ -1,4 +1,4 @@
-import { memo, RefObject, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Info, Play } from 'lucide-react';
@@ -406,6 +406,39 @@ const RailHeader = memo(function RailHeader({ title, to }: { title: string; to?:
   );
 });
 
+const MediaRail = memo(function MediaRail({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const scroll = (direction: 1 | -1) => {
+    ref.current?.scrollBy({ left: direction * 560, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="group/rail relative">
+      <div ref={ref} className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar scroll-smooth">
+        {children}
+      </div>
+      <div className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 gap-2 opacity-0 transition-opacity duration-200 group-hover/rail:opacity-100 xl:flex">
+        <button
+          type="button"
+          onClick={() => scroll(-1)}
+          className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full border border-white/[0.08] bg-black/55 text-white/76 shadow-lg shadow-black/25 backdrop-blur transition-colors hover:bg-white/[0.12] hover:text-white"
+          aria-label="Scroll rail left"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => scroll(1)}
+          className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full border border-white/[0.08] bg-black/55 text-white/76 shadow-lg shadow-black/25 backdrop-blur transition-colors hover:bg-white/[0.12] hover:text-white"
+          aria-label="Scroll rail right"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </div>
+    </div>
+  );
+});
+
 function useNearViewport<T extends HTMLElement>(): [RefObject<T | null>, boolean] {
   const ref = useRef<T | null>(null);
   const [visible, setVisible] = useState(false);
@@ -436,19 +469,19 @@ function useNearViewport<T extends HTMLElement>(): [RefObject<T | null>, boolean
 const ContinueCard = memo(function ContinueCard({ anime, to, episode }: { anime: any; to: string; episode?: string | number }) {
   const images = thumbnailImageCandidates(anime);
   return (
-    <Link to={to} className="group w-[238px] shrink-0">
-      <div className="relative h-[118px] overflow-hidden rounded-lg border border-white/8 bg-white/[0.06] shadow-lg shadow-black/30">
+    <Link to={to} className="group w-[248px] shrink-0 transition-transform duration-200 hover:-translate-y-1">
+      <div className="relative h-[124px] overflow-hidden rounded-2xl border border-white/8 bg-[#111217] shadow-lg shadow-black/24 transition-colors group-hover:border-white/16">
         <DesktopImage
           candidates={images}
           alt={anime.title}
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
         />
-        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.46),rgba(0,0,0,0.04))]" />
-        <span className="absolute bottom-3 left-3 grid h-28 w-28 max-h-8 max-w-8 place-items-center rounded-full bg-black/62 text-white backdrop-blur">
+        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.78),rgba(7,8,12,0.05)_58%)]" />
+        <span className="absolute bottom-3 left-3 grid h-8 w-8 place-items-center rounded-full bg-black/58 text-white opacity-90 backdrop-blur transition-colors group-hover:bg-white group-hover:text-black">
           <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
         </span>
       </div>
-      <p className="mt-2 line-clamp-1 text-[15px] font-medium text-white">{anime.title}</p>
+      <p className="mt-3 line-clamp-1 text-[15px] font-semibold text-white">{anime.title}</p>
       <p className="mt-1 text-[13px] text-white/50">Episode {episode || anime.latestEpisode || anime.episodes || '1'}</p>
     </Link>
   );
@@ -470,21 +503,21 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
           console.warn(error instanceof Error ? error.message : String(error || 'Source link could not open.'));
         });
       }}
-      className="group w-[238px] shrink-0 text-left"
+      className="group w-[248px] shrink-0 text-left transition-transform duration-200 hover:-translate-y-1"
     >
-      <div className="relative h-[118px] overflow-hidden rounded-lg border border-primary/18 bg-[linear-gradient(135deg,rgba(225,29,72,0.42),rgba(255,255,255,0.06)),#141015] p-4 shadow-lg shadow-black/30">
+      <div className="relative h-[124px] overflow-hidden rounded-2xl border border-white/8 bg-[#111217] p-4 shadow-lg shadow-black/24 transition-colors group-hover:border-white/16">
         <DesktopImage
           candidates={images}
           alt={source.animeTitle || source.title}
           className="absolute inset-0 h-full w-full object-cover opacity-80 transition-transform duration-500 group-hover:scale-[1.04]"
         />
-        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.58),rgba(0,0,0,0.16))]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_20%,rgba(255,255,255,0.22),transparent_36%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.78),rgba(7,8,12,0.14))]" />
+        <div className="absolute inset-x-0 bottom-0 h-1 bg-primary/80" style={{ width: `${progress}%` }} />
         <span className="relative grid h-8 w-8 place-items-center rounded-full bg-black/58 text-white backdrop-blur">
           <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
         </span>
       </div>
-      <p className="mt-2 line-clamp-1 text-[15px] font-medium text-white">{source.animeTitle || source.title}</p>
+      <p className="mt-3 line-clamp-1 text-[15px] font-semibold text-white">{source.animeTitle || source.title}</p>
       <p className="mt-1 text-[13px] text-white/50">{source.episode ? `Episode ${source.episode}` : source.size || 'Recent source'}</p>
       {source.resumeSeconds ? (
         <p className="mt-1 text-[12px] font-medium text-white/40">
@@ -657,7 +690,7 @@ export default function DesktopHome() {
     <div className="desktop-home-cinema px-6 pb-9 pt-3">
       <Seo title="StreamNyaa Desktop Cinema" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
 
-      <section className="relative overflow-hidden rounded-lg border border-white/9 bg-[#101014] shadow-2xl shadow-black/45">
+      <section className="relative overflow-hidden rounded-2xl border border-white/8 bg-[#111217] shadow-2xl shadow-black/42">
         <div className="relative h-[350px]">
           {hero ? (
             <DesktopImage
@@ -668,7 +701,7 @@ export default function DesktopHome() {
               forceKey={`${hero?.mal_id || hero?.id || hero?.title || heroIndex}-${heroIndex}`}
             />
           ) : null}
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,12,15,0.96)_0%,rgba(12,12,15,0.74)_31%,rgba(12,12,15,0.22)_61%,rgba(12,12,15,0.75)_100%),linear-gradient(0deg,rgba(12,12,15,0.62)_0%,transparent_42%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,8,12,0.96)_0%,rgba(7,8,12,0.68)_38%,rgba(7,8,12,0.16)_68%,rgba(7,8,12,0.72)_100%),linear-gradient(0deg,rgba(7,8,12,0.82)_0%,transparent_52%)]" />
 
           <div className="relative flex h-full items-center px-14">
             <div className="max-w-[560px]">
@@ -678,25 +711,21 @@ export default function DesktopHome() {
               <p className="mt-1 line-clamp-1 text-[18px] font-normal text-white/82">
                 {hero?.title_english || hero?.title_japanese || 'Desktop anime cinema'}
               </p>
-              <div className="mt-4 flex flex-wrap gap-2 text-[12px] font-medium text-white/86">
-                <span className="rounded bg-white/12 px-2.5 py-1 backdrop-blur">{hero?.year || hero?.aired?.prop?.from?.year || '2026'}</span>
-                <span className="rounded bg-white/12 px-2.5 py-1 backdrop-blur">{hero?.rating?.replace(' - ', '-') || 'TV-MA'}</span>
-                <span className="rounded bg-white/12 px-2.5 py-1 backdrop-blur">{hero?.episodes || 'TBA'} Episodes</span>
-                <span className="rounded bg-white/12 px-2.5 py-1 backdrop-blur">HD</span>
-                <span className="rounded bg-white/12 px-2.5 py-1 backdrop-blur">Multi Audio</span>
-              </div>
-              <p className="mt-5 max-w-[500px] text-[15px] leading-7 text-white/72">{heroDescription(hero)}</p>
+              <p className="mt-4 text-[13px] font-semibold text-white/74">
+                {hero?.year || hero?.aired?.prop?.from?.year || '2026'} <span className="text-white/30">•</span> {hero?.rating?.replace(' - ', '-') || 'TV-MA'} <span className="text-white/30">•</span> {hero?.episodes || 'TBA'} Episodes <span className="text-white/30">•</span> HD <span className="text-white/30">•</span> Sub/Dub
+              </p>
+              <p className="mt-5 line-clamp-2 max-w-[500px] text-[15px] leading-7 text-white/72">{heroDescription(hero)}</p>
               <div className="mt-7 flex gap-3">
                 <Link
                   to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))}
-                  className="inline-flex h-11 items-center gap-3 rounded-md bg-primary px-6 text-[16px] font-medium text-white shadow-xl shadow-primary/20 hover:bg-primary/90"
+                  className="inline-flex h-11 items-center gap-3 rounded-xl bg-primary px-6 text-[16px] font-semibold text-white shadow-xl shadow-primary/20 transition-colors hover:bg-primary/90"
                 >
                   <Play className="h-4 w-4 fill-current" />
                   Watch Now
                 </Link>
                 <Link
                   to={hero ? watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero)) : '/search'}
-                  className="inline-flex h-11 items-center gap-3 rounded-md border border-white/13 bg-white/10 px-6 text-[16px] font-medium text-white shadow-xl shadow-black/20 backdrop-blur hover:bg-white/14"
+                  className="inline-flex h-11 items-center gap-3 rounded-xl border border-white/10 bg-white/[0.08] px-6 text-[16px] font-semibold text-white shadow-xl shadow-black/20 backdrop-blur transition-colors hover:bg-white/[0.12]"
                 >
                   <Info className="h-4 w-4" />
                   More Info
@@ -705,11 +734,11 @@ export default function DesktopHome() {
             </div>
           </div>
 
-          <div className="absolute right-12 top-1/2 flex -translate-y-1/2 gap-6">
+          <div className="absolute right-12 top-1/2 flex -translate-y-1/2 gap-3">
             <button
               type="button"
               onClick={() => moveHero(-1)}
-              className="grid h-10 w-10 place-items-center rounded-full bg-black/36 text-white/80 backdrop-blur hover:bg-white/15"
+              className="grid h-10 w-10 place-items-center rounded-full border border-white/8 bg-black/32 text-white/76 backdrop-blur transition-colors hover:bg-white/[0.12] hover:text-white"
               aria-label="Previous seasonal pick"
             >
               <ChevronLeft className="h-5 w-5" />
@@ -717,7 +746,7 @@ export default function DesktopHome() {
             <button
               type="button"
               onClick={() => moveHero(1)}
-              className="grid h-10 w-10 place-items-center rounded-full bg-black/36 text-white/80 backdrop-blur hover:bg-white/15"
+              className="grid h-10 w-10 place-items-center rounded-full border border-white/8 bg-black/32 text-white/76 backdrop-blur transition-colors hover:bg-white/[0.12] hover:text-white"
               aria-label="Next seasonal pick"
             >
               <ChevronRight className="h-5 w-5" />
@@ -741,17 +770,17 @@ export default function DesktopHome() {
       </section>
 
       {recentSources.length ? (
-        <section className="mt-7">
+        <section className="mt-7 desktop-section-enter">
           <RailHeader title="Continue Watching" to="/dashboard" />
-          <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
+          <MediaRail>
             {recentSources.map((source) => <SourceCard key={source.magnet} source={source} />)}
-          </div>
+          </MediaRail>
         </section>
       ) : null}
 
-      <section ref={latestRef} className="mt-7">
+      <section ref={latestRef} className="mt-7 desktop-section-enter">
         <RailHeader title="New Episodes" to="/schedule" />
-        <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
+        <MediaRail>
           {latestEpisodes.map((anime: any, index: number) => (
             <ContinueCard
               key={`latest-${anime.mal_id || anime.id || index}`}
@@ -760,13 +789,13 @@ export default function DesktopHome() {
               episode={watchEpisodeFor(anime, history, index + 1)}
             />
           ))}
-          {!latestEpisodes.length ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 rounded-lg bg-white/[0.045]" />) : null}
-        </div>
+          {!latestEpisodes.length ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 rounded-2xl border border-white/8 bg-white/[0.045]" />) : null}
+        </MediaRail>
       </section>
 
-      <section className="mt-7">
+      <section className="mt-7 desktop-section-enter">
         <RailHeader title="Trending Now" to="/search?sort=trending&status=airing" />
-        <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
+        <MediaRail>
           {trending.map((anime: any, index: number) => (
             <ContinueCard
               key={`trending-${anime.mal_id || anime.id || index}`}
@@ -775,13 +804,13 @@ export default function DesktopHome() {
               episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
             />
           ))}
-          {!trending.length ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 rounded-lg bg-white/[0.045]" />) : null}
-        </div>
+          {!trending.length ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 rounded-2xl border border-white/8 bg-white/[0.045]" />) : null}
+        </MediaRail>
       </section>
 
-      <section className="mt-7">
+      <section className="mt-7 desktop-section-enter">
         <RailHeader title="Top Airing Anime" to="/search?sort=score&status=airing" />
-        <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
+        <MediaRail>
           {topAiring.map((anime: any, index: number) => (
             <ContinueCard
               key={`top-airing-${anime.mal_id || anime.id || index}`}
@@ -790,12 +819,12 @@ export default function DesktopHome() {
               episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
             />
           ))}
-        </div>
+        </MediaRail>
       </section>
 
-      <section className="mt-7">
+      <section className="mt-7 desktop-section-enter">
         <RailHeader title="Seasonal Anime" to="/search?status=airing" />
-        <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
+        <MediaRail>
           {seasonalPicks.map((anime: any, index: number) => (
             <ContinueCard
               key={`seasonal-${anime.mal_id || anime.id || index}`}
@@ -804,23 +833,23 @@ export default function DesktopHome() {
               episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
             />
           ))}
-        </div>
+        </MediaRail>
       </section>
 
       {upcoming.length ? (
-        <section className="mt-7">
+        <section className="mt-7 desktop-section-enter">
           <RailHeader title="Upcoming Anime" to="/search?mode=upcoming" />
-          <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
+          <MediaRail>
             {upcoming.map((anime: any, index: number) => (
               <ContinueCard key={`upcoming-${anime.mal_id || anime.id || index}`} anime={anime} to={desktopUpcomingPath(anime)} episode="TBA" />
             ))}
-          </div>
+          </MediaRail>
         </section>
       ) : null}
 
-      <section ref={popularRef} className="mt-7">
+      <section ref={popularRef} className="mt-7 desktop-section-enter">
         <RailHeader title="Popular Picks" to="/search?sort=popular" />
-        <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
+        <MediaRail>
           {popular.map((anime: any, index: number) => (
             <ContinueCard
               key={`popular-${anime.mal_id || anime.id || index}`}
@@ -829,13 +858,13 @@ export default function DesktopHome() {
               episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
             />
           ))}
-          {!popular.length ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 rounded-lg bg-white/[0.045]" />) : null}
-        </div>
+          {!popular.length ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[118px] w-[238px] shrink-0 rounded-2xl border border-white/8 bg-white/[0.045]" />) : null}
+        </MediaRail>
       </section>
 
-      <section className="mt-7">
+      <section className="mt-7 desktop-section-enter">
         <RailHeader title={`Top Anime From ${topYear}`} to={`/search?sort=score`} />
-        <div className="flex gap-5 overflow-x-auto pb-2 hide-scrollbar">
+        <MediaRail>
           {yearlyTop.map((anime: any, index: number) => (
             <ContinueCard
               key={`yearly-${anime.mal_id || anime.id || index}`}
@@ -844,7 +873,7 @@ export default function DesktopHome() {
               episode={watchEpisodeFor(anime, history, preferredEpisodeFor(anime))}
             />
           ))}
-        </div>
+        </MediaRail>
       </section>
     </div>
   );

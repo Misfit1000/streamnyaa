@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ChevronLeft, ChevronRight, Copy, Download, Loader2, Play, Search, SlidersHorizontal, Star } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Play, Search, SlidersHorizontal, Star } from 'lucide-react';
 import Seo from '../components/Seo';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
@@ -11,10 +11,13 @@ import {
   findLocalPlaybackHistoryItem,
   formatPlaybackTime,
   getLocalPlaybackProgress,
+  loadDesktopAutoOpenBestSource,
   loadDesktopAudioPreference,
   openLocalSourceNow,
+  saveDesktopAutoOpenBestSource,
   saveDesktopAudioPreference,
   stopDesktopPlayback,
+  subscribeDesktopAutoOpenBestSource,
   updateLocalPlaybackHistoryProgress,
   watchTypeForAudioPreference,
   type DesktopAudioPreference,
@@ -24,6 +27,9 @@ import {
 
 type AudioMode = 'sub' | 'dub';
 type SourceSort = 'best' | 'seeders' | 'size';
+type SourceFilterMode = 'strict' | 'balanced' | 'broad';
+type SourceMatchTier = 'exact' | 'likely' | 'broad' | 'rejected';
+type SourcePlayableStatus = 'verified' | 'untested' | 'low-seed' | 'likely-wrong' | 'unsupported';
 type EpisodeViewMode = 'cards' | 'grid';
 type PlaybackNotice = { tone: 'loading' | 'success' | 'error'; text: string };
 type PlaybackStageView = { headline: string; detail: string; progress: number; step: 1 | 2 | 3 | 4; status: string };
@@ -43,10 +49,18 @@ type InstallmentItem = {
   format: string;
   year: number | null;
   seasonNumber: number | null;
+  sourceSeasonNumber: number | null;
   partNumber: number | null;
   relation?: string;
   kind: InstallmentKind;
   label: string;
+};
+type RankedNyaaItem = NyaaItem & {
+  matchTier: SourceMatchTier;
+  matchReasons: string[];
+  playableStatus: SourcePlayableStatus;
+  playableLabel: string;
+  playable: boolean;
 };
 
 const EPISODE_WINDOW_SIZE = 72;
@@ -55,8 +69,11 @@ const EPISODE_CARD_SEARCH_LIMIT = 36;
 const AUTO_COMPACT_EPISODE_THRESHOLD = 180;
 const SOURCE_QUERY_BATCH_SIZE = 3;
 const SOURCE_RETRY_LIMIT = 5;
-const ALLOWED_INSTALLMENT_KINDS = new Set<InstallmentKind>(['season', 'ova', 'ona', 'special']);
-const CORE_SEASON_RELATIONS = new Set(['PREQUEL', 'SEQUEL', 'PARENT']);
+const FAILED_SOURCE_MEMORY_KEY = 'streamnyaa.desktopFailedSources';
+const FAILED_SOURCE_MEMORY_TTL = 1000 * 60 * 20;
+const FAILED_SOURCE_MEMORY_LIMIT = 80;
+const ALLOWED_INSTALLMENT_KINDS = new Set<InstallmentKind>(['season', 'movie', 'ova', 'ona', 'special']);
+const CORE_SEASON_RELATIONS = new Set(['PREQUEL', 'SEQUEL']);
 const ANCILLARY_SOURCE_PATTERNS = [
   /\b(?:nc)?op(?:ening)?\b/i,
   /\b(?:nc)?ed(?:ing)?\b/i,
@@ -69,6 +86,12 @@ const ANCILLARY_SOURCE_PATTERNS = [
   /\bost\b/i,
   /\bsoundtrack\b/i,
 ];
+type SourceFailureRecord = {
+  failedAt: number;
+  message: string;
+  animeId?: string | number;
+  episode?: number;
+};
 
 function posterFor(anime: any) {
   const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
@@ -196,6 +219,103 @@ function cleanTitle(value = '') {
   return value.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function titleForInstallment(item: any) {
+  const structuredTitle = item?.title && typeof item.title === 'object'
+    ? item.title?.english || item.title?.romaji || item.title?.native
+    : '';
+  return String(
+    item?.name
+      || item?.title_english
+      || item?.title_romaji
+      || structuredTitle
+      || (typeof item?.title === 'string' ? item.title : '')
+      || '',
+  ).trim();
+}
+
+function sourceFailureKey(source: Pick<NyaaItem, 'infoHash' | 'magnet' | 'title'>) {
+  const hash = String(source.infoHash || '').trim().toLowerCase();
+  if (hash) return `hash:${hash}`;
+  const magnetHash = String(source.magnet || '').match(/btih:([a-z0-9]+)/i)?.[1];
+  if (magnetHash) return `hash:${magnetHash.toLowerCase()}`;
+  const normalizedTitle = cleanTitle(source.title || '').toLowerCase();
+  return normalizedTitle ? `title:${normalizedTitle.slice(0, 180)}` : '';
+}
+
+function isObsoleteLargeSourceFailure(message = '') {
+  return /too large for reliable desktop streaming|choose a smaller release|large_source/i.test(message);
+}
+
+function compactSourceFailures(records: Record<string, SourceFailureRecord>) {
+  const now = Date.now();
+  return Object.fromEntries(
+    Object.entries(records)
+      .filter(([, record]) => now - Number(record.failedAt || 0) <= FAILED_SOURCE_MEMORY_TTL)
+      .filter(([, record]) => !isObsoleteLargeSourceFailure(record.message || ''))
+      .sort((left, right) => Number(right[1].failedAt || 0) - Number(left[1].failedAt || 0))
+      .slice(0, FAILED_SOURCE_MEMORY_LIMIT),
+  ) as Record<string, SourceFailureRecord>;
+}
+
+function loadSourceFailureRecords() {
+  if (typeof window === 'undefined') return {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(FAILED_SOURCE_MEMORY_KEY) || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return compactSourceFailures(parsed as Record<string, SourceFailureRecord>);
+  } catch {
+    return {};
+  }
+}
+
+function saveSourceFailureRecords(records: Record<string, SourceFailureRecord>) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(FAILED_SOURCE_MEMORY_KEY, JSON.stringify(compactSourceFailures(records)));
+  } catch {
+    // Failure memory only affects ranking. Playback should never depend on local storage.
+  }
+}
+
+function rememberSourceFailure(
+  source: RankedNyaaItem,
+  message: string,
+  context: { animeId?: string | number; episode?: number },
+) {
+  const key = sourceFailureKey(source);
+  if (!key) return;
+  if (isObsoleteLargeSourceFailure(message)) return;
+  const records = loadSourceFailureRecords();
+  records[key] = {
+    failedAt: Date.now(),
+    message: message.slice(0, 220),
+    animeId: context.animeId,
+    episode: context.episode,
+  };
+  saveSourceFailureRecords(records);
+}
+
+function forgetSourceFailure(source: RankedNyaaItem) {
+  const key = sourceFailureKey(source);
+  if (!key) return;
+  const records = loadSourceFailureRecords();
+  if (!records[key]) return;
+  delete records[key];
+  saveSourceFailureRecords(records);
+}
+
+function sourceFailureFor(source: RankedNyaaItem, records: Record<string, SourceFailureRecord>) {
+  const key = sourceFailureKey(source);
+  return key ? records[key] || null : null;
+}
+
+function sourceFailurePenalty(source: RankedNyaaItem, records: Record<string, SourceFailureRecord>) {
+  const record = sourceFailureFor(source, records);
+  if (!record) return 0;
+  const ageRatio = Math.max(0, Math.min(1, (Date.now() - record.failedAt) / FAILED_SOURCE_MEMORY_TTL));
+  return Math.round(80 * (1 - ageRatio));
+}
+
 function uniqueTextValues(values: Array<string | undefined | null>) {
   return values.filter((value, index, list): value is string => Boolean(value?.trim()) && list.indexOf(value) === index);
 }
@@ -226,9 +346,43 @@ function stripSeasonDecorators(value = '') {
   );
 }
 
-function sourceSearchTitleVariants(anime: any, routeId = '') {
+function seriesRootTitle(value = '') {
+  const cleaned = stripSeasonDecorators(value)
+    .replace(/\b(?:movie|film|ova|ona|special)s?\b/ig, ' ');
+  const segments = cleaned.split(/\s*[:：-]\s*/).map((segment) => cleanTitle(segment)).filter(Boolean);
+  const firstSegment = segments[0] || '';
+  const root = firstSegment.length >= 4 && firstSegment.split(' ').filter((token) => token.length > 1).length >= 1
+    ? firstSegment
+    : cleaned;
+  return cleanTitle(root || value).toLowerCase();
+}
+
+function sameSeriesFamily(rootTitle = '', nextTitle = '') {
+  const root = seriesRootTitle(rootTitle);
+  const next = seriesRootTitle(nextTitle);
+  if (!root || !next) return false;
+  if (root === next) return true;
+  if (root.length >= 8 && next.includes(root)) return true;
+  if (next.length >= 8 && root.includes(next)) return true;
+  const rootTokens = root.split(' ').filter((token) => token.length > 2);
+  const nextTokens = new Set(next.split(' ').filter((token) => token.length > 2));
+  if (rootTokens.length < 2 || nextTokens.size < 2) return false;
+  const hits = rootTokens.filter((token) => nextTokens.has(token)).length;
+  return hits >= Math.min(3, rootTokens.length);
+}
+
+function hasSeasonTitleSignal(value = '') {
+  return Boolean(
+    seasonNumberFromText(value)
+      || partNumberFromText(value)
+      || /\b(final\s+season|cour\s+\d+|part\s+\d+)\b/i.test(value),
+  );
+}
+
+function sourceSearchTitleVariants(anime: any, routeId = '', installment?: InstallmentItem | null) {
   const routeTitle = titleFromRoute(routeId);
   const raw = uniqueTextValues([
+    installment?.name,
     anime?.title_romaji,
     anime?.title_english,
     anime?.title,
@@ -242,26 +396,50 @@ function sourceSearchTitleVariants(anime: any, routeId = '') {
   }));
 }
 
-function sourceSearchSeasonHints(anime: any, routeId = '') {
+function sourceSearchSeasonHints(anime: any, routeId = '', installment?: InstallmentItem | null) {
   return uniqueTextValues([
+    installment?.name,
     anime?.title_romaji,
     anime?.title_english,
     anime?.title,
     titleFromRoute(routeId),
   ])
     .map((title) => seasonNumberFromText(title))
+    .concat(installment?.seasonNumber || 0)
+    .concat(installment?.sourceSeasonNumber || 0)
     .filter((value, index, list): value is number => Boolean(value) && list.indexOf(value) === index);
 }
 
-function sourceSearchPartHints(anime: any, routeId = '') {
+function sourceSearchPartHints(anime: any, routeId = '', installment?: InstallmentItem | null) {
   return uniqueTextValues([
+    installment?.name,
     anime?.title_romaji,
     anime?.title_english,
     anime?.title,
     titleFromRoute(routeId),
   ])
     .map((title) => partNumberFromText(title))
+    .concat(installment?.partNumber || 0)
     .filter((value, index, list): value is number => Boolean(value) && list.indexOf(value) === index);
+}
+
+function sourceAliasVariants(anime: any, routeId = '', installment?: InstallmentItem | null) {
+  return sourceSearchTitleVariants(anime, routeId, installment)
+    .map((title) => stripSeasonDecorators(title) || cleanTitle(title))
+    .map((title) => cleanTitle(title).toLowerCase())
+    .filter((title, index, list) => title.length >= 4 && list.indexOf(title) === index);
+}
+
+function sourceTitleMatchesAlias(title = '', aliases: string[]) {
+  const normalizedTitle = cleanTitle(title).toLowerCase();
+  if (!normalizedTitle || !aliases.length) return false;
+  return aliases.some((alias) => {
+    if (normalizedTitle.includes(alias)) return true;
+    const tokens = alias.split(' ').filter((token) => token.length >= 3);
+    if (tokens.length < 2) return false;
+    const matched = tokens.filter((token) => normalizedTitle.includes(token)).length;
+    return matched / tokens.length >= 0.78;
+  });
 }
 
 function isDubSource(title = '') {
@@ -327,12 +505,31 @@ function sourcePartNumber(title = '') {
   return partNumberFromText(title);
 }
 
+function sourceOrdinalForKind(title = '', kind: InstallmentKind) {
+  const kindPattern = kind === 'movie'
+    ? '(?:movie|film|gekijouban)'
+    : kind === 'special'
+      ? 'special'
+      : kind;
+  const match = title.match(new RegExp(`\\b${kindPattern}\\s*0?(\\d{1,2})\\b`, 'i'));
+  const number = Number(match?.[1] || 0);
+  return number > 0 ? number : null;
+}
+
+function installmentOrdinal(item: InstallmentItem | null) {
+  if (!item) return null;
+  if (item.kind === 'season') return item.seasonNumber;
+  const match = item.label.match(/\b(\d{1,2})\b/);
+  const number = Number(match?.[1] || 0);
+  return number > 0 ? number : null;
+}
+
 function sourceMatchesInstallment(title = '', installment: InstallmentItem | null) {
   if (!installment) return true;
   const explicitKind = sourceInstallmentKind(title);
   if (installment.kind === 'season') {
     if (explicitKind && explicitKind !== 'season') return false;
-    const seasonNumber = installment.seasonNumber;
+    const seasonNumber = installment.seasonNumber || installment.sourceSeasonNumber;
     const partNumber = installment.partNumber;
     const sourceSeason = sourceSeasonNumber(title);
     const sourcePart = sourcePartNumber(title);
@@ -348,6 +545,145 @@ function sourceMatchesInstallment(title = '', installment: InstallmentItem | nul
   }
 
   return true;
+}
+
+function sourceInstallmentMismatchReason(title = '', installment: InstallmentItem | null) {
+  if (!installment) return '';
+  const explicitKind = sourceInstallmentKind(title);
+  const sourceSeason = sourceSeasonNumber(title);
+  const sourcePart = sourcePartNumber(title);
+
+  if (installment.kind === 'season') {
+    if (explicitKind && explicitKind !== 'season') return `Wrong format: ${explicitKind}`;
+    const expectedSeason = installment.seasonNumber || installment.sourceSeasonNumber;
+    if (expectedSeason && sourceSeason && sourceSeason !== expectedSeason) {
+      return `Wrong season: S${sourceSeason}`;
+    }
+    if (installment.partNumber && sourcePart && sourcePart !== installment.partNumber) {
+      return `Wrong part: Part ${sourcePart}`;
+    }
+    return '';
+  }
+
+  if (installment.kind === 'movie' || installment.kind === 'ova' || installment.kind === 'ona' || installment.kind === 'special') {
+    if (explicitKind && explicitKind !== installment.kind) return `Wrong format: ${explicitKind}`;
+    if (explicitKind === 'season' || sourceSeason) return 'TV episode source';
+    const expectedOrdinal = installmentOrdinal(installment);
+    const sourceOrdinal = sourceOrdinalForKind(title, installment.kind);
+    if (expectedOrdinal && sourceOrdinal && sourceOrdinal !== expectedOrdinal) {
+      return `Wrong ${installment.kind}: ${sourceOrdinal}`;
+    }
+  }
+
+  return '';
+}
+
+function sourceHasValidInput(source: NyaaItem) {
+  const hasHash = Boolean(source.infoHash && /^[a-z0-9]{32,40}$/i.test(source.infoHash));
+  const hasMagnet = Boolean(source.magnet && /^magnet:\?xt=urn:btih:/i.test(source.magnet));
+  return hasHash || hasMagnet;
+}
+
+function classifySource(
+  source: NyaaItem,
+  context: {
+    anime: any;
+    routeId?: string;
+    installment: InstallmentItem | null;
+    episode: number;
+  },
+): RankedNyaaItem {
+  const reasons: string[] = [];
+  const title = source.title || '';
+  const aliases = sourceAliasVariants(context.anime, context.routeId, context.installment);
+  const titleMatch = sourceTitleMatchesAlias(title, aliases);
+  const explicitKind = sourceInstallmentKind(title);
+  const sourceSeason = sourceSeasonNumber(title);
+  const sourcePart = sourcePartNumber(title);
+  const episodeMatch = context.installment?.kind === 'movie'
+    ? true
+    : hasEpisodeSignal(title, context.episode);
+  const mismatchReason = sourceInstallmentMismatchReason(title, context.installment);
+  const validInput = sourceHasValidInput(source);
+  const seeded = source.rawSeeders > 0;
+  const videoSized = source.rawSize > 0 && source.rawSize <= 3 * 1024 * 1024 * 1024;
+  const expectedSourceSeason = context.installment?.seasonNumber || context.installment?.sourceSeasonNumber || null;
+  const laterSeasonNeedsSeasonSignal = context.installment?.kind === 'season'
+    && Boolean(expectedSourceSeason && expectedSourceSeason > 1);
+  const hasRequiredSeasonSignal = !laterSeasonNeedsSeasonSignal
+    || sourceSeason === expectedSourceSeason
+    || sourceTitleMatchesAlias(title, [cleanTitle(context.installment?.name || '').toLowerCase()].filter(Boolean));
+  const hasRequiredPartSignal = !context.installment?.partNumber
+    || sourcePart === context.installment.partNumber
+    || /\b(part|cour)\b/i.test(title);
+  let matchTier: SourceMatchTier = 'rejected';
+
+  if (isBatchSource(title)) reasons.push('Batch source');
+  if (isAncillarySource(title)) reasons.push('Non-episode extra');
+  if (!validInput) reasons.push('Torrent hash missing');
+  if (!seeded) reasons.push('No seeders');
+  if (!titleMatch) reasons.push('Loose title match');
+  if (mismatchReason) reasons.push(mismatchReason);
+  if (episodeMatch) reasons.push(context.installment?.kind === 'movie' ? 'Movie match' : 'Exact episode');
+  if (explicitKind) reasons.push(explicitKind === 'season' ? 'TV season' : explicitKind.toUpperCase());
+  if (laterSeasonNeedsSeasonSignal && !hasRequiredSeasonSignal) reasons.push('Missing season signal');
+  if (context.installment?.partNumber && !hasRequiredPartSignal) reasons.push('Missing part signal');
+  if (context.installment?.label) reasons.push(context.installment.label);
+  if (videoSized) reasons.push('Sane size');
+
+  if (!isBatchSource(title) && !isAncillarySource(title) && validInput && titleMatch && !mismatchReason) {
+    if (episodeMatch && seeded && hasRequiredSeasonSignal && hasRequiredPartSignal) matchTier = 'exact';
+    else if (episodeMatch || seeded) matchTier = 'likely';
+    else matchTier = 'broad';
+  } else if (!isBatchSource(title) && !isAncillarySource(title) && validInput && !mismatchReason && episodeMatch) {
+    matchTier = 'broad';
+  }
+
+  const structurallyPlayable = validInput
+    && seeded
+    && !isBatchSource(title)
+    && !isAncillarySource(title)
+    && !mismatchReason
+    && matchTier !== 'rejected';
+  const playableStatus: SourcePlayableStatus = !validInput
+    ? 'unsupported'
+    : mismatchReason || (!titleMatch && matchTier !== 'broad')
+      ? 'likely-wrong'
+      : !seeded
+        ? 'low-seed'
+        : matchTier === 'exact'
+          ? 'verified'
+          : 'untested';
+  const playable = structurallyPlayable;
+  const playableLabel = playableStatus === 'verified'
+    ? 'Verified'
+    : playableStatus === 'low-seed'
+      ? 'Low seed'
+      : playableStatus === 'unsupported'
+        ? 'Unsupported'
+        : playableStatus === 'likely-wrong'
+          ? 'Likely wrong'
+          : matchTier === 'broad'
+            ? 'Wide match'
+            : 'Untested';
+
+  return {
+    ...source,
+    matchTier,
+    matchReasons: reasons.filter((reason, index, list) => Boolean(reason) && list.indexOf(reason) === index),
+    playableStatus,
+    playableLabel,
+    playable,
+  };
+}
+
+function sourceTierWeight(tier: SourceMatchTier) {
+  switch (tier) {
+    case 'exact': return 0;
+    case 'likely': return 1;
+    case 'broad': return 2;
+    default: return 3;
+  }
 }
 
 function installmentDiscoveryKind(format = ''): InstallmentKind | null {
@@ -377,7 +713,7 @@ function relationTypeAllowed(entry: any, currentKind: InstallmentKind) {
   const relationType = String(entry?.relation || '').toUpperCase();
   if (!relationType) return false;
   if (currentKind === 'season') return CORE_SEASON_RELATIONS.has(relationType);
-  return ['PREQUEL', 'SEQUEL', 'PARENT', 'SIDE_STORY', 'ALTERNATIVE', 'ALTERNATIVE_VERSION'].includes(relationType);
+  return ['PREQUEL', 'SEQUEL', 'PARENT'].includes(relationType);
 }
 
 function installmentDiscoveryPriority(entry: any, displayKinds: Set<InstallmentKind>) {
@@ -405,7 +741,6 @@ function installmentIdentity(item: Omit<InstallmentItem, 'label'>) {
   if (item.kind === 'season') {
     if (item.seasonNumber && item.partNumber) return `season:${item.seasonNumber}:part:${item.partNumber}`;
     if (item.seasonNumber) return `season:${item.seasonNumber}`;
-    if (item.year) return `season:year:${item.year}`;
   }
   const normalizedTitle = cleanTitle(stripSeasonDecorators(item.name || '')).toLowerCase();
   return `${item.kind}:${normalizedTitle || item.year || item.mal_id}`;
@@ -453,7 +788,7 @@ function sourceScore(source: NyaaItem, audioPreference: DesktopAudioPreference, 
     if (isDualAudioSource(source.title)) score += 44;
     else if (isDubSource(source.title)) score += 24;
   }
-  if (/trusted/i.test(String(source.trusted || ''))) score += 25;
+  if (isTrustedSource(source)) score += 25;
   if (/\b1080p\b/i.test(source.title)) score += 20;
   if (source.rawSeeders >= 100) score += 20;
   else if (source.rawSeeders >= 50) score += 14;
@@ -461,6 +796,31 @@ function sourceScore(source: NyaaItem, audioPreference: DesktopAudioPreference, 
   if (/\b(hevc|h\.?265|x265)\b/i.test(source.title)) score += 6;
   if (source.rawSize > 0 && source.rawSize < 5 * 1024 * 1024 * 1024) score += 5;
   return score + Number(source.sourceScore || 0);
+}
+
+function isTrustedSource(source: NyaaItem) {
+  return /\btrusted\b/i.test(String(source.trusted || ''));
+}
+
+function sourceQualityReasons(
+  source: NyaaItem,
+  episode: number,
+  audioPreference: DesktopAudioPreference,
+  audioMode: AudioMode,
+) {
+  const reasons: string[] = [];
+  if (hasEpisodeSignal(source.title, episode)) reasons.push('Exact episode');
+  if (isDualAudioSource(source.title)) reasons.push('Dual audio');
+  else if (isDubOnlySource(source.title)) reasons.push('Dub');
+  else if (audioMode === 'sub' || audioPreference === 'sub-preferred') reasons.push('Sub-safe');
+  if (isTrustedSource(source)) reasons.push('Trusted');
+  if (source.rawSeeders >= 100) reasons.push('Fast start');
+  else if (source.rawSeeders >= 50) reasons.push('Stable peers');
+  else if (source.rawSeeders >= 15) reasons.push('Usable peers');
+  if (/\b1080p\b/i.test(source.title)) reasons.push('1080p');
+  if (/\b(hevc|h\.?265|x265)\b/i.test(source.title)) reasons.push('HEVC');
+  if (source.rawSize > 0 && source.rawSize <= 5 * 1024 * 1024 * 1024) reasons.push('Sane size');
+  return reasons.filter((reason, index, list) => list.indexOf(reason) === index).slice(0, 6);
 }
 
 function torrentUrlFor(source: NyaaItem) {
@@ -499,6 +859,7 @@ function installmentSortWeight(kind: InstallmentKind) {
 
 function displayKindsFor(currentKind: InstallmentKind) {
   if (currentKind === 'season') return new Set<InstallmentKind>(['season']);
+  if (currentKind === 'movie') return new Set<InstallmentKind>(['movie']);
   if (currentKind === 'ova') return new Set<InstallmentKind>(['ova']);
   if (currentKind === 'ona') return new Set<InstallmentKind>(['ona']);
   if (currentKind === 'special') return new Set<InstallmentKind>(['special']);
@@ -541,12 +902,24 @@ function buildInstallmentLabels(items: Omit<InstallmentItem, 'label'>[]): Instal
 
   return sorted.map((item) => {
     let label = item.format || 'Entry';
+    let sourceSeasonNumber = item.sourceSeasonNumber || item.seasonNumber || null;
     if (item.kind === 'season') {
-      const resolvedSeasonNumber = item.seasonNumber || (seasonIndex + 1);
-      seasonIndex = Math.max(seasonIndex + 1, resolvedSeasonNumber);
-      label = item.partNumber
-        ? `Season ${resolvedSeasonNumber} Part ${item.partNumber}`
-        : `Season ${resolvedSeasonNumber}`;
+      if (item.seasonNumber) {
+        const resolvedSeasonNumber = item.seasonNumber;
+        seasonIndex = Math.max(seasonIndex + 1, resolvedSeasonNumber);
+        sourceSeasonNumber = resolvedSeasonNumber;
+        label = item.partNumber
+          ? `Season ${resolvedSeasonNumber} Part ${item.partNumber}`
+          : `Season ${resolvedSeasonNumber}`;
+      } else if (sorted.filter((entry) => entry.kind === 'season').length === 1) {
+        seasonIndex += 1;
+        sourceSeasonNumber = 1;
+        label = 'Season 1';
+      } else {
+        seasonIndex += 1;
+        sourceSeasonNumber = seasonIndex;
+        label = item.name || `TV ${seasonIndex}`;
+      }
     } else if (item.kind === 'movie') {
       movieIndex += 1;
       label = movieTotal > 1 ? `Movie ${movieIndex}` : 'Movie';
@@ -560,17 +933,33 @@ function buildInstallmentLabels(items: Omit<InstallmentItem, 'label'>[]): Instal
       specialIndex += 1;
       label = specialTotal > 1 ? `Special ${specialIndex}` : 'Special';
     }
-    return { ...item, label };
+    return { ...item, sourceSeasonNumber, label };
   });
 }
 
 function shouldSkipInstallment(item: any, kind: InstallmentKind, current: boolean, displayKinds: Set<InstallmentKind>) {
-  const title = String(item?.name || item?.title || item?.title_english || item?.title_romaji || '');
+  const title = titleForInstallment(item);
   const mediaType = String(item?.type || '').toUpperCase();
+  const status = String(item?.status || '').toUpperCase();
   if (!current && (!ALLOWED_INSTALLMENT_KINDS.has(kind) || !displayKinds.has(kind))) return true;
   if (!current && mediaType && !['ANIME', 'TV', 'TV_SHORT', 'OVA', 'ONA', 'SPECIAL', 'MOVIE'].includes(mediaType)) return true;
+  if (!current && status === 'NOT_YET_RELEASED') return true;
   if (kind === 'season' && /\b(director'?s cut|recap|compilation|digest|summary|tv edit(?:ion)?)\b/i.test(title)) return true;
   return false;
+}
+
+function isSameTitleLineInstallment(rootAnime: any, item: any, kind: InstallmentKind, current: boolean, relation?: string) {
+  if (current) return true;
+  const currentKind = installmentKindFor(normalizeInstallmentFormat(rootAnime?.type || 'TV'));
+  const relationType = String(relation || item?.relation || '').toUpperCase();
+  if (!relationTypeAllowed({ relation: relationType }, currentKind)) return false;
+  if (kind !== 'season') return true;
+
+  const rootTitle = titleForInstallment(rootAnime);
+  const nextTitle = titleForInstallment(item);
+  if (!sameSeriesFamily(rootTitle, nextTitle)) return false;
+  if (hasSeasonTitleSignal(nextTitle)) return true;
+  return /\b(after\s+story|shippuuden|shippuden|kai|final|next|second|third|fourth)\b/i.test(nextTitle);
 }
 
 function buildInstallmentItems(anime: any, discoveredItems: any[] = []): InstallmentItem[] {
@@ -583,15 +972,18 @@ function buildInstallmentItems(anime: any, discoveredItems: any[] = []): Install
     const format = normalizeInstallmentFormat(item?.format || item?.type || anime?.type || 'TV');
     const kind = installmentKindFor(format);
     if (shouldSkipInstallment(item, kind, current, displayKinds)) return;
+    if (!isSameTitleLineInstallment(anime, item, kind, current, relation)) return;
+    const title = titleForInstallment(item);
     const nextItem: Omit<InstallmentItem, 'label'> = {
       mal_id: item?.mal_id || item?.id,
       anilist_id: item?.anilist_id || item?.id || null,
-      name: item?.name || item?.title || item?.title_english || item?.title_romaji || 'Untitled',
+      name: title || 'Untitled',
       current,
       format,
       year: Number(item?.year || item?.seasonYear || 0) || null,
-      seasonNumber: seasonNumberFromText(item?.name || item?.title || item?.title_english || item?.title_romaji || ''),
-      partNumber: partNumberFromText(item?.name || item?.title || item?.title_english || item?.title_romaji || ''),
+      seasonNumber: seasonNumberFromText(title),
+      sourceSeasonNumber: seasonNumberFromText(title),
+      partNumber: partNumberFromText(title),
       relation,
       kind,
     };
@@ -611,12 +1003,17 @@ function buildInstallmentItems(anime: any, discoveredItems: any[] = []): Install
   (anime?.relations || []).forEach((relation: any) => {
     (relation?.entry || [])
       .filter((entry: any) => entry?.mal_id)
+      .filter((entry: any) => relationTypeAllowed({ ...entry, relation: relation?.relation }, currentKind))
       .forEach((entry: any) => pushItem(entry, false, relation?.relation));
   });
 
   discoveredItems
     .filter((entry: any) => entry?.mal_id || entry?.id)
-    .forEach((entry: any) => pushItem(entry, String(entry?.mal_id || entry?.id) === String(anime?.mal_id || anime?.id || ''), 'DISCOVERED'));
+    .forEach((entry: any) => pushItem(
+      entry,
+      String(entry?.mal_id || entry?.id) === String(anime?.mal_id || anime?.id || ''),
+      entry?.relation || 'SEQUEL',
+    ));
 
   return buildInstallmentLabels(Array.from(deduped.values()));
 }
@@ -668,18 +1065,22 @@ export default function DesktopWatch() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
+  const [autoOpenBestSource, setAutoOpenBestSource] = useState(() => loadDesktopAutoOpenBestSource());
   const [audioMode, setAudioMode] = useState<AudioMode>(() => {
     const requestedType = searchParams.get('type');
     if (requestedType === 'dub' || requestedType === 'sub') return requestedType;
     return watchTypeForAudioPreference(loadDesktopAudioPreference());
   });
   const [sortBy, setSortBy] = useState<SourceSort>('best');
+  const [sourceMode, setSourceMode] = useState<SourceFilterMode>('balanced');
   const [episodeSearch, setEpisodeSearch] = useState('');
   const [episodeViewMode, setEpisodeViewMode] = useState<EpisodeViewMode>('cards');
   const [episodeJumpValue, setEpisodeJumpValue] = useState('');
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<{ torrentId: string; title: string; source: LocalPlaybackSource } | null>(null);
   const [playbackNotice, setPlaybackNotice] = useState<PlaybackNotice | null>(null);
+  const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(() => new Set());
+  const [failedSourceVersion, setFailedSourceVersion] = useState(0);
   const routeAniListId = searchParams.get('aid') || '';
   const routeMalId = searchParams.get('mid') || '';
   const seasonRailRef = useRef<HTMLDivElement | null>(null);
@@ -690,6 +1091,19 @@ export default function DesktopWatch() {
   const playActionLockRef = useRef(false);
   const [pendingAutoPlayEpisode, setPendingAutoPlayEpisode] = useState<number | null>(null);
   const requestedType = searchParams.get('type');
+
+  const toggleSourceDetails = useCallback((sourceId: string) => {
+    setExpandedSourceIds((current) => {
+      const next = new Set(current);
+      if (next.has(sourceId)) next.delete(sourceId);
+      else next.add(sourceId);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => subscribeDesktopAutoOpenBestSource(() => {
+    setAutoOpenBestSource(loadDesktopAutoOpenBestSource());
+  }), []);
 
   useEffect(() => {
     const nextPreference = loadDesktopAudioPreference();
@@ -737,6 +1151,7 @@ export default function DesktopWatch() {
         malId: string;
         anilistId: string;
         title: string;
+        relation: string;
       };
       const identityFor = (value: { malId?: string; anilistId?: string; routeId?: string }) =>
         value.anilistId
@@ -758,7 +1173,8 @@ export default function DesktopWatch() {
           routeId: String(entry?.mal_id || entry?.id || ''),
           malId: String(entry?.mal_id || ''),
           anilistId: String(entry?.anilist_id || entry?.id || ''),
-          title: String(entry?.name || entry?.title || entry?.title_english || entry?.title_romaji || ''),
+          title: titleForInstallment(entry),
+          relation: String(entry?.relation || ''),
         };
         const identity = identityFor(queueEntry);
         if (!queueEntry.routeId || seen.has(identity)) return;
@@ -766,8 +1182,16 @@ export default function DesktopWatch() {
         if (installmentDiscoveryPriority(entry, currentDisplayKinds) === 0) preferredQueue.push(queueEntry);
         else secondaryQueue.push(queueEntry);
       };
+      const graphEntryAllowed = (entry: any) => {
+        const format = normalizeInstallmentFormat(entry?.format || entry?.type || 'TV');
+        const kind = installmentKindFor(format);
+        return relationTypeAllowed(entry, currentInstallmentKind)
+          && !shouldSkipInstallment(entry, kind, false, currentDisplayKinds)
+          && isSameTitleLineInstallment(anime, entry, kind, false, entry?.relation);
+      };
+
       relationEntriesForGraph(anime)
-        .filter((entry: any) => relationTypeAllowed(entry, currentInstallmentKind))
+        .filter(graphEntryAllowed)
         .forEach(enqueue);
       const discovered: any[] = [];
       const maxNodes = 20;
@@ -787,10 +1211,10 @@ export default function DesktopWatch() {
           });
           const relatedAnime = detail?.data;
           if (!relatedAnime) continue;
-          discovered.push(relatedAnime);
+          discovered.push({ ...relatedAnime, relation: nextEntry.relation });
 
           relationEntriesForGraph(relatedAnime)
-            .filter((entry: any) => relationTypeAllowed(entry, currentInstallmentKind))
+            .filter(graphEntryAllowed)
             .forEach(enqueue);
         } catch {
           // Best-effort graph expansion only.
@@ -925,13 +1349,13 @@ export default function DesktopWatch() {
   const installmentSubtitle = useMemo(() => installmentHint(seasonItems), [seasonItems]);
   const showMetadataSkeleton = detailsQuery.isLoading && !hasFullMetadata;
 
-  const { data: sources, isLoading: sourcesLoading } = useQuery({
+  const { data: sources, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
     queryKey: ['desktop-watch-sources', anime?.title, anime?.title_english, anime?.title_romaji, selectedInstallment?.mal_id, selectedInstallment?.label, selectedEpisode, audioMode, audioPreference],
     queryFn: async () => {
       const epPadded = String(selectedEpisode).padStart(2, '0');
-      const titleCandidates = sourceSearchTitleVariants(anime, id).slice(0, 4);
-      const seasonHints = sourceSearchSeasonHints(anime, id);
-      const partHints = sourceSearchPartHints(anime, id);
+      const titleCandidates = sourceSearchTitleVariants(anime, id, selectedInstallment).slice(0, 6);
+      const seasonHints = sourceSearchSeasonHints(anime, id, selectedInstallment);
+      const partHints = sourceSearchPartHints(anime, id, selectedInstallment);
       const audioSuffix = audioMode === 'dub' ? ' dub' : '';
 
       const normalizeSourcePool = (items: NyaaItem[]) => {
@@ -939,16 +1363,17 @@ export default function DesktopWatch() {
           .filter((source) => !isBatchSource(source.title))
           .filter((source) => !isAncillarySource(source.title));
         if (!deduped.length) return [];
-        const episodeMatches = deduped.filter((source) => hasEpisodeSignal(source.title, selectedEpisode));
-        if (selectedEpisode > 0 && !episodeMatches.length) return [];
-        const narrowed = episodeMatches.length ? episodeMatches : deduped;
-        const installmentFiltered = selectedInstallment
-          ? narrowed.filter((source) => sourceMatchesInstallment(source.title, selectedInstallment))
-          : narrowed;
-        if (selectedInstallment && !installmentFiltered.length) return [];
-        const targeted = installmentFiltered;
-        const seeded = targeted.filter((source) => source.rawSeeders > 0);
-        const viable = seeded.length ? seeded : targeted;
+        const ranked = deduped
+          .map((source) => classifySource(source, {
+            anime,
+            routeId: id,
+            installment: selectedInstallment,
+            episode: selectedEpisode,
+          }))
+          .filter((source) => source.matchTier !== 'rejected');
+        if (!ranked.length) return [];
+        const seeded = ranked.filter((source) => source.rawSeeders > 0);
+        const viable = seeded.length ? seeded : ranked;
         const audioFiltered = audioMode === 'dub'
           ? viable.filter((source) => {
               if (audioPreference === 'dub-only') return isDubOnlySource(source.title) || isDualAudioSource(source.title);
@@ -993,7 +1418,7 @@ export default function DesktopWatch() {
         ];
       });
       const exact = await tryQueries(exactEpisodeQueries, { pages: 2, wide: false, deep: false });
-      if (exact.length) return exact;
+      if (exact.some((source) => source.matchTier === 'exact')) return exact;
 
       const seasonEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
         const stripped = stripSeasonDecorators(title) || cleanTitle(title);
@@ -1009,7 +1434,7 @@ export default function DesktopWatch() {
         return queries;
       }));
       const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 2, wide: true, deep: true });
-      if (seasonEpisode.length) return seasonEpisode;
+      if (seasonEpisode.some((source) => source.matchTier === 'exact')) return dedupeNyaaItems([...exact, ...seasonEpisode]) as RankedNyaaItem[];
 
       const broadEpisodeQueries = titleCandidates.flatMap((title) => {
         const cleanedTitle = cleanTitle(title);
@@ -1020,27 +1445,59 @@ export default function DesktopWatch() {
         ];
       });
       const broad = await tryQueries(broadEpisodeQueries, { pages: 5, wide: true, deep: true });
-      if (broad.length) return broad;
+      const combinedEpisode = dedupeNyaaItems([...exact, ...seasonEpisode, ...broad]) as RankedNyaaItem[];
+      if (combinedEpisode.some((source) => source.matchTier === 'exact' || source.matchTier === 'likely')) return combinedEpisode;
 
       const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 5, wide: true, deep: true });
-      if (fallback.length) return fallback;
+      if (fallback.length) return dedupeNyaaItems([...combinedEpisode, ...fallback]) as RankedNyaaItem[];
 
       return [];
     },
     enabled: !!anime?.title && selectedEpisode > 0,
-    placeholderData: (previous) => previous,
     staleTime: 1000 * 60 * 2,
     refetchOnWindowFocus: false,
   });
 
-  const sortedSources = useMemo(() => {
-    const items = [...(sources || [])];
+  const failedSourceRecords = useMemo(() => loadSourceFailureRecords(), [failedSourceVersion]);
+  const allRankedSources = useMemo<RankedNyaaItem[]>(() => {
+    const items = [...((sources || []) as RankedNyaaItem[])];
     return items.sort((a, b) => {
+      const failureDelta = sourceFailurePenalty(a, failedSourceRecords) - sourceFailurePenalty(b, failedSourceRecords);
+      if (failureDelta !== 0) return failureDelta;
+      const tierDifference = sourceTierWeight(a.matchTier) - sourceTierWeight(b.matchTier);
+      if (tierDifference !== 0 && sortBy === 'best') return tierDifference;
       if (sortBy === 'seeders') return b.rawSeeders - a.rawSeeders;
       if (sortBy === 'size') return a.rawSize - b.rawSize;
       return sourceScore(b, audioPreference, audioMode) - sourceScore(a, audioPreference, audioMode);
     });
-  }, [audioMode, audioPreference, sortBy, sources]);
+  }, [audioMode, audioPreference, failedSourceRecords, sortBy, sources]);
+  const exactSources = useMemo(() => allRankedSources.filter((source) => source.matchTier === 'exact'), [allRankedSources]);
+  const likelySources = useMemo(() => allRankedSources.filter((source) => source.matchTier === 'likely'), [allRankedSources]);
+  const broadSources = useMemo(() => allRankedSources.filter((source) => source.matchTier === 'broad'), [allRankedSources]);
+  const playableSources = useMemo(() => {
+    const shouldUseBroadFallback = sourceMode === 'balanced' && !exactSources.length && !likelySources.length;
+    const eligible = sourceMode === 'strict'
+      ? exactSources
+      : sourceMode === 'balanced'
+        ? [...exactSources, ...likelySources, ...(shouldUseBroadFallback ? broadSources : [])]
+        : [...exactSources, ...likelySources, ...broadSources];
+    return eligible
+      .filter((source) => source.playable && (source.matchTier !== 'broad' || sourceMode === 'broad' || shouldUseBroadFallback))
+      .sort((a, b) => sourceFailurePenalty(a, failedSourceRecords) - sourceFailurePenalty(b, failedSourceRecords));
+  }, [broadSources, exactSources, failedSourceRecords, likelySources, sourceMode]);
+  const sortedSources = useMemo(() => {
+    if (sourceMode === 'strict') return exactSources;
+    if (sourceMode === 'balanced') {
+      const primary = [...exactSources, ...likelySources];
+      return primary.length ? primary : broadSources;
+    }
+    return [...exactSources, ...likelySources, ...broadSources];
+  }, [broadSources, exactSources, likelySources, sourceMode]);
+  const sourcesBusy = sourcesLoading || sourcesFetching;
+  const nextPlayableSource = useMemo(
+    () => playableSources.find((source) => !sourceFailureFor(source, failedSourceRecords)) || playableSources[0] || null,
+    [failedSourceRecords, playableSources],
+  );
 
   const { data: playbackProgress } = useQuery<DesktopPlaybackProgress>({
     queryKey: ['desktop-playback-progress', playback?.torrentId],
@@ -1151,15 +1608,27 @@ export default function DesktopWatch() {
     return { result, playbackSource };
   }, [sourcePayloadFor]);
 
-  const playSource = useCallback(async (source: NyaaItem) => {
+  const playSource = useCallback(async (source: RankedNyaaItem) => {
     if (playActionLockRef.current || activeSourceId) {
       setPlaybackNotice({ tone: 'loading', text: 'A playback action is already running. Wait for it to finish before starting another source.' });
+      return;
+    }
+    if (!source.playable) {
+      setPlaybackNotice({ tone: 'error', text: `${source.playableLabel} source. StreamNyaa will only play sources that pass the same-anime, same-installment, same-episode checks.` });
       return;
     }
     playActionLockRef.current = true;
     const retryPool = [
       source,
-      ...sortedSources.filter((candidate) => (candidate.infoHash || candidate.magnet) !== (source.infoHash || source.magnet)),
+      ...playableSources.filter((candidate) => (
+        (candidate.infoHash || candidate.magnet) !== (source.infoHash || source.magnet)
+        && (
+          candidate.matchTier !== 'broad'
+          || source.matchTier === 'broad'
+          || sourceMode === 'broad'
+          || (!exactSources.length && !likelySources.length)
+        )
+      )),
     ].slice(0, SOURCE_RETRY_LIMIT);
     const errors: string[] = [];
     setPlaybackNotice({ tone: 'loading', text: `Opening the player and preparing this release${retryPool.length > 1 ? ' with backup sources ready' : ''}...` });
@@ -1174,6 +1643,8 @@ export default function DesktopWatch() {
 
         try {
           const { result, playbackSource } = await openOneSource(candidate);
+          forgetSourceFailure(candidate);
+          setFailedSourceVersion((value) => value + 1);
           setPlayback({ torrentId: result.torrent_id!, title: result.title || candidate.title, source: playbackSource });
           setPlaybackNotice({
             tone: 'success',
@@ -1184,10 +1655,15 @@ export default function DesktopWatch() {
           return;
         } catch (error) {
           const message = errorMessage(error, 'Source link could not open.');
-          errors.push(message);
           if (/another playback action is already running|playback shutdown is busy|busy\./i.test(message)) {
             throw new Error(message);
           }
+          rememberSourceFailure(candidate, message, {
+            animeId: anime?.mal_id || anime?.id,
+            episode: selectedEpisode,
+          });
+          setFailedSourceVersion((value) => value + 1);
+          errors.push(message);
         }
       }
 
@@ -1201,7 +1677,12 @@ export default function DesktopWatch() {
       setActiveSourceId(null);
       playActionLockRef.current = false;
     }
-  }, [activeSourceId, openOneSource, sortedSources]);
+  }, [activeSourceId, anime?.id, anime?.mal_id, exactSources.length, likelySources.length, openOneSource, playableSources, selectedEpisode, sourceMode]);
+
+  const playNextPlayableSource = useCallback(() => {
+    if (!nextPlayableSource) return;
+    void playSource(nextPlayableSource);
+  }, [nextPlayableSource, playSource]);
 
   const playEpisodeNumber = useCallback((episodeNumber: number) => {
     const targetEpisode = clampNumber(Math.round(episodeNumber), 1, Math.max(1, airedCount || selectedEpisode || 1));
@@ -1211,26 +1692,45 @@ export default function DesktopWatch() {
       selectEpisode(targetEpisode);
       return;
     }
-    if (sortedSources[0]) {
-      void playSource(sortedSources[0]);
+    if (activeSourceId || playActionLockRef.current) {
+      setPendingAutoPlayEpisode(targetEpisode);
+      setPlaybackNotice({ tone: 'loading', text: 'Current player handoff is still starting. The selected episode will open next.' });
+      return;
+    }
+    if (sourcesBusy) {
+      setPendingAutoPlayEpisode(targetEpisode);
+      setPlaybackNotice({ tone: 'loading', text: 'Finding a verified same-episode source before opening playback...' });
+      return;
+    }
+    if (playableSources[0]) {
+      void playSource(playableSources[0]);
       return;
     }
     setPendingAutoPlayEpisode(targetEpisode);
-  }, [airedCount, playSource, selectEpisode, selectedEpisode, sortedSources]);
+  }, [activeSourceId, airedCount, playSource, playableSources, selectEpisode, selectedEpisode, sourcesBusy]);
+
+  const chooseEpisode = useCallback((episodeNumber: number) => {
+    if (autoOpenBestSource) {
+      playEpisodeNumber(episodeNumber);
+      return;
+    }
+    selectEpisode(episodeNumber);
+  }, [autoOpenBestSource, playEpisodeNumber, selectEpisode]);
 
   useEffect(() => {
     if (pendingAutoPlayEpisode === null) return;
     if (pendingAutoPlayEpisode !== selectedEpisode) return;
-    if (sourcesLoading) return;
-    if (sortedSources[0]) {
-      const bestSource = sortedSources[0];
+    if (activeSourceId || playActionLockRef.current) return;
+    if (sourcesBusy) return;
+    if (playableSources[0]) {
+      const bestSource = playableSources[0];
       setPendingAutoPlayEpisode(null);
       void playSource(bestSource);
       return;
     }
     setPendingAutoPlayEpisode(null);
-    setPlaybackNotice({ tone: 'error', text: 'No playable sources were found for that episode.' });
-  }, [pendingAutoPlayEpisode, playSource, selectedEpisode, sortedSources, sourcesLoading]);
+    setPlaybackNotice({ tone: 'error', text: 'No verified same-episode source was found. Switch to Balanced to inspect likely matches, or open the manual source search.' });
+  }, [activeSourceId, pendingAutoPlayEpisode, playSource, playableSources, selectedEpisode, sourcesBusy]);
 
   const stopPlayback = useCallback(async () => {
     try {
@@ -1247,7 +1747,7 @@ export default function DesktopWatch() {
   if (!id) return <div className="py-24 text-center text-white">Select an anime to continue.</div>;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#050508] text-white">
+    <div className="relative min-h-screen overflow-x-hidden bg-[#0A0A0C] text-white">
       <Seo title={`${anime.title} Watch | StreamNyaa Desktop`} description="Desktop watch source screen." canonicalPath={`/watch/${id}`} robots="noindex, nofollow" />
       <SafeImage candidates={imageCandidatesFor(anime, true)} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-[0.13] blur-2xl" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_24%,rgba(126,58,242,0.20),transparent_30%),linear-gradient(90deg,#050508_0%,rgba(5,5,8,0.94)_31%,rgba(5,5,8,0.82)_100%)]" />
@@ -1257,8 +1757,13 @@ export default function DesktopWatch() {
           <Link to="/" className="mb-6 grid h-10 w-10 place-items-center rounded-full bg-black/50 text-white hover:bg-white/12">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] shadow-2xl shadow-black/40">
-            <SafeImage candidates={imageCandidatesFor(anime)} alt={anime.title} className="aspect-[2/3] w-full object-cover" />
+          <div className="relative">
+            <div className="pointer-events-none absolute -inset-4 overflow-hidden rounded-[2rem] opacity-25 blur-2xl">
+              <SafeImage candidates={imageCandidatesFor(anime)} alt="" className="h-full w-full object-cover" fallbackClassName="h-full w-full" />
+            </div>
+            <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] shadow-2xl shadow-black/40 ring-1 ring-white/[0.02]">
+              <SafeImage candidates={imageCandidatesFor(anime)} alt={anime.title} className="aspect-[2/3] w-full object-cover" />
+            </div>
           </div>
           {showMetadataSkeleton ? (
             <>
@@ -1277,7 +1782,10 @@ export default function DesktopWatch() {
             </>
           ) : (
             <>
-              <h1 className="mt-7 text-[34px] font-black leading-tight tracking-[-0.03em]">{anime.title}</h1>
+              {selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? (
+                <p className="mt-7 text-[11px] font-black uppercase tracking-[0.22em] text-primary">{selectedInstallment.label}</p>
+              ) : null}
+              <h1 className={`${selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? 'mt-2' : 'mt-7'} break-words text-[30px] font-black leading-[1.06] tracking-[-0.035em]`}>{anime.title}</h1>
               <div className="mt-2 flex items-center gap-2 text-sm font-bold text-white/62">
                 <span>{anime.year || 'Anime'}</span>
                 <span>-</span>
@@ -1299,7 +1807,7 @@ export default function DesktopWatch() {
 
         <main className="min-w-0 py-8">
           <section>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="sticky top-0 z-20 mb-4 flex items-center justify-between border-b border-white/[0.06] bg-[#0A0A0C]/82 pb-4 pt-1 backdrop-blur-xl">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">{installmentTitle}</p>
                 <p className="mt-2 text-xs font-semibold text-white/34">{installmentSubtitle}</p>
@@ -1307,8 +1815,8 @@ export default function DesktopWatch() {
                   {seasonItems.map((season) => {
                     const sharedClassName = `shrink-0 rounded-full border px-5 py-2.5 text-sm font-black transition-all ${
                       season.current
-                        ? 'border-primary/70 bg-primary text-white shadow-[0_0_0_1px_rgba(225,29,72,0.38)]'
-                        : 'border-white/22 bg-white/[0.04] text-white/76 hover:border-primary/50 hover:bg-white/[0.08] hover:text-white'
+                        ? 'border-transparent bg-primary text-white shadow-lg shadow-primary/18'
+                        : 'border-white/10 bg-white/[0.04] text-white/64 hover:border-white/18 hover:bg-white/[0.07] hover:text-white'
                     }`;
                     return season.current ? (
                       <button
@@ -1368,7 +1876,7 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => railScroll(seasonRailRef, 'left', 260)}
-                    className="grid h-10 w-10 place-items-center rounded-full border border-white/12 bg-white/[0.04] text-white/74 hover:border-primary/45 hover:text-white"
+                    className="grid h-10 w-10 place-items-center rounded-full border border-white/12 bg-white/[0.04] text-white/74 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                     aria-label="Scroll installments left"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -1376,7 +1884,7 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => railScroll(seasonRailRef, 'right', 260)}
-                    className="grid h-10 w-10 place-items-center rounded-full border border-white/12 bg-white/[0.04] text-white/74 hover:border-primary/45 hover:text-white"
+                    className="grid h-10 w-10 place-items-center rounded-full border border-white/12 bg-white/[0.04] text-white/74 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                     aria-label="Scroll installments right"
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -1385,7 +1893,7 @@ export default function DesktopWatch() {
               </div>
             </div>
 
-            <div className="mb-2 flex items-center justify-between gap-4">
+            <div className="sticky top-[154px] z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-2xl border border-white/[0.06] bg-[#0A0A0C]/78 px-2 py-3 backdrop-blur-xl">
               <div className="flex items-center gap-2 text-lg font-black">
                 <Download className="h-4 w-4 text-primary" />
                 <span>{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'} ({airedCount || allEpisodes.length || 0})</span>
@@ -1407,7 +1915,7 @@ export default function DesktopWatch() {
                   />
                 </div>
                 {longEpisodeRun ? (
-                  <div className="hidden rounded-xl border border-white/12 bg-black/35 p-1 md:flex">
+                  <div className="hidden rounded-xl border border-white/10 bg-black/30 p-1 md:flex">
                     {(['cards', 'grid'] as EpisodeViewMode[]).map((mode) => (
                       <button
                         key={mode}
@@ -1415,7 +1923,7 @@ export default function DesktopWatch() {
                         onClick={() => setEpisodeViewMode(mode)}
                         className={`rounded-lg px-3 py-2 text-xs font-black uppercase tracking-[0.16em] ${
                           episodeViewMode === mode
-                            ? 'bg-primary text-white'
+                            ? 'bg-white/[0.12] text-white'
                             : 'text-white/56 hover:text-white'
                         }`}
                       >
@@ -1482,17 +1990,32 @@ export default function DesktopWatch() {
                 ) : null}
                 <button
                   type="button"
-                  disabled={Boolean(activeSourceId) || sourcesLoading}
+                  disabled={Boolean(activeSourceId) || sourcesBusy}
                   onClick={() => playEpisodeNumber(selectedEpisode)}
                   className="hidden rounded-xl bg-primary px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white shadow-lg shadow-primary/20 disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
                 >
                   {Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : 'Play Episode'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !autoOpenBestSource;
+                    setAutoOpenBestSource(next);
+                    saveDesktopAutoOpenBestSource(next);
+                  }}
+                  className={`hidden rounded-xl border px-4 py-3 text-xs font-black uppercase tracking-[0.16em] transition-colors md:inline-flex ${
+                    autoOpenBestSource
+                      ? 'border-white/14 bg-white/[0.08] text-white'
+                      : 'border-white/12 bg-black/35 text-white/48 hover:border-white/18 hover:text-white'
+                  }`}
+                >
+                  Auto-play {autoOpenBestSource ? 'On' : 'Off'}
+                </button>
                 <div className={`hidden items-center gap-2 md:flex ${longEpisodeRun && episodeViewMode === 'grid' ? 'opacity-40 pointer-events-none' : ''}`}>
                   <button
                     type="button"
                     onClick={() => railScroll(episodesRailRef, 'left', 520)}
-                    className="grid h-10 w-10 place-items-center rounded-full border border-white/12 bg-white/[0.04] text-white/74 hover:border-primary/45 hover:text-white"
+                    className="grid h-10 w-10 place-items-center rounded-full border border-white/12 bg-white/[0.04] text-white/74 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                     aria-label="Scroll episodes left"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -1500,7 +2023,7 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => railScroll(episodesRailRef, 'right', 520)}
-                    className="grid h-10 w-10 place-items-center rounded-full border border-white/12 bg-white/[0.04] text-white/74 hover:border-primary/45 hover:text-white"
+                    className="grid h-10 w-10 place-items-center rounded-full border border-white/12 bg-white/[0.04] text-white/74 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                     aria-label="Scroll episodes right"
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -1519,14 +2042,14 @@ export default function DesktopWatch() {
                     key={episode.number}
                     className={`rounded-xl border px-3 py-3 text-left transition-all ${
                       episode.number === selectedEpisode
-                        ? 'border-primary bg-primary/[0.1] shadow-[0_0_0_1px_rgba(225,29,72,0.42)]'
-                        : 'border-white/10 bg-white/[0.035] hover:border-white/24'
+                        ? 'border-white/20 bg-white/[0.075] shadow-lg shadow-black/20 ring-1 ring-primary/25'
+                        : 'border-white/10 bg-white/[0.035] hover:-translate-y-0.5 hover:border-white/18 hover:bg-white/[0.055]'
                     }`}
                   >
                     <button
                       ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
                       type="button"
-                      onClick={() => selectEpisode(episode.number)}
+                      onClick={() => chooseEpisode(episode.number)}
                       className="w-full text-left"
                     >
                       <p className={`text-base font-black ${episode.number === selectedEpisode ? 'text-white' : 'text-white/86'}`}>Ep {episode.number}</p>
@@ -1536,7 +2059,7 @@ export default function DesktopWatch() {
                       type="button"
                       disabled={Boolean(activeSourceId)}
                       onClick={() => playEpisodeNumber(episode.number)}
-                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-40"
+                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-white/[0.14] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <Play className="h-3 w-3 fill-current" />
                       Play
@@ -1551,16 +2074,16 @@ export default function DesktopWatch() {
                     key={episode.number}
                     ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
                     type="button"
-                    onClick={() => selectEpisode(episode.number)}
+                    onClick={() => chooseEpisode(episode.number)}
                     className={`group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-lg border text-left transition-all ${
                       episode.number === selectedEpisode
-                        ? 'border-primary bg-primary/[0.08] shadow-[0_0_0_1px_rgba(225,29,72,0.45)]'
-                        : 'border-white/12 hover:border-white/30'
+                        ? 'border-white/22 bg-white/[0.08] shadow-lg shadow-black/22 ring-1 ring-primary/30'
+                        : 'border-white/10 hover:-translate-y-0.5 hover:border-white/20'
                     }`}
                   >
                     <SafeImage candidates={uniqueImageCandidates([episode.image, wideImageFor(anime), posterFor(anime)])} alt={episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
                     <div className={`absolute inset-0 ${episode.number === selectedEpisode ? 'bg-[linear-gradient(0deg,rgba(48,8,16,0.92),rgba(0,0,0,0.06)_62%)]' : 'bg-[linear-gradient(0deg,rgba(0,0,0,0.82),rgba(0,0,0,0.08)_62%)]'}`} />
-                    <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-black ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/70 text-white'}`}>{episode.number}</span>
+                    <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-black ${episode.number === selectedEpisode ? 'bg-white text-black' : 'bg-black/70 text-white'}`}>{episode.number}</span>
                     <p className="absolute bottom-3 left-3 right-3 line-clamp-1 text-sm font-black">{episode.title}</p>
                   </button>
                 ))}
@@ -1577,7 +2100,7 @@ export default function DesktopWatch() {
             </p>
           </section>
 
-          <section ref={sourceSectionRef} className="mt-8">
+          <section ref={sourceSectionRef} className="mt-8 pb-24">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <button
@@ -1590,34 +2113,62 @@ export default function DesktopWatch() {
                 </button>
                 <button
                   type="button"
-                  disabled={!sortedSources[0] || Boolean(activeSourceId)}
-                  onClick={() => sortedSources[0] && void playSource(sortedSources[0])}
+                  disabled={!playableSources[0] || Boolean(activeSourceId) || sourcesBusy}
+                  onClick={() => playableSources[0] && void playSource(playableSources[0])}
                   className="rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Play Episode
                 </button>
               </div>
-              <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SourceSort)} className="rounded-xl border border-white/12 bg-black/45 px-4 py-3 text-sm font-black text-white outline-none">
-                <option value="best">Best Match</option>
-                <option value="seeders">Seeders (High to Low)</option>
-                <option value="size">Smaller Files First</option>
-              </select>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="rounded-xl border border-white/10 bg-black/35 p-1">
+                  {(['strict', 'balanced', 'broad'] as SourceFilterMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setSourceMode(mode)}
+                      className={`rounded-lg px-3 py-2 text-xs font-black uppercase tracking-[0.14em] transition-colors ${
+                        sourceMode === mode
+                          ? 'bg-white text-black'
+                          : 'text-white/52 hover:bg-white/[0.07] hover:text-white'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+                <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SourceSort)} className="rounded-xl border border-white/12 bg-black/45 px-4 py-3 text-sm font-black text-white outline-none">
+                  <option value="best">Best Match</option>
+                  <option value="seeders">Seeders (High to Low)</option>
+                  <option value="size">Smaller Files First</option>
+                </select>
+              </div>
             </div>
 
             {playbackNotice ? (
-              <div className={`mb-5 rounded-2xl border p-4 text-sm font-bold ${
+              <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-sm font-bold ${
                 playbackNotice.tone === 'error'
                   ? 'border-red-400/25 bg-red-500/10 text-red-100'
                   : playbackNotice.tone === 'success'
                     ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
                     : 'border-primary/25 bg-primary/10 text-white/76'
               }`}>
-                {playbackNotice.text}
+                <span>{playbackNotice.text}</span>
+                {playbackNotice.tone === 'error' && nextPlayableSource ? (
+                  <button
+                    type="button"
+                    disabled={Boolean(activeSourceId) || sourcesBusy}
+                    onClick={playNextPlayableSource}
+                    className="rounded-full border border-white/12 bg-white px-4 py-2 text-xs font-black text-black transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Try next playable source
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
             {playback ? (
-              <div className="mb-5 overflow-hidden rounded-2xl border border-primary/30 bg-primary/[0.08] p-4 shadow-lg shadow-primary/10">
+              <div className="mb-5 overflow-hidden rounded-2xl border border-white/10 bg-[#111217]/82 p-4 shadow-lg shadow-black/20">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Active stream</p>
@@ -1638,7 +2189,7 @@ export default function DesktopWatch() {
                         key={label}
                         className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] ${
                           activeStep
-                            ? 'border-primary/50 bg-primary/15 text-white'
+                            ? 'border-white/14 bg-white/[0.08] text-white'
                             : 'border-white/10 bg-white/[0.04] text-white/38'
                         }`}
                       >
@@ -1664,7 +2215,7 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => void stopPlayback()}
-                    className="rounded-full border border-white/12 bg-black/35 px-4 py-2 text-xs font-black text-white/78 transition-colors hover:border-primary/45 hover:text-white"
+                    className="rounded-full border border-white/12 bg-black/35 px-4 py-2 text-xs font-black text-white/78 transition-colors hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
                   >
                     Stop stream
                   </button>
@@ -1672,47 +2223,171 @@ export default function DesktopWatch() {
               </div>
             ) : null}
 
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-black">Available Sources <span className="text-white/35">- Episode {selectedEpisode}</span></h2>
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-primary">Smart source selector</p>
+                <h2 className="mt-1 text-lg font-black">Available Sources <span className="text-white/35">- Episode {selectedEpisode}</span></h2>
+              </div>
               <div className="flex gap-2 text-xs font-black text-white/58">
                 {['1080p', 'High seeders', 'Dual Audio', 'HEVC'].map((label) => <span key={label} className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5">{label}</span>)}
               </div>
             </div>
+            <div className="mb-4 flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/42">
+              <span className="rounded-full border border-white/8 bg-white/[0.035] px-3 py-1.5">
+                Sort: {sortBy === 'seeders' ? 'Seed health' : sortBy === 'size' ? 'Small files' : 'Best match'}
+              </span>
+              <span className="rounded-full border border-white/8 bg-white/[0.035] px-3 py-1.5">
+                Audio: {audioPreference === 'sub-preferred' ? 'Sub preferred' : audioPreference === 'dub-only' ? 'Dub only' : 'Dual preferred'}
+              </span>
+              <span className="rounded-full border border-white/8 bg-white/[0.035] px-3 py-1.5">Exact episode first</span>
+              <span className="rounded-full border border-white/8 bg-white/[0.035] px-3 py-1.5">
+                Showing {sourceMode === 'strict' ? 'exact only' : sourceMode === 'balanced' ? 'exact + likely' : 'all tiers'}
+              </span>
+              <span className="rounded-full border border-white/8 bg-white/[0.035] px-3 py-1.5">
+                Exact {exactSources.length} / Likely {likelySources.length} / Broad {broadSources.length}
+              </span>
+            </div>
 
-            {sourcesLoading ? (
+            {sourcesBusy ? (
               <div className="grid gap-3">
-                {Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-[92px] animate-pulse rounded-xl border border-white/8 bg-white/[0.045]" />)}
+                <div className="rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.055))] p-4 shadow-lg shadow-black/18">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Finding best source</p>
+                      <p className="mt-1 text-sm font-black text-white">Checking episode match, seed health, audio preference, and release quality.</p>
+                      <p className="mt-1 text-xs font-bold text-white/50">The first playable source will be ranked above the full list.</p>
+                    </div>
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  </div>
+                </div>
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="desktop-skeleton-shimmer h-[76px] rounded-2xl border border-white/[0.06]" />
+                ))}
               </div>
             ) : sortedSources.length ? (
               <div className="grid gap-3">
                 {sortedSources.map((source, index) => {
+                  const sourceId = source.infoHash || source.magnet || source.link || source.title;
                   const active = activeSourceId === (source.infoHash || source.magnet);
+                  const reasons = [
+                    ...source.matchReasons,
+                    ...sourceQualityReasons(source, selectedEpisode, audioPreference, audioMode),
+                  ].filter((reason, reasonIndex, list) => list.indexOf(reason) === reasonIndex);
+                  const score = Math.round(sourceScore(source, audioPreference, audioMode));
+                  const visibleReasons = reasons.slice(0, 3);
+                  const expanded = expandedSourceIds.has(sourceId);
+                  const quality = /\b720p\b/i.test(source.title) ? '720p' : /\b2160p|4k\b/i.test(source.title) ? '4K' : '1080p';
+                  const codec = /\b(hevc|h\.?265|x265)\b/i.test(source.title) ? 'HEVC' : /\b(avc|h\.?264|x264)\b/i.test(source.title) ? 'H.264' : 'Video';
+                  const audioLabel = isDualAudioSource(source.title) ? 'Dual Audio' : isDubOnlySource(source.title) ? 'Dub' : 'Sub';
+                  const failure = sourceFailureFor(source, failedSourceRecords);
+                  const previousTier = sortedSources[index - 1]?.matchTier;
                   return (
-                    <div key={source.infoHash || source.magnet} className={`flex items-center gap-4 rounded-xl border p-4 ${index === 0 ? 'border-primary/70 bg-primary/[0.08]' : 'border-white/10 bg-white/[0.035]'}`}>
-                      <span className="rounded-md bg-blue-600 px-2 py-1 text-xs font-black text-white">{/\b720p\b/i.test(source.title) ? '720p' : '1080p'}</span>
-                      <div className="min-w-0 flex-1">
-                        {index === 0 ? <p className="mb-1 text-[10px] font-black uppercase tracking-[0.24em] text-primary">Best match</p> : null}
-                        <p className="line-clamp-1 text-sm font-black">{source.title}</p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-white/45">
-                          <span className="text-emerald-400">Seeders {source.seeders}</span>
-                          <span>{source.size}</span>
-                          <span>{sourceHealth(source.rawSeeders)}</span>
-                          {getTorrentBadges(source).slice(0, 3).map((badge) => <span key={`${source.infoHash}-${badge.label}`} className={torrentBadgeClassName(badge.tone)}>{badge.label}</span>)}
+                    <Fragment key={sourceId}>
+                    {index === 0 || source.matchTier !== previousTier ? (
+                      <div className={`${index === 0 ? '' : 'mt-2'} flex items-center justify-between border-t border-white/8 pt-4`}>
+                        <div>
+                          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/52">{sourceTierLabel(source.matchTier)}</p>
+                          <p className="mt-1 text-xs font-bold text-white/32">{sourceTierDescription(source.matchTier)}</p>
+                        </div>
+                        <p className="text-xs font-bold text-white/36">
+                          {source.matchTier === 'exact' ? exactSources.length : source.matchTier === 'likely' ? likelySources.length : broadSources.length} source
+                          {(source.matchTier === 'exact' ? exactSources.length : source.matchTier === 'likely' ? likelySources.length : broadSources.length) === 1 ? '' : 's'}
+                        </p>
+                      </div>
+                    ) : null}
+                    <div
+                      className={`relative overflow-hidden rounded-2xl border bg-[#111217]/78 p-4 shadow-lg shadow-black/18 transition-all hover:-translate-y-0.5 hover:border-white/16 hover:bg-[#181a22]/78 ${
+                        index === 0 && source.matchTier === 'exact' ? 'border-white/14 bg-[linear-gradient(135deg,rgba(255,255,255,0.075),rgba(255,255,255,0.035)_52%,rgba(244,63,94,0.06))] shadow-black/25' : 'border-white/8'
+                      }`}
+                    >
+                      {index === 0 && source.matchTier === 'exact' ? <div className="absolute inset-y-4 left-0 w-1 rounded-r-full bg-primary" /> : null}
+                      <div className="flex items-center gap-4">
+                        <span className="shrink-0 rounded-lg border border-white/10 bg-white/[0.07] px-3 py-2 text-xs font-black text-white">{quality}</span>
+                        <div className="min-w-0 flex-1">
+                          {index === 0 && source.matchTier === 'exact' ? <p className="mb-1 text-[10px] font-black uppercase tracking-[0.22em] text-primary">Recommended source</p> : null}
+                          <p className="line-clamp-1 text-sm font-black text-white">{source.title}</p>
+                          <p className="mt-1 text-xs font-semibold text-white/48">
+                            {quality} <span className="text-white/24">-</span> {codec} <span className="text-white/24">-</span> {audioLabel} <span className="text-white/24">-</span> {source.size}
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-white/45">
+                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${playableStatusClassName(source.playableStatus)}`}>
+                              {source.playableLabel}
+                            </span>
+                            {failure ? (
+                              <span
+                                title={failure.message}
+                                className="rounded-full border border-red-400/20 bg-red-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-200"
+                              >
+                                Recently failed
+                              </span>
+                            ) : null}
+                            <span className="text-emerald-400">{sourceHealth(source.rawSeeders)}</span>
+                            <span>{source.seeders} seeders</span>
+                            {visibleReasons.map((reason) => (
+                              <span key={`${sourceId}-${reason}`} className="rounded-full border border-white/8 bg-white/[0.045] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/54">
+                                {reason}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleSourceDetails(sourceId)}
+                            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs font-black text-white/58 transition-colors hover:border-white/18 hover:text-white"
+                          >
+                            Details
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                          </button>
+                          <button type="button" onClick={() => navigator.clipboard?.writeText(source.magnet || torrentUrlFor(source))} className="grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/[0.05] text-white/62 transition-colors hover:border-white/18 hover:text-white">
+                            <Copy className="h-4 w-4" />
+                          </button>
+                          <button type="button" disabled={Boolean(active) || !source.playable} onClick={() => void playSource(source)} className="inline-flex h-10 min-w-[86px] items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-black uppercase tracking-[0.14em] text-white shadow-lg shadow-primary/18 disabled:cursor-not-allowed disabled:opacity-60">
+                            {active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}
+                            {active ? 'Opening' : source.playable ? 'Play' : 'Blocked'}
+                          </button>
                         </div>
                       </div>
-                      <button type="button" onClick={() => navigator.clipboard?.writeText(source.magnet || torrentUrlFor(source))} className="grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/[0.06] text-white/68 hover:text-white">
-                        <Copy className="h-4 w-4" />
-                      </button>
-                      <button type="button" disabled={Boolean(active)} onClick={() => void playSource(source)} className="grid h-10 w-10 place-items-center rounded-lg bg-primary text-white shadow-lg shadow-primary/20 disabled:cursor-not-allowed disabled:opacity-60">
-                        {active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}
-                      </button>
+                      {expanded ? (
+                        <div className="mt-4 rounded-xl border border-white/8 bg-black/24 p-3">
+                          <div className="flex flex-wrap gap-2">
+                            {[...reasons, `Score ${score}`, source.category, source.pubDate ? `Updated ${new Date(source.pubDate).toLocaleDateString()}` : '', source.infoHash ? `Hash ${source.infoHash.slice(0, 10)}` : '']
+                              .filter(Boolean)
+                              .map((label) => (
+                                <span key={`${sourceId}-${label}`} className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-white/46">
+                                  {label}
+                                </span>
+                              ))}
+                            {getTorrentBadges(source).map((badge) => (
+                              <span key={`${sourceId}-${badge.label}`} className={torrentBadgeClassName(badge.tone)}>{badge.label}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
+                    </Fragment>
                   );
                 })}
               </div>
             ) : (
-              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-8 text-center text-white/54">
-                No sources found. Try another episode or switch between Sub and Dual / Dub.
+              <div className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.05))] p-8 text-center text-white/62">
+                <p className="text-lg font-black text-white">No playable source found</p>
+                <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/50">Try switching audio mode, lowering quality expectations, or opening the manual source search for this title.</p>
+                <div className="mt-5 flex flex-wrap justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void refetchSources()}
+                    className="inline-flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-black text-white shadow-lg shadow-primary/18 transition-colors hover:bg-primary/90"
+                  >
+                    Retry
+                  </button>
+                  <Link
+                    to={`/nyaa?q=${encodeURIComponent(anime.title || '')}`}
+                    className="inline-flex h-11 items-center rounded-xl border border-white/10 bg-white/[0.06] px-5 text-sm font-black text-white transition-colors hover:border-white/18 hover:bg-white/[0.09]"
+                  >
+                    Open Sources Search
+                  </Link>
+                </div>
               </div>
             )}
           </section>
@@ -1727,6 +2402,28 @@ function sourceHealth(seedCount: number) {
   if (seedCount >= 50) return 'Healthy';
   if (seedCount >= 15) return 'Usable';
   return 'Low seed';
+}
+
+function sourceTierLabel(tier: SourceMatchTier) {
+  if (tier === 'exact') return 'Exact matches';
+  if (tier === 'likely') return 'Likely matches';
+  if (tier === 'broad') return 'Broad matches';
+  return 'Rejected';
+}
+
+function sourceTierDescription(tier: SourceMatchTier) {
+  if (tier === 'exact') return 'Same anime, same installment, same episode. Default playback uses this group.';
+  if (tier === 'likely') return 'Strong title match, but one filename signal is weaker. Visible in Balanced mode.';
+  if (tier === 'broad') return 'Loose matches only. Kept visible for manual inspection and not used for autoplay.';
+  return '';
+}
+
+function playableStatusClassName(status: SourcePlayableStatus) {
+  if (status === 'verified') return 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300';
+  if (status === 'untested') return 'border-sky-400/20 bg-sky-500/10 text-sky-300';
+  if (status === 'low-seed') return 'border-amber-400/20 bg-amber-500/10 text-amber-300';
+  if (status === 'unsupported') return 'border-red-400/20 bg-red-500/10 text-red-300';
+  return 'border-white/10 bg-white/[0.05] text-white/44';
 }
 
 function clampNumber(value: number, min: number, max: number) {

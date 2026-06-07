@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::{
     collections::HashMap,
     env, fs,
@@ -11,20 +13,18 @@ use std::{
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 use tauri::Manager;
 
 const RQBIT_URL: &str = "http://127.0.0.1:3030";
 const PER_SESSION_CACHE_MAX_BYTES: u64 = 3 * 1024 * 1024 * 1024;
+const MAX_SESSION_CACHE_BYTES: u64 = 12 * 1024 * 1024 * 1024;
 const GLOBAL_CACHE_MAX_BYTES: u64 = 6 * 1024 * 1024 * 1024;
 const LOW_SPACE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const MIN_PLAYBACK_FREE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-const ABSOLUTE_STREAM_SOURCE_MAX_BYTES: u64 = 3 * 1024 * 1024 * 1024;
 const INITIAL_PLAYBACK_BUFFER_BYTES: u64 = 24 * 1024 * 1024;
 const MIN_INITIAL_PLAYBACK_BUFFER_BYTES: u64 = 6 * 1024 * 1024;
 const STREAM_READY_TIMEOUT_MS: u128 = 20_000;
-const STREAM_SESSION_HARD_STOP_BYTES: u64 = PER_SESSION_CACHE_MAX_BYTES;
+const STREAM_TARGET_HANDOFF_MS: u128 = 2_200;
 const PLAYER_PIPE_PREFIX: &str = "streamnyaa-player";
 const SOURCE_API_CACHE_TTL_MS: u128 = 1000 * 60 * 3;
 const SOURCE_API_CACHE_MAX_ENTRIES: usize = 24;
@@ -123,6 +123,7 @@ struct ActiveSessionStatus {
     torrent_id: String,
     session_dir: String,
     cache_bytes: u64,
+    cache_limit_bytes: u64,
     media_url: Option<String>,
 }
 
@@ -137,7 +138,6 @@ struct DesktopSettings {
 #[derive(Deserialize)]
 struct PlaybackRequest {
     magnet: String,
-    torrent_url: Option<String>,
     info_hash: Option<String>,
     title: String,
     anime_title: String,
@@ -160,6 +160,7 @@ struct ActiveSession {
     session_dir: PathBuf,
     engine_path: String,
     media_url: String,
+    cache_limit_bytes: u64,
 }
 
 #[derive(Clone)]
@@ -309,26 +310,68 @@ fn candidate_paths(command: &str) -> Vec<String> {
         paths.push(manifest_bin.join("mpv.exe").to_string_lossy().to_string());
         if let Ok(exe) = env::current_exe() {
             if let Some(dir) = exe.parent() {
-                paths.push(dir.join("bin").join("mpv.exe").to_string_lossy().to_string());
-                paths.push(dir.join("resources").join("bin").join("mpv.exe").to_string_lossy().to_string());
+                paths.push(
+                    dir.join("bin")
+                        .join("mpv.exe")
+                        .to_string_lossy()
+                        .to_string(),
+                );
+                paths.push(
+                    dir.join("resources")
+                        .join("bin")
+                        .join("mpv.exe")
+                        .to_string_lossy()
+                        .to_string(),
+                );
             }
         }
-        push_env_candidate(&mut paths, env::var("ProgramW6432").ok(), r"MPV Player\mpv.exe");
-        push_env_candidate(&mut paths, env::var("ProgramFiles").ok(), r"MPV Player\mpv.exe");
+        push_env_candidate(
+            &mut paths,
+            env::var("ProgramW6432").ok(),
+            r"MPV Player\mpv.exe",
+        );
+        push_env_candidate(
+            &mut paths,
+            env::var("ProgramFiles").ok(),
+            r"MPV Player\mpv.exe",
+        );
         push_env_candidate(&mut paths, env::var("ProgramFiles").ok(), r"mpv\mpv.exe");
-        push_env_candidate(&mut paths, env::var("ProgramFiles(x86)").ok(), r"MPV Player\mpv.exe");
-        push_env_candidate(&mut paths, env::var("LOCALAPPDATA").ok(), r"Microsoft\WinGet\Links\mpv.exe");
+        push_env_candidate(
+            &mut paths,
+            env::var("ProgramFiles(x86)").ok(),
+            r"MPV Player\mpv.exe",
+        );
+        push_env_candidate(
+            &mut paths,
+            env::var("LOCALAPPDATA").ok(),
+            r"Microsoft\WinGet\Links\mpv.exe",
+        );
     }
 
     if command.eq_ignore_ascii_case("rqbit") {
         paths.push(manifest_bin.join("rqbit.exe").to_string_lossy().to_string());
         if let Ok(exe) = env::current_exe() {
             if let Some(dir) = exe.parent() {
-                paths.push(dir.join("bin").join("rqbit.exe").to_string_lossy().to_string());
-                paths.push(dir.join("resources").join("bin").join("rqbit.exe").to_string_lossy().to_string());
+                paths.push(
+                    dir.join("bin")
+                        .join("rqbit.exe")
+                        .to_string_lossy()
+                        .to_string(),
+                );
+                paths.push(
+                    dir.join("resources")
+                        .join("bin")
+                        .join("rqbit.exe")
+                        .to_string_lossy()
+                        .to_string(),
+                );
             }
         }
-        push_env_candidate(&mut paths, env::var("LOCALAPPDATA").ok(), r"Microsoft\WinGet\Links\rqbit.exe");
+        push_env_candidate(
+            &mut paths,
+            env::var("LOCALAPPDATA").ok(),
+            r"Microsoft\WinGet\Links\rqbit.exe",
+        );
     }
 
     paths
@@ -447,7 +490,13 @@ fn append_log_line(level: &str, message: &str) {
         .append(true)
         .open(&log_file)
     {
-        let _ = writeln!(file, "[{}] [{}] {}", unix_timestamp(), level, message.trim());
+        let _ = writeln!(
+            file,
+            "[{}] [{}] {}",
+            unix_timestamp(),
+            level,
+            message.trim()
+        );
     }
 }
 
@@ -480,7 +529,11 @@ fn old_appdata_cache_roots() -> Vec<PathBuf> {
 
 fn is_temp_cache_path(path: &Path) -> bool {
     let full = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    full.starts_with(env::temp_dir().canonicalize().unwrap_or_else(|_| env::temp_dir()))
+    full.starts_with(
+        env::temp_dir()
+            .canonicalize()
+            .unwrap_or_else(|_| env::temp_dir()),
+    )
 }
 
 fn is_safe_cache_path(path: &Path) -> bool {
@@ -630,7 +683,9 @@ fn pressure_for(free_bytes: Option<u64>) -> String {
 
 fn collect_cache_status(cache_dir: &Path) -> CacheStatus {
     let mut entries = cache_entries(cache_dir);
-    let total_bytes = entries.iter().fold(0u64, |sum, entry| sum.saturating_add(entry.size_bytes));
+    let total_bytes = entries
+        .iter()
+        .fold(0u64, |sum, entry| sum.saturating_add(entry.size_bytes));
     let file_count = entries.len() as u64;
     let free_bytes = available_disk_bytes(cache_dir);
     entries.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
@@ -685,7 +740,11 @@ fn remember_error(message: impl Into<String>) {
     log_error(&message);
 }
 
-fn trim_memory_cache(cache: &mut HashMap<String, SourceCacheEntry>, ttl_ms: u128, max_entries: usize) {
+fn trim_memory_cache(
+    cache: &mut HashMap<String, SourceCacheEntry>,
+    ttl_ms: u128,
+    max_entries: usize,
+) {
     let now = now_millis();
     cache.retain(|_, entry| now.saturating_sub(entry.fetched_at) <= ttl_ms);
     if cache.len() <= max_entries {
@@ -722,6 +781,7 @@ fn active_session_snapshot() -> Option<ActiveSessionStatus> {
             torrent_id: active.torrent_id,
             session_dir: active.session_dir.to_string_lossy().to_string(),
             cache_bytes: dir_size(&active.session_dir),
+            cache_limit_bytes: active.cache_limit_bytes,
             media_url: (!active.media_url.trim().is_empty()).then_some(active.media_url),
         })
 }
@@ -750,7 +810,9 @@ fn cleanup_abandoned_sessions(cache_dir: &Path, keep: Option<&Path>) {
 fn prune_cache(cache_dir: &Path, active: Option<&Path>) {
     let _ = fs::create_dir_all(cache_dir);
     let entries = cache_entries(cache_dir);
-    let mut total = entries.iter().fold(0u64, |sum, entry| sum.saturating_add(entry.size_bytes));
+    let mut total = entries
+        .iter()
+        .fold(0u64, |sum, entry| sum.saturating_add(entry.size_bytes));
 
     for entry in entries.clone() {
         if total <= GLOBAL_CACHE_MAX_BYTES {
@@ -764,43 +826,7 @@ fn prune_cache(cache_dir: &Path, active: Option<&Path>) {
         total = total.saturating_sub(entry.size_bytes);
     }
 
-    if let Some(active) = active {
-        let active_size = dir_size(active);
-        if active_size > PER_SESSION_CACHE_MAX_BYTES.saturating_mul(2) {
-            let mut files = collect_files(active);
-            files.sort_by(|a, b| a.1.cmp(&b.1));
-            let mut session_total = active_size;
-            for (file, _, size) in files {
-                if session_total <= PER_SESSION_CACHE_MAX_BYTES {
-                    break;
-                }
-                let _ = fs::remove_file(&file);
-                session_total = session_total.saturating_sub(size);
-            }
-        }
-    }
-}
-
-fn collect_files(root: &Path) -> Vec<(PathBuf, u128, u64)> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Ok(meta) = entry.metadata() else {
-                continue;
-            };
-            if meta.is_dir() {
-                stack.push(path);
-            } else if meta.is_file() {
-                files.push((path.clone(), file_modified_ms(&path), meta.len()));
-            }
-        }
-    }
-    files
+    let _ = active;
 }
 
 fn percent_encode(value: &str) -> String {
@@ -985,7 +1011,10 @@ fn xml_tag_value(block: &str, tag: &str) -> String {
         return String::new();
     };
     let content_start = open_start + open_end + 1;
-    let Some(close_start) = block[content_start..].find(&close).map(|index| content_start + index) else {
+    let Some(close_start) = block[content_start..]
+        .find(&close)
+        .map(|index| content_start + index)
+    else {
         return String::new();
     };
     html_entity_decode(strip_cdata(&block[content_start..close_start]))
@@ -1049,9 +1078,9 @@ fn normalize_source_text(value: &str) -> String {
 fn meaningful_source_tokens(value: &str) -> Vec<String> {
     const IGNORE: &[&str] = &[
         "anime", "episode", "episodes", "season", "movie", "ova", "ona", "special", "batch",
-        "complete", "pack", "1080p", "720p", "480p", "2160p", "4k", "x264", "x265",
-        "h264", "h265", "hevc", "aac", "flac", "web", "webrip", "webdl", "dl",
-        "sub", "subs", "dub", "dubbed", "dual", "multi", "audio", "english", "eng",
+        "complete", "pack", "1080p", "720p", "480p", "2160p", "4k", "x264", "x265", "h264", "h265",
+        "hevc", "aac", "flac", "web", "webrip", "webdl", "dl", "sub", "subs", "dub", "dubbed",
+        "dual", "multi", "audio", "english", "eng",
     ];
     normalize_source_text(value)
         .split_whitespace()
@@ -1086,9 +1115,9 @@ fn source_title_matches_episode(title: &str, episode: u64) -> bool {
     let ep = episode.to_string();
     let ep2 = format!("{:02}", episode);
     let ep3 = format!("{:03}", episode);
-    normalized
-        .split_whitespace()
-        .any(|token| token == ep || token == ep2 || token == ep3 || token.ends_with(&format!("e{}", ep2)))
+    normalized.split_whitespace().any(|token| {
+        token == ep || token == ep2 || token == ep3 || token.ends_with(&format!("e{}", ep2))
+    })
 }
 
 fn source_title_match_ratio(title: &str, tokens: &[String]) -> f64 {
@@ -1098,17 +1127,30 @@ fn source_title_match_ratio(title: &str, tokens: &[String]) -> f64 {
     let normalized_title = normalize_source_text(title);
     let matched = tokens
         .iter()
-        .filter(|token| normalized_title.split_whitespace().any(|part| part == token.as_str()) || normalized_title.contains(token.as_str()))
+        .filter(|token| {
+            normalized_title
+                .split_whitespace()
+                .any(|part| part == token.as_str())
+                || normalized_title.contains(token.as_str())
+        })
         .count();
     matched as f64 / tokens.len() as f64
 }
 
-fn direct_source_score(title: &str, seeders: u64, downloads: u64, trusted: &str, tokens: &[String], episode: Option<u64>) -> u64 {
+fn direct_source_score(
+    title: &str,
+    seeders: u64,
+    downloads: u64,
+    trusted: &str,
+    tokens: &[String],
+    episode: Option<u64>,
+) -> u64 {
     let mut score = (source_title_match_ratio(title, tokens) * 30.0).round() as u64;
     score += (((seeders + 1) as f64).log10() * 12.0).round().min(30.0) as u64;
     score += (((downloads + 1) as f64).log10() * 3.0).round().min(8.0) as u64;
     let lower = title.to_ascii_lowercase();
-    if trusted.eq_ignore_ascii_case("yes") || trusted.eq_ignore_ascii_case("true") || trusted == "1" {
+    if trusted.eq_ignore_ascii_case("yes") || trusted.eq_ignore_ascii_case("true") || trusted == "1"
+    {
         score += 12;
     }
     if lower.contains("1080p") {
@@ -1247,9 +1289,18 @@ fn parse_nyaa_rss_items(
 fn dedupe_source_json(items: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
     let mut map = HashMap::<String, serde_json::Value>::new();
     for item in items {
-        let hash = item.get("infoHash").and_then(|value| value.as_str()).unwrap_or("");
-        let link = item.get("link").and_then(|value| value.as_str()).unwrap_or("");
-        let title = item.get("title").and_then(|value| value.as_str()).unwrap_or("");
+        let hash = item
+            .get("infoHash")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let link = item
+            .get("link")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let title = item
+            .get("title")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         let key = if !hash.is_empty() {
             format!("hash:{}", hash.to_ascii_lowercase())
         } else if !link.is_empty() {
@@ -1257,7 +1308,10 @@ fn dedupe_source_json(items: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
         } else {
             format!("title:{}", normalize_source_text(title))
         };
-        let score = item.get("sourceScore").and_then(|value| value.as_u64()).unwrap_or(0);
+        let score = item
+            .get("sourceScore")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
         let seeders = item
             .get("seeders")
             .and_then(|value| value.as_str())
@@ -1284,8 +1338,14 @@ fn dedupe_source_json(items: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
     }
     let mut values: Vec<_> = map.into_values().collect();
     values.sort_by(|a, b| {
-        let a_score = a.get("sourceScore").and_then(|value| value.as_u64()).unwrap_or(0);
-        let b_score = b.get("sourceScore").and_then(|value| value.as_u64()).unwrap_or(0);
+        let a_score = a
+            .get("sourceScore")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
+        let b_score = b
+            .get("sourceScore")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(0);
         let a_seeders = a
             .get("seeders")
             .and_then(|value| value.as_str())
@@ -1296,7 +1356,9 @@ fn dedupe_source_json(items: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
             .and_then(|value| value.as_str())
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(0);
-        b_score.cmp(&a_score).then_with(|| b_seeders.cmp(&a_seeders))
+        b_score
+            .cmp(&a_score)
+            .then_with(|| b_seeders.cmp(&a_seeders))
     });
     values
 }
@@ -1313,8 +1375,12 @@ fn fetch_nyaa_direct_from_api_url(trimmed_url: &str) -> Result<serde_json::Value
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(1)
         .clamp(1, 3);
-    let deep = query_param(trimmed_url, "deep").map(|value| value != "0").unwrap_or(false);
-    let wide = query_param(trimmed_url, "wide").map(|value| value == "1").unwrap_or(false);
+    let deep = query_param(trimmed_url, "deep")
+        .map(|value| value != "0")
+        .unwrap_or(false);
+    let wide = query_param(trimmed_url, "wide")
+        .map(|value| value == "1")
+        .unwrap_or(false);
     let episode = parse_episode_from_query(&query);
     let variants = if deep {
         nyaa_query_variants(&query, episode)
@@ -1348,7 +1414,9 @@ fn fetch_nyaa_direct_from_api_url(trimmed_url: &str) -> Result<serde_json::Value
                     .and_then(|response| response.error_for_status())
                     .map_err(|error| format!("Direct Nyaa source search failed: {}", error))?
                     .text()
-                    .map_err(|error| format!("Could not read direct Nyaa source results: {}", error))?;
+                    .map_err(|error| {
+                        format!("Could not read direct Nyaa source results: {}", error)
+                    })?;
                 items.extend(parse_nyaa_rss_items(
                     &xml,
                     &variant,
@@ -1362,34 +1430,13 @@ fn fetch_nyaa_direct_from_api_url(trimmed_url: &str) -> Result<serde_json::Value
     Ok(serde_json::Value::Array(dedupe_source_json(items)))
 }
 
-fn normalize_torrent_url(value: &str) -> Option<String> {
-    let value = value.trim();
-    if !(value.starts_with("http://") || value.starts_with("https://")) {
-        return None;
-    }
-    if value.ends_with(".torrent") || value.contains("/download/") {
-        return Some(value.to_string());
-    }
-    if let Some(rest) = value.split("nyaa.si/view/").nth(1) {
-        let id: String = rest.chars().take_while(|ch| ch.is_ascii_digit()).collect();
-        if !id.is_empty() {
-            return Some(format!("https://nyaa.si/download/{}.torrent", id));
-        }
-    }
-    None
-}
-
 fn normalize_info_hash(value: &str) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.len() == 40 && trimmed.chars().all(|ch| ch.is_ascii_hexdigit()) {
         return Some(trimmed.to_ascii_lowercase());
     }
     let upper = trimmed.to_ascii_uppercase();
-    if upper.len() == 32
-        && upper
-            .chars()
-            .all(|ch| matches!(ch, 'A'..='Z' | '2'..='7'))
-    {
+    if upper.len() == 32 && upper.chars().all(|ch| matches!(ch, 'A'..='Z' | '2'..='7')) {
         return Some(upper);
     }
     None
@@ -1438,35 +1485,21 @@ fn playback_source_candidates(request: &PlaybackRequest) -> Result<Vec<String>, 
 
     if let Some(hash) = magnet_info_hash(&request.magnet) {
         candidates.push(request.magnet.trim().to_string());
-        if let Some(request_hash) = request
-            .info_hash
-            .as_deref()
-            .and_then(normalize_info_hash)
-        {
+        if let Some(request_hash) = request.info_hash.as_deref().and_then(normalize_info_hash) {
             if request_hash != hash {
                 candidates.push(build_magnet_uri(&request_hash, &request.title));
             }
         }
-    } else if let Some(hash) = request
-        .info_hash
-        .as_deref()
-        .and_then(normalize_info_hash)
-    {
+    } else if let Some(hash) = request.info_hash.as_deref().and_then(normalize_info_hash) {
         candidates.push(build_magnet_uri(&hash, &request.title));
-    }
-
-    if let Some(url) = request
-        .torrent_url
-        .as_deref()
-        .and_then(normalize_torrent_url)
-    {
-        candidates.push(url);
     }
 
     let mut seen = HashMap::<String, bool>::new();
     candidates.retain(|candidate| seen.insert(candidate.clone(), true).is_none());
     if candidates.is_empty() {
-        return Err("Desktop streaming needs a valid torrent file URL or a valid magnet link.".to_string());
+        return Err(
+            "Desktop streaming needs a valid magnet link or torrent info hash.".to_string(),
+        );
     }
     Ok(candidates)
 }
@@ -1535,7 +1568,9 @@ fn extension_from_name(value: &str) -> String {
 
 fn infer_extension_from_label(value: &str) -> String {
     let lower = value.to_ascii_lowercase();
-    for extension in ["mkv", "mp4", "webm", "avi", "m4v", "mov", "ts", "ass", "ssa", "srt", "vtt"] {
+    for extension in [
+        "mkv", "mp4", "webm", "avi", "m4v", "mov", "ts", "ass", "ssa", "srt", "vtt",
+    ] {
         if lower.contains(&format!(".{}", extension)) {
             return extension.to_string();
         }
@@ -1544,10 +1579,7 @@ fn infer_extension_from_label(value: &str) -> String {
 }
 
 fn is_video_extension(value: &str) -> bool {
-    matches!(
-        value,
-        "mkv" | "mp4" | "webm" | "avi" | "m4v" | "mov" | "ts"
-    )
+    matches!(value, "mkv" | "mp4" | "webm" | "avi" | "m4v" | "mov" | "ts")
 }
 
 fn is_subtitle_extension(value: &str) -> bool {
@@ -1562,8 +1594,15 @@ fn normalize_playlist_url(playlist_url: &str, value: &str) -> String {
     if trimmed.starts_with('/') {
         return format!("{}{}", RQBIT_URL, trimmed);
     }
-    let base = playlist_url.rsplit_once('/').map(|(prefix, _)| prefix).unwrap_or(playlist_url);
-    format!("{}/{}", base.trim_end_matches('/'), trimmed.trim_start_matches('/'))
+    let base = playlist_url
+        .rsplit_once('/')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(playlist_url);
+    format!(
+        "{}/{}",
+        base.trim_end_matches('/'),
+        trimmed.trim_start_matches('/')
+    )
 }
 
 fn parse_playlist_entries(playlist_url: &str, content: &str) -> Vec<PlaylistEntry> {
@@ -1575,7 +1614,10 @@ fn parse_playlist_entries(playlist_url: &str, content: &str) -> Vec<PlaylistEntr
         if line.is_empty() {
             continue;
         }
-        if let Some((_, label)) = line.strip_prefix("#EXTINF:").and_then(|value| value.split_once(',')) {
+        if let Some((_, label)) = line
+            .strip_prefix("#EXTINF:")
+            .and_then(|value| value.split_once(','))
+        {
             let label = label.trim();
             if !label.is_empty() {
                 label_hint = Some(label.to_string());
@@ -1608,7 +1650,11 @@ fn parse_playlist_entries(playlist_url: &str, content: &str) -> Vec<PlaylistEntr
         } else {
             raw_file_name.clone()
         };
-        let file_stem = stem_from_name(if !label_name.is_empty() { &label_name } else { &file_name });
+        let file_stem = stem_from_name(if !label_name.is_empty() {
+            &label_name
+        } else {
+            &file_name
+        });
         let kind = if is_video_extension(&extension) {
             PlaylistKind::Video
         } else if is_subtitle_extension(&extension) {
@@ -1648,6 +1694,84 @@ fn episode_signal_in_text(value: &str, episode: &str) -> bool {
     .any(|needle| value.contains(needle))
 }
 
+fn parse_episode_number(value: &str) -> Option<u32> {
+    let trimmed = value.trim().trim_start_matches('0');
+    if trimmed.is_empty() {
+        return Some(0);
+    }
+    trimmed.parse::<u32>().ok().filter(|number| *number <= 2000)
+}
+
+fn push_unique_episode_number(numbers: &mut Vec<u32>, value: &str) {
+    if let Some(number) = parse_episode_number(value) {
+        if number > 0 && !numbers.contains(&number) {
+            numbers.push(number);
+        }
+    }
+}
+
+fn episode_numbers_after_token(value: &str, token: &str, numbers: &mut Vec<u32>) {
+    let mut start = 0usize;
+    while let Some(offset) = value[start..].find(token) {
+        let token_end = start + offset + token.len();
+        let after = &value[token_end..];
+        let skipped = after
+            .char_indices()
+            .take_while(|(_, ch)| matches!(ch, ' ' | '.' | '_' | '-' | ':' | '#'))
+            .last()
+            .map(|(index, ch)| index + ch.len_utf8())
+            .unwrap_or(0);
+        let digits = after[skipped..]
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit())
+            .take(4)
+            .collect::<String>();
+        if !digits.is_empty() {
+            push_unique_episode_number(numbers, &digits);
+        }
+        start = token_end;
+    }
+}
+
+fn sxe_episode_numbers(value: &str, numbers: &mut Vec<u32>) {
+    let bytes = value.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] != b's' {
+            index += 1;
+            continue;
+        }
+        let mut cursor = index + 1;
+        let season_start = cursor;
+        while cursor < bytes.len() && bytes[cursor].is_ascii_digit() {
+            cursor += 1;
+        }
+        if cursor == season_start || cursor >= bytes.len() || bytes[cursor] != b'e' {
+            index += 1;
+            continue;
+        }
+        cursor += 1;
+        let episode_start = cursor;
+        while cursor < bytes.len() && bytes[cursor].is_ascii_digit() {
+            cursor += 1;
+        }
+        if cursor > episode_start {
+            push_unique_episode_number(numbers, &value[episode_start..cursor]);
+        }
+        index = cursor.max(index + 1);
+    }
+}
+
+fn episode_numbers_in_text(value: &str) -> Vec<u32> {
+    let lower = value.to_ascii_lowercase();
+    let mut numbers = Vec::new();
+    sxe_episode_numbers(&lower, &mut numbers);
+    for token in ["episode", " ep", "[ep", "(ep", "_ep", "-ep", ".ep"] {
+        episode_numbers_after_token(&lower, token, &mut numbers);
+    }
+    numbers
+}
+
 fn looks_like_auxiliary_video(value: &str) -> bool {
     [
         "nced",
@@ -1668,19 +1792,33 @@ fn looks_like_auxiliary_video(value: &str) -> bool {
     .any(|needle| value.contains(needle))
 }
 
-fn playlist_video_score(entry: &PlaylistEntry, request: &PlaybackRequest) -> i32 {
-    let value = format!(
+fn playlist_entry_search_text(entry: &PlaylistEntry) -> String {
+    format!(
         "{} {}",
         entry.file_name.to_ascii_lowercase(),
         entry.label.to_ascii_lowercase()
-    );
+    )
+}
+
+fn playlist_video_score(entry: &PlaylistEntry, request: &PlaybackRequest) -> i32 {
+    let value = playlist_entry_search_text(entry);
     let mut score = 0i32;
 
     if entry.kind == PlaylistKind::Video {
         score += 1000;
     }
-    if !request.episode.trim().is_empty() && episode_signal_in_text(&value, &request.episode) {
-        score += 220;
+    if !request.episode.trim().is_empty() {
+        if episode_signal_in_text(&value, &request.episode) {
+            score += 220;
+        }
+        if let Some(expected_episode) = parse_episode_number(&request.episode) {
+            let episode_numbers = episode_numbers_in_text(&value);
+            if episode_numbers.contains(&expected_episode) {
+                score += 260;
+            } else if !episode_numbers.is_empty() {
+                score -= 320;
+            }
+        }
     }
     if !request.anime_title.trim().is_empty() {
         let title = request
@@ -1730,10 +1868,27 @@ fn playlist_video_score(entry: &PlaylistEntry, request: &PlaybackRequest) -> i32
     score
 }
 
-fn select_stream_target(entries: &[PlaylistEntry], request: &PlaybackRequest) -> Option<ResolvedStreamTarget> {
-    let media = entries
+fn select_stream_target(
+    entries: &[PlaylistEntry],
+    request: &PlaybackRequest,
+) -> Option<ResolvedStreamTarget> {
+    let videos = entries
         .iter()
         .filter(|entry| entry.kind == PlaylistKind::Video)
+        .collect::<Vec<_>>();
+    let playable_videos = videos
+        .iter()
+        .copied()
+        .filter(|entry| !looks_like_auxiliary_video(&playlist_entry_search_text(entry)))
+        .collect::<Vec<_>>();
+    let video_pool = if playable_videos.is_empty() {
+        videos
+    } else {
+        playable_videos
+    };
+
+    let media = video_pool
+        .into_iter()
         .max_by_key(|entry| playlist_video_score(entry, request))
         .cloned()
         .or_else(|| {
@@ -1747,7 +1902,11 @@ fn select_stream_target(entries: &[PlaylistEntry], request: &PlaybackRequest) ->
     let subtitle_urls = entries
         .iter()
         .filter(|entry| entry.kind == PlaylistKind::Subtitle)
-        .filter(|entry| entry.file_stem.eq_ignore_ascii_case(&media.file_stem))
+        .filter(|entry| {
+            entry.file_stem.eq_ignore_ascii_case(&media.file_stem)
+                || entry.file_stem.contains(&media.file_stem)
+                || media.file_stem.contains(&entry.file_stem)
+        })
         .map(|entry| entry.url.clone())
         .collect::<Vec<_>>();
 
@@ -1768,7 +1927,10 @@ fn select_stream_target(entries: &[PlaylistEntry], request: &PlaybackRequest) ->
     })
 }
 
-fn playlist_target(torrent_id: &str, request: &PlaybackRequest) -> Result<Option<ResolvedStreamTarget>, String> {
+fn playlist_target(
+    torrent_id: &str,
+    request: &PlaybackRequest,
+) -> Result<Option<ResolvedStreamTarget>, String> {
     let playlist_path = format!("/torrents/{}/playlist", percent_encode(torrent_id));
     let playlist_url = format!("{}{}", RQBIT_URL, &playlist_path);
     let payload = rqbit_get(&playlist_path)?;
@@ -1815,7 +1977,11 @@ fn loading_stage_markup(step: usize, label: &str) -> String {
     )
 }
 
-fn loading_svg(cache_dir: &Path, request: &PlaybackRequest, title: &str) -> Result<PathBuf, String> {
+fn loading_svg(
+    cache_dir: &Path,
+    request: &PlaybackRequest,
+    title: &str,
+) -> Result<PathBuf, String> {
     let path = cache_dir.join("streamnyaa-loading.svg");
     let display_title = trim_for_display(title, 42);
     let display_anime_title = if request.anime_title.trim().is_empty() {
@@ -1906,12 +2072,21 @@ fn loading_svg(cache_dir: &Path, request: &PlaybackRequest, title: &str) -> Resu
         panel_top,
         panel_bottom,
         artwork,
-        if anime_title.is_empty() { title.clone() } else { anime_title },
+        if anime_title.is_empty() {
+            title.clone()
+        } else {
+            anime_title
+        },
         title,
-        if episode.is_empty() { "Current".to_string() } else { episode },
+        if episode.is_empty() {
+            "Current".to_string()
+        } else {
+            episode
+        },
         source_title,
     );
-    fs::write(&path, svg).map_err(|error| format!("Could not prepare loading screen: {}", error))?;
+    fs::write(&path, svg)
+        .map_err(|error| format!("Could not prepare loading screen: {}", error))?;
     Ok(path)
 }
 
@@ -1999,7 +2174,10 @@ fn send_mpv_request(ipc: &str, command: &str) -> Option<serde_json::Value> {
 
 fn player_ipc_ready(ipc: &str, retries: usize, delay_ms: u64) -> bool {
     for _ in 0..retries {
-        if send_mpv(ipc, r#"{"command":["get_property","idle-active"],"request_id":1}"#) {
+        if send_mpv(
+            ipc,
+            r#"{"command":["get_property","idle-active"],"request_id":1}"#,
+        ) {
             return true;
         }
         thread::sleep(Duration::from_millis(delay_ms));
@@ -2013,9 +2191,11 @@ fn get_player_property_f64(ipc: &str, property: &str) -> Option<f64> {
         json_string(property)
     );
     let response = send_mpv_request(ipc, &command)?;
-    response
-        .get("data")
-        .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|item| item as f64)))
+    response.get("data").and_then(|value| {
+        value
+            .as_f64()
+            .or_else(|| value.as_u64().map(|item| item as f64))
+    })
 }
 
 fn ass_escape(value: &str) -> String {
@@ -2027,31 +2207,48 @@ fn ass_escape(value: &str) -> String {
 }
 
 fn player_overlay_copy(status: &str) -> (&'static str, String, usize) {
-    if status.contains("Preparing torrent session") || status.contains("Fetching torrent metadata") || status.contains("Fetching metadata and peers") {
+    if status.contains("Preparing torrent session")
+        || status.contains("Fetching torrent metadata")
+        || status.contains("Fetching metadata and peers")
+    {
         (
             "Preparing stream session",
             "Reading torrent metadata, validating the release, and waiting for the first peer responses.".to_string(),
             1,
         )
-    } else if status.contains("Looking for the episode file") || status.contains("Matching the correct episode file") {
+    } else if status.contains("Looking for the episode file")
+        || status.contains("Matching the correct episode file")
+    {
         (
             "Selecting the episode file",
-            "The torrent is ready. StreamNyaa is matching the exact video file for this episode.".to_string(),
+            "The torrent is ready. StreamNyaa is matching the exact video file for this episode."
+                .to_string(),
             2,
         )
-    } else if status.contains("connecting") || status.contains("responsive peers") || status.contains("Connecting peers") {
+    } else if status.contains("connecting")
+        || status.contains("responsive peers")
+        || status.contains("Connecting peers")
+    {
         (
             "Connecting to peers",
-            "Peers are responding. StreamNyaa is building a stable session before playback begins.".to_string(),
+            "Peers are responding. StreamNyaa is building a stable session before playback begins."
+                .to_string(),
             2,
         )
-    } else if status.contains("Buffering") || status.contains("buffering") || status.contains("Opening the player while the first buffer fills") || status.contains("Preparing the player handoff") {
+    } else if status.contains("Buffering")
+        || status.contains("buffering")
+        || status.contains("Opening the player while the first buffer fills")
+        || status.contains("Preparing the player handoff")
+    {
         (
             "Building the playback buffer",
             "The player is open. StreamNyaa is filling the first playback buffer for a smooth start.".to_string(),
             3,
         )
-    } else if status.contains("Starting playback") || status.contains("Opening stream") || status.contains("Opening the stream in the current player") {
+    } else if status.contains("Starting playback")
+        || status.contains("Opening stream")
+        || status.contains("Opening the stream in the current player")
+    {
         (
             "Starting the episode",
             "The selected release is now entering playback in the same player window.".to_string(),
@@ -2060,7 +2257,8 @@ fn player_overlay_copy(status: &str) -> (&'static str, String, usize) {
     } else if status.contains("Switching episode") {
         (
             "Switching episode",
-            "Reusing the current player window and handing the next episode over cleanly.".to_string(),
+            "Reusing the current player window and handing the next episode over cleanly."
+                .to_string(),
             1,
         )
     } else if status.contains("Stopping previous stream") {
@@ -2084,7 +2282,8 @@ fn player_overlay_copy(status: &str) -> (&'static str, String, usize) {
     } else {
         (
             "Preparing local playback",
-            "StreamNyaa keeps the selected source active while the local player prepares playback.".to_string(),
+            "StreamNyaa keeps the selected source active while the local player prepares playback."
+                .to_string(),
             1,
         )
     }
@@ -2171,7 +2370,12 @@ fn stop_player_stream_only(ipc: &str) {
     let _ = send_mpv(ipc, r#"{"command":["stop"],"request_id":33}"#);
 }
 
-fn launch_or_reuse_player(player_path: &str, cache_dir: &Path, request: &PlaybackRequest, title: &str) -> Result<String, String> {
+fn launch_or_reuse_player(
+    player_path: &str,
+    cache_dir: &Path,
+    request: &PlaybackRequest,
+    title: &str,
+) -> Result<String, String> {
     let stale_player = {
         let mut guard = manager()
             .lock()
@@ -2203,12 +2407,15 @@ fn launch_or_reuse_player(player_path: &str, cache_dir: &Path, request: &Playbac
         .arg("--idle=yes")
         .arg("--keep-open=yes")
         .arg("--osc=yes")
+        .arg("--script-opts=osc-layout=bottombar,osc-seekbarstyle=bar,osc-visibility=auto,osc-deadzonesize=0")
         .arg("--osd-bar=yes")
         .arg("--osd-level=1")
+        .arg("--osd-duration=1700")
         .arg("--cursor-autohide=700")
         .arg("--input-default-bindings=yes")
         .arg("--background-color=#050508")
         .arg("--hwdec=auto-safe")
+        .arg("--vo=gpu-next,gpu")
         .arg("--cache=yes")
         .arg("--cache-on-disk=no")
         .arg("--cache-pause=yes")
@@ -2351,7 +2558,7 @@ fn spawn_player_watchdog() {
                 if let Some(active) = guard.active.clone() {
                     let session_bytes = dir_size(&active.session_dir);
                     let free_bytes = available_disk_bytes(&active.session_dir);
-                    let over_session_limit = session_bytes > STREAM_SESSION_HARD_STOP_BYTES;
+                    let over_session_limit = session_bytes > active.cache_limit_bytes;
                     let low_disk = free_bytes
                         .map(|value| value < MIN_PLAYBACK_FREE_BYTES)
                         .unwrap_or(false);
@@ -2363,7 +2570,11 @@ fn spawn_player_watchdog() {
                         } else {
                             "The active stream was stopped because the device is too low on free space for safe playback.".to_string()
                         };
-                        Some(WatchdogAction::GuardTrip { active, ipc, reason })
+                        Some(WatchdogAction::GuardTrip {
+                            active,
+                            ipc,
+                            reason,
+                        })
                     } else {
                         None
                     }
@@ -2386,7 +2597,11 @@ fn spawn_player_watchdog() {
                     prune_cache(&cache_dir, None);
                     log_info("Cleaned playback session after player exit");
                 }
-                WatchdogAction::GuardTrip { active, ipc, reason } => {
+                WatchdogAction::GuardTrip {
+                    active,
+                    ipc,
+                    reason,
+                } => {
                     let cache_dir = active
                         .session_dir
                         .parent()
@@ -2438,26 +2653,64 @@ fn parse_size_bytes(size: Option<&str>) -> Option<u64> {
     Some((number * multiplier).max(0.0) as u64)
 }
 
+fn stream_session_cache_limit(
+    source_size: Option<u64>,
+    free_bytes: Option<u64>,
+) -> Result<u64, String> {
+    let requested = source_size
+        .map(|size| size.saturating_add(512 * 1024 * 1024))
+        .unwrap_or(PER_SESSION_CACHE_MAX_BYTES)
+        .max(PER_SESSION_CACHE_MAX_BYTES)
+        .min(MAX_SESSION_CACHE_BYTES);
+
+    let Some(free_bytes) = free_bytes else {
+        return Ok(requested);
+    };
+    let available_for_stream = free_bytes.saturating_sub(MIN_PLAYBACK_FREE_BYTES);
+    if available_for_stream < MIN_INITIAL_PLAYBACK_BUFFER_BYTES.saturating_mul(3) {
+        return Err(
+            "Your device does not have enough safe temporary space to start local streaming."
+                .to_string(),
+        );
+    }
+
+    Ok(requested.min(available_for_stream))
+}
+
 fn looks_like_batch_source(title: &str) -> bool {
     let lower = title.to_ascii_lowercase();
-    [" batch", "complete season", "season pack", " collection", "[batch]", " complete"]
-        .iter()
-        .any(|needle| lower.contains(needle))
+    [
+        " batch",
+        "complete season",
+        "season pack",
+        " collection",
+        "[batch]",
+        " complete",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
 }
 
 fn torrent_stats(torrent_id: &str) -> Result<serde_json::Value, String> {
-    let payload = rqbit_get(&format!("/torrents/{}/stats/v1", percent_encode(torrent_id)))
-        .or_else(|_| rqbit_get(&format!("/torrents/{}", percent_encode(torrent_id))))?;
+    let payload = rqbit_get(&format!(
+        "/torrents/{}/stats/v1",
+        percent_encode(torrent_id)
+    ))
+    .or_else(|_| rqbit_get(&format!("/torrents/{}", percent_encode(torrent_id))))?;
     serde_json::from_str(&payload)
         .map_err(|error| format!("Could not parse stream status: {}", error))
 }
 
-fn session_guard_error(cache_dir: &Path, session_dir: &Path) -> Option<String> {
+fn session_guard_error(
+    cache_dir: &Path,
+    session_dir: &Path,
+    cache_limit_bytes: u64,
+) -> Option<String> {
     let session_bytes = dir_size(session_dir);
-    if session_bytes > STREAM_SESSION_HARD_STOP_BYTES {
+    if session_bytes > cache_limit_bytes {
         return Some(format!(
-            "This source is using too much local storage for one stream ({} MB). Choose a smaller release.",
-            session_bytes / 1024 / 1024
+            "This source used the safe temporary playback limit ({} MB). StreamNyaa stopped it before it could fill the drive.",
+            cache_limit_bytes / 1024 / 1024
         ));
     }
 
@@ -2479,15 +2732,15 @@ fn wait_for_stream_with_session_guard(
     player_ipc: Option<&str>,
     cache_dir: &Path,
     session_dir: &Path,
+    cache_limit_bytes: u64,
 ) -> Result<ResolvedStreamTarget, String> {
     let started_at = now_millis();
     let mut saw_peer = false;
-    let mut best_downloaded = 0u64;
     let mut selected_target: Option<ResolvedStreamTarget> = None;
     let mut selected_target_at: Option<u128> = None;
 
     while now_millis().saturating_sub(started_at) <= STREAM_READY_TIMEOUT_MS {
-        if let Some(error) = session_guard_error(cache_dir, session_dir) {
+        if let Some(error) = session_guard_error(cache_dir, session_dir, cache_limit_bytes) {
             if let Some(ipc) = player_ipc {
                 show_player_text(ipc, "Stopping stream to protect local storage...");
             }
@@ -2495,15 +2748,20 @@ fn wait_for_stream_with_session_guard(
         }
 
         let json = torrent_stats(torrent_id)?;
-        let downloaded_bytes =
-            find_number(&json, &["downloaded_bytes", "bytes_completed", "downloaded"]).unwrap_or(0.0) as u64;
-        let total_bytes =
-            find_number(&json, &["total_bytes", "bytes_total", "size_bytes", "total_size"]).unwrap_or(0.0) as u64;
-        let peers =
-            find_number(&json, &["peers", "num_peers", "live_peers", "peer_count"]).unwrap_or(0.0) as u64;
+        let downloaded_bytes = find_number(
+            &json,
+            &["downloaded_bytes", "bytes_completed", "downloaded"],
+        )
+        .unwrap_or(0.0) as u64;
+        let total_bytes = find_number(
+            &json,
+            &["total_bytes", "bytes_total", "size_bytes", "total_size"],
+        )
+        .unwrap_or(0.0) as u64;
+        let peers = find_number(&json, &["peers", "num_peers", "live_peers", "peer_count"])
+            .unwrap_or(0.0) as u64;
 
         saw_peer |= peers > 0;
-        best_downloaded = best_downloaded.max(downloaded_bytes);
 
         if selected_target.is_none() {
             if let Ok(target) = playlist_target(torrent_id, request) {
@@ -2515,7 +2773,8 @@ fn wait_for_stream_with_session_guard(
         }
 
         let target_buffer = if total_bytes > 0 {
-            INITIAL_PLAYBACK_BUFFER_BYTES.min((total_bytes / 6).max(MIN_INITIAL_PLAYBACK_BUFFER_BYTES))
+            INITIAL_PLAYBACK_BUFFER_BYTES
+                .min((total_bytes / 6).max(MIN_INITIAL_PLAYBACK_BUFFER_BYTES))
         } else {
             INITIAL_PLAYBACK_BUFFER_BYTES
         };
@@ -2526,7 +2785,7 @@ fn wait_for_stream_with_session_guard(
                 .unwrap_or(0);
             let ready_for_player = downloaded_bytes >= target_buffer
                 || (saw_peer && downloaded_bytes >= MIN_INITIAL_PLAYBACK_BUFFER_BYTES)
-                || target_age >= 2200;
+                || target_age >= STREAM_TARGET_HANDOFF_MS;
             if ready_for_player {
                 if let Some(ipc) = player_ipc {
                     if downloaded_bytes >= MIN_INITIAL_PLAYBACK_BUFFER_BYTES || saw_peer {
@@ -2540,7 +2799,8 @@ fn wait_for_stream_with_session_guard(
         }
 
         let status_text = if selected_target.is_none() && peers == 0 {
-            "Preparing torrent session. Reading metadata and waiting for the first peers...".to_string()
+            "Preparing torrent session. Reading metadata and waiting for the first peers..."
+                .to_string()
         } else if selected_target.is_none() {
             format!(
                 "Torrent ready. Matching the correct episode file... {} MB cached from {} peer{}",
@@ -2556,7 +2816,10 @@ fn wait_for_stream_with_session_guard(
                 if peers == 1 { "" } else { "s" }
             )
         } else {
-            format!("Preparing the player handoff... {} MB cached", downloaded_bytes / 1024 / 1024)
+            format!(
+                "Preparing the player handoff... {} MB cached",
+                downloaded_bytes / 1024 / 1024
+            )
         };
         if let Some(ipc) = player_ipc {
             show_player_text(ipc, &status_text);
@@ -2564,15 +2827,20 @@ fn wait_for_stream_with_session_guard(
         thread::sleep(Duration::from_millis(450));
     }
 
-    if selected_target.is_none() {
-        return Err("This source did not expose a playable video file in time. Try another release.".to_string());
+    if let Some(target) = selected_target {
+        if let Some(ipc) = player_ipc {
+            show_player_text(
+                ipc,
+                "Opening the player while the source keeps buffering...",
+            );
+        }
+        return Ok(target);
     }
 
-    if saw_peer || best_downloaded > 0 {
-        Err("The source did not become ready quickly enough. The player can stay open, but this release may be too slow or unstable.".to_string())
-    } else {
-        Err("No responsive peers were found for this source. Try another release.".to_string())
-    }
+    Err(
+        "This source did not expose a playable video file in time. Try another release."
+            .to_string(),
+    )
 }
 
 fn runtime_status(settings: Option<DesktopSettings>) -> RuntimeStatus {
@@ -2667,7 +2935,8 @@ fn stop_local_playback(settings: Option<DesktopSettings>) -> Result<PlaybackStat
     Ok(PlaybackStatus {
         ok: true,
         state: "stopped".to_string(),
-        message: "The active playback session was stopped and its temporary files were cleaned.".to_string(),
+        message: "The active playback session was stopped and its temporary files were cleaned."
+            .to_string(),
         title: "StreamNyaa".to_string(),
         torrent_id: None,
         playlist_url: None,
@@ -2694,9 +2963,9 @@ fn get_desktop_diagnostics(settings: Option<DesktopSettings>) -> Result<Diagnost
 }
 
 fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
-    let _operation_guard = playback_operation_lock()
-        .try_lock()
-        .map_err(|_| "Another playback action is already running. Wait for it to finish.".to_string())?;
+    let _operation_guard = playback_operation_lock().try_lock().map_err(|_| {
+        "Another playback action is already running. Wait for it to finish.".to_string()
+    })?;
     let source_inputs = playback_source_candidates(&request)?;
 
     let status = runtime_status(request.settings.clone());
@@ -2717,7 +2986,8 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
     fs::create_dir_all(&cache_dir)
         .map_err(|error| format!("Could not prepare StreamNyaa cache: {}", error))?;
     log_info(format!("Starting playback: {}", title));
-    if let Some(free) = available_disk_bytes(&cache_dir) {
+    let free_bytes = available_disk_bytes(&cache_dir);
+    if let Some(free) = free_bytes {
         if free < MIN_PLAYBACK_FREE_BYTES {
             return Ok(PlaybackStatus {
                 ok: false,
@@ -2730,19 +3000,12 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             });
         }
     }
-    if let Some(size) = parse_size_bytes(request.size.as_deref()) {
-        if size > ABSOLUTE_STREAM_SOURCE_MAX_BYTES {
-            return Ok(PlaybackStatus {
-                ok: false,
-                state: "large_source".to_string(),
-                message: "This source is too large for reliable desktop streaming. Choose a smaller release.".to_string(),
-                title,
-                torrent_id: None,
-                playlist_url: None,
-                media_url: None,
-            });
-        }
-        if !request.episode.trim().is_empty() && looks_like_batch_source(&request.title) && size > PER_SESSION_CACHE_MAX_BYTES {
+    let source_size = parse_size_bytes(request.size.as_deref());
+    if let Some(size) = source_size {
+        if !request.episode.trim().is_empty()
+            && looks_like_batch_source(&request.title)
+            && size > PER_SESSION_CACHE_MAX_BYTES
+        {
             return Ok(PlaybackStatus {
                 ok: false,
                 state: "batch_source".to_string(),
@@ -2754,6 +3017,20 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             });
         }
     }
+    let session_cache_limit = match stream_session_cache_limit(source_size, free_bytes) {
+        Ok(limit) => limit,
+        Err(message) => {
+            return Ok(PlaybackStatus {
+                ok: false,
+                state: "low_storage".to_string(),
+                message,
+                title,
+                torrent_id: None,
+                playlist_url: None,
+                media_url: None,
+            });
+        }
+    };
 
     let session_dir = session_dir(&cache_dir);
     let engine_dir = session_dir.join("engine");
@@ -2837,7 +3114,11 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             })
             .or(request.info_hash.clone())
             .ok_or_else(|| "Stream engine did not return a torrent id.".to_string())?;
-        let playlist_url = format!("{}/torrents/{}/playlist", RQBIT_URL, percent_encode(&torrent_id));
+        let playlist_url = format!(
+            "{}/torrents/{}/playlist",
+            RQBIT_URL,
+            percent_encode(&torrent_id)
+        );
 
         {
             let mut guard = manager()
@@ -2848,6 +3129,7 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
                 session_dir: session_dir.clone(),
                 engine_path: engine_path.to_string(),
                 media_url: String::new(),
+                cache_limit_bytes: session_cache_limit,
             });
         }
 
@@ -2859,6 +3141,7 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             Some(&player_ipc),
             &cache_dir,
             &session_dir,
+            session_cache_limit,
         )?;
 
         {
@@ -2872,10 +3155,19 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
 
         show_player_text(&player_ipc, "Opening the stream in the current player...");
         if !load_player_target(&player_ipc, &title, &target, request.resume_seconds) {
-            let _ = relaunch_player_and_load_target(player_path, &cache_dir, &request, &title, &target)?;
+            let _ = relaunch_player_and_load_target(
+                player_path,
+                &cache_dir,
+                &request,
+                &title,
+                &target,
+            )?;
         }
 
-        log_info(format!("Playback handed off to player for torrent {}", torrent_id));
+        log_info(format!(
+            "Playback handed off to player for torrent {}",
+            torrent_id
+        ));
 
         Ok(PlaybackStatus {
             ok: true,
@@ -2918,7 +3210,11 @@ async fn get_local_playback_progress(
         if torrent_id.is_empty() {
             return Err("Torrent id is missing.".to_string());
         }
-        let playlist_url = format!("{}/torrents/{}/playlist", RQBIT_URL, percent_encode(&torrent_id));
+        let playlist_url = format!(
+            "{}/torrents/{}/playlist",
+            RQBIT_URL,
+            percent_encode(&torrent_id)
+        );
         let (media_url, player_ipc, still_active) = manager()
             .lock()
             .ok()
@@ -2938,8 +3234,11 @@ async fn get_local_playback_progress(
                 }
             })
             .unwrap_or((None, None, false));
-        let payload = match rqbit_get(&format!("/torrents/{}/stats/v1", percent_encode(&torrent_id)))
-            .or_else(|_| rqbit_get(&format!("/torrents/{}", percent_encode(&torrent_id))))
+        let payload = match rqbit_get(&format!(
+            "/torrents/{}/stats/v1",
+            percent_encode(&torrent_id)
+        ))
+        .or_else(|_| rqbit_get(&format!("/torrents/{}", percent_encode(&torrent_id))))
         {
             Ok(payload) => payload,
             Err(error) => {
@@ -2948,7 +3247,9 @@ async fn get_local_playback_progress(
                         ok: false,
                         torrent_id,
                         state: "stopped".to_string(),
-                        message: "The local playback session ended and its temporary files were cleaned.".to_string(),
+                        message:
+                            "The local playback session ended and its temporary files were cleaned."
+                                .to_string(),
                         progress: Some(100.0),
                         current_seconds: None,
                         duration_seconds: None,
@@ -2965,15 +3266,26 @@ async fn get_local_playback_progress(
         };
         let json: serde_json::Value = serde_json::from_str(&payload)
             .map_err(|error| format!("Could not parse stream status: {}", error))?;
-        let downloaded_bytes = find_number(&json, &["downloaded_bytes", "bytes_completed", "downloaded"]).map(|value| value as u64);
-        let total_bytes = find_number(&json, &["total_bytes", "bytes_total", "size_bytes", "total_size"]).map(|value| value as u64);
+        let downloaded_bytes = find_number(
+            &json,
+            &["downloaded_bytes", "bytes_completed", "downloaded"],
+        )
+        .map(|value| value as u64);
+        let total_bytes = find_number(
+            &json,
+            &["total_bytes", "bytes_total", "size_bytes", "total_size"],
+        )
+        .map(|value| value as u64);
         let progress = find_number(&json, &["progress", "progress_percent"]).or_else(|| {
             match (downloaded_bytes, total_bytes) {
-                (Some(downloaded), Some(total)) if total > 0 => Some((downloaded as f64 / total as f64 * 100.0).clamp(0.0, 100.0)),
+                (Some(downloaded), Some(total)) if total > 0 => {
+                    Some((downloaded as f64 / total as f64 * 100.0).clamp(0.0, 100.0))
+                }
                 _ => None,
             }
         });
-        let peers = find_number(&json, &["peers", "num_peers", "live_peers", "peer_count"]).map(|value| value as u64);
+        let peers = find_number(&json, &["peers", "num_peers", "live_peers", "peer_count"])
+            .map(|value| value as u64);
         let download_speed = find_number(&json, &["download_speed", "download_rate", "down_rate"]);
         let current_seconds = player_ipc
             .as_deref()
@@ -2995,9 +3307,18 @@ async fn get_local_playback_progress(
             torrent_id,
             state: state.to_string(),
             message: match state {
-                "ready" => "Playback is active. The selected episode has enough buffer to keep going.".to_string(),
-                "buffering" => "The player is open. StreamNyaa is still filling the playback buffer.".to_string(),
-                "connecting" => "Peers are responding. StreamNyaa is building the first playback buffer.".to_string(),
+                "ready" => {
+                    "Playback is active. The selected episode has enough buffer to keep going."
+                        .to_string()
+                }
+                "buffering" => {
+                    "The player is open. StreamNyaa is still filling the playback buffer."
+                        .to_string()
+                }
+                "connecting" => {
+                    "Peers are responding. StreamNyaa is building the first playback buffer."
+                        .to_string()
+                }
                 _ => "Reading torrent metadata and waiting for the first peers.".to_string(),
             },
             progress,
@@ -3039,7 +3360,11 @@ fn fetch_desktop_source_api_blocking(url: String) -> Result<SourceApiResponse, S
         return Err("Desktop source search can only call the StreamNyaa source API.".to_string());
     }
     if let Ok(mut cache) = source_cache().lock() {
-        trim_memory_cache(&mut cache, SOURCE_API_CACHE_TTL_MS, SOURCE_API_CACHE_MAX_ENTRIES);
+        trim_memory_cache(
+            &mut cache,
+            SOURCE_API_CACHE_TTL_MS,
+            SOURCE_API_CACHE_MAX_ENTRIES,
+        );
         if let Some(entry) = cache.get(trimmed_url) {
             log_info(format!("Desktop source API cache hit: {}", trimmed_url));
             return Ok(SourceApiResponse {
@@ -3078,7 +3403,11 @@ fn fetch_desktop_source_api_blocking(url: String) -> Result<SourceApiResponse, S
                 fetched_at,
             },
         );
-        trim_memory_cache(&mut cache, SOURCE_API_CACHE_TTL_MS, SOURCE_API_CACHE_MAX_ENTRIES);
+        trim_memory_cache(
+            &mut cache,
+            SOURCE_API_CACHE_TTL_MS,
+            SOURCE_API_CACHE_MAX_ENTRIES,
+        );
     }
     log_info(format!("Desktop source API fetched: {}", trimmed_url));
     Ok(SourceApiResponse { data, fetched_at })
@@ -3103,6 +3432,36 @@ fn metadata_cache_key(request: &MetadataApiRequest) -> String {
         request.path.clone().unwrap_or_default(),
         body
     )
+}
+
+fn env_value(names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| env::var(name).ok().map(|value| value.trim().to_string()))
+        .filter(|value| !value.is_empty())
+}
+
+fn disabled_provider_value(provider: &str, reason: &str) -> serde_json::Value {
+    serde_json::json!({
+        "provider": provider,
+        "disabled": true,
+        "reason": reason,
+    })
+}
+
+fn safe_metadata_path(path: Option<&str>, provider: &str) -> Result<String, String> {
+    let clean_path = path
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| format!("{} desktop metadata request is missing a path.", provider))?;
+    if !clean_path.starts_with('/')
+        || clean_path.contains("://")
+        || clean_path.contains("..")
+        || clean_path.contains('\\')
+    {
+        return Err(format!("{} desktop metadata path is not valid.", provider));
+    }
+    Ok(clean_path.to_string())
 }
 
 fn fetch_desktop_metadata_api_blocking(
@@ -3143,14 +3502,7 @@ fn fetch_desktop_metadata_api_blocking(
                 .map_err(|error| format!("Could not read AniList metadata: {}", error))?
         }
         "jikan" => {
-            let path = request
-                .path
-                .as_deref()
-                .map(str::trim)
-                .ok_or_else(|| "Jikan desktop metadata request is missing a path.".to_string())?;
-            if !path.starts_with('/') {
-                return Err("Jikan desktop metadata path must start with '/'.".to_string());
-            }
+            let path = safe_metadata_path(request.path.as_deref(), "Jikan")?;
             let url = format!("https://api.jikan.moe/v4{}", path);
             client
                 .get(&url)
@@ -3159,6 +3511,110 @@ fn fetch_desktop_metadata_api_blocking(
                 .map_err(|error| format!("Jikan desktop metadata request failed: {}", error))?
                 .json::<serde_json::Value>()
                 .map_err(|error| format!("Could not read Jikan metadata: {}", error))?
+        }
+        "tmdb" => {
+            let path = safe_metadata_path(request.path.as_deref(), "TMDB")?;
+            let bearer_token = env_value(&["TMDB_BEARER_TOKEN", "TMDB_READ_ACCESS_TOKEN"]);
+            let api_key = env_value(&["TMDB_API_KEY"]);
+            if bearer_token.is_none() && api_key.is_none() {
+                disabled_provider_value(
+                    "tmdb",
+                    "TMDB is not configured. Add TMDB_BEARER_TOKEN or TMDB_API_KEY to enable poster and backdrop enrichment.",
+                )
+            } else {
+                let mut url = reqwest::Url::parse(&format!("https://api.themoviedb.org/3{}", path))
+                    .map_err(|error| format!("Could not prepare TMDB metadata URL: {}", error))?;
+                if bearer_token.is_none() {
+                    if let Some(key) = api_key {
+                        if !url.query_pairs().any(|(key_name, _)| key_name == "api_key") {
+                            url.query_pairs_mut().append_pair("api_key", &key);
+                        }
+                    }
+                }
+                let mut request_builder = client.get(url).header("Accept", "application/json");
+                if let Some(token) = bearer_token {
+                    request_builder = request_builder.bearer_auth(token);
+                }
+                request_builder
+                    .send()
+                    .and_then(|response| response.error_for_status())
+                    .map_err(|error| format!("TMDB desktop metadata request failed: {}", error))?
+                    .json::<serde_json::Value>()
+                    .map_err(|error| format!("Could not read TMDB metadata: {}", error))?
+            }
+        }
+        "animeschedule" => {
+            let path = safe_metadata_path(request.path.as_deref(), "AnimeSchedule")?;
+            let mut request_builder = client
+                .get(format!("https://animeschedule.net/api/v3{}", path))
+                .header("Accept", "application/json")
+                .header("User-Agent", "StreamNyaa Desktop Metadata Cache/1.0");
+            if let Some(token) = env_value(&["ANIMESCHEDULE_TOKEN", "ANIMESCHEDULE_API_TOKEN"]) {
+                request_builder = request_builder.bearer_auth(token);
+            }
+            request_builder
+                .send()
+                .and_then(|response| response.error_for_status())
+                .map_err(|error| {
+                    format!("AnimeSchedule desktop metadata request failed: {}", error)
+                })?
+                .json::<serde_json::Value>()
+                .map_err(|error| format!("Could not read AnimeSchedule metadata: {}", error))?
+        }
+        "anidb" => {
+            let path = safe_metadata_path(request.path.as_deref(), "AniDB")?;
+            let probe_url = reqwest::Url::parse(&format!("https://streamnyaa.local{}", path))
+                .map_err(|error| format!("Could not read AniDB metadata path: {}", error))?;
+            let request_name = probe_url
+                .path_segments()
+                .and_then(|mut segments| segments.next())
+                .unwrap_or("anime")
+                .trim()
+                .to_ascii_lowercase();
+            let aid = probe_url
+                .query_pairs()
+                .find(|(key, _)| key == "aid")
+                .and_then(|(_, value)| value.parse::<u64>().ok())
+                .ok_or_else(|| {
+                    "AniDB desktop metadata request needs an aid query value.".to_string()
+                })?;
+            if request_name != "anime" || aid == 0 {
+                return Err(
+                    "AniDB desktop metadata currently supports /anime?aid=... only.".to_string(),
+                );
+            }
+
+            let client_name = env_value(&["ANIDB_CLIENT"]);
+            let client_version = env_value(&["ANIDB_CLIENT_VERSION", "ANIDB_CLIENTVER"]);
+            if client_name.is_none() || client_version.is_none() {
+                disabled_provider_value(
+                    "anidb",
+                    "AniDB is not configured. Register an AniDB HTTP API client and set ANIDB_CLIENT plus ANIDB_CLIENT_VERSION.",
+                )
+            } else {
+                let mut url = reqwest::Url::parse("https://api.anidb.net:9001/httpapi")
+                    .map_err(|error| format!("Could not prepare AniDB metadata URL: {}", error))?;
+                url.query_pairs_mut()
+                    .append_pair("request", "anime")
+                    .append_pair("client", &client_name.unwrap_or_default())
+                    .append_pair("clientver", &client_version.unwrap_or_default())
+                    .append_pair("protover", "1")
+                    .append_pair("aid", &aid.to_string());
+                let xml = client
+                    .get(url)
+                    .header("Accept", "application/xml,text/xml,*/*")
+                    .header("User-Agent", "StreamNyaa Desktop Metadata Cache/1.0")
+                    .send()
+                    .and_then(|response| response.error_for_status())
+                    .map_err(|error| format!("AniDB desktop metadata request failed: {}", error))?
+                    .text()
+                    .map_err(|error| format!("Could not read AniDB metadata: {}", error))?;
+                serde_json::json!({
+                    "provider": "anidb",
+                    "aid": aid,
+                    "raw_xml": xml,
+                })
+            }
         }
         _ => return Err("Unsupported desktop metadata provider.".to_string()),
     };
@@ -3284,11 +3740,27 @@ mod tests {
     }
 
     #[test]
-    fn playback_source_prefers_magnet_over_torrent_url() {
+    fn stream_session_limit_allows_large_episode_sources_when_space_exists() {
+        let source_size = Some(7 * 1024 * 1024 * 1024);
+        let free_space = Some(20 * 1024 * 1024 * 1024);
+        let limit = stream_session_cache_limit(source_size, free_space).expect("session limit");
+        assert!(limit > PER_SESSION_CACHE_MAX_BYTES);
+        assert!(limit <= MAX_SESSION_CACHE_BYTES);
+    }
+
+    #[test]
+    fn stream_session_limit_preserves_safe_free_space() {
+        let source_size = Some(9 * 1024 * 1024 * 1024);
+        let free_space = Some(5 * 1024 * 1024 * 1024);
+        let limit = stream_session_cache_limit(source_size, free_space).expect("session limit");
+        assert_eq!(limit, 3 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn playback_source_uses_valid_magnet() {
         let hash = "0123456789abcdef0123456789abcdef01234567";
         let request = PlaybackRequest {
             magnet: format!("magnet:?xt=urn:btih:{}", hash),
-            torrent_url: Some("https://nyaa.si/download/12345.torrent".to_string()),
             info_hash: None,
             title: "Source".to_string(),
             anime_title: "Anime".to_string(),
@@ -3305,31 +3777,52 @@ mod tests {
     }
 
     #[test]
-    fn playback_source_converts_nyaa_view_url() {
+    fn playback_source_ignores_torrent_url_for_rqbit_handoff() {
         let hash = "0123456789abcdef0123456789abcdef01234567";
-        let request = PlaybackRequest {
-            magnet: format!("magnet:?xt=urn:btih:{}", hash),
-            torrent_url: Some("https://nyaa.si/view/98765".to_string()),
-            info_hash: None,
-            title: "Source".to_string(),
-            anime_title: "Anime".to_string(),
-            episode: "1".to_string(),
-            size: None,
-            poster: None,
-            banner: None,
-            resume_seconds: None,
-            settings: None,
-        };
+        let request: PlaybackRequest = serde_json::from_value(serde_json::json!({
+            "magnet": format!("magnet:?xt=urn:btih:{}", hash),
+            "torrent_url": "https://nyaa.si/view/98765",
+            "info_hash": null,
+            "title": "Source",
+            "anime_title": "Anime",
+            "episode": "1",
+            "size": null,
+            "poster": null,
+            "banner": null,
+            "resume_seconds": null,
+            "settings": null
+        }))
+        .expect("request");
 
         let candidates = playback_source_candidates(&request).expect("source input");
-        assert_eq!(candidates[1], "https://nyaa.si/download/98765.torrent");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0], format!("magnet:?xt=urn:btih:{}", hash));
+    }
+
+    #[test]
+    fn playback_source_rejects_torrent_url_without_hash() {
+        let request: PlaybackRequest = serde_json::from_value(serde_json::json!({
+            "magnet": "",
+            "torrent_url": "https://nyaa.si/view/98765",
+            "info_hash": "",
+            "title": "Source",
+            "anime_title": "Anime",
+            "episode": "1",
+            "size": null,
+            "poster": null,
+            "banner": null,
+            "resume_seconds": null,
+            "settings": null
+        }))
+        .expect("request");
+
+        assert!(playback_source_candidates(&request).is_err());
     }
 
     #[test]
     fn playback_source_rebuilds_valid_magnet_from_info_hash() {
         let request = PlaybackRequest {
             magnet: "magnet:?xt=urn:btih:".to_string(),
-            torrent_url: Some(String::new()),
             info_hash: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
             title: "Example Source".to_string(),
             anime_title: "Anime".to_string(),
@@ -3343,14 +3836,87 @@ mod tests {
 
         let candidates = playback_source_candidates(&request).expect("source candidates");
         assert_eq!(candidates.len(), 1);
-        assert!(candidates[0].starts_with("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"));
+        assert!(candidates[0]
+            .starts_with("magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"));
+    }
+
+    fn playback_request_for_episode(episode: &str) -> PlaybackRequest {
+        PlaybackRequest {
+            magnet: "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567".to_string(),
+            info_hash: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
+            title: "Example Anime S01E05 1080p".to_string(),
+            anime_title: "Example Anime".to_string(),
+            episode: episode.to_string(),
+            size: None,
+            poster: None,
+            banner: None,
+            resume_seconds: None,
+            settings: None,
+        }
+    }
+
+    fn playlist_entry(label: &str, file_name: &str, kind: PlaylistKind) -> PlaylistEntry {
+        PlaylistEntry {
+            url: format!("http://127.0.0.1:3030/torrents/1/{}", file_name),
+            label: label.to_string(),
+            file_name: file_name.to_string(),
+            file_stem: stem_from_name(file_name),
+            kind,
+        }
+    }
+
+    #[test]
+    fn episode_number_parser_detects_sxe_and_episode_tokens() {
+        let numbers = episode_numbers_in_text("Example Anime S02E05 - Episode 06 preview");
+        assert!(numbers.contains(&5));
+        assert!(numbers.contains(&6));
+    }
+
+    #[test]
+    fn playlist_target_prefers_requested_episode_over_wrong_episode() {
+        let request = playback_request_for_episode("5");
+        let entries = vec![
+            playlist_entry(
+                "Example Anime S01E04 1080p.mkv",
+                "Example.Anime.S01E04.1080p.mkv",
+                PlaylistKind::Video,
+            ),
+            playlist_entry(
+                "Example Anime S01E05 720p.mkv",
+                "Example.Anime.S01E05.720p.mkv",
+                PlaylistKind::Video,
+            ),
+        ];
+
+        let target = select_stream_target(&entries, &request).expect("target");
+        assert!(target.media_url.contains("S01E05"));
+    }
+
+    #[test]
+    fn playlist_target_avoids_auxiliary_video_when_episode_exists() {
+        let request = playback_request_for_episode("5");
+        let entries = vec![
+            playlist_entry(
+                "Example Anime S01E05 NCOP.mkv",
+                "Example.Anime.S01E05.NCOP.mkv",
+                PlaylistKind::Video,
+            ),
+            playlist_entry(
+                "Example Anime S01E05 1080p.mkv",
+                "Example.Anime.S01E05.1080p.mkv",
+                PlaylistKind::Video,
+            ),
+        ];
+
+        let target = select_stream_target(&entries, &request).expect("target");
+        assert!(target.media_url.contains("1080p"));
+        assert!(!target.media_url.contains("NCOP"));
     }
 
     #[test]
     fn playback_source_rejects_missing_hash_and_url() {
         let request = PlaybackRequest {
             magnet: "magnet:?xt=urn:btih:".to_string(),
-            torrent_url: Some(String::new()),
             info_hash: Some(String::new()),
             title: "Example Source".to_string(),
             anime_title: "Anime".to_string(),

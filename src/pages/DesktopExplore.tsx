@@ -13,8 +13,37 @@ import {
   searchAnime,
 } from '../api/jikan';
 import { getCurrentAnimeSeason } from '../lib/currentSeason';
+import { saveDesktopAudioPreference, type DesktopAudioPreference } from '../lib/desktop';
 
 type ExploreMode = 'trending' | 'popular' | 'top' | 'airing' | 'upcoming' | 'year';
+type VisualFilterKey = 'genre' | 'season' | 'status' | 'audio' | 'rating' | 'episodes';
+
+const defaultVisualFilters: Record<VisualFilterKey, string> = {
+  genre: 'Any',
+  season: 'Any',
+  status: 'Any',
+  audio: 'Any',
+  rating: 'Any',
+  episodes: 'Any',
+};
+
+const visualFilterGroups: Array<{ key: VisualFilterKey; label: string; options: string[] }> = [
+  { key: 'genre', label: 'Genre', options: ['Any', 'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Romance', 'Slice of Life'] },
+  { key: 'season', label: 'Season', options: ['Any', 'Winter', 'Spring', 'Summer', 'Fall'] },
+  { key: 'status', label: 'Status', options: ['Any', 'Airing', 'Completed', 'Upcoming'] },
+  { key: 'audio', label: 'Audio', options: ['Any', 'Sub', 'Dual Audio', 'Dub'] },
+  { key: 'rating', label: 'Rating', options: ['Any', '8+', '8.5+', '9+'] },
+  { key: 'episodes', label: 'Episodes', options: ['Any', 'Short', '12-24', '25+', 'Long-running'] },
+];
+
+const sortModes: Array<{ label: string; mode: ExploreMode }> = [
+  { label: 'Trending', mode: 'trending' },
+  { label: 'Popular', mode: 'popular' },
+  { label: 'Highest Rated', mode: 'top' },
+  { label: 'Top Airing', mode: 'airing' },
+  { label: 'Upcoming', mode: 'upcoming' },
+  { label: 'Top This Year', mode: 'year' },
+];
 
 const modeConfig: Record<ExploreMode, { label: string; sort: string; status: string; description: string }> = {
   trending: {
@@ -162,6 +191,76 @@ function uniqueAnime(items: any[]) {
   });
 }
 
+function normalizedValue(value: unknown) {
+  return String(value || '').toLowerCase().trim();
+}
+
+function scoreFor(anime: any) {
+  const score = Number(anime?.score || anime?.meanScore || anime?.averageScore || 0);
+  return Number.isFinite(score) ? score : 0;
+}
+
+function episodeCountFor(anime: any) {
+  const episodes = Number(anime?.episodes || anime?.episodeCount || 0);
+  return Number.isFinite(episodes) ? episodes : 0;
+}
+
+function matchesVisualFilters(anime: any, filters: Record<VisualFilterKey, string>) {
+  if (filters.genre !== 'Any') {
+    const genre = normalizedValue(filters.genre);
+    const genres = Array.isArray(anime?.genres) ? anime.genres : [];
+    const names = genres.map((item: any) => normalizedValue(item?.name || item)).filter(Boolean);
+    if (!names.includes(genre)) return false;
+  }
+
+  if (filters.season !== 'Any') {
+    const season = normalizedValue(anime?.season);
+    if (season && season !== normalizedValue(filters.season)) return false;
+  }
+
+  if (filters.status !== 'Any') {
+    const status = normalizedValue(anime?.status);
+    const target = normalizedValue(filters.status);
+    if (status) {
+      const matches =
+        (target === 'airing' && /airing|currently/.test(status)) ||
+        (target === 'completed' && /complete|finished/.test(status)) ||
+        (target === 'upcoming' && /upcoming|not yet|not_yet|future/.test(status));
+      if (!matches) return false;
+    }
+  }
+
+  if (filters.rating !== 'Any') {
+    const score = scoreFor(anime);
+    const threshold = filters.rating === '9+' ? 9 : filters.rating === '8.5+' ? 8.5 : 8;
+    if (!score || score < threshold) return false;
+  }
+
+  if (filters.episodes !== 'Any') {
+    const episodes = episodeCountFor(anime);
+    if (!episodes) return false;
+    if (filters.episodes === 'Short' && episodes > 12) return false;
+    if (filters.episodes === '12-24' && (episodes < 12 || episodes > 24)) return false;
+    if (filters.episodes === '25+' && episodes < 25) return false;
+    if (filters.episodes === 'Long-running' && episodes < 100) return false;
+  }
+
+  return true;
+}
+
+function filterAnimeList(items: any[], filters: Record<VisualFilterKey, string>) {
+  const metadataFiltersActive = Object.entries(filters).some(([key, value]) => key !== 'audio' && value !== 'Any');
+  if (!metadataFiltersActive) return items;
+  return items.filter((anime) => matchesVisualFilters(anime, filters));
+}
+
+function audioPreferenceFromFilter(value: string): DesktopAudioPreference | null {
+  if (value === 'Sub') return 'sub-preferred';
+  if (value === 'Dual Audio') return 'dual-preferred';
+  if (value === 'Dub') return 'dub-only';
+  return null;
+}
+
 function markExploreKeys(used: Set<string>, items: any[]) {
   items.forEach((anime) => {
     const key = String(anime?.mal_id || anime?.id || anime?.title || '').trim();
@@ -197,7 +296,7 @@ function SkeletonGrid() {
   return (
     <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
       {Array.from({ length: 10 }).map((_, index) => (
-        <div key={index} className="aspect-[2/3] animate-pulse rounded-xl bg-white/[0.055]" />
+        <div key={index} className="aspect-[2/3] animate-pulse rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]" />
       ))}
     </div>
   );
@@ -205,8 +304,9 @@ function SkeletonGrid() {
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="rounded-3xl border border-white/8 bg-white/[0.04] px-6 py-14 text-center text-white/56">
-      {text}
+    <div className="rounded-3xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_52%,rgba(244,63,94,0.045))] px-6 py-14 text-center shadow-xl shadow-black/18">
+      <p className="text-lg font-black text-white">No anime found</p>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">{text}</p>
     </div>
   );
 }
@@ -234,6 +334,8 @@ export default function DesktopExplore() {
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const [mode, setMode] = useState<ExploreMode>(() => modeFromSearchParams(searchParams));
   const [year, setYear] = useState(Number(searchParams.get('year') || currentYear));
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [visualFilters, setVisualFilters] = useState<Record<VisualFilterKey, string>>(defaultVisualFilters);
 
   useEffect(() => {
     const nextMode = modeFromSearchParams(searchParams);
@@ -246,6 +348,22 @@ export default function DesktopExplore() {
   }, [currentYear, searchParams]);
 
   const selected = modeConfig[mode];
+  const activeVisualFilterCount = useMemo(
+    () => Object.values(visualFilters).filter((value) => value !== 'Any').length,
+    [visualFilters],
+  );
+  const updateVisualFilter = (key: VisualFilterKey, value: string) => {
+    setVisualFilters((current) => ({ ...current, [key]: value }));
+    const preference = key === 'audio' ? audioPreferenceFromFilter(value) : null;
+    if (preference) saveDesktopAudioPreference(preference);
+  };
+  const updateMode = (item: ExploreMode) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('mode', item);
+    if (item === 'year') next.set('year', String(year));
+    else next.delete('year');
+    setSearchParams(next, { replace: true });
+  };
   const searchQuery = useQuery({
     queryKey: ['desktop-explore-results', query, mode, year],
     queryFn: async () => {
@@ -286,11 +404,12 @@ export default function DesktopExplore() {
     retry: 1,
   });
 
-  const results = useMemo(() => {
+  const rawResults = useMemo(() => {
     const live = uniqueAnime(searchQuery.data?.data || []);
     if (query.trim()) return live;
     return live.length ? live : fallbackByMode[mode];
   }, [mode, query, searchQuery.data]);
+  const results = useMemo(() => filterAnimeList(rawResults, visualFilters), [rawResults, visualFilters]);
   const rows = useMemo(() => {
     const used = new Set<string>();
     return [
@@ -309,6 +428,10 @@ export default function DesktopExplore() {
     upcomingQuery.data?.data,
     upcomingQuery.isLoading,
   ]);
+  const filteredRows = useMemo(
+    () => rows.map((row) => ({ ...row, data: filterAnimeList(row.data, visualFilters) })),
+    [rows, visualFilters],
+  );
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -329,24 +452,24 @@ export default function DesktopExplore() {
     <div className="px-6 py-6">
       <Seo title="Explore Anime | StreamNyaa Desktop" description="Desktop anime discovery." canonicalPath="/search" robots="noindex, nofollow" />
 
-      <section className="rounded-lg border border-white/8 bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(255,255,255,0.035)_42%,rgba(0,0,0,0.1))] p-6 shadow-2xl shadow-black/25">
+      <section className="desktop-premium-surface overflow-hidden rounded-2xl p-6">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Explore</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-white">Find anime that actually matches the category.</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">{selected.description}</p>
           </div>
-          <form onSubmit={submit} className="flex min-w-[420px] max-w-[620px] flex-1 gap-3">
+          <form onSubmit={submit} className="flex min-w-[420px] max-w-[620px] flex-1 gap-3 rounded-2xl border border-white/8 bg-black/18 p-2 backdrop-blur">
             <label className="relative flex-1">
               <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/36" />
               <input
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 placeholder="Search anime..."
-                className="h-12 w-full rounded-lg border border-white/10 bg-black/32 pl-12 pr-4 text-sm text-white outline-none placeholder:text-white/36 focus:border-primary/65"
+                className="h-12 w-full rounded-xl border border-white/10 bg-black/32 pl-12 pr-4 text-sm text-white outline-none placeholder:text-white/36 focus:border-white/24"
               />
             </label>
-            <button className="h-12 rounded-lg bg-primary px-6 text-sm font-black text-white shadow-lg shadow-primary/20 hover:bg-primary/90">
+            <button className="h-12 rounded-xl bg-primary px-6 text-sm font-black text-white shadow-lg shadow-primary/18 transition-colors hover:bg-primary/90">
               Search
             </button>
           </form>
@@ -358,17 +481,11 @@ export default function DesktopExplore() {
             <button
               key={item}
               type="button"
-              onClick={() => {
-                const next = new URLSearchParams(searchParams);
-                next.set('mode', item);
-                if (item === 'year') next.set('year', String(year));
-                else next.delete('year');
-                setSearchParams(next, { replace: true });
-              }}
+              onClick={() => updateMode(item)}
               className={`rounded-full border px-4 py-2 text-sm font-black transition-colors ${
                 mode === item
-                  ? 'border-primary bg-primary text-white'
-                  : 'border-white/10 bg-white/[0.045] text-white/64 hover:border-primary/50 hover:text-white'
+                  ? 'border-transparent bg-primary text-white shadow-lg shadow-primary/12'
+                  : 'border-white/10 bg-white/[0.045] text-white/64 hover:border-white/18 hover:bg-white/[0.07] hover:text-white'
               }`}
             >
               {modeConfig[item].label}
@@ -393,26 +510,83 @@ export default function DesktopExplore() {
               })}
             </select>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((value) => !value)}
+            className={`rounded-full border px-4 py-2 text-sm font-black transition-colors ${
+              filtersOpen || activeVisualFilterCount
+                ? 'border-white/14 bg-white/[0.10] text-white'
+                : 'border-white/10 bg-white/[0.045] text-white/64 hover:border-white/18 hover:bg-white/[0.07] hover:text-white'
+            }`}
+          >
+            Filters{activeVisualFilterCount ? ` (${activeVisualFilterCount})` : ''}
+          </button>
+          <label className="ml-auto flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-white/34">
+            Sort
+            <select
+              value={mode}
+              onChange={(event) => updateMode(event.target.value as ExploreMode)}
+              className="h-10 rounded-full border border-white/10 bg-black/35 px-3 text-sm font-black normal-case tracking-normal text-white outline-none"
+            >
+              {sortModes.map((item) => (
+                <option key={item.mode} value={item.mode}>{item.label}</option>
+              ))}
+            </select>
+          </label>
         </div>
+
+        {filtersOpen ? (
+          <div className="mt-5 rounded-2xl border border-white/8 bg-black/24 p-4 shadow-xl shadow-black/20">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-white">Discovery filters</p>
+                <p className="mt-1 text-xs font-semibold text-white/42">Lightweight desktop filters. Category and sort stay connected to the existing search flow.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVisualFilters(defaultVisualFilters)}
+                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-black text-white/56 transition-colors hover:border-white/18 hover:text-white"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {visualFilterGroups.map((group) => (
+                <label key={group.key} className="rounded-xl border border-white/8 bg-white/[0.035] p-3">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{group.label}</span>
+                  <select
+                    value={visualFilters[group.key]}
+                    onChange={(event) => updateVisualFilter(group.key, event.target.value)}
+                    className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black/35 px-3 text-sm font-bold text-white outline-none focus:border-white/22"
+                  >
+                    {group.options.map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="mt-8">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold tracking-[-0.01em] text-white">{query ? `Results for "${query}"` : selected.label}</h2>
-          <span className="text-sm text-white/42">{results.length} titles</span>
+          <span className="rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-sm font-bold text-white/42">{results.length} titles</span>
         </div>
         {searchQuery.isLoading ? <SkeletonGrid /> : results.length ? (
           <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
             {results.map((anime) => <AnimeCard key={anime.mal_id || anime.id || anime.title} anime={anime} />)}
           </div>
         ) : (
-          <EmptyState text={searchQuery.isError ? 'Anime data could not load. Check your connection and try again.' : 'No anime found for this filter.'} />
+          <EmptyState text={searchQuery.isError ? 'Anime data could not load. Check your connection and try again.' : 'Try removing filters or searching another title.'} />
         )}
       </section>
 
       {!query ? (
         <div className="mt-10 space-y-9">
-          {rows.map((row) => (
+          {filteredRows.map((row) => (
             <section key={row.title}>
               <h2 className="mb-4 text-xl font-semibold tracking-[-0.01em] text-white">{row.title}</h2>
               {row.loading ? <SkeletonGrid /> : row.data.length ? (

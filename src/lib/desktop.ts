@@ -64,7 +64,7 @@ export type DesktopSourceApiResponse = {
 };
 
 export type DesktopMetadataApiRequest = {
-  provider: 'anilist' | 'jikan';
+  provider: 'anilist' | 'jikan' | 'anidb' | 'animeschedule' | 'tmdb';
   path?: string;
   body?: Record<string, unknown>;
   ttl_seconds?: number;
@@ -114,7 +114,9 @@ const LOCAL_PLAYBACK_HISTORY_KEY = 'streamnyaa.localPlaybackHistory';
 const DESKTOP_SETTINGS_KEY = 'streamnyaa.desktopSettings';
 const DESKTOP_RUNTIME_STATUS_KEY = 'streamnyaa.desktopRuntimeStatus';
 const DESKTOP_AUDIO_PREFERENCE_KEY = 'streamnyaa.desktopAudioPreference';
+const DESKTOP_AUTO_OPEN_BEST_SOURCE_KEY = 'streamnyaa.desktopAutoOpenBestSource';
 const DESKTOP_AUDIO_PREFERENCE_EVENT = 'streamnyaa:desktop-audio-preference';
+const DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT = 'streamnyaa:desktop-auto-open-best-source';
 const LOCAL_PLAYBACK_HISTORY_EVENT = 'streamnyaa:local-playback-history';
 const LOCAL_PLAYBACK_HISTORY_LIMIT = 18;
 const COMPLETION_PERCENT_THRESHOLD = 92;
@@ -126,6 +128,7 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
 };
 
 export const DEFAULT_DESKTOP_AUDIO_PREFERENCE: DesktopAudioPreference = 'sub-preferred';
+export const DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE = false;
 
 function emitDesktopEvent(eventName: string) {
   if (typeof window === 'undefined') return;
@@ -137,6 +140,13 @@ export function subscribeDesktopAudioPreference(listener: () => void) {
   const wrapped = () => listener();
   window.addEventListener(DESKTOP_AUDIO_PREFERENCE_EVENT, wrapped);
   return () => window.removeEventListener(DESKTOP_AUDIO_PREFERENCE_EVENT, wrapped);
+}
+
+export function subscribeDesktopAutoOpenBestSource(listener: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const wrapped = () => listener();
+  window.addEventListener(DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT, wrapped);
+  return () => window.removeEventListener(DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT, wrapped);
 }
 
 export function subscribeLocalPlaybackHistory(listener: () => void) {
@@ -235,10 +245,29 @@ export function loadLocalPlaybackHistory(): LocalPlaybackSource[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((item): item is LocalPlaybackSource => Boolean(item?.magnet && item?.title))
-      .filter((item) => Number(item.progressPercent || 0) > 0 || Number(item.resumeSeconds || 0) > 0)
       .slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
   } catch {
     return [];
+  }
+}
+
+export function clearLocalPlaybackHistory() {
+  try {
+    localStorage.removeItem(LOCAL_PLAYBACK_HISTORY_KEY);
+    emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
+  } catch {
+    // Playback history is optional and should never block app use.
+  }
+}
+
+export function removeLocalPlaybackHistoryItem(source: Partial<LocalPlaybackSource>) {
+  try {
+    const key = playbackHistoryKey(source);
+    const next = loadLocalPlaybackHistory().filter((item) => playbackHistoryKey(item) !== key);
+    localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
+    emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
+  } catch {
+    // Playback history is optional and should never block app use.
   }
 }
 
@@ -340,6 +369,19 @@ export function loadDesktopAudioPreference(): DesktopAudioPreference {
 export function saveDesktopAudioPreference(preference: DesktopAudioPreference) {
   localStorage.setItem(DESKTOP_AUDIO_PREFERENCE_KEY, preference);
   emitDesktopEvent(DESKTOP_AUDIO_PREFERENCE_EVENT);
+}
+
+export function loadDesktopAutoOpenBestSource() {
+  try {
+    return localStorage.getItem(DESKTOP_AUTO_OPEN_BEST_SOURCE_KEY) === 'true';
+  } catch {
+    return DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE;
+  }
+}
+
+export function saveDesktopAutoOpenBestSource(enabled: boolean) {
+  localStorage.setItem(DESKTOP_AUTO_OPEN_BEST_SOURCE_KEY, enabled ? 'true' : 'false');
+  emitDesktopEvent(DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT);
 }
 
 export function watchTypeForAudioPreference(preference: DesktopAudioPreference) {

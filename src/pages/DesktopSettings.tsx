@@ -1,19 +1,25 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Copy, HardDrive, PlayCircle, RefreshCw, ServerCog, Square, Trash2 } from 'lucide-react';
+import { CheckCircle2, Copy, HardDrive, History, PlayCircle, RefreshCw, ServerCog, Square, Trash2 } from 'lucide-react';
 import Seo from '../components/Seo';
 import {
   buildDesktopDiagnosticsReport,
+  clearLocalPlaybackHistory,
   clearDesktopPlaybackCache,
   copyDesktopDiagnosticsReport,
   DEFAULT_DESKTOP_AUDIO_PREFERENCE,
+  DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE,
   getDesktopDiagnostics,
   getDesktopRuntimeStatus,
+  loadDesktopAutoOpenBestSource,
   loadCachedDesktopRuntimeStatus,
   loadDesktopAudioPreference,
   loadDesktopPlaybackSettings,
+  loadLocalPlaybackHistory,
+  saveDesktopAutoOpenBestSource,
   saveDesktopAudioPreference,
   saveDesktopPlaybackSettings,
   stopDesktopPlayback,
+  subscribeLocalPlaybackHistory,
   type DesktopAudioPreference,
   type DesktopDiagnosticsStatus,
   type DesktopPlaybackSettings,
@@ -35,8 +41,10 @@ function formatBytes(bytes?: number | null) {
 export default function DesktopSettings() {
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
+  const [autoOpenBestSource, setAutoOpenBestSource] = useState(() => loadDesktopAutoOpenBestSource());
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(() => loadCachedDesktopRuntimeStatus());
   const [diagnostics, setDiagnostics] = useState<DesktopDiagnosticsStatus | null>(null);
+  const [historyCount, setHistoryCount] = useState(() => loadLocalPlaybackHistory().length);
   const [message, setMessage] = useState<{ tone: 'neutral' | 'success' | 'error'; text: string } | null>(null);
 
   const refresh = async (includeDiagnostics = false, activeSettings = settings) => {
@@ -57,6 +65,10 @@ export default function DesktopSettings() {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => subscribeLocalPlaybackHistory(() => {
+    setHistoryCount(loadLocalPlaybackHistory().length);
+  }), []);
+
   const updateSetting = (key: keyof DesktopPlaybackSettings, value: string) => {
     const next = { ...settings, [key]: value };
     setSettings(next);
@@ -69,6 +81,12 @@ export default function DesktopSettings() {
     setMessage({ tone: 'success', text: 'Audio preference saved for new watch sessions.' });
   };
 
+  const updateAutoOpenBestSource = (enabled: boolean) => {
+    setAutoOpenBestSource(enabled);
+    saveDesktopAutoOpenBestSource(enabled);
+    setMessage({ tone: 'success', text: enabled ? 'Episode clicks now open the best source directly.' : 'Episode clicks now select first, then wait for your play action.' });
+  };
+
   const clearStorage = async () => {
     try {
       const status = await clearDesktopPlaybackCache(settings);
@@ -77,6 +95,12 @@ export default function DesktopSettings() {
     } catch (error) {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Playback cache could not be cleared.' });
     }
+  };
+
+  const clearWatchHistory = () => {
+    clearLocalPlaybackHistory();
+    setHistoryCount(0);
+    setMessage({ tone: 'success', text: 'Watch history and Continue Watching entries were cleared.' });
   };
 
   const stopPlayback = async () => {
@@ -200,6 +224,37 @@ export default function DesktopSettings() {
             </div>
           </div>
 
+          <div className="mt-4 rounded-[1.4rem] border border-white/10 bg-black/25 p-4">
+            <p className="text-[11px] font-black uppercase tracking-wider text-white/34">Episode click behavior</p>
+            <p className="mt-2 text-sm leading-6 text-white/54">
+              Choose whether episode cards should start playback immediately or only change the selected episode.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => updateAutoOpenBestSource(true)}
+                className={`rounded-2xl border px-4 py-3 text-sm font-black transition-colors ${
+                  autoOpenBestSource
+                    ? 'border-primary/60 bg-primary text-white'
+                    : 'border-white/10 bg-black/35 text-white/70 hover:border-primary/40 hover:text-white'
+                }`}
+              >
+                Auto-open best source
+              </button>
+              <button
+                type="button"
+                onClick={() => updateAutoOpenBestSource(DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE)}
+                className={`rounded-2xl border px-4 py-3 text-sm font-black transition-colors ${
+                  !autoOpenBestSource
+                    ? 'border-primary/60 bg-primary text-white'
+                    : 'border-white/10 bg-black/35 text-white/70 hover:border-primary/40 hover:text-white'
+                }`}
+              >
+                Select episode first
+              </button>
+            </div>
+          </div>
+
           <div className="mt-6 rounded-[1.4rem] border border-primary/25 bg-primary/10 p-4">
             <div className="flex items-start gap-3">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
@@ -226,6 +281,10 @@ export default function DesktopSettings() {
             <button onClick={clearStorage} className="inline-flex items-center gap-2 rounded-2xl border border-primary/30 bg-primary/10 px-5 py-3 text-sm font-black text-primary hover:bg-primary hover:text-white">
               <Trash2 className="h-4 w-4" />
               Clear cache
+            </button>
+            <button onClick={clearWatchHistory} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/25 px-5 py-3 text-sm font-black text-white hover:border-primary/40">
+              <History className="h-4 w-4" />
+              Clear watch history
             </button>
           </div>
 
@@ -280,6 +339,7 @@ export default function DesktopSettings() {
               <p>App version: <span className="font-mono text-white/75">{diagnostics?.app_version || '0.1.0'}</span></p>
               <p>Cache pressure: <span className="font-mono text-white/75">{cache?.pressure || 'unknown'}</span></p>
               <p>Cached items: <span className="font-mono text-white/75">{cache?.file_count || 0}</span></p>
+              <p>Watch history: <span className="font-mono text-white/75">{historyCount}</span></p>
               <p>Logs: <span className="font-mono text-white/75 break-all">{diagnostics?.logs_dir || 'Unavailable'}</span></p>
             </div>
             {diagnostics?.recent_errors?.length ? (

@@ -77,9 +77,9 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
       to={cardPath}
       onMouseEnter={prefetchAnime}
       onFocus={prefetchAnime}
-      className="group relative block w-full"
+      className="group relative block w-full rounded-xl transition-transform duration-200 hover:-translate-y-1 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-xl bg-secondary shadow-lg shadow-black/16 ring-1 ring-white/[0.03]">
+      <div className="relative aspect-[2/3] overflow-hidden rounded-xl border border-white/[0.06] bg-[#111217] shadow-lg shadow-black/24 transition-colors group-hover:border-white/14">
         {currentImage && !imageFailed ? (
           <img
             key={currentImage}
@@ -109,19 +109,19 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
         <div className="absolute top-2 left-2 z-30 flex gap-1 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100">
           <button
             onClick={handleLikeToggle}
-            className="rounded-md bg-black/50 p-1.5 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
+            className="rounded-lg border border-white/[0.08] bg-black/42 p-1.5 text-white/82 backdrop-blur-sm transition-colors hover:bg-white/[0.12] hover:text-white"
           >
             <Heart className={`h-3.5 w-3.5 ${liked ? 'fill-primary text-primary' : ''}`} />
           </button>
           <button
             onClick={handleListToggle}
-            className="rounded-md bg-black/50 p-1.5 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
+            className="rounded-lg border border-white/[0.08] bg-black/42 p-1.5 text-white/82 backdrop-blur-sm transition-colors hover:bg-white/[0.12] hover:text-white"
           >
             {inList ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Plus className="h-3.5 w-3.5" />}
           </button>
         </div>
 
-        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-end bg-gradient-to-t from-black/90 via-black/20 to-transparent p-3">
+        <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-end bg-[linear-gradient(0deg,rgba(7,8,12,0.88),rgba(7,8,12,0.20)_48%,transparent)] p-3">
           <div className="mb-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold text-white">
             {anime.title}
           </div>
@@ -134,8 +134,8 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           </div>
         </div>
 
-        <div className="absolute top-2 right-2 z-10 rounded bg-black/50 p-1 backdrop-blur-sm">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" /></svg>
+        <div className="absolute top-2 right-2 z-10 rounded-lg border border-white/[0.08] bg-black/36 p-1 text-white/78 opacity-80 backdrop-blur-sm transition-opacity group-hover:opacity-100">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" /></svg>
         </div>
       </div>
     </Link>

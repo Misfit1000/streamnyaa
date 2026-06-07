@@ -6,6 +6,10 @@ const ANILIST_URL = 'https://graphql.anilist.co';
 const LOCAL_METADATA_PREFIX = 'streamnyaa.metadataCache.v2.';
 const LEGACY_METADATA_PREFIXES = ['streamnyaa.metadataCache.'];
 const LOCAL_METADATA_LIMIT = 90;
+const LOCAL_METADATA_MAX_STALE_MS = 1000 * 60 * 60 * 24 * 7;
+const PROVIDER_COOLDOWN_FALLBACK_MS = 1000 * 60;
+
+type MetadataProvider = 'anilist' | 'jikan' | 'anidb' | 'animeschedule' | 'tmdb';
 
 type MetadataCacheEntry = {
   value: unknown;
@@ -14,6 +18,8 @@ type MetadataCacheEntry = {
 };
 
 const memoryMetadataCache = new Map<string, MetadataCacheEntry>();
+const inFlightMetadataRequests = new Map<string, Promise<Response>>();
+const providerCooldowns = new Map<MetadataProvider, number>();
 
 const hashCacheKey = (input: string) => {
   let hash = 5381;
@@ -23,7 +29,7 @@ const hashCacheKey = (input: string) => {
   return (hash >>> 0).toString(36);
 };
 
-const cacheKeyFor = (provider: 'anilist' | 'jikan', value: unknown) => {
+const cacheKeyFor = (provider: MetadataProvider, value: unknown) => {
   const serialized = typeof value === 'string' ? value : JSON.stringify(value);
   return `${LOCAL_METADATA_PREFIX}${provider}.${hashCacheKey(serialized)}`;
 };
@@ -153,7 +159,10 @@ const titleMatchScore = (routeTitle: string, media: any) => {
 const readLocalMetadata = (key: string, allowStale = false) => {
   const now = Date.now();
   const memoryEntry = memoryMetadataCache.get(key);
-  if (memoryEntry && (allowStale || memoryEntry.expiresAt > now)) return memoryEntry;
+  if (memoryEntry) {
+    if (memoryEntry.expiresAt > now) return memoryEntry;
+    if (allowStale && now - Number(memoryEntry.savedAt || 0) <= LOCAL_METADATA_MAX_STALE_MS) return memoryEntry;
+  }
 
   if (typeof window === 'undefined') return null;
   try {
@@ -161,7 +170,13 @@ const readLocalMetadata = (key: string, allowStale = false) => {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as MetadataCacheEntry;
     if (!parsed || typeof parsed.expiresAt !== 'number') return null;
-    if (!allowStale && parsed.expiresAt <= now) return null;
+    if (parsed.expiresAt <= now) {
+      if (!allowStale || now - Number(parsed.savedAt || 0) > LOCAL_METADATA_MAX_STALE_MS) {
+        localStorage.removeItem(key);
+        memoryMetadataCache.delete(key);
+        return null;
+      }
+    }
     memoryMetadataCache.set(key, parsed);
     return parsed;
   } catch {
@@ -170,9 +185,10 @@ const readLocalMetadata = (key: string, allowStale = false) => {
 };
 
 const writeLocalMetadata = (key: string, value: unknown, ttlSeconds: number) => {
+  const boundedTtlSeconds = Math.max(60, Math.min(60 * 60 * 24 * 30, Math.floor(ttlSeconds || 0)));
   const entry: MetadataCacheEntry = {
     value,
-    expiresAt: Date.now() + ttlSeconds * 1000,
+    expiresAt: Date.now() + boundedTtlSeconds * 1000,
     savedAt: Date.now(),
   };
   memoryMetadataCache.set(key, entry);
@@ -191,29 +207,70 @@ const writeLocalMetadata = (key: string, value: unknown, ttlSeconds: number) => 
   }
 };
 
+const providerInCooldown = (provider: MetadataProvider) => {
+  const until = providerCooldowns.get(provider) || 0;
+  if (until <= Date.now()) {
+    providerCooldowns.delete(provider);
+    return false;
+  }
+  return true;
+};
+
+const markProviderCooldown = (provider: MetadataProvider, response?: Response | null) => {
+  const retryAfter = Number(response?.headers?.get?.('Retry-After') || 0);
+  const cooldownMs = Number.isFinite(retryAfter) && retryAfter > 0
+    ? retryAfter * 1000
+    : PROVIDER_COOLDOWN_FALLBACK_MS;
+  providerCooldowns.set(provider, Date.now() + cooldownMs);
+};
+
 const fetchWithLocalMetadataCache = async (
+  provider: MetadataProvider,
   key: string,
   ttlSeconds: number,
   request: () => Promise<Response>,
 ) => {
   const cached = readLocalMetadata(key);
   if (cached) return jsonResponse(cached.value, 'local-hit');
+  const stale = readLocalMetadata(key, true);
+  if (stale && providerInCooldown(provider)) return jsonResponse(stale.value, 'local-stale');
 
-  try {
+  const requestKey = `${provider}:${key}`;
+  const existingRequest = inFlightMetadataRequests.get(requestKey);
+  if (existingRequest) {
+    try {
+      return (await existingRequest).clone();
+    } catch (error) {
+      if (stale) return jsonResponse(stale.value, 'local-stale');
+      throw error;
+    }
+  }
+
+  const nextRequest = (async () => {
     const response = await request();
     if (!response.ok) {
-      const stale = readLocalMetadata(key, true);
+      if (response.status === 429 || response.status >= 500) markProviderCooldown(provider, response);
       if (stale) return jsonResponse(stale.value, 'local-stale');
       return response;
     }
 
     const json = await response.clone().json();
     writeLocalMetadata(key, json, ttlSeconds);
+    providerCooldowns.delete(provider);
     return response;
+  })();
+
+  inFlightMetadataRequests.set(requestKey, nextRequest);
+
+  try {
+    return (await nextRequest).clone();
   } catch (error) {
-    const stale = readLocalMetadata(key, true);
     if (stale) return jsonResponse(stale.value, 'local-stale');
     throw error;
+  } finally {
+    if (inFlightMetadataRequests.get(requestKey) === nextRequest) {
+      inFlightMetadataRequests.delete(requestKey);
+    }
   }
 };
 
@@ -225,7 +282,7 @@ const fetchAniListDirect = (body: Record<string, unknown>) => fetch(ANILIST_URL,
 
 const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600) => {
   const cacheKey = cacheKeyFor('anilist', body);
-  return fetchWithLocalMetadataCache(cacheKey, ttlSeconds, async () => {
+  return fetchWithLocalMetadataCache('anilist', cacheKey, ttlSeconds, async () => {
     if (isDesktopApp()) {
       try {
         const desktopResponse = await fetchDesktopMetadataApi({
@@ -260,7 +317,7 @@ const fetchJikanPathDirect = (path: string) => fetch(`https://api.jikan.moe/v4${
 
 const fetchJikanPath = async (path: string, ttlSeconds = 21600) => {
   const cacheKey = cacheKeyFor('jikan', path);
-  return fetchWithLocalMetadataCache(cacheKey, ttlSeconds, async () => {
+  return fetchWithLocalMetadataCache('jikan', cacheKey, ttlSeconds, async () => {
     if (isDesktopApp()) {
       try {
         const desktopResponse = await fetchDesktopMetadataApi({
@@ -283,6 +340,98 @@ const fetchJikanPath = async (path: string, ttlSeconds = 21600) => {
     const gatewayResponse = await fetch(`/api/stream-sources?provider=jikan&ttl=${ttlSeconds}&path=${encodeURIComponent(path)}`).catch(() => null);
     if (gatewayResponse?.ok) return gatewayResponse;
     return fetchJikanPathDirect(path);
+  });
+};
+
+export const fetchMetadataProviderPath = async (
+  provider: 'tmdb' | 'animeschedule',
+  path: string,
+  ttlSeconds = 21600,
+) => {
+  const cacheKey = cacheKeyFor(provider, path);
+  return fetchWithLocalMetadataCache(provider, cacheKey, ttlSeconds, async () => {
+    if (isDesktopApp()) {
+      try {
+        const desktopResponse = await fetchDesktopMetadataApi({
+          provider,
+          path,
+          ttl_seconds: ttlSeconds,
+        });
+        return new Response(JSON.stringify(desktopResponse.data), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-StreamNyaa-Desktop-Cache': 'bridge',
+          },
+        });
+      } catch {
+        return new Response(JSON.stringify({
+          provider,
+          disabled: true,
+          reason: `${provider} metadata is unavailable in this desktop runtime.`,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    const gatewayResponse = await fetch(
+      `/api/stream-sources?provider=${provider}&ttl=${ttlSeconds}&path=${encodeURIComponent(path)}`,
+    ).catch(() => null);
+    if (gatewayResponse?.ok) return gatewayResponse;
+    return new Response(JSON.stringify({
+      provider,
+      disabled: true,
+      reason: `${provider} metadata is unavailable in this runtime.`,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  });
+};
+
+export const fetchAniDbAnimeMetadata = async (aid: number, ttlSeconds = 604800) => {
+  const cacheKey = cacheKeyFor('anidb', { request: 'anime', aid });
+  return fetchWithLocalMetadataCache('anidb', cacheKey, ttlSeconds, async () => {
+    if (isDesktopApp()) {
+      try {
+        const desktopResponse = await fetchDesktopMetadataApi({
+          provider: 'anidb',
+          path: `/anime?aid=${encodeURIComponent(String(aid))}`,
+          ttl_seconds: ttlSeconds,
+        });
+        return new Response(JSON.stringify(desktopResponse.data), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-StreamNyaa-Desktop-Cache': 'bridge',
+          },
+        });
+      } catch {
+        return new Response(JSON.stringify({
+          provider: 'anidb',
+          disabled: true,
+          reason: 'AniDB metadata is unavailable in this desktop runtime.',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    const gatewayResponse = await fetch(
+      `/api/stream-sources?provider=anidb&ttl=${ttlSeconds}&request=anime&aid=${encodeURIComponent(String(aid))}`,
+    ).catch(() => null);
+    if (gatewayResponse?.ok) return gatewayResponse;
+    return new Response(JSON.stringify({
+      provider: 'anidb',
+      disabled: true,
+      reason: 'AniDB metadata is unavailable in this runtime.',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   });
 };
 
@@ -333,7 +482,10 @@ const mapAnilistToJikan = (m: any) => ({
         mal_id: edge.node.idMal || edge.node.id,
         type: edge.node.type,
         format: edge.node.format,
+        status: edge.node.status,
+        episodes: edge.node.episodes,
         year: edge.node.seasonYear,
+        startDate: edge.node.startDate,
         name: edge.node.title?.english || edge.node.title?.romaji || edge.node.title?.native,
         images: {
           jpg: {
@@ -617,7 +769,10 @@ const ANIME_DETAIL_SELECTION = `
         idMal
         type
         format
+        status
+        episodes
         seasonYear
+        startDate { year month day }
         title { romaji english native }
         coverImage { extraLarge large color }
         bannerImage
