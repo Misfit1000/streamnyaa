@@ -63,6 +63,13 @@ export default function Login({ adminOnly = false }: LoginProps) {
       .slice(0, 8);
     return apiVisuals.length >= 3 ? apiVisuals : FALLBACK_VISUALS;
   }, [seasonalData]);
+  const redirectTarget = useMemo(() => {
+    if (adminOnly) return '/admin';
+    const rawNext = new URLSearchParams(location.search).get('next') || '';
+    if (!rawNext || !rawNext.startsWith('/') || rawNext.startsWith('//')) return '/dashboard';
+    if (rawNext === '/login' || rawNext.startsWith('/login?') || rawNext === '/reset-password') return '/dashboard';
+    return rawNext;
+  }, [adminOnly, location.search]);
   const activeVisual = seasonalVisuals[activeVisualIndex % seasonalVisuals.length] || FALLBACK_VISUALS[0];
   const previewVisuals = Array.from({ length: 3 }, (_, index) => seasonalVisuals[(activeVisualIndex + index + 1) % seasonalVisuals.length]).filter(Boolean);
 
@@ -96,16 +103,19 @@ export default function Login({ adminOnly = false }: LoginProps) {
 
   useEffect(() => {
     if (!adminOnly && user && location.pathname === '/login') {
-      navigate('/dashboard', { replace: true });
+      navigate(redirectTarget, { replace: true });
     }
-  }, [adminOnly, user, location.pathname, navigate]);
+  }, [adminOnly, user, location.pathname, navigate, redirectTarget]);
 
   const startGoogleLogin = async () => {
     setError('');
     setMessage('');
     setSubmitting(true);
     try {
-      await signInGoogle();
+      const loginRedirect = redirectTarget === '/dashboard'
+        ? '/login'
+        : `/login?next=${encodeURIComponent(redirectTarget)}`;
+      await signInGoogle(loginRedirect);
     } catch (authError) {
       setSubmitting(false);
       setError(authError instanceof Error ? authError.message : 'Google sign-in failed.');
@@ -132,7 +142,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
         setResetToken('');
       } else if (adminOnly || mode === 'login') {
         await signIn(email.trim(), password);
-        navigate(adminOnly ? '/admin' : '/dashboard');
+        navigate(redirectTarget);
       } else {
         await signUp(email.trim(), password);
         setMessage('Profile created. Check your email if confirmation is required, then sign in.');

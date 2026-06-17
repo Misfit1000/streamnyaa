@@ -50,12 +50,38 @@ export type DesktopPlaybackProgress = {
   progress?: number | null;
   current_seconds?: number | null;
   duration_seconds?: number | null;
+  paused?: boolean | null;
+  volume?: number | null;
   downloaded_bytes?: number | null;
   total_bytes?: number | null;
   peers?: number | null;
   download_speed?: number | null;
   playlist_url: string;
   media_url?: string | null;
+};
+
+export type DesktopPlayerControlAction =
+  | 'toggle_pause'
+  | 'play'
+  | 'pause'
+  | 'seek_relative'
+  | 'seek_absolute'
+  | 'volume_relative'
+  | 'volume'
+  | 'mute'
+  | 'fullscreen'
+  | 'speed'
+  | 'subtitle'
+  | 'audio'
+  | 'show_status';
+
+export type DesktopPlayerControlStatus = {
+  ok: boolean;
+  message: string;
+  paused?: boolean | null;
+  volume?: number | null;
+  current_seconds?: number | null;
+  duration_seconds?: number | null;
 };
 
 export type DesktopSourceApiResponse = {
@@ -257,6 +283,18 @@ export function clearLocalPlaybackHistory() {
     emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
   } catch {
     // Playback history is optional and should never block app use.
+  }
+}
+
+export function replaceLocalPlaybackHistory(history: LocalPlaybackSource[]) {
+  try {
+    const next = history
+      .filter((item): item is LocalPlaybackSource => Boolean(item?.magnet && item?.title))
+      .slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
+    localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
+    emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
+  } catch {
+    // Playback history sync is optional and should never block app use.
   }
 }
 
@@ -593,6 +631,29 @@ export async function getLocalPlaybackProgress(torrentId: string) {
       torrent_id: torrentId,
     },
   });
+}
+
+export async function controlLocalPlayer(action: DesktopPlayerControlAction, value?: number) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Player controls are only available inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<DesktopPlayerControlStatus>('control_local_player', {
+    request: {
+      action,
+      value,
+    },
+  });
+}
+
+export async function importSubtitleForCurrentDesktopPlayer() {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Subtitle import is only available inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<DesktopPlayerControlStatus>('import_subtitle_for_current_player');
 }
 
 export async function fetchDesktopSourceApi(url: string) {

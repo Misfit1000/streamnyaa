@@ -1,6 +1,7 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { Filter, Search, SlidersHorizontal, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
@@ -16,21 +17,28 @@ import { getCurrentAnimeSeason } from '../lib/currentSeason';
 import { saveDesktopAudioPreference, type DesktopAudioPreference } from '../lib/desktop';
 
 type ExploreMode = 'trending' | 'popular' | 'top' | 'airing' | 'upcoming' | 'year';
-type VisualFilterKey = 'genre' | 'season' | 'status' | 'audio' | 'rating' | 'episodes';
+type VisualFilterKey = 'genre' | 'season' | 'status' | 'format' | 'source' | 'yearRange' | 'audio' | 'rating' | 'episodes';
+type LocalSortKey = 'best' | 'title' | 'score' | 'popularity' | 'newest' | 'episodes';
 
 const defaultVisualFilters: Record<VisualFilterKey, string> = {
   genre: 'Any',
   season: 'Any',
   status: 'Any',
+  format: 'Any',
+  source: 'Any',
+  yearRange: 'Any',
   audio: 'Any',
   rating: 'Any',
   episodes: 'Any',
 };
 
 const visualFilterGroups: Array<{ key: VisualFilterKey; label: string; options: string[] }> = [
-  { key: 'genre', label: 'Genre', options: ['Any', 'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Romance', 'Slice of Life'] },
+  { key: 'genre', label: 'Genre', options: ['Any', 'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Mystery', 'Psychological', 'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'] },
   { key: 'season', label: 'Season', options: ['Any', 'Winter', 'Spring', 'Summer', 'Fall'] },
   { key: 'status', label: 'Status', options: ['Any', 'Airing', 'Completed', 'Upcoming'] },
+  { key: 'format', label: 'Format', options: ['Any', 'TV', 'TV Short', 'Movie', 'OVA', 'ONA', 'Special', 'Music'] },
+  { key: 'source', label: 'Source', options: ['Any', 'Manga', 'Light Novel', 'Original', 'Web Manga', 'Novel', 'Visual Novel', 'Game', 'Other'] },
+  { key: 'yearRange', label: 'Year', options: ['Any', 'This Year', 'Last 3 Years', 'Last 5 Years', '2020s', '2010s', 'Before 2010'] },
   { key: 'audio', label: 'Audio', options: ['Any', 'Sub', 'Dual Audio', 'Dub'] },
   { key: 'rating', label: 'Rating', options: ['Any', '8+', '8.5+', '9+'] },
   { key: 'episodes', label: 'Episodes', options: ['Any', 'Short', '12-24', '25+', 'Long-running'] },
@@ -43,6 +51,15 @@ const sortModes: Array<{ label: string; mode: ExploreMode }> = [
   { label: 'Top Airing', mode: 'airing' },
   { label: 'Upcoming', mode: 'upcoming' },
   { label: 'Top This Year', mode: 'year' },
+];
+
+const localSortModes: Array<{ label: string; value: LocalSortKey }> = [
+  { label: 'Best Match', value: 'best' },
+  { label: 'Title A-Z', value: 'title' },
+  { label: 'Highest Score', value: 'score' },
+  { label: 'Most Popular', value: 'popularity' },
+  { label: 'Newest', value: 'newest' },
+  { label: 'Episode Count', value: 'episodes' },
 ];
 
 const modeConfig: Record<ExploreMode, { label: string; sort: string; status: string; description: string }> = {
@@ -195,6 +212,56 @@ function normalizedValue(value: unknown) {
   return String(value || '').toLowerCase().trim();
 }
 
+function searchableValue(value: unknown) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function displayLabel(value: unknown) {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+    .trim();
+}
+
+function titleCandidatesFor(anime: any) {
+  return [
+    anime?.title,
+    anime?.title_english,
+    anime?.title_romaji,
+    anime?.title_native,
+    ...(Array.isArray(anime?.synonyms) ? anime.synonyms : []),
+  ]
+    .map((value) => String(value || '').trim())
+    .filter((value, index, list) => Boolean(value) && list.indexOf(value) === index);
+}
+
+function searchRankFor(anime: any, query: string) {
+  const normalizedQuery = searchableValue(query);
+  if (!normalizedQuery) return 0;
+  const queryTokens = normalizedQuery.split(' ').filter((token) => token.length > 1);
+  const titles = titleCandidatesFor(anime).map(searchableValue).filter(Boolean);
+
+  let best = 999;
+  for (const title of titles) {
+    if (title === normalizedQuery) best = Math.min(best, 0);
+    else if (title.startsWith(normalizedQuery)) best = Math.min(best, 1);
+    else if (title.includes(normalizedQuery)) best = Math.min(best, 2);
+    else if (queryTokens.length) {
+      const hits = queryTokens.filter((token) => title.includes(token)).length;
+      if (hits) best = Math.min(best, 3 + (queryTokens.length - hits));
+    }
+  }
+
+  return best;
+}
+
 function scoreFor(anime: any) {
   const score = Number(anime?.score || anime?.meanScore || anime?.averageScore || 0);
   return Number.isFinite(score) ? score : 0;
@@ -205,7 +272,46 @@ function episodeCountFor(anime: any) {
   return Number.isFinite(episodes) ? episodes : 0;
 }
 
-function matchesVisualFilters(anime: any, filters: Record<VisualFilterKey, string>) {
+function popularityFor(anime: any) {
+  const popularity = Number(anime?.popularity || anime?.members || anime?.scored_by || 0);
+  return Number.isFinite(popularity) ? popularity : 0;
+}
+
+function yearFor(anime: any) {
+  const year = Number(anime?.year || anime?.seasonYear || anime?.aired?.prop?.from?.year || 0);
+  return Number.isFinite(year) ? year : 0;
+}
+
+function formatFor(anime: any) {
+  return normalizedValue(anime?.type || anime?.format).replace(/_/g, ' ');
+}
+
+function sourceFor(anime: any) {
+  return normalizedValue(anime?.source).replace(/_/g, ' ');
+}
+
+function statusMatches(statusValue: string, target: string) {
+  const status = normalizedValue(statusValue).replace(/_/g, ' ');
+  if (!status) return false;
+  if (target === 'airing') return /airing|releasing|currently/.test(status);
+  if (target === 'completed') return /complete|finished/.test(status);
+  if (target === 'upcoming') return /upcoming|not yet|future/.test(status);
+  return true;
+}
+
+function yearRangeMatches(year: number, value: string, currentYear: number) {
+  if (value === 'Any') return true;
+  if (!year) return false;
+  if (value === 'This Year') return year === currentYear;
+  if (value === 'Last 3 Years') return year >= currentYear - 2;
+  if (value === 'Last 5 Years') return year >= currentYear - 4;
+  if (value === '2020s') return year >= 2020 && year <= 2029;
+  if (value === '2010s') return year >= 2010 && year <= 2019;
+  if (value === 'Before 2010') return year < 2010;
+  return true;
+}
+
+function matchesVisualFilters(anime: any, filters: Record<VisualFilterKey, string>, currentYear: number) {
   if (filters.genre !== 'Any') {
     const genre = normalizedValue(filters.genre);
     const genres = Array.isArray(anime?.genres) ? anime.genres : [];
@@ -215,19 +321,26 @@ function matchesVisualFilters(anime: any, filters: Record<VisualFilterKey, strin
 
   if (filters.season !== 'Any') {
     const season = normalizedValue(anime?.season);
-    if (season && season !== normalizedValue(filters.season)) return false;
+    if (!season || season !== normalizedValue(filters.season)) return false;
   }
 
   if (filters.status !== 'Any') {
-    const status = normalizedValue(anime?.status);
     const target = normalizedValue(filters.status);
-    if (status) {
-      const matches =
-        (target === 'airing' && /airing|currently/.test(status)) ||
-        (target === 'completed' && /complete|finished/.test(status)) ||
-        (target === 'upcoming' && /upcoming|not yet|not_yet|future/.test(status));
-      if (!matches) return false;
-    }
+    if (!statusMatches(anime?.status, target)) return false;
+  }
+
+  if (filters.format !== 'Any') {
+    const format = formatFor(anime);
+    if (!format || format !== normalizedValue(filters.format)) return false;
+  }
+
+  if (filters.source !== 'Any') {
+    const source = sourceFor(anime);
+    if (!source || source !== normalizedValue(filters.source)) return false;
+  }
+
+  if (filters.yearRange !== 'Any' && !yearRangeMatches(yearFor(anime), filters.yearRange, currentYear)) {
+    return false;
   }
 
   if (filters.rating !== 'Any') {
@@ -248,10 +361,27 @@ function matchesVisualFilters(anime: any, filters: Record<VisualFilterKey, strin
   return true;
 }
 
-function filterAnimeList(items: any[], filters: Record<VisualFilterKey, string>) {
+function sortAnimeList(items: any[], sort: LocalSortKey, query: string) {
+  const normalizedQuery = query.trim();
+  return [...items].sort((left, right) => {
+    if (normalizedQuery) {
+      const leftRank = searchRankFor(left, normalizedQuery);
+      const rightRank = searchRankFor(right, normalizedQuery);
+      if (leftRank !== rightRank) return leftRank - rightRank;
+    }
+    if (sort === 'title') return String(left.title || '').localeCompare(String(right.title || ''));
+    if (sort === 'score') return scoreFor(right) - scoreFor(left);
+    if (sort === 'popularity') return popularityFor(right) - popularityFor(left);
+    if (sort === 'newest') return yearFor(right) - yearFor(left);
+    if (sort === 'episodes') return episodeCountFor(right) - episodeCountFor(left);
+    return (scoreFor(right) * 100 + popularityFor(right) / 10000) - (scoreFor(left) * 100 + popularityFor(left) / 10000);
+  });
+}
+
+function filterAnimeList(items: any[], filters: Record<VisualFilterKey, string>, currentYear: number, sort: LocalSortKey, query = '') {
   const metadataFiltersActive = Object.entries(filters).some(([key, value]) => key !== 'audio' && value !== 'Any');
-  if (!metadataFiltersActive) return items;
-  return items.filter((anime) => matchesVisualFilters(anime, filters));
+  const filtered = metadataFiltersActive ? items.filter((anime) => matchesVisualFilters(anime, filters, currentYear)) : items;
+  return sortAnimeList(filtered, sort, query);
 }
 
 function audioPreferenceFromFilter(value: string): DesktopAudioPreference | null {
@@ -302,11 +432,12 @@ function SkeletonGrid() {
   );
 }
 
-function EmptyState({ text }: { text: string }) {
+function EmptyState({ text, children }: { text: string; children?: ReactNode }) {
   return (
     <div className="rounded-3xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_52%,rgba(244,63,94,0.045))] px-6 py-14 text-center shadow-xl shadow-black/18">
       <p className="text-lg font-black text-white">No anime found</p>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">{text}</p>
+      {children ? <div className="mt-5 flex flex-wrap justify-center gap-2">{children}</div> : null}
     </div>
   );
 }
@@ -326,8 +457,24 @@ function modeFromSearchParams(searchParams: URLSearchParams): ExploreMode {
   return 'trending';
 }
 
+function filtersFromSearchParams(searchParams: URLSearchParams) {
+  return (Object.keys(defaultVisualFilters) as VisualFilterKey[]).reduce((filters, key) => {
+    const value = searchParams.get(key);
+    if (!value) return filters;
+    const group = visualFilterGroups.find((item) => item.key === key);
+    if (!group?.options.includes(value)) return filters;
+    return { ...filters, [key]: value };
+  }, defaultVisualFilters);
+}
+
+function localSortFromSearchParams(searchParams: URLSearchParams): LocalSortKey {
+  const sort = searchParams.get('order');
+  return localSortModes.some((item) => item.value === sort) ? sort as LocalSortKey : 'best';
+}
+
 export default function DesktopExplore() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const currentYear = new Date().getFullYear();
   const currentSeason = useMemo(() => getCurrentAnimeSeason(), []);
   const [input, setInput] = useState(searchParams.get('q') || '');
@@ -335,27 +482,109 @@ export default function DesktopExplore() {
   const [mode, setMode] = useState<ExploreMode>(() => modeFromSearchParams(searchParams));
   const [year, setYear] = useState(Number(searchParams.get('year') || currentYear));
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [visualFilters, setVisualFilters] = useState<Record<VisualFilterKey, string>>(defaultVisualFilters);
+  const [visualFilters, setVisualFilters] = useState<Record<VisualFilterKey, string>>(() => filtersFromSearchParams(searchParams));
+  const [localSort, setLocalSort] = useState<LocalSortKey>(() => localSortFromSearchParams(searchParams));
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('streamnyaa.desktop.recentExploreSearches') || '[]').slice(0, 6);
+    } catch {
+      return [];
+    }
+  });
 
   useEffect(() => {
     const nextMode = modeFromSearchParams(searchParams);
     const nextQuery = searchParams.get('q') || '';
     const nextYear = Number(searchParams.get('year') || currentYear);
+    const nextFilters = filtersFromSearchParams(searchParams);
+    const nextSort = localSortFromSearchParams(searchParams);
     setMode((value) => (value === nextMode ? value : nextMode));
     setInput((value) => (value === nextQuery ? value : nextQuery));
     setQuery((value) => (value === nextQuery ? value : nextQuery));
     setYear((value) => (value === nextYear ? value : nextYear));
+    setLocalSort((value) => (value === nextSort ? value : nextSort));
+    setVisualFilters((value) => JSON.stringify(value) === JSON.stringify(nextFilters) ? value : nextFilters);
   }, [currentYear, searchParams]);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      const nextQuery = input.trim();
+      if (nextQuery === query) return;
+      const next = new URLSearchParams(searchParams);
+      if (nextQuery) next.set('q', nextQuery);
+      else next.delete('q');
+      next.set('mode', mode);
+      if (mode === 'year') next.set('year', String(year));
+      else next.delete('year');
+      setSearchParams(next, { replace: true });
+    }, 320);
+
+    return () => window.clearTimeout(handle);
+  }, [input, mode, query, searchParams, setSearchParams, year]);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (event.key === 'Escape') {
+        setSearchFocused(false);
+        setFiltersOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, []);
 
   const selected = modeConfig[mode];
   const activeVisualFilterCount = useMemo(
     () => Object.values(visualFilters).filter((value) => value !== 'Any').length,
     [visualFilters],
   );
+  const activeFilterEntries = useMemo(
+    () => (Object.keys(visualFilters) as VisualFilterKey[])
+      .filter((key) => visualFilters[key] !== 'Any')
+      .map((key) => ({ key, label: visualFilterGroups.find((group) => group.key === key)?.label || key, value: visualFilters[key] })),
+    [visualFilters],
+  );
+  const providerFormat = visualFilters.format === 'Any' ? '' : visualFilters.format.replace(/\s+/g, '_').toUpperCase();
+  const providerGenre = visualFilters.genre === 'Any' ? '' : visualFilters.genre;
+  const providerStatus = visualFilters.status === 'Airing'
+    ? 'airing'
+    : visualFilters.status === 'Completed'
+      ? 'complete'
+      : visualFilters.status === 'Upcoming'
+        ? 'upcoming'
+        : selected.status;
+  const providerSort = localSort === 'popularity'
+    ? 'popular'
+    : localSort === 'score'
+      ? 'score'
+      : selected.sort;
+
   const updateVisualFilter = (key: VisualFilterKey, value: string) => {
     setVisualFilters((current) => ({ ...current, [key]: value }));
+    const next = new URLSearchParams(searchParams);
+    if (value === 'Any') next.delete(key);
+    else next.set(key, value);
+    setSearchParams(next, { replace: true });
     const preference = key === 'audio' ? audioPreferenceFromFilter(value) : null;
     if (preference) saveDesktopAudioPreference(preference);
+  };
+  const updateLocalSort = (value: LocalSortKey) => {
+    setLocalSort(value);
+    const next = new URLSearchParams(searchParams);
+    if (value === 'best') next.delete('order');
+    else next.set('order', value);
+    setSearchParams(next, { replace: true });
+  };
+  const clearAllFilters = () => {
+    setVisualFilters(defaultVisualFilters);
+    const next = new URLSearchParams(searchParams);
+    (Object.keys(defaultVisualFilters) as VisualFilterKey[]).forEach((key) => next.delete(key));
+    setSearchParams(next, { replace: true });
   };
   const updateMode = (item: ExploreMode) => {
     const next = new URLSearchParams(searchParams);
@@ -365,19 +594,33 @@ export default function DesktopExplore() {
     setSearchParams(next, { replace: true });
   };
   const searchQuery = useQuery({
-    queryKey: ['desktop-explore-results', query, mode, year],
+    queryKey: ['desktop-explore-results', query, mode, year, providerFormat, providerGenre, providerStatus, providerSort],
     queryFn: async () => {
-      if (query.trim()) return searchAnime(query, 1, '', '', '', selected.sort, selected.status);
+      if (query.trim()) return searchAnime(query, 1, providerFormat, '', providerGenre, providerSort, providerStatus);
       if (mode === 'year') return fetchTopAnimeByYear(year);
       if (mode === 'popular') return fetchPopularAnime();
       if (mode === 'airing') return fetchTopAiring();
       if (mode === 'upcoming') return fetchUpcomingAnime();
-      if (mode === 'trending') return searchAnime('', 1, '', '', '', '', 'airing');
-      return searchAnime(query, 1, '', '', '', selected.sort, selected.status);
+      if (mode === 'trending') return searchAnime('', 1, providerFormat, '', providerGenre, providerSort, providerStatus || 'airing');
+      return searchAnime(query, 1, providerFormat, '', providerGenre, providerSort, providerStatus);
     },
     staleTime: 1000 * 60 * 20,
     retry: 1,
   });
+
+  useEffect(() => {
+    const value = query.trim();
+    if (!value) return;
+    setRecentSearches((current) => {
+      const next = [value, ...current.filter((item) => item.toLowerCase() !== value.toLowerCase())].slice(0, 6);
+      try {
+        localStorage.setItem('streamnyaa.desktop.recentExploreSearches', JSON.stringify(next));
+      } catch {
+        // Recent searches are a convenience only.
+      }
+      return next;
+    });
+  }, [query]);
 
   const seasonalQuery = useQuery({
     queryKey: ['desktop-explore-seasonal', currentSeason.season, currentSeason.year],
@@ -409,7 +652,10 @@ export default function DesktopExplore() {
     if (query.trim()) return live;
     return live.length ? live : fallbackByMode[mode];
   }, [mode, query, searchQuery.data]);
-  const results = useMemo(() => filterAnimeList(rawResults, visualFilters), [rawResults, visualFilters]);
+  const results = useMemo(
+    () => filterAnimeList(rawResults, visualFilters, currentYear, localSort, query),
+    [currentYear, localSort, query, rawResults, visualFilters],
+  );
   const rows = useMemo(() => {
     const used = new Set<string>();
     return [
@@ -429,13 +675,14 @@ export default function DesktopExplore() {
     upcomingQuery.isLoading,
   ]);
   const filteredRows = useMemo(
-    () => rows.map((row) => ({ ...row, data: filterAnimeList(row.data, visualFilters) })),
-    [rows, visualFilters],
+    () => rows.map((row) => ({ ...row, data: filterAnimeList(row.data, visualFilters, currentYear, localSort) })),
+    [currentYear, localSort, rows, visualFilters],
   );
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const nextQuery = input.trim();
+    setQuery(nextQuery);
     const next = new URLSearchParams(searchParams);
     if (nextQuery) {
       next.set('q', nextQuery);
@@ -447,6 +694,19 @@ export default function DesktopExplore() {
     else next.delete('year');
     setSearchParams(next, { replace: true });
   };
+  const clearSearch = () => {
+    setInput('');
+    setQuery('');
+    const next = new URLSearchParams(searchParams);
+    next.delete('q');
+    setSearchParams(next, { replace: true });
+  };
+  const suggestions = useMemo(() => {
+    const popular = fallbackByMode.trending.slice(0, 5).map((anime) => anime.title);
+    return uniqueAnime([...recentSearches.map((title) => ({ title, mal_id: title })), ...popular.map((title) => ({ title, mal_id: title }))])
+      .map((item) => item.title)
+      .slice(0, 7);
+  }, [recentSearches]);
 
   return (
     <div className="px-6 py-6">
@@ -459,19 +719,67 @@ export default function DesktopExplore() {
             <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-white">Find anime that actually matches the category.</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">{selected.description}</p>
           </div>
-          <form onSubmit={submit} className="flex min-w-[420px] max-w-[620px] flex-1 gap-3 rounded-2xl border border-white/8 bg-black/18 p-2 backdrop-blur">
+          <form onSubmit={submit} className="relative flex w-full max-w-[680px] flex-1 gap-3 rounded-2xl border border-white/8 bg-black/18 p-2 backdrop-blur lg:min-w-[420px]">
             <label className="relative flex-1">
               <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/36" />
               <input
+                ref={searchInputRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
-                placeholder="Search anime..."
-                className="h-12 w-full rounded-xl border border-white/10 bg-black/32 pl-12 pr-4 text-sm text-white outline-none placeholder:text-white/36 focus:border-white/24"
+                onFocus={() => setSearchFocused(true)}
+                aria-label="Search anime"
+                placeholder="Search title, alias, native name, or season..."
+                className="h-12 w-full rounded-xl border border-white/10 bg-black/32 pl-12 pr-12 text-sm text-white outline-none placeholder:text-white/36 focus:border-white/24"
               />
+              {input ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={clearSearch}
+                  className="absolute right-3 top-1/2 rounded-full p-1 text-white/42 hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : (
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded-md border border-white/8 bg-white/[0.04] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/34">Ctrl K</span>
+              )}
             </label>
             <button className="h-12 rounded-xl bg-primary px-6 text-sm font-black text-white shadow-lg shadow-primary/18 transition-colors hover:bg-primary/90">
               Search
             </button>
+            {searchFocused && suggestions.length ? (
+              <div
+                className="absolute left-0 right-0 top-[calc(100%+10px)] z-30 rounded-2xl border border-white/10 bg-[#101014]/95 p-3 shadow-2xl shadow-black/40 backdrop-blur"
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/36">
+                    {recentSearches.length ? 'Recent and popular searches' : 'Popular searches'}
+                  </span>
+                  <button type="button" onClick={() => setSearchFocused(false)} className="text-xs font-bold text-white/42 hover:text-white">Close</button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {suggestions.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => {
+                        setInput(item);
+                        setQuery(item);
+                        setSearchFocused(false);
+                        const next = new URLSearchParams(searchParams);
+                        next.set('q', item);
+                        next.set('mode', mode);
+                        setSearchParams(next, { replace: true });
+                      }}
+                      className="rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs font-bold text-white/62 hover:border-primary/40 hover:text-white"
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </form>
         </div>
 
@@ -522,7 +830,7 @@ export default function DesktopExplore() {
             Filters{activeVisualFilterCount ? ` (${activeVisualFilterCount})` : ''}
           </button>
           <label className="ml-auto flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-white/34">
-            Sort
+            Category
             <select
               value={mode}
               onChange={(event) => updateMode(event.target.value as ExploreMode)}
@@ -533,18 +841,53 @@ export default function DesktopExplore() {
               ))}
             </select>
           </label>
+          <label className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-white/34">
+            Order
+            <select
+              value={localSort}
+              onChange={(event) => updateLocalSort(event.target.value as LocalSortKey)}
+              className="h-10 rounded-full border border-white/10 bg-black/35 px-3 text-sm font-black normal-case tracking-normal text-white outline-none"
+            >
+              {localSortModes.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
         </div>
+
+        {activeFilterEntries.length ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/38">
+              <Filter className="h-3.5 w-3.5 text-primary" />
+              Active
+            </span>
+            {activeFilterEntries.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => updateVisualFilter(item.key, 'Any')}
+                className="inline-flex items-center gap-2 rounded-full border border-primary/22 bg-primary/10 px-3 py-1.5 text-xs font-bold text-white/82 hover:border-primary/45 hover:bg-primary/16"
+              >
+                {item.label}: {item.value}
+                <X className="h-3.5 w-3.5 text-white/52" />
+              </button>
+            ))}
+            <button type="button" onClick={clearAllFilters} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-xs font-black text-white/50 hover:text-white">
+              Clear all
+            </button>
+          </div>
+        ) : null}
 
         {filtersOpen ? (
           <div className="mt-5 rounded-2xl border border-white/8 bg-black/24 p-4 shadow-xl shadow-black/20">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-black text-white">Discovery filters</p>
-                <p className="mt-1 text-xs font-semibold text-white/42">Lightweight desktop filters. Category and sort stay connected to the existing search flow.</p>
+                <p className="mt-1 text-xs font-semibold text-white/42">Combine title search with genre, format, source, year, score, status, season, and episode length.</p>
               </div>
               <button
                 type="button"
-                onClick={() => setVisualFilters(defaultVisualFilters)}
+                onClick={clearAllFilters}
                 className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-black text-white/56 transition-colors hover:border-white/18 hover:text-white"
               >
                 Clear
@@ -580,7 +923,23 @@ export default function DesktopExplore() {
             {results.map((anime) => <AnimeCard key={anime.mal_id || anime.id || anime.title} anime={anime} />)}
           </div>
         ) : (
-          <EmptyState text={searchQuery.isError ? 'Anime data could not load. Check your connection and try again.' : 'Try removing filters or searching another title.'} />
+          <EmptyState text={searchQuery.isError ? 'Anime data could not load. Check your connection and try again.' : query ? `No results for "${query}". Try fewer filters, another title alias, or a broader category.` : 'Try removing filters or searching another title.'}>
+            {query ? (
+              <button type="button" onClick={clearSearch} className="rounded-full bg-primary px-4 py-2 text-sm font-black text-white shadow-lg shadow-primary/18 hover:bg-primary/90">
+                Clear search
+              </button>
+            ) : null}
+            {activeVisualFilterCount ? (
+              <button type="button" onClick={clearAllFilters} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70 hover:text-white">
+                Clear filters
+              </button>
+            ) : null}
+            {searchQuery.isError ? (
+              <button type="button" onClick={() => searchQuery.refetch()} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70 hover:text-white">
+                Retry
+              </button>
+            ) : null}
+          </EmptyState>
         )}
       </section>
 

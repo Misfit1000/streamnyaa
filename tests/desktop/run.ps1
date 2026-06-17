@@ -35,6 +35,7 @@ $workflow = Get-Content -Raw (Join-Path $repo '.github\workflows\desktop-release
 $packageJson = Get-Content -Raw (Join-Path $repo 'package.json')
 $desktopHtmlWriter = Get-Content -Raw (Join-Path $repo 'scripts\write-desktop-html.mjs')
 $desktopFallbackBuilder = Get-Content -Raw (Join-Path $repo 'scripts\build-desktop-fallback.ps1')
+$playerSkin = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\bin\streamnyaa-player.lua')
 
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
@@ -71,10 +72,9 @@ Assert-Match $watchPage 'episodeNumberFromTitle' 'Desktop watch page should avoi
 Assert-Match $watchPage 'selectedEpisode - Math\.floor\(maxVisible / 2\)' 'Desktop watch page should keep the selected long-running episode in the visible strip.'
 Assert-Match $watchPage 'sourceSearchTitleVariants' 'Desktop watch page should widen source title matching for alternate season naming.'
 Assert-Match $watchPage 'sourceMatchesInstallment' 'Desktop watch page should filter torrent sources by the selected installment.'
-Assert-Match $watchPage 'CORE_SEASON_RELATIONS' 'Desktop watch page should restrict season traversal to core sequel relations.'
-if ($watchPage -match 'CORE_SEASON_RELATIONS\s*=\s*new Set\([^)]*PARENT') {
-  throw 'Desktop watch page must not treat parent relations as TV seasons.'
-}
+Assert-Match $watchPage 'TIMELINE_RELATIONS' 'Desktop watch page should build a complete related-series timeline instead of only direct sequel pills.'
+Assert-Match $watchPage "'SIDE_STORY'" 'Desktop watch page should allow OVA/special timeline entries while still filtering non-anime media.'
+Assert-Match $watchPage 'Promise\.allSettled' 'Desktop watch page should expand related installments in batches so the timeline appears complete.'
 Assert-Match $watchPage 'sameSeriesFamily' 'Desktop watch page should keep season traversal inside the same title family.'
 Assert-Match $watchPage 'hasSeasonTitleSignal' 'Desktop watch page should avoid fake season labels for unlabeled TV relations.'
 Assert-Match $watchPage 'sourceSeasonNumber' 'Desktop watch page should keep hidden season ordinals for torrent source matching without fake season labels.'
@@ -90,7 +90,7 @@ Assert-Match $watchPage 'rememberSourceFailure' 'Desktop watch page should recor
 Assert-Match $watchPage 'Try next playable source' 'Desktop watch page should expose a same-episode recovery action.'
 Assert-Match $watchPage "source\.matchTier === 'broad'" 'Desktop playback retry should allow broad backups when broad is the selected playable pool.'
 Assert-Match $watchPage 'isFetching:\s*sourcesFetching' 'Desktop watch page should track source refetching during episode switches.'
-Assert-Match $watchPage 'sourcesBusy\s*=\s*sourcesLoading\s*\|\|\s*sourcesFetching' 'Desktop autoplay should wait for the current episode source query.'
+Assert-Match $watchPage 'sourcesBusy\s*=\s*sourcesLoading\s*\|\|\s*\(sourcesFetching\s*&&\s*!sources\?\.length\)' 'Desktop autoplay should wait for uncached source queries while keeping cached current-episode sources usable.'
 Assert-Match $watchPage 'activeSourceId\s*\|\|\s*playActionLockRef\.current\) return' 'Desktop autoplay should wait for active player handoff before opening the next source.'
 Assert-Match $watchPage 'desktopWatchPath\(' 'Desktop watch page season switches should preserve the resolved desktop route identity.'
 if ($watchPage -match 'Anime not found') {
@@ -130,11 +130,24 @@ Assert-Match $streamSourcesApi 'fetchAnimeSchedule' 'Metadata gateway should sup
 Assert-Match $streamSourcesApi 'fetchAniDb' 'Metadata gateway should support cached AniDB enrichment.'
 Assert-Match $streamSourcesApi 'PROVIDER_DISABLED_TTL_SECONDS' 'Metadata gateway should fail closed for unconfigured optional providers.'
 Assert-Match $desktopBridge "'anilist' \| 'jikan' \| 'anidb' \| 'animeschedule' \| 'tmdb'" 'Desktop metadata bridge type should include every supported metadata provider.'
+Assert-Match $desktopBridge 'controlLocalPlayer' 'Desktop bridge should expose player control commands.'
+Assert-Match $watchPage 'runPlayerControl' 'Desktop watch page should wire the player control UI.'
+Assert-Match $watchPage 'Pause' 'Desktop watch page should expose a pause control.'
 Assert-Match $tauriMain 'fn get_desktop_diagnostics' 'Desktop diagnostics command is missing.'
 Assert-Match $tauriMain 'logs_root\(\)' 'Desktop log directory helper is missing.'
 Assert-Match $tauriMain 'cleanup_abandoned_sessions' 'Desktop cache cleanup path is missing.'
 Assert-Match $tauriMain 'play_local_torrent' 'Desktop local playback command is missing.'
-Assert-Match $tauriMain 'osc-layout=bottombar' 'Desktop player should use a cleaner streaming-style MPV control layout.'
+Assert-Match $tauriMain 'PlayerControlRequest' 'Desktop player control request type is missing.'
+Assert-Match $tauriMain 'control_local_player' 'Desktop player control command is missing.'
+Assert-Match $tauriMain 'get_player_property_bool' 'Desktop player progress should expose boolean player state.'
+Assert-Match $tauriMain 'streamnyaa-player\.lua' 'Desktop player should load the StreamNyaa MPV control skin.'
+Assert-Match $tauriMain '--osc=no' 'Desktop player should disable the default MPV OSC when the StreamNyaa skin is used.'
+Assert-Match $playerSkin 'cycle_speed' 'StreamNyaa MPV skin should expose playback speed cycling.'
+Assert-Match $playerSkin 'streamnyaa-mute' 'StreamNyaa MPV skin should expose mute controls.'
+Assert-Match $playerSkin 'MBTN_LEFT_DBL' 'StreamNyaa MPV skin should support double-click fullscreen.'
+Assert-Match $playerSkin 'seek_hot' 'StreamNyaa MPV skin should expose seek preview hover state.'
+Assert-Match $tauriMain 'loading_frame' 'Desktop player should use a branded supported loading frame.'
+Assert-Match $tauriMain 'image-display-duration=inf' 'Desktop player should hold the branded loading frame while buffering.'
 Assert-Match $tauriMain '"tmdb"' 'Desktop metadata bridge should support TMDB enrichment requests.'
 Assert-Match $tauriMain '"animeschedule"' 'Desktop metadata bridge should support AnimeSchedule enrichment requests.'
 Assert-Match $tauriMain '"anidb"' 'Desktop metadata bridge should support AniDB enrichment requests.'

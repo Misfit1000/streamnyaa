@@ -1,4 +1,13 @@
-export default function handler(_req: any, res: any) {
+function setCors(res: any) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization,Content-Type');
+}
+
+export default function handler(req: any, res: any) {
+  setCors(res);
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
   const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/+$/, '').replace(/\/rest\/v1$/i, '');
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 

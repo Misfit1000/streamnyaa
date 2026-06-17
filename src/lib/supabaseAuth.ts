@@ -1,3 +1,5 @@
+import { accountApiFetch, accountApiUrl } from './accountApi';
+
 const STORAGE_KEY = 'streamnyaa.auth.session';
 
 export interface AuthUser {
@@ -24,7 +26,7 @@ let cachedConfig: AuthConfig | null = null;
 async function authConfig() {
   if (cachedConfig) return cachedConfig;
 
-  const response = await fetch('/api/auth/config');
+  const response = await accountApiFetch('/api/auth/config');
   if (!response.ok) throw new Error('Login is not configured yet.');
   cachedConfig = await response.json();
   return cachedConfig!;
@@ -113,9 +115,9 @@ export async function signInWithPassword(email: string, password: string) {
   return session;
 }
 
-export async function signInWithGoogle() {
+export async function signInWithGoogle(redirectPath = '/login') {
   const config = await authConfig();
-  const redirectTo = siteRedirectUrl('/login');
+  const redirectTo = siteRedirectUrl(redirectPath);
   const params = new URLSearchParams({
     provider: 'google',
     redirect_to: redirectTo,
@@ -182,7 +184,7 @@ export async function signOutSession(session: AuthSession | null) {
 }
 
 export async function fetchAccount(session: AuthSession) {
-  const response = await fetch('/api/auth/me', {
+  const response = await fetch(accountApiUrl('/api/auth/me'), {
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
   if (!response.ok) {

@@ -442,6 +442,8 @@ const mapAnilistToJikan = (m: any) => ({
   title: m.title.english || m.title.romaji || m.title.native,
   title_romaji: m.title.romaji,
   title_english: m.title.english,
+  title_native: m.title.native,
+  synonyms: m.synonyms || [],
   images: { 
     jpg: { 
       image_url: m.coverImage?.large || m.coverImage?.extraLarge, 
@@ -463,6 +465,8 @@ const mapAnilistToJikan = (m: any) => ({
   scored_by: m.scored_by || null,
   type: m.format || 'TV',
   year: m.seasonYear,
+  season: m.season,
+  source: m.source,
   genres: (m.genres || []).map((g: string) => ({ name: g })),
   trailer: m.trailer?.site === 'youtube' ? {
     youtube_id: m.trailer.id,
@@ -577,10 +581,14 @@ export const fetchTopAiring = async () => {
           id
           idMal
           title { romaji english native }
+          synonyms
           description
           episodes
           status
           format
+          season
+          seasonYear
+          source
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
@@ -655,10 +663,14 @@ export const fetchUpcomingAnime = async () => {
           id
           idMal
           title { romaji english native }
+          synonyms
           description
           episodes
           status
           format
+          season
+          seasonYear
+          source
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
@@ -684,10 +696,14 @@ export const fetchPopularAnime = async () => {
           id
           idMal
           title { romaji english native }
+          synonyms
           description
           episodes
           status
           format
+          season
+          seasonYear
+          source
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
@@ -713,10 +729,14 @@ export const fetchSeasonalAnime = async () => {
           id
           idMal
           title { romaji english native }
+          synonyms
           description
           episodes
           status
           format
+          season
+          seasonYear
+          source
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
@@ -844,8 +864,8 @@ const animeDetailsCandidateScore = (
 
 export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupOptions = {}) => {
   const routeNumericId = toPositiveInt(id);
-  const preferredMalId = toPositiveInt(options.malId) || routeNumericId;
   const preferredAniListId = toPositiveInt(options.anilistId);
+  const preferredMalId = toPositiveInt(options.malId) || (preferredAniListId ? null : routeNumericId);
   const titleHint = String(options.routeTitle || titleHintFromRoute(id) || '').trim();
 
   const candidates: any[] = [];
@@ -1103,10 +1123,14 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
           id
           idMal
           title { romaji english native }
+          synonyms
           description
           episodes
           status
           format
+          season
+          seasonYear
+          source
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
@@ -1129,10 +1153,14 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
           id
           idMal
           title { romaji english native }
+          synonyms
           description
           episodes
           status
           format
+          season
+          seasonYear
+          source
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
@@ -1168,11 +1196,14 @@ export const fetchTopAnimeByYear = async (year: number) => {
           id
           idMal
           title { romaji english native }
+          synonyms
           description
           episodes
           status
           format
+          season
           seasonYear
+          source
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
@@ -1205,11 +1236,14 @@ export const fetchAnimeSeason = async (season: string, year: number, page = 1) =
           id
           idMal
           title { romaji english native }
+          synonyms
           description
           episodes
           status
           format
+          season
           seasonYear
+          source
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore

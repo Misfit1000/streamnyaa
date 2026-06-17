@@ -22,7 +22,7 @@ type AuthContextValue = {
   loading: boolean;
   error: string;
   signIn: (email: string, password: string) => Promise<void>;
-  signInGoogle: () => Promise<void>;
+  signInGoogle: (redirectPath?: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   resetPassword: (accessToken: string, password: string) => Promise<void>;
@@ -116,9 +116,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const nextSession = await signInWithPassword(email, password);
       await applySession(nextSession);
     },
-    signInGoogle: async () => {
+    signInGoogle: async (redirectPath) => {
       setError('');
-      await signInWithGoogle();
+      await signInWithGoogle(redirectPath);
     },
     signUp: async (email, password) => {
       setError('');

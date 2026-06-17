@@ -122,6 +122,54 @@ select:focus-visible {
   animation: desktop-shimmer 1.4s cubic-bezier(0.25, 1, 0.5, 1) infinite;
 }
 
+.desktop-loading-orbit::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 250deg, rgba(196, 181, 253, 0.96) 315deg, transparent 360deg);
+  filter: drop-shadow(0 0 14px rgba(167, 139, 250, 0.72));
+  animation: desktop-loading-orbit 1.2s linear infinite;
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+}
+
+.desktop-loading-progress {
+  width: 42%;
+  animation: desktop-loading-progress 1.45s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+}
+
+.desktop-player-range {
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(244, 63, 94, 0.95), rgba(244, 63, 94, 0.95)) 0 / var(--range-fill, 0%) 100% no-repeat,
+    rgba(255, 255, 255, 0.16);
+}
+
+.desktop-player-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  background: #f43f5e;
+  box-shadow: 0 0 0 6px rgba(244, 63, 94, 0.16), 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.desktop-player-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  background: #f43f5e;
+  box-shadow: 0 0 0 6px rgba(244, 63, 94, 0.16), 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.desktop-player-range:disabled {
+  opacity: 0.44;
+}
+
 @keyframes desktop-route-enter {
   from {
     opacity: 0;
@@ -153,10 +201,30 @@ select:focus-visible {
   }
 }
 
+@keyframes desktop-loading-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes desktop-loading-progress {
+  0% {
+    transform: translateX(-110%);
+  }
+  58% {
+    transform: translateX(92%);
+  }
+  100% {
+    transform: translateX(238%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .desktop-route-transition,
   .desktop-section-enter,
-  .desktop-skeleton-shimmer {
+  .desktop-skeleton-shimmer,
+  .desktop-loading-orbit::before,
+  .desktop-loading-progress {
     animation: none;
   }
 

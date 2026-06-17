@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Bell, CalendarDays, Compass, Download, Heart, History, Home, Library, Menu, Search, Settings, UserCircle } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
+import { useAuth } from '../context/AuthContext';
 
 const desktopNav = [
   { to: '/', label: 'Home', icon: Home },
@@ -51,6 +52,7 @@ const DesktopNavItem = memo(function DesktopNavItem({
 
 export default function DesktopShell() {
   const location = useLocation();
+  const { user } = useAuth();
   const isWatch = location.pathname.startsWith('/watch/');
   const [logoFailed, setLogoFailed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -136,7 +138,11 @@ export default function DesktopShell() {
                 <Bell className="h-5 w-5" />
                 <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
               </button>
-              <Link to="/dashboard" className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.08] bg-white/[0.055] text-white/80 transition-colors hover:bg-white/[0.08] hover:text-white">
+              <Link
+                to={user ? '/profile' : '/login?next=/profile'}
+                title={user ? 'Profile' : 'Sign in'}
+                className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.08] bg-white/[0.055] text-white/80 transition-colors hover:bg-white/[0.08] hover:text-white"
+              >
                 <UserCircle className="h-6 w-6" />
               </Link>
             </div>

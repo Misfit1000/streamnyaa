@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use image::imageops::FilterType;
 use serde::{Deserialize, Serialize};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -9,9 +10,12 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc, Mutex, MutexGuard, OnceLock, TryLockError,
+    },
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::Manager;
 
@@ -26,11 +30,17 @@ const MIN_INITIAL_PLAYBACK_BUFFER_BYTES: u64 = 6 * 1024 * 1024;
 const STREAM_READY_TIMEOUT_MS: u128 = 20_000;
 const STREAM_TARGET_HANDOFF_MS: u128 = 2_200;
 const PLAYER_PIPE_PREFIX: &str = "streamnyaa-player";
-const SOURCE_API_CACHE_TTL_MS: u128 = 1000 * 60 * 3;
-const SOURCE_API_CACHE_MAX_ENTRIES: usize = 24;
+const SOURCE_API_CACHE_TTL_MS: u128 = 1000 * 60 * 10;
+const SOURCE_API_CACHE_MAX_ENTRIES: usize = 96;
 const METADATA_CACHE_MAX_ENTRIES: usize = 64;
 const LOG_FILE_LIMIT_BYTES: u64 = 512 * 1024;
 const LOG_FILE_KEEP_COUNT: usize = 5;
+const PLAYER_COVER_MAX_BYTES: u64 = 8 * 1024 * 1024;
+const PLAYER_COVER_MAX_WIDTH: u32 = 320;
+const PLAYER_COVER_MAX_HEIGHT: u32 = 440;
+const PLAYER_COVER_BACKGROUND_WIDTH: u32 = 1920;
+const PLAYER_COVER_BACKGROUND_HEIGHT: u32 = 1080;
+const PLAYER_COVER_PRELOAD_TIMEOUT_MS: u64 = 950;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -54,6 +64,8 @@ struct LocalPlaybackProgress {
     progress: Option<f64>,
     current_seconds: Option<f64>,
     duration_seconds: Option<f64>,
+    paused: Option<bool>,
+    volume: Option<f64>,
     downloaded_bytes: Option<u64>,
     total_bytes: Option<u64>,
     peers: Option<u64>,
@@ -135,7 +147,7 @@ struct DesktopSettings {
     cache_dir: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct PlaybackRequest {
     magnet: String,
     info_hash: Option<String>,
@@ -149,9 +161,68 @@ struct PlaybackRequest {
     settings: Option<DesktopSettings>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlayerMetadata {
+    anime_title: String,
+    episode_title: Option<String>,
+    episode_number: Option<String>,
+    cover_image: Option<String>,
+    loading_image_path: Option<String>,
+    loading_image_width: Option<u32>,
+    loading_image_height: Option<u32>,
+    cover_poster_bgra_path: Option<String>,
+    cover_poster_width: Option<u32>,
+    cover_poster_height: Option<u32>,
+    cover_background_bgra_path: Option<String>,
+    cover_background_width: Option<u32>,
+    cover_background_height: Option<u32>,
+}
+
+struct PreparedCover {
+    path: PathBuf,
+    width: u32,
+    height: u32,
+    loading_image_path: PathBuf,
+    loading_image_width: u32,
+    loading_image_height: u32,
+    background_path: PathBuf,
+    background_width: u32,
+    background_height: u32,
+}
+
+struct PlayerMetadataWrite {
+    path: PathBuf,
+    has_cover: bool,
+    loading_image_path: Option<PathBuf>,
+}
+
+struct PlayerMetadataLaunch {
+    path: Option<PathBuf>,
+    cover_ready: bool,
+    loading_image_path: Option<PathBuf>,
+    pending_cover: Option<mpsc::Receiver<Result<PlayerMetadataWrite, String>>>,
+}
+
 #[derive(Deserialize)]
 struct PlaybackProgressRequest {
     torrent_id: String,
+}
+
+#[derive(Deserialize)]
+struct PlayerControlRequest {
+    action: String,
+    value: Option<f64>,
+}
+
+#[derive(Serialize)]
+struct PlayerControlStatus {
+    ok: bool,
+    message: String,
+    paused: Option<bool>,
+    volume: Option<f64>,
+    current_seconds: Option<f64>,
+    duration_seconds: Option<f64>,
 }
 
 #[derive(Clone)]
@@ -201,8 +272,10 @@ struct SourceCacheEntry {
 
 static MANAGER: OnceLock<Mutex<PlaybackManager>> = OnceLock::new();
 static PLAYBACK_OPERATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static PLAYBACK_SWITCH_GENERATION: AtomicU64 = AtomicU64::new(0);
 static SOURCE_CACHE: OnceLock<Mutex<HashMap<String, SourceCacheEntry>>> = OnceLock::new();
 static METADATA_CACHE: OnceLock<Mutex<HashMap<String, SourceCacheEntry>>> = OnceLock::new();
+static SUBTITLE_IMPORT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 fn manager() -> &'static Mutex<PlaybackManager> {
     MANAGER.get_or_init(|| Mutex::new(PlaybackManager::default()))
@@ -214,6 +287,61 @@ fn source_cache() -> &'static Mutex<HashMap<String, SourceCacheEntry>> {
 
 fn playback_operation_lock() -> &'static Mutex<()> {
     PLAYBACK_OPERATION_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn next_playback_generation() -> u64 {
+    PLAYBACK_SWITCH_GENERATION.fetch_add(1, Ordering::SeqCst) + 1
+}
+
+fn playback_generation_current(generation: u64) -> bool {
+    PLAYBACK_SWITCH_GENERATION.load(Ordering::SeqCst) == generation
+}
+
+fn playback_superseded_error() -> String {
+    "Playback source switch was superseded by a newer source.".to_string()
+}
+
+fn ensure_playback_generation_current(generation: u64) -> Result<(), String> {
+    if playback_generation_current(generation) {
+        Ok(())
+    } else {
+        Err(playback_superseded_error())
+    }
+}
+
+fn acquire_playback_operation_for_switch(
+    generation: u64,
+    settings: Option<DesktopSettings>,
+    title: &str,
+) -> Result<MutexGuard<'static, ()>, String> {
+    let started_at = Instant::now();
+    let mut cancellation_requested = false;
+    loop {
+        match playback_operation_lock().try_lock() {
+            Ok(guard) => return Ok(guard),
+            Err(TryLockError::WouldBlock) => {
+                ensure_playback_generation_current(generation)?;
+                if !cancellation_requested && started_at.elapsed() > Duration::from_millis(250) {
+                    cancellation_requested = true;
+                    log_info(format!(
+                        "Cancelling previous loading source before starting generation {}",
+                        generation
+                    ));
+                    cancel_previous_loading_source(settings.clone(), title);
+                }
+                if started_at.elapsed() > Duration::from_secs(45) {
+                    return Err(
+                        "The previous source did not release the local stream engine in time."
+                            .to_string(),
+                    );
+                }
+                thread::sleep(Duration::from_millis(75));
+            }
+            Err(TryLockError::Poisoned(_)) => {
+                return Err("Playback operation lock is unavailable.".to_string());
+            }
+        }
+    }
 }
 
 fn metadata_cache() -> &'static Mutex<HashMap<String, SourceCacheEntry>> {
@@ -375,6 +503,24 @@ fn candidate_paths(command: &str) -> Vec<String> {
     }
 
     paths
+}
+
+fn bundled_player_skin_script() -> Option<PathBuf> {
+    let manifest_bin = Path::new(env!("CARGO_MANIFEST_DIR")).join("bin");
+    let mut paths = vec![manifest_bin.join("streamnyaa-player.lua")];
+
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            paths.push(dir.join("bin").join("streamnyaa-player.lua"));
+            paths.push(
+                dir.join("resources")
+                    .join("bin")
+                    .join("streamnyaa-player.lua"),
+            );
+        }
+    }
+
+    paths.into_iter().find(|path| path.exists())
 }
 
 fn configured_command(
@@ -902,14 +1048,38 @@ fn rqbit_delete(path: &str) -> Result<(), String> {
 }
 
 fn rqbit_ready() -> bool {
-    rqbit_get("/").is_ok()
+    let url = format!("{}/", RQBIT_URL);
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(700))
+        .build()
+        .ok()
+        .and_then(|client| client.get(url).send().ok())
+        .map(|response| response.status().is_success())
+        .unwrap_or(false)
+}
+
+fn wait_for_rqbit_shutdown() -> bool {
+    for _ in 0..24 {
+        if !rqbit_ready() {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(125));
+    }
+    !rqbit_ready()
 }
 
 fn start_rqbit(engine_path: &str, cache_dir: &Path) -> Result<(), String> {
     fs::create_dir_all(cache_dir)
         .map_err(|error| format!("Could not prepare StreamNyaa cache: {}", error))?;
     if rqbit_ready() {
-        return Ok(());
+        log_info("Stopping stale local stream engine before starting a clean session");
+        stop_rqbit_server(Some(engine_path));
+        if !wait_for_rqbit_shutdown() {
+            return Err(
+                "The previous local stream engine did not shut down cleanly. Close StreamNyaa and try again."
+                    .to_string(),
+            );
+        }
     }
     log_info(format!("Starting local stream engine from {}", engine_path));
     prepared_command(engine_path)
@@ -961,24 +1131,446 @@ fn json_string(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "\"\"".to_string())
 }
 
-fn xml_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+fn path_for_player_option(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
-fn trim_for_display(value: &str, max_chars: usize) -> String {
-    let mut output = String::new();
-    for (index, ch) in value.trim().chars().enumerate() {
-        if index >= max_chars {
-            output.push_str("...");
-            break;
-        }
-        output.push(ch);
+fn player_metadata_dir(cache_dir: &Path) -> PathBuf {
+    cache_dir.join("player-meta")
+}
+
+fn player_metadata_path(cache_dir: &Path) -> PathBuf {
+    player_metadata_dir(cache_dir).join("current.json")
+}
+
+fn player_subtitle_import_request_path(cache_dir: &Path) -> PathBuf {
+    player_metadata_dir(cache_dir).join("subtitle-import.request")
+}
+
+fn prepare_player_subtitle_import_request(cache_dir: &Path) -> Result<PathBuf, String> {
+    let request_file = player_subtitle_import_request_path(cache_dir);
+    if let Some(parent) = request_file.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not prepare subtitle import bridge: {}", error))?;
     }
-    output
+    let _ = fs::remove_file(&request_file);
+    Ok(request_file)
+}
+
+fn playback_cover_source(request: &PlaybackRequest) -> Option<String> {
+    [request.banner.as_deref(), request.poster.as_deref()]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn playback_cover_source_kind(request: &PlaybackRequest, source: &str) -> &'static str {
+    if request
+        .banner
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value == source)
+        .is_some()
+    {
+        "banner"
+    } else if request
+        .poster
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value == source)
+        .is_some()
+    {
+        "poster"
+    } else {
+        "cover"
+    }
+}
+
+fn is_remote_url(value: &str) -> bool {
+    let value = value.to_ascii_lowercase();
+    value.starts_with("https://") || value.starts_with("http://")
+}
+
+fn cover_local_path(value: &str) -> PathBuf {
+    let trimmed = value.trim();
+    let without_file_scheme = trimmed
+        .strip_prefix("file:///")
+        .or_else(|| trimmed.strip_prefix("file://"))
+        .unwrap_or(trimmed);
+    PathBuf::from(without_file_scheme)
+}
+
+fn read_cover_bytes(source: &str) -> Result<Vec<u8>, String> {
+    if is_remote_url(source) {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(3))
+            .build()
+            .map_err(|error| format!("Could not prepare cover downloader: {}", error))?;
+        let response = client
+            .get(source)
+            .send()
+            .map_err(|error| format!("Could not download cover image: {}", error))?
+            .error_for_status()
+            .map_err(|error| format!("Cover image request failed: {}", error))?;
+        if response.content_length().unwrap_or(0) > PLAYER_COVER_MAX_BYTES {
+            return Err("Cover image is too large.".to_string());
+        }
+        let bytes = response
+            .bytes()
+            .map_err(|error| format!("Could not read cover image: {}", error))?;
+        if bytes.len() as u64 > PLAYER_COVER_MAX_BYTES {
+            return Err("Cover image is too large.".to_string());
+        }
+        return Ok(bytes.to_vec());
+    }
+
+    let path = cover_local_path(source);
+    let size = fs::metadata(&path)
+        .map_err(|error| format!("Could not read cover image metadata: {}", error))?
+        .len();
+    if size > PLAYER_COVER_MAX_BYTES {
+        return Err("Cover image is too large.".to_string());
+    }
+    fs::read(&path).map_err(|error| format!("Could not read cover image: {}", error))
+}
+
+fn rgba_to_bgra(image: &image::RgbaImage) -> Vec<u8> {
+    let mut bgra = Vec::with_capacity((image.width() * image.height() * 4) as usize);
+    for pixel in image.pixels() {
+        bgra.push(pixel[2]);
+        bgra.push(pixel[1]);
+        bgra.push(pixel[0]);
+        bgra.push(pixel[3]);
+    }
+    bgra
+}
+
+fn prepare_cover_background(decoded: &image::RgbaImage) -> image::RgbaImage {
+    let (source_width, source_height) = decoded.dimensions();
+    let target_width = PLAYER_COVER_BACKGROUND_WIDTH;
+    let target_height = PLAYER_COVER_BACKGROUND_HEIGHT;
+    let scale = (target_width as f64 / source_width as f64)
+        .max(target_height as f64 / source_height as f64)
+        .max(1.0);
+    let resized_width = ((source_width as f64 * scale).round() as u32).max(target_width);
+    let resized_height = ((source_height as f64 * scale).round() as u32).max(target_height);
+    let resized =
+        image::imageops::resize(decoded, resized_width, resized_height, FilterType::Triangle);
+    let crop_x = resized_width.saturating_sub(target_width) / 2;
+    let crop_y = resized_height.saturating_sub(target_height) / 2;
+    let cropped =
+        image::imageops::crop_imm(&resized, crop_x, crop_y, target_width, target_height).to_image();
+    let mut background = image::imageops::blur(&cropped, 18.0);
+    for pixel in background.pixels_mut() {
+        pixel[0] = ((pixel[0] as f32 * 0.46) + 16.0).clamp(0.0, 255.0) as u8;
+        pixel[1] = (pixel[1] as f32 * 0.34).clamp(0.0, 255.0) as u8;
+        pixel[2] = ((pixel[2] as f32 * 0.36) + 10.0).clamp(0.0, 255.0) as u8;
+        pixel[3] = 255;
+    }
+    background
+}
+
+fn prepare_player_cover(
+    cache_dir: &Path,
+    request: &PlaybackRequest,
+) -> Result<Option<PreparedCover>, String> {
+    let Some(source) = playback_cover_source(request) else {
+        return Ok(None);
+    };
+    let source_kind = playback_cover_source_kind(request, &source);
+    log_info(format!(
+        "Player cover source selected: type={} source={}",
+        source_kind, source
+    ));
+
+    let bytes = read_cover_bytes(&source)?;
+    let decoded = image::load_from_memory(&bytes)
+        .map_err(|error| format!("Could not decode cover image: {}", error))?
+        .to_rgba8();
+    let (source_width, source_height) = decoded.dimensions();
+    if source_width == 0 || source_height == 0 {
+        return Ok(None);
+    }
+
+    let scale = (PLAYER_COVER_MAX_WIDTH as f64 / source_width as f64)
+        .min(PLAYER_COVER_MAX_HEIGHT as f64 / source_height as f64)
+        .min(1.0);
+    let width = ((source_width as f64 * scale).round() as u32).max(1);
+    let height = ((source_height as f64 * scale).round() as u32).max(1);
+    let background = prepare_cover_background(&decoded);
+    let resized = if width == source_width && height == source_height {
+        decoded.clone()
+    } else {
+        image::imageops::resize(&decoded, width, height, FilterType::Lanczos3)
+    };
+
+    let metadata_dir = player_metadata_dir(cache_dir);
+    fs::create_dir_all(&metadata_dir)
+        .map_err(|error| format!("Could not prepare player metadata folder: {}", error))?;
+    let loading_image_path = metadata_dir.join("loading-cover.jpg");
+    let loading_image_rgb = image::DynamicImage::ImageRgba8(background.clone()).to_rgb8();
+    image::DynamicImage::ImageRgb8(loading_image_rgb)
+        .save_with_format(&loading_image_path, image::ImageFormat::Jpeg)
+        .map_err(|error| format!("Could not write cover loading image: {}", error))?;
+    let loading_image_size = fs::metadata(&loading_image_path)
+        .map_err(|error| format!("Could not verify cover loading image: {}", error))?
+        .len();
+    log_info(format!(
+        "Player cover loading image ready: path={} type={} dimensions={}x{} size={} bytes",
+        loading_image_path.to_string_lossy(),
+        source_kind,
+        background.width(),
+        background.height(),
+        loading_image_size
+    ));
+    let cover_path = metadata_dir.join("current-cover.bgra");
+    fs::write(&cover_path, rgba_to_bgra(&resized))
+        .map_err(|error| format!("Could not write player cover overlay: {}", error))?;
+    let background_path = metadata_dir.join("current-cover-background.bgra");
+    fs::write(&background_path, rgba_to_bgra(&background))
+        .map_err(|error| format!("Could not write player cover background: {}", error))?;
+    let cover_expected_bytes = resized.width() as u64 * resized.height() as u64 * 4;
+    let cover_actual_bytes = fs::metadata(&cover_path)
+        .map_err(|error| format!("Could not verify player cover overlay: {}", error))?
+        .len();
+    if cover_actual_bytes != cover_expected_bytes {
+        return Err(format!(
+            "Player cover overlay byte size mismatch: got {}, expected {}.",
+            cover_actual_bytes, cover_expected_bytes
+        ));
+    }
+    let background_expected_bytes = background.width() as u64 * background.height() as u64 * 4;
+    let background_actual_bytes = fs::metadata(&background_path)
+        .map_err(|error| format!("Could not verify player cover background: {}", error))?
+        .len();
+    if background_actual_bytes != background_expected_bytes {
+        return Err(format!(
+            "Player cover background byte size mismatch: got {}, expected {}.",
+            background_actual_bytes, background_expected_bytes
+        ));
+    }
+    log_info(format!(
+        "Player cover BGRA ready: poster={}x{} {} bytes, background={}x{} {} bytes",
+        resized.width(),
+        resized.height(),
+        cover_actual_bytes,
+        background.width(),
+        background.height(),
+        background_actual_bytes
+    ));
+
+    Ok(Some(PreparedCover {
+        path: cover_path,
+        width: resized.width(),
+        height: resized.height(),
+        loading_image_path,
+        loading_image_width: background.width(),
+        loading_image_height: background.height(),
+        background_path,
+        background_width: background.width(),
+        background_height: background.height(),
+    }))
+}
+
+fn player_metadata_for(
+    request: &PlaybackRequest,
+    title: &str,
+    cover: Option<&PreparedCover>,
+) -> PlayerMetadata {
+    PlayerMetadata {
+        anime_title: clean_value(Some(request.anime_title.clone()))
+            .unwrap_or_else(|| title.to_string()),
+        episode_title: clean_value(Some(request.title.clone())),
+        episode_number: clean_value(Some(request.episode.clone())),
+        cover_image: playback_cover_source(request),
+        loading_image_path: cover.map(|item| path_for_player_option(&item.loading_image_path)),
+        loading_image_width: cover.map(|item| item.loading_image_width),
+        loading_image_height: cover.map(|item| item.loading_image_height),
+        cover_poster_bgra_path: cover.map(|item| path_for_player_option(&item.path)),
+        cover_poster_width: cover.map(|item| item.width),
+        cover_poster_height: cover.map(|item| item.height),
+        cover_background_bgra_path: cover.map(|item| path_for_player_option(&item.background_path)),
+        cover_background_width: cover.map(|item| item.background_width),
+        cover_background_height: cover.map(|item| item.background_height),
+    }
+}
+
+fn write_player_metadata_file(
+    cache_dir: &Path,
+    metadata: &PlayerMetadata,
+) -> Result<PathBuf, String> {
+    let metadata_dir = player_metadata_dir(cache_dir);
+    fs::create_dir_all(&metadata_dir)
+        .map_err(|error| format!("Could not prepare player metadata folder: {}", error))?;
+
+    let path = player_metadata_path(cache_dir);
+    let bytes = serde_json::to_vec_pretty(metadata)
+        .map_err(|error| format!("Could not serialize player metadata: {}", error))?;
+    fs::write(&path, bytes)
+        .map_err(|error| format!("Could not write player metadata: {}", error))?;
+    Ok(path)
+}
+
+fn write_player_metadata(
+    cache_dir: &Path,
+    request: &PlaybackRequest,
+    title: &str,
+) -> Result<PathBuf, String> {
+    let metadata = player_metadata_for(request, title, None);
+    write_player_metadata_file(cache_dir, &metadata)
+}
+
+fn write_player_metadata_with_cover(
+    cache_dir: &Path,
+    request: &PlaybackRequest,
+    title: &str,
+) -> Result<PlayerMetadataWrite, String> {
+    let cover = match prepare_player_cover(cache_dir, request) {
+        Ok(cover) => cover,
+        Err(error) => {
+            log_info(format!("Player cover fallback: {}", error));
+            None
+        }
+    };
+    let has_cover = cover.is_some();
+    let loading_image_path = cover.as_ref().map(|item| item.loading_image_path.clone());
+    let metadata = player_metadata_for(request, title, cover.as_ref());
+    let path = write_player_metadata_file(cache_dir, &metadata)?;
+    Ok(PlayerMetadataWrite {
+        path,
+        has_cover,
+        loading_image_path,
+    })
+}
+
+fn prepare_player_metadata_for_launch(
+    cache_dir: &Path,
+    request: &PlaybackRequest,
+    title: &str,
+) -> PlayerMetadataLaunch {
+    let Some(_) = playback_cover_source(request) else {
+        let path = write_player_metadata(cache_dir, request, title)
+            .map_err(|error| log_info(format!("Player metadata fallback: {}", error)))
+            .ok();
+        return PlayerMetadataLaunch {
+            path,
+            cover_ready: false,
+            loading_image_path: None,
+            pending_cover: None,
+        };
+    };
+
+    let (tx, rx) = mpsc::channel();
+    let cache_dir_for_cover = cache_dir.to_path_buf();
+    let request_for_cover = request.clone();
+    let title_for_cover = title.to_string();
+    let started_at = Instant::now();
+    thread::spawn(move || {
+        let result = write_player_metadata_with_cover(
+            &cache_dir_for_cover,
+            &request_for_cover,
+            &title_for_cover,
+        );
+        let _ = tx.send(result);
+    });
+
+    match rx.recv_timeout(Duration::from_millis(PLAYER_COVER_PRELOAD_TIMEOUT_MS)) {
+        Ok(Ok(write)) => {
+            log_info(format!(
+                "Playback perf: cover metadata prepared before player launch in {} ms",
+                started_at.elapsed().as_millis()
+            ));
+            PlayerMetadataLaunch {
+                path: Some(write.path),
+                cover_ready: write.has_cover,
+                loading_image_path: write.loading_image_path,
+                pending_cover: None,
+            }
+        }
+        Ok(Err(error)) => {
+            log_info(format!("Player cover preload fallback: {}", error));
+            let path = write_player_metadata(cache_dir, request, title)
+                .map_err(|error| log_info(format!("Player metadata fallback: {}", error)))
+                .ok();
+            PlayerMetadataLaunch {
+                path,
+                cover_ready: false,
+                loading_image_path: None,
+                pending_cover: None,
+            }
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            log_info(format!(
+                "Player cover preload timed out after {} ms; opening player with fallback metadata",
+                PLAYER_COVER_PRELOAD_TIMEOUT_MS
+            ));
+            let path = write_player_metadata(cache_dir, request, title)
+                .map_err(|error| log_info(format!("Player metadata fallback: {}", error)))
+                .ok();
+            PlayerMetadataLaunch {
+                path,
+                cover_ready: false,
+                loading_image_path: None,
+                pending_cover: Some(rx),
+            }
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            log_info("Player cover preload disconnected; opening player with fallback metadata");
+            let path = write_player_metadata(cache_dir, request, title)
+                .map_err(|error| log_info(format!("Player metadata fallback: {}", error)))
+                .ok();
+            PlayerMetadataLaunch {
+                path,
+                cover_ready: false,
+                loading_image_path: None,
+                pending_cover: None,
+            }
+        }
+    }
+}
+
+fn spawn_player_cover_metadata_update(
+    ipc: String,
+    pending_cover: mpsc::Receiver<Result<PlayerMetadataWrite, String>>,
+) {
+    thread::spawn(move || {
+        let started_at = Instant::now();
+        match pending_cover.recv_timeout(Duration::from_secs(8)) {
+            Ok(Ok(write)) => {
+                let still_active = manager()
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.player_ipc.clone())
+                    .map(|active_ipc| active_ipc == ipc)
+                    .unwrap_or(false);
+                if still_active && write.has_cover {
+                    if let Some(loading_image_path) = write.loading_image_path.as_ref() {
+                        maybe_replace_generic_loading_frame(&ipc, loading_image_path);
+                    }
+                    send_player_script_message_arg(
+                        &ipc,
+                        "streamnyaa-reload-meta",
+                        &path_for_player_option(&write.path),
+                    );
+                }
+                log_info(format!(
+                    "Playback perf: late cover metadata prepared in {} ms",
+                    started_at.elapsed().as_millis()
+                ));
+            }
+            Ok(Err(error)) => {
+                log_info(format!("Player cover metadata skipped: {}", error));
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                log_info("Player cover metadata skipped after late timeout");
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                log_info("Player cover metadata skipped after worker disconnect");
+            }
+        }
+    });
 }
 
 fn html_entity_decode(value: &str) -> String {
@@ -1484,11 +2076,17 @@ fn playback_source_candidates(request: &PlaybackRequest) -> Result<Vec<String>, 
     let mut candidates = Vec::new();
 
     if let Some(hash) = magnet_info_hash(&request.magnet) {
-        candidates.push(request.magnet.trim().to_string());
+        let original = request.magnet.trim().to_string();
+        let enhanced = build_magnet_uri(&hash, &request.title);
+        if original.to_ascii_lowercase().contains("&tr=") {
+            candidates.push(original);
+            candidates.push(enhanced);
+        } else {
+            candidates.push(enhanced);
+            candidates.push(original);
+        }
         if let Some(request_hash) = request.info_hash.as_deref().and_then(normalize_info_hash) {
-            if request_hash != hash {
-                candidates.push(build_magnet_uri(&request_hash, &request.title));
-            }
+            candidates.push(build_magnet_uri(&request_hash, &request.title));
         }
     } else if let Some(hash) = request.info_hash.as_deref().and_then(normalize_info_hash) {
         candidates.push(build_magnet_uri(&hash, &request.title));
@@ -1583,7 +2181,7 @@ fn is_video_extension(value: &str) -> bool {
 }
 
 fn is_subtitle_extension(value: &str) -> bool {
-    matches!(value, "ass" | "ssa" | "srt" | "vtt")
+    matches!(value, "ass" | "ssa" | "srt" | "vtt" | "sub" | "idx")
 }
 
 fn normalize_playlist_url(playlist_url: &str, value: &str) -> String {
@@ -1938,156 +2536,158 @@ fn playlist_target(
     Ok(select_stream_target(&entries, request))
 }
 
-fn loading_artwork_url(request: &PlaybackRequest) -> Option<String> {
-    [request.banner.as_deref(), request.poster.as_deref()]
-        .into_iter()
-        .flatten()
-        .map(str::trim)
-        .find(|value| value.starts_with("https://") || value.starts_with("http://"))
-        .map(str::to_string)
+fn loading_palette_rgb(_value: &str) -> ([u8; 3], [u8; 3], [u8; 3]) {
+    ([255, 38, 48], [142, 18, 32], [8, 6, 9])
 }
 
-fn loading_palette_seed(value: &str) -> usize {
-    value
-        .bytes()
-        .fold(0usize, |sum, item| sum.wrapping_add(item as usize))
-        % 4
-}
+fn write_loading_bmp(path: &Path, seed: &str) -> Result<(), String> {
+    let width = 1280usize;
+    let height = 720usize;
+    let (accent, secondary, base_tint) = loading_palette_rgb(seed);
+    let mut pixels = vec![0u8; width * height * 3];
 
-fn loading_palette(value: &str) -> (&'static str, &'static str, &'static str, &'static str) {
-    match loading_palette_seed(value) {
-        0 => ("#e11d48", "#7c3aed", "#241018", "#0a0a0f"),
-        1 => ("#fb7185", "#2563eb", "#201018", "#090b12"),
-        2 => ("#a855f7", "#ec4899", "#1a0d17", "#08070d"),
-        _ => ("#f43f5e", "#0ea5e9", "#1f1016", "#07090d"),
+    for y in 0..height {
+        for x in 0..width {
+            let fx = x as f64 / width as f64;
+            let fy = y as f64 / height as f64;
+            let left_glow = (1.0
+                - (((fx - 0.26).powi(2) + ((fy - 0.45) * 1.35).powi(2)).sqrt() / 0.55))
+                .clamp(0.0, 1.0);
+            let right_glow = (1.0
+                - (((fx - 0.82).powi(2) + ((fy - 0.24) * 1.2).powi(2)).sqrt() / 0.48))
+                .clamp(0.0, 1.0);
+            let vignette =
+                (((fx - 0.5).powi(2) + ((fy - 0.5) * 1.45).powi(2)).sqrt() / 0.72).clamp(0.0, 1.0);
+            let index = (y * width + x) * 3;
+            for channel in 0..3 {
+                let value = 5.0
+                    + base_tint[channel] as f64 * 0.36
+                    + accent[channel] as f64 * left_glow * 0.30
+                    + secondary[channel] as f64 * right_glow * 0.24
+                    - vignette * 12.0;
+                pixels[index + channel] = value.clamp(0.0, 255.0) as u8;
+            }
+        }
     }
+
+    let mut blend_pixel = |x: usize, y: usize, color: [u8; 3], alpha: f64| {
+        if x >= width || y >= height {
+            return;
+        }
+        let alpha = alpha.clamp(0.0, 1.0);
+        let index = (y * width + x) * 3;
+        for channel in 0..3 {
+            let current = pixels[index + channel] as f64;
+            pixels[index + channel] =
+                (current * (1.0 - alpha) + color[channel] as f64 * alpha).clamp(0.0, 255.0) as u8;
+        }
+    };
+
+    for y in 0..height {
+        for x in 0..width {
+            let fx = x as f64 / width as f64;
+            let fy = y as f64 / height as f64;
+            let center_glow = (1.0
+                - (((fx - 0.50).powi(2) + ((fy - 0.45) * 1.25).powi(2)).sqrt() / 0.42))
+                .clamp(0.0, 1.0);
+            if center_glow > 0.0 {
+                blend_pixel(x, y, secondary, center_glow * 0.08);
+            }
+        }
+    }
+
+    let row_size = (width * 3 + 3) & !3;
+    let image_size = row_size * height;
+    let file_size = 14 + 40 + image_size;
+    let mut output = Vec::with_capacity(file_size);
+    output.extend_from_slice(b"BM");
+    output.extend_from_slice(&(file_size as u32).to_le_bytes());
+    output.extend_from_slice(&[0, 0, 0, 0]);
+    output.extend_from_slice(&(54u32).to_le_bytes());
+    output.extend_from_slice(&(40u32).to_le_bytes());
+    output.extend_from_slice(&(width as i32).to_le_bytes());
+    output.extend_from_slice(&(height as i32).to_le_bytes());
+    output.extend_from_slice(&(1u16).to_le_bytes());
+    output.extend_from_slice(&(24u16).to_le_bytes());
+    output.extend_from_slice(&(0u32).to_le_bytes());
+    output.extend_from_slice(&(image_size as u32).to_le_bytes());
+    output.extend_from_slice(&(2835i32).to_le_bytes());
+    output.extend_from_slice(&(2835i32).to_le_bytes());
+    output.extend_from_slice(&(0u32).to_le_bytes());
+    output.extend_from_slice(&(0u32).to_le_bytes());
+
+    let padding = vec![0u8; row_size - width * 3];
+    for y in (0..height).rev() {
+        for x in 0..width {
+            let index = (y * width + x) * 3;
+            output.push(pixels[index + 2]);
+            output.push(pixels[index + 1]);
+            output.push(pixels[index]);
+        }
+        output.extend_from_slice(&padding);
+    }
+
+    fs::write(path, output).map_err(|error| format!("Could not write loading frame: {}", error))
 }
 
-fn loading_stage_markup(step: usize, label: &str) -> String {
-    let active = step.min(4);
-    let marks = (0..4)
-        .map(|index| if index < active { "[####]" } else { "[----]" })
-        .collect::<Vec<_>>()
-        .join(" ");
-    format!(
-        "{{\\fs14\\b1}}{}\\N{{\\fs16\\b1}}STEP {} OF 4  {}",
-        ass_escape(label),
-        active.max(1),
-        marks
-    )
-}
-
-fn loading_svg(
+fn loading_frame(
     cache_dir: &Path,
     request: &PlaybackRequest,
     title: &str,
 ) -> Result<PathBuf, String> {
-    let path = cache_dir.join("streamnyaa-loading.svg");
-    let display_title = trim_for_display(title, 42);
-    let display_anime_title = if request.anime_title.trim().is_empty() {
-        display_title.clone()
-    } else {
-        trim_for_display(request.anime_title.trim(), 40)
-    };
-    let display_source_title = trim_for_display(request.title.trim(), 64);
-    let title = xml_escape(&display_title);
-    let anime_title = xml_escape(&display_anime_title);
-    let source_title = xml_escape(&display_source_title);
-    let episode = xml_escape(request.episode.trim());
-    let artwork = loading_artwork_url(request)
-        .map(|value| {
-            format!(
-                r#"<image href="{}" x="704" y="78" width="510" height="564" preserveAspectRatio="xMidYMid slice" clip-path="url(#artClip)" opacity="0.92"/>"#,
-                xml_escape(&value)
-            )
-        })
-        .unwrap_or_else(|| {
-            r#"<rect x="704" y="78" width="510" height="564" rx="28" fill="url(#artFallback)"/>"#.to_string()
-        });
-    let (accent, accent_secondary, panel_top, panel_bottom) = loading_palette(&format!(
-        "{}|{}|{}",
-        request.anime_title, request.episode, request.title
-    ));
-    let svg = format!(
-        r##"<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
-<defs>
-<radialGradient id="g" cx="52%" cy="40%" r="78%">
-<stop offset="0" stop-color="{2}" stop-opacity="0.78"/>
-<stop offset="0.38" stop-color="{3}"/>
-<stop offset="1" stop-color="#040405"/>
-</radialGradient>
-<linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="#17171d" stop-opacity="0.92"/>
-<stop offset="1" stop-color="#09090d" stop-opacity="0.84"/>
-</linearGradient>
-<linearGradient id="artFallback" x1="0" y1="0" x2="1" y2="1">
-<stop offset="0" stop-color="{2}" stop-opacity="0.92"/>
-<stop offset="1" stop-color="{3}" stop-opacity="0.78"/>
-</linearGradient>
-<linearGradient id="accentGlow" x1="0" y1="0" x2="1" y2="0">
-<stop offset="0" stop-color="{0}"/>
-<stop offset="1" stop-color="{1}"/>
-</linearGradient>
-<clipPath id="artClip">
-  <rect x="704" y="78" width="510" height="564" rx="28"/>
-</clipPath>
-</defs>
-<rect width="1280" height="720" fill="url(#g)"/>
-<circle cx="950" cy="112" r="236" fill="{0}" fill-opacity="0.16"/>
-<circle cx="1028" cy="158" r="172" fill="{1}" fill-opacity="0.12"/>
-<rect x="84" y="88" width="580" height="544" rx="28" fill="url(#panel)" stroke="#ffffff" stroke-opacity="0.09"/>
-<rect x="84" y="88" width="580" height="544" rx="28" fill="url(#g)" fill-opacity="0.10"/>
-<rect x="704" y="78" width="510" height="564" rx="28" fill="#0b0b10" stroke="#ffffff" stroke-opacity="0.08"/>
-{4}
-<rect x="704" y="78" width="510" height="564" rx="28" fill="url(#panel)" fill-opacity="0.20"/>
-<rect x="704" y="78" width="510" height="564" rx="28" fill="url(#g)" fill-opacity="0.42"/>
-<text x="126" y="146" fill="{0}" font-family="Segoe UI,Arial" font-size="16" font-weight="800" letter-spacing="4">STREAMNYAA</text>
-<text x="126" y="194" fill="#8f96a3" font-family="Segoe UI,Arial" font-size="16" font-weight="700" letter-spacing="3">LOCAL CINEMA</text>
-<text x="126" y="252" fill="#ffffff" font-family="Segoe UI,Arial" font-size="18" font-weight="700">Selected anime</text>
-<text x="126" y="306" fill="#ffffff" font-family="Segoe UI,Arial" font-size="48" font-weight="800">{5}</text>
-<text x="126" y="344" fill="#c4c7cf" font-family="Segoe UI,Arial" font-size="24">{6}</text>
-<rect x="126" y="378" width="134" height="40" rx="20" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.08"/>
-<text x="152" y="403" fill="#ffffff" font-family="Segoe UI,Arial" font-size="15" font-weight="700">Episode {7}</text>
-<rect x="274" y="378" width="154" height="40" rx="20" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.08"/>
-<text x="300" y="403" fill="#ffffff" font-family="Segoe UI,Arial" font-size="15" font-weight="700">Local player</text>
-<text x="126" y="452" fill="#9ca3af" font-family="Segoe UI,Arial" font-size="18">Selected release</text>
-<text x="126" y="486" fill="#ffffff" font-family="Segoe UI,Arial" font-size="22" font-weight="700">{8}</text>
-<text x="126" y="528" fill="#9ca3af" font-family="Segoe UI,Arial" font-size="18">The player stays open while metadata, peers, and the first video pieces arrive.</text>
-<rect x="126" y="564" width="104" height="42" rx="21" fill="url(#accentGlow)"/>
-<text x="146" y="590" fill="#ffffff" font-family="Segoe UI,Arial" font-size="15" font-weight="800">METADATA</text>
-<rect x="242" y="564" width="88" height="42" rx="21" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.08"/>
-<text x="265" y="590" fill="#ffffff" fill-opacity="0.78" font-family="Segoe UI,Arial" font-size="15" font-weight="800">PEERS</text>
-<rect x="342" y="564" width="104" height="42" rx="21" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.08"/>
-<text x="368" y="590" fill="#ffffff" fill-opacity="0.78" font-family="Segoe UI,Arial" font-size="15" font-weight="800">BUFFER</text>
-<rect x="458" y="564" width="86" height="42" rx="21" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.08"/>
-<text x="486" y="590" fill="#ffffff" fill-opacity="0.78" font-family="Segoe UI,Arial" font-size="15" font-weight="800">PLAY</text>
-<text x="126" y="636" fill="#c9ced9" font-family="Segoe UI,Arial" font-size="16">Preparing the first playback buffer. StreamNyaa keeps this source locked to the same player window.</text>
-<circle cx="955" cy="378" r="72" fill="{0}"/>
-<polygon points="908,330 908,402 972,366" fill="white"/>
-<text x="932" y="482" text-anchor="middle" fill="#ffffff" font-family="Segoe UI,Arial" font-size="28" font-weight="800">Opening player</text>
-<text x="932" y="520" text-anchor="middle" fill="#9ca3af" font-family="Segoe UI,Arial" font-size="18">Selected source remains active while playback initializes</text>
-</svg>"##,
-        accent,
-        accent_secondary,
-        panel_top,
-        panel_bottom,
-        artwork,
-        if anime_title.is_empty() {
-            title.clone()
-        } else {
-            anime_title
-        },
-        title,
-        if episode.is_empty() {
-            "Current".to_string()
-        } else {
-            episode
-        },
-        source_title,
-    );
-    fs::write(&path, svg)
-        .map_err(|error| format!("Could not prepare loading screen: {}", error))?;
+    let path = cache_dir.join("streamnyaa-loading.bmp");
+    write_loading_bmp(
+        &path,
+        &format!(
+            "{}|{}|{}|{}|{}",
+            request.anime_title,
+            request.episode,
+            title,
+            request.poster.as_deref().unwrap_or(""),
+            request.banner.as_deref().unwrap_or("")
+        ),
+    )?;
     Ok(path)
+}
+
+fn loading_frame_for_player(
+    cache_dir: &Path,
+    request: &PlaybackRequest,
+    title: &str,
+    cover_loading_image: Option<&PathBuf>,
+) -> Result<PathBuf, String> {
+    if let Some(path) = cover_loading_image {
+        match fs::metadata(path) {
+            Ok(metadata) if metadata.is_file() && metadata.len() > 0 => {
+                log_info(format!(
+                    "MPV initial loading image uses cover placeholder: {} ({} bytes)",
+                    path.to_string_lossy(),
+                    metadata.len()
+                ));
+                return Ok(path.clone());
+            }
+            Ok(_) => {
+                log_info(format!(
+                    "Cover loading image was not usable; falling back to generic loading BMP: {}",
+                    path.to_string_lossy()
+                ));
+            }
+            Err(error) => {
+                log_info(format!(
+                    "Cover loading image missing; falling back to generic loading BMP: {} ({})",
+                    path.to_string_lossy(),
+                    error
+                ));
+            }
+        }
+    }
+
+    let fallback = loading_frame(cache_dir, request, title)?;
+    log_info(format!(
+        "MPV initial loading image uses fallback BMP: {}",
+        fallback.to_string_lossy()
+    ));
+    Ok(fallback)
 }
 
 fn mpv_ipc_path() -> String {
@@ -2120,6 +2720,18 @@ fn send_mpv(ipc: &str, command: &str) -> bool {
         }
         false
     }
+}
+
+fn send_mpv_with_retry(ipc: &str, command: &str, attempts: usize, delay_ms: u64) -> bool {
+    for attempt in 0..attempts.max(1) {
+        if send_mpv(ipc, command) {
+            return true;
+        }
+        if attempt + 1 < attempts {
+            thread::sleep(Duration::from_millis(delay_ms));
+        }
+    }
+    false
 }
 
 fn send_mpv_request(ipc: &str, command: &str) -> Option<serde_json::Value> {
@@ -2198,112 +2810,272 @@ fn get_player_property_f64(ipc: &str, property: &str) -> Option<f64> {
     })
 }
 
-fn ass_escape(value: &str) -> String {
-    value
-        .replace('\\', r"\\")
-        .replace('{', r"\{")
-        .replace('}', r"\}")
-        .replace('\n', r"\N")
+fn get_player_property_bool(ipc: &str, property: &str) -> Option<bool> {
+    let command = format!(
+        r#"{{"command":["get_property",{}],"request_id":42}}"#,
+        json_string(property)
+    );
+    let response = send_mpv_request(ipc, &command)?;
+    response.get("data").and_then(|value| value.as_bool())
 }
 
-fn player_overlay_copy(status: &str) -> (&'static str, String, usize) {
-    if status.contains("Preparing torrent session")
-        || status.contains("Fetching torrent metadata")
-        || status.contains("Fetching metadata and peers")
-    {
-        (
-            "Preparing stream session",
-            "Reading torrent metadata, validating the release, and waiting for the first peer responses.".to_string(),
-            1,
-        )
-    } else if status.contains("Looking for the episode file")
-        || status.contains("Matching the correct episode file")
-    {
-        (
-            "Selecting the episode file",
-            "The torrent is ready. StreamNyaa is matching the exact video file for this episode."
-                .to_string(),
-            2,
-        )
-    } else if status.contains("connecting")
-        || status.contains("responsive peers")
-        || status.contains("Connecting peers")
-    {
-        (
-            "Connecting to peers",
-            "Peers are responding. StreamNyaa is building a stable session before playback begins."
-                .to_string(),
-            2,
-        )
-    } else if status.contains("Buffering")
-        || status.contains("buffering")
-        || status.contains("Opening the player while the first buffer fills")
-        || status.contains("Preparing the player handoff")
-    {
-        (
-            "Building the playback buffer",
-            "The player is open. StreamNyaa is filling the first playback buffer for a smooth start.".to_string(),
-            3,
-        )
-    } else if status.contains("Starting playback")
-        || status.contains("Opening stream")
-        || status.contains("Opening the stream in the current player")
-    {
-        (
-            "Starting the episode",
-            "The selected release is now entering playback in the same player window.".to_string(),
-            4,
-        )
-    } else if status.contains("Switching episode") {
-        (
-            "Switching episode",
-            "Reusing the current player window and handing the next episode over cleanly."
-                .to_string(),
-            1,
-        )
-    } else if status.contains("Stopping previous stream") {
-        (
-            "Cleaning the previous stream",
-            "Stopping the old torrent session before the next episode takes over.".to_string(),
-            1,
-        )
-    } else if status.contains("Stopping stream") {
-        (
-            "Closing the playback session",
-            "Cleaning temporary files and releasing the local stream session.".to_string(),
-            4,
-        )
-    } else if status.contains("Retrying") {
-        (
-            "Retrying the player handoff",
-            "Reopening the selected stream after a player handoff retry.".to_string(),
-            3,
-        )
+fn get_player_property_string(ipc: &str, property: &str) -> Option<String> {
+    let command = format!(
+        r#"{{"command":["get_property",{}],"request_id":43}}"#,
+        json_string(property)
+    );
+    let response = send_mpv_request(ipc, &command)?;
+    response
+        .get("data")
+        .and_then(|value| value.as_str())
+        .map(ToOwned::to_owned)
+}
+
+fn clamp_player_volume(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 130.0)
     } else {
-        (
-            "Preparing local playback",
-            "StreamNyaa keeps the selected source active while the local player prepares playback."
-                .to_string(),
-            1,
-        )
+        70.0
     }
 }
 
-fn player_overlay_message(status: &str) -> String {
-    let (headline, detail, stage_number) = player_overlay_copy(status);
-    let stage = loading_stage_markup(stage_number, headline);
-    format!(
-        "{{\\an7\\fs14\\bord2.4\\shad0\\b1}}STREAMNYAA LOCAL PLAYER\\N{{\\fs28\\b1}}{}\\N{{\\fs17\\b0}}{}\\N{}",
-        ass_escape(headline),
-        ass_escape(&detail),
-        stage
-    )
+fn clamp_player_speed(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.25, 3.0)
+    } else {
+        1.0
+    }
+}
+
+fn clamp_player_seek_delta(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(-600.0, 600.0)
+    } else {
+        0.0
+    }
+}
+
+fn clamp_player_seek_absolute(value: f64) -> f64 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
+    }
+}
+
+fn player_control_status(ipc: &str, message: &str) -> PlayerControlStatus {
+    PlayerControlStatus {
+        ok: true,
+        message: message.to_string(),
+        paused: get_player_property_bool(ipc, "pause"),
+        volume: get_player_property_f64(ipc, "volume"),
+        current_seconds: get_player_property_f64(ipc, "time-pos"),
+        duration_seconds: get_player_property_f64(ipc, "duration"),
+    }
+}
+
+fn active_player_ipc() -> Result<String, String> {
+    let mut guard = manager()
+        .lock()
+        .map_err(|_| "Playback manager is unavailable.".to_string())?;
+    let ipc = guard
+        .player_ipc
+        .clone()
+        .ok_or_else(|| "No active StreamNyaa player is running.".to_string())?;
+    if let Some(child) = guard.player.as_mut() {
+        if child.try_wait().ok().flatten().is_some() {
+            guard.player = None;
+            guard.player_ipc = None;
+            return Err("The StreamNyaa player is not running.".to_string());
+        }
+    }
+    Ok(ipc)
+}
+
+fn control_player(request: PlayerControlRequest) -> Result<PlayerControlStatus, String> {
+    let ipc = active_player_ipc()?;
+    if !player_ipc_ready(&ipc, 1, 0) {
+        return Err("The StreamNyaa player is not ready for controls yet.".to_string());
+    }
+
+    let action = request.action.trim().to_ascii_lowercase();
+    let command = match action.as_str() {
+        "toggle_pause" => r#"{"command":["cycle","pause"],"request_id":61}"#.to_string(),
+        "play" => r#"{"command":["set_property","pause",false],"request_id":62}"#.to_string(),
+        "pause" => r#"{"command":["set_property","pause",true],"request_id":63}"#.to_string(),
+        "seek_relative" => {
+            let seconds = clamp_player_seek_delta(request.value.unwrap_or(0.0));
+            format!(
+                r#"{{"command":["seek",{},"relative"],"request_id":64}}"#,
+                seconds
+            )
+        }
+        "seek_absolute" => {
+            let seconds = clamp_player_seek_absolute(request.value.unwrap_or(0.0));
+            format!(
+                r#"{{"command":["seek",{},"absolute+exact"],"request_id":65}}"#,
+                seconds
+            )
+        }
+        "volume_relative" => {
+            let current = get_player_property_f64(&ipc, "volume").unwrap_or(70.0);
+            let next = clamp_player_volume(current + request.value.unwrap_or(0.0));
+            format!(
+                r#"{{"command":["set_property","volume",{}],"request_id":66}}"#,
+                next
+            )
+        }
+        "volume" => {
+            let next = clamp_player_volume(request.value.unwrap_or(70.0));
+            format!(
+                r#"{{"command":["set_property","volume",{}],"request_id":67}}"#,
+                next
+            )
+        }
+        "mute" => r#"{"command":["cycle","mute"],"request_id":68}"#.to_string(),
+        "fullscreen" => r#"{"command":["cycle","fullscreen"],"request_id":69}"#.to_string(),
+        "speed" => {
+            let next = clamp_player_speed(request.value.unwrap_or(1.0));
+            format!(
+                r#"{{"command":["set_property","speed",{}],"request_id":70}}"#,
+                next
+            )
+        }
+        "subtitle" => r#"{"command":["cycle","sub"],"request_id":71}"#.to_string(),
+        "audio" => r#"{"command":["cycle","audio"],"request_id":72}"#.to_string(),
+        "show_status" => {
+            r#"{"command":["show-text","StreamNyaa player ready",1200],"request_id":73}"#
+                .to_string()
+        }
+        other => return Err(format!("Unsupported player control: {}", other)),
+    };
+
+    if !send_mpv(&ipc, &command) {
+        return Err("The StreamNyaa player did not accept the control command.".to_string());
+    }
+
+    Ok(player_control_status(&ipc, "Player control applied."))
 }
 
 fn show_player_text(ipc: &str, text: &str) {
+    show_player_text_with_title(ipc, None, text);
+}
+
+fn should_suppress_player_loading_text(text: &str) -> bool {
+    let status = text.to_ascii_lowercase();
+    [
+        "preparing torrent session",
+        "preparing ",
+        "loading",
+        "opening player",
+        "starting torrent engine",
+        "fetching torrent metadata",
+        "fetching metadata",
+        "looking for the episode file",
+        "matching the correct episode file",
+        "connecting to the local stream engine",
+        "connecting peers",
+        "responsive peers",
+        "buffering",
+        "opening the player while",
+        "preparing the player handoff",
+        "starting playback",
+        "opening stream",
+        "opening the stream",
+        "switching episode",
+        "switching source",
+        "retrying the player handoff",
+    ]
+    .iter()
+    .any(|marker| status.contains(marker))
+}
+
+fn format_stream_bytes(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * 1024.0;
+    const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
+    let value = bytes as f64;
+    if value >= GIB {
+        format!("{:.1} GiB", value / GIB)
+    } else if value >= MIB {
+        format!("{:.1} MiB", value / MIB)
+    } else if value >= KIB {
+        format!("{:.0} KiB", value / KIB)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+fn format_stream_rate(bytes_per_second: u64) -> String {
+    if bytes_per_second == 0 {
+        "--".to_string()
+    } else {
+        format!("{}/s", format_stream_bytes(bytes_per_second))
+    }
+}
+
+fn set_player_user_data(ipc: &str, key: &str, value: &str) {
+    let property = format!("user-data/streamnyaa/{}", key);
     let command = format!(
-        r#"{{"command":["show-text",{},"3500"],"request_id":2}}"#,
-        json_string(&player_overlay_message(text))
+        r#"{{"command":["set_property",{},{}],"request_id":86}}"#,
+        json_string(&property),
+        json_string(value)
+    );
+    let _ = send_mpv(ipc, &command);
+}
+
+fn update_player_stream_metrics(
+    ipc: &str,
+    state: &str,
+    peers: u64,
+    downloaded_bytes: u64,
+    total_bytes: u64,
+    progress: Option<f64>,
+    download_rate: Option<u64>,
+) {
+    let buffer_percent = progress
+        .or_else(|| {
+            if total_bytes > 0 {
+                Some((downloaded_bytes as f64 / total_bytes as f64 * 100.0).clamp(0.0, 100.0))
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0.0)
+        .clamp(0.0, 100.0);
+
+    set_player_user_data(ipc, "state", state);
+    set_player_user_data(ipc, "peers", &peers.to_string());
+    set_player_user_data(
+        ipc,
+        "download",
+        &format_stream_rate(download_rate.unwrap_or(0)),
+    );
+    set_player_user_data(ipc, "upload", "--");
+    set_player_user_data(
+        ipc,
+        "downloaded",
+        &if total_bytes > 0 {
+            format!(
+                "{} / {}",
+                format_stream_bytes(downloaded_bytes),
+                format_stream_bytes(total_bytes)
+            )
+        } else {
+            format_stream_bytes(downloaded_bytes)
+        },
+    );
+    set_player_user_data(ipc, "buffer", &format!("{:.0}%", buffer_percent));
+}
+
+fn show_player_text_with_title(ipc: &str, title: Option<&str>, text: &str) {
+    let _ = title;
+    if should_suppress_player_loading_text(text) {
+        return;
+    }
+    let command = format!(
+        r#"{{"command":["show-text",{},"2400"],"request_id":2}}"#,
+        json_string(text)
     );
     let _ = send_mpv(ipc, &command);
 }
@@ -2313,7 +3085,52 @@ fn load_player_file(ipc: &str, url: &str) -> bool {
         r#"{{"command":["loadfile",{},"replace"],"request_id":3}}"#,
         json_string(url)
     );
-    send_mpv(ipc, &command)
+    send_mpv_with_retry(ipc, &command, 8, 180)
+}
+
+fn maybe_replace_generic_loading_frame(ipc: &str, loading_image_path: &Path) {
+    let Some(current_path) = get_player_property_string(ipc, "path") else {
+        log_info("Late cover loading image skipped because MPV path could not be read");
+        return;
+    };
+    let normalized = current_path.replace('\\', "/").to_ascii_lowercase();
+    if !normalized.ends_with("/streamnyaa-loading.bmp")
+        && !normalized.ends_with("\\streamnyaa-loading.bmp")
+        && !normalized.ends_with("streamnyaa-loading.bmp")
+    {
+        log_info(format!(
+            "Late cover loading image skipped because MPV is no longer on the generic placeholder: {}",
+            current_path
+        ));
+        return;
+    }
+    match fs::metadata(loading_image_path) {
+        Ok(metadata) if metadata.is_file() && metadata.len() > 0 => {
+            let player_path = path_for_player_option(loading_image_path);
+            if load_player_file(ipc, &player_path) {
+                log_info(format!(
+                    "Late cover loading image replaced generic MPV placeholder: {} ({} bytes)",
+                    loading_image_path.to_string_lossy(),
+                    metadata.len()
+                ));
+            } else {
+                log_info("Late cover loading image could not be loaded into MPV");
+            }
+        }
+        Ok(_) => {
+            log_info(format!(
+                "Late cover loading image skipped because file is empty or invalid: {}",
+                loading_image_path.to_string_lossy()
+            ));
+        }
+        Err(error) => {
+            log_info(format!(
+                "Late cover loading image skipped because file is missing: {} ({})",
+                loading_image_path.to_string_lossy(),
+                error
+            ));
+        }
+    }
 }
 
 fn set_player_title(ipc: &str, title: &str) {
@@ -2324,12 +3141,296 @@ fn set_player_title(ipc: &str, title: &str) {
     let _ = send_mpv(ipc, &command);
 }
 
+fn send_player_script_message(ipc: &str, message: &str) {
+    let command = format!(
+        r#"{{"command":["script-message",{}],"request_id":87}}"#,
+        json_string(message)
+    );
+    let _ = send_mpv(ipc, &command);
+}
+
+fn send_player_script_message_arg(ipc: &str, message: &str, arg: &str) {
+    let command = format!(
+        r#"{{"command":["script-message",{},{}],"request_id":87}}"#,
+        json_string(message),
+        json_string(arg)
+    );
+    let _ = send_mpv(ipc, &command);
+}
+
 fn add_player_subtitle(ipc: &str, url: &str) {
     let command = format!(
         r#"{{"command":["sub-add",{},"select"],"request_id":32}}"#,
         json_string(url)
     );
     let _ = send_mpv(ipc, &command);
+}
+
+fn send_player_subtitle_import(ipc: &str, path: &Path) -> bool {
+    let command = serde_json::json!({
+        "command": [
+            "script-message",
+            "streamnyaa-import-subtitle-path",
+            path.to_string_lossy().to_string()
+        ],
+        "request_id": 88
+    })
+    .to_string();
+    send_mpv_with_retry(ipc, &command, 4, 120)
+}
+
+fn player_ipc_is_active(ipc: &str) -> bool {
+    manager()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.player_ipc.clone())
+        .map(|active_ipc| active_ipc == ipc)
+        .unwrap_or(false)
+}
+
+fn import_subtitle_for_ipc_guarded(ipc: &str) -> Result<Option<PathBuf>, String> {
+    if SUBTITLE_IMPORT_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+        show_player_text(ipc, "Subtitle picker is already open...");
+        return Ok(None);
+    }
+    let result = import_subtitle_for_ipc(ipc);
+    SUBTITLE_IMPORT_IN_PROGRESS.store(false, Ordering::SeqCst);
+    result
+}
+
+fn spawn_subtitle_import_task(ipc: String) {
+    if !player_ipc_is_active(&ipc) {
+        return;
+    }
+    thread::spawn(move || match import_subtitle_for_ipc_guarded(&ipc) {
+        Ok(Some(path)) => {
+            log_info(format!(
+                "Imported external subtitle into player: {}",
+                path.to_string_lossy()
+            ));
+        }
+        Ok(None) => {
+            log_info("External subtitle import cancelled");
+        }
+        Err(error) => {
+            remember_error(format!("Subtitle import failed: {}", error));
+            show_player_text(&ipc, &error);
+        }
+    });
+}
+
+fn spawn_subtitle_import_request_watcher(ipc: String, request_file: PathBuf) {
+    thread::spawn(move || {
+        let mut last_token = fs::read_to_string(&request_file).unwrap_or_default();
+        loop {
+            thread::sleep(Duration::from_millis(250));
+            if !player_ipc_is_active(&ipc) {
+                break;
+            }
+            let token = fs::read_to_string(&request_file).unwrap_or_default();
+            if token.trim().is_empty() || token == last_token {
+                continue;
+            }
+            last_token = token;
+            log_info("MPV requested external subtitle import through request file");
+            spawn_subtitle_import_task(ipc.clone());
+        }
+    });
+}
+
+fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
+    let event = value.get("event").and_then(|item| item.as_str());
+    if event != Some("client-message") {
+        return;
+    }
+    let args = value.get("args").and_then(|item| item.as_array());
+    let Some(args) = args else {
+        return;
+    };
+    let message = args.first().and_then(|item| item.as_str());
+    if let Some(message) = message {
+        if message.starts_with("streamnyaa-") {
+            log_info(format!(
+                "MPV Lua client-message received: {} args={}",
+                message,
+                serde_json::to_string(args).unwrap_or_else(|_| "[]".to_string())
+            ));
+        }
+    }
+    if message == Some("streamnyaa-lua-ready") {
+        return;
+    }
+    if message != Some("streamnyaa-import-subtitle-request") {
+        return;
+    }
+
+    if !player_ipc_is_active(ipc) {
+        return;
+    }
+
+    log_info("MPV requested external subtitle import");
+    spawn_subtitle_import_task(ipc.to_string());
+}
+
+#[cfg(windows)]
+fn spawn_player_ipc_event_listener(ipc: String) {
+    thread::spawn(move || {
+        use std::io::{BufRead, BufReader};
+        let mut stream = match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&ipc)
+        {
+            Ok(stream) => stream,
+            Err(error) => {
+                log_info(format!(
+                    "Could not attach player IPC event listener: {}",
+                    error
+                ));
+                return;
+            }
+        };
+        let _ = stream
+            .write_all(b"{\"command\":[\"enable_event\",\"client-message\"],\"request_id\":90}\n");
+        let _ = stream.write_all(
+            b"{\"command\":[\"observe_property\",91,\"idle-active\"],\"request_id\":91}\n",
+        );
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim()) {
+                        handle_player_client_message(&ipc, value);
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn spawn_player_ipc_event_listener(ipc: String) {
+    thread::spawn(move || {
+        use std::io::{BufRead, BufReader};
+        use std::os::unix::net::UnixStream;
+        let mut stream = match UnixStream::connect(&ipc) {
+            Ok(stream) => stream,
+            Err(error) => {
+                log_info(format!(
+                    "Could not attach player IPC event listener: {}",
+                    error
+                ));
+                return;
+            }
+        };
+        let _ = stream
+            .write_all(b"{\"command\":[\"enable_event\",\"client-message\"],\"request_id\":90}\n");
+        let _ = stream.write_all(
+            b"{\"command\":[\"observe_property\",91,\"idle-active\"],\"request_id\":91}\n",
+        );
+        let mut reader = BufReader::new(stream);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(_) => {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim()) {
+                        handle_player_client_message(&ipc, value);
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
+fn validate_external_subtitle_path(path: PathBuf) -> Result<PathBuf, String> {
+    if !path.exists() || !path.is_file() {
+        return Err("Selected subtitle file does not exist.".to_string());
+    }
+    let path_text = path.to_string_lossy();
+    let extension = extension_from_name(path_text.as_ref());
+    if !is_subtitle_extension(&extension) {
+        return Err("Selected file is not a supported subtitle format.".to_string());
+    }
+    Ok(path)
+}
+
+#[cfg(windows)]
+fn open_subtitle_file_picker() -> Result<Option<PathBuf>, String> {
+    let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$owner = New-Object System.Windows.Forms.Form
+$owner.StartPosition = 'CenterScreen'
+$owner.Size = New-Object System.Drawing.Size(1, 1)
+$owner.ShowInTaskbar = $false
+$owner.TopMost = $true
+$owner.Opacity = 0
+$owner.Show()
+$owner.Activate()
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.Title = 'Import subtitle file'
+$dialog.Filter = 'Subtitle files (*.srt;*.ass;*.ssa;*.vtt;*.sub;*.idx)|*.srt;*.ass;*.ssa;*.vtt;*.sub;*.idx|All files (*.*)|*.*'
+$dialog.Multiselect = $false
+$dialog.CheckFileExists = $true
+$dialog.CheckPathExists = $true
+$result = $dialog.ShowDialog($owner)
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+  Write-Output $dialog.FileName
+}
+$owner.Close()
+"#;
+    let output = prepared_command("powershell")
+        .arg("-NoProfile")
+        .arg("-STA")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-Command")
+        .arg(script)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| format!("Could not open subtitle picker: {}", error))?;
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if error.is_empty() {
+            "Subtitle picker did not open.".to_string()
+        } else {
+            format!("Subtitle picker failed: {}", error)
+        });
+    }
+    let selected = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .trim_start_matches('\u{feff}')
+        .trim()
+        .to_string();
+    if selected.is_empty() {
+        Ok(None)
+    } else {
+        validate_external_subtitle_path(PathBuf::from(selected)).map(Some)
+    }
+}
+
+#[cfg(not(windows))]
+fn open_subtitle_file_picker() -> Result<Option<PathBuf>, String> {
+    Err("Subtitle file picker is currently implemented for Windows desktop builds.".to_string())
+}
+
+fn import_subtitle_for_ipc(ipc: &str) -> Result<Option<PathBuf>, String> {
+    show_player_text(ipc, "Choose a subtitle file...");
+    let Some(path) = open_subtitle_file_picker()? else {
+        return Ok(None);
+    };
+    if !send_player_subtitle_import(ipc, &path) {
+        return Err("The StreamNyaa player did not accept the subtitle file.".to_string());
+    }
+    Ok(Some(path))
 }
 
 fn seek_player_resume(ipc: &str, resume_seconds: f64) {
@@ -2370,12 +3471,41 @@ fn stop_player_stream_only(ipc: &str) {
     let _ = send_mpv(ipc, r#"{"command":["stop"],"request_id":33}"#);
 }
 
+fn notify_player_source_switch(title: &str) {
+    let player_ipc = manager()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.player_ipc.clone());
+    if let Some(ipc) = player_ipc {
+        show_player_text_with_title(&ipc, Some(title), "Switching source...");
+        stop_player_stream_only(&ipc);
+    }
+}
+
+fn cancel_previous_loading_source(settings: Option<DesktopSettings>, title: &str) {
+    notify_player_source_switch(title);
+    stop_active_session(true);
+    let status = runtime_status(settings);
+    stop_rqbit_server(status.torrent_engine_path.as_deref());
+}
+
 fn launch_or_reuse_player(
     player_path: &str,
     cache_dir: &Path,
     request: &PlaybackRequest,
     title: &str,
 ) -> Result<String, String> {
+    let started_at = Instant::now();
+    let mut metadata_launch = prepare_player_metadata_for_launch(cache_dir, request, title);
+    let metadata_file = metadata_launch.path.clone();
+    let subtitle_request_file = match prepare_player_subtitle_import_request(cache_dir) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            log_info(format!("Subtitle import bridge fallback: {}", error));
+            None
+        }
+    };
+
     let stale_player = {
         let mut guard = manager()
             .lock()
@@ -2384,7 +3514,31 @@ fn launch_or_reuse_player(
         let existing_ipc = guard.player_ipc.clone();
         if let (Some(child), Some(ipc)) = (guard.player.as_mut(), existing_ipc) {
             if child.try_wait().ok().flatten().is_none() && player_ipc_ready(&ipc, 2, 60) {
-                show_player_text(&ipc, "Switching episode...");
+                set_player_title(&ipc, title);
+                if let Some(metadata_file) = metadata_file.as_ref() {
+                    send_player_script_message_arg(
+                        &ipc,
+                        "streamnyaa-reload-meta",
+                        &path_for_player_option(metadata_file),
+                    );
+                } else {
+                    send_player_script_message(&ipc, "streamnyaa-reload-meta");
+                }
+                send_player_script_message(&ipc, "streamnyaa-playback-ready");
+                log_info("MPV playback-ready message sent while reusing player");
+                show_player_text_with_title(&ipc, Some(title), "Switching episode...");
+                if let Some(pending_cover) = metadata_launch.pending_cover.take() {
+                    spawn_player_cover_metadata_update(ipc.clone(), pending_cover);
+                }
+                log_info(format!(
+                    "Playback perf: reused MPV in {} ms{}",
+                    started_at.elapsed().as_millis(),
+                    if metadata_launch.cover_ready {
+                        " with preloaded cover"
+                    } else {
+                        ""
+                    }
+                ));
                 return Ok(ipc);
             }
         }
@@ -2400,18 +3554,40 @@ fn launch_or_reuse_player(
     }
 
     let ipc = mpv_ipc_path();
-    let loading = loading_svg(cache_dir, request, title)?;
-    let child = prepared_command(player_path)
+    let loading = loading_frame_for_player(
+        cache_dir,
+        request,
+        title,
+        metadata_launch.loading_image_path.as_ref(),
+    )?;
+    let player_skin = bundled_player_skin_script();
+    if let Some(player_skin_path) = player_skin.as_ref() {
+        log_info(format!(
+            "MPV Lua skin path: {}",
+            player_skin_path.to_string_lossy()
+        ));
+    } else {
+        log_info("MPV Lua skin path was not found; player will open without StreamNyaa Lua UI");
+    }
+    let player_log = logs_root().join("mpv-player.log");
+    if let Some(log_dir) = player_log.parent() {
+        let _ = fs::create_dir_all(log_dir);
+    }
+    let mut command = prepared_command(player_path);
+    command
         .arg("--no-config")
         .arg("--force-window=yes")
         .arg("--idle=yes")
         .arg("--keep-open=yes")
-        .arg("--osc=yes")
-        .arg("--script-opts=osc-layout=bottombar,osc-seekbarstyle=bar,osc-visibility=auto,osc-deadzonesize=0")
-        .arg("--osd-bar=yes")
+        .arg("--image-display-duration=inf")
+        .arg("--osc=no")
+        .arg("--osd-bar=no")
         .arg("--osd-level=1")
-        .arg("--osd-duration=1700")
-        .arg("--cursor-autohide=700")
+        .arg("--osd-duration=1400")
+        .arg("--osd-align-x=center")
+        .arg("--osd-align-y=bottom")
+        .arg("--osd-margin-y=86")
+        .arg("--cursor-autohide=900")
         .arg("--input-default-bindings=yes")
         .arg("--background-color=#050508")
         .arg("--hwdec=auto-safe")
@@ -2443,8 +3619,36 @@ fn launch_or_reuse_player(
         .arg("--sub-border-size=2.5")
         .arg("--sub-shadow-offset=0")
         .arg("--sub-back-color=#00000022")
+        .arg(format!(
+            "--log-file={}",
+            path_for_player_option(&player_log)
+        ))
         .arg(format!("--input-ipc-server={}", ipc))
-        .arg(format!("--title=StreamNyaa - {}", title))
+        .arg(format!("--force-media-title={}", title))
+        .arg(format!("--title=StreamNyaa - {}", title));
+
+    let mut script_opts: Vec<String> = Vec::new();
+    if let Some(metadata_file) = metadata_file.as_ref() {
+        script_opts.push(format!(
+            "streamnyaa_player-meta_file={}",
+            path_for_player_option(metadata_file)
+        ));
+    }
+    if let Some(subtitle_request_file) = subtitle_request_file.as_ref() {
+        script_opts.push(format!(
+            "streamnyaa_player-subtitle_request_file={}",
+            path_for_player_option(subtitle_request_file)
+        ));
+    }
+    if !script_opts.is_empty() {
+        command.arg(format!("--script-opts={}", script_opts.join(",")));
+    }
+
+    if let Some(player_skin) = player_skin {
+        command.arg(format!("--script={}", player_skin.to_string_lossy()));
+    }
+
+    let child = command
         .arg(loading)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -2461,7 +3665,38 @@ fn launch_or_reuse_player(
     }
 
     if player_ipc_ready(&ipc, 35, 100) {
-        show_player_text(&ipc, "Preparing torrent session...");
+        spawn_player_ipc_event_listener(ipc.clone());
+        if let Some(metadata_file) = metadata_file.as_ref() {
+            send_player_script_message_arg(
+                &ipc,
+                "streamnyaa-reload-meta",
+                &path_for_player_option(metadata_file),
+            );
+            log_info("MPV metadata reload message sent after IPC listener attach");
+        } else {
+            send_player_script_message(&ipc, "streamnyaa-reload-meta");
+            log_info(
+                "MPV metadata reload message sent without metadata file after IPC listener attach",
+            );
+        }
+        if let Some(subtitle_request_file) = subtitle_request_file {
+            spawn_subtitle_import_request_watcher(ipc.clone(), subtitle_request_file);
+        }
+        send_player_script_message(&ipc, "streamnyaa-playback-ready");
+        log_info("MPV playback-ready message sent after IPC listener attach");
+        show_player_text_with_title(&ipc, Some(title), "Preparing torrent session...");
+        if let Some(pending_cover) = metadata_launch.pending_cover.take() {
+            spawn_player_cover_metadata_update(ipc.clone(), pending_cover);
+        }
+        log_info(format!(
+            "Playback perf: opened MPV in {} ms{}",
+            started_at.elapsed().as_millis(),
+            if metadata_launch.cover_ready {
+                " with preloaded cover"
+            } else {
+                ""
+            }
+        ));
         return Ok(ipc);
     }
 
@@ -2478,7 +3713,7 @@ fn relaunch_player_and_load_target(
 ) -> Result<String, String> {
     close_player_if_needed();
     let ipc = launch_or_reuse_player(player_path, cache_dir, request, title)?;
-    show_player_text(&ipc, "Retrying the player handoff...");
+    show_player_text_with_title(&ipc, Some(title), "Retrying the player handoff...");
     if !load_player_target(&ipc, title, target, request.resume_seconds) {
         close_player_if_needed();
         return Err("The native player could not load the stream after retrying.".to_string());
@@ -2733,16 +3968,30 @@ fn wait_for_stream_with_session_guard(
     cache_dir: &Path,
     session_dir: &Path,
     cache_limit_bytes: u64,
+    playback_generation: u64,
 ) -> Result<ResolvedStreamTarget, String> {
     let started_at = now_millis();
     let mut saw_peer = false;
     let mut selected_target: Option<ResolvedStreamTarget> = None;
     let mut selected_target_at: Option<u128> = None;
+    let mut previous_downloaded_bytes = 0u64;
+    let mut previous_sample_at = started_at;
 
     while now_millis().saturating_sub(started_at) <= STREAM_READY_TIMEOUT_MS {
+        if !playback_generation_current(playback_generation) {
+            if let Some(ipc) = player_ipc {
+                show_player_text_with_title(ipc, Some(&request.anime_title), "Switching source...");
+            }
+            return Err(playback_superseded_error());
+        }
+
         if let Some(error) = session_guard_error(cache_dir, session_dir, cache_limit_bytes) {
             if let Some(ipc) = player_ipc {
-                show_player_text(ipc, "Stopping stream to protect local storage...");
+                show_player_text_with_title(
+                    ipc,
+                    Some(&request.anime_title),
+                    "Stopping stream to protect local storage...",
+                );
             }
             return Err(error);
         }
@@ -2760,6 +4009,22 @@ fn wait_for_stream_with_session_guard(
         .unwrap_or(0.0) as u64;
         let peers = find_number(&json, &["peers", "num_peers", "live_peers", "peer_count"])
             .unwrap_or(0.0) as u64;
+        let now = now_millis();
+        let elapsed_ms = now.saturating_sub(previous_sample_at);
+        let download_rate = if elapsed_ms >= 250 && downloaded_bytes >= previous_downloaded_bytes {
+            Some(
+                downloaded_bytes
+                    .saturating_sub(previous_downloaded_bytes)
+                    .saturating_mul(1000)
+                    / elapsed_ms as u64,
+            )
+        } else {
+            None
+        };
+        if elapsed_ms >= 450 {
+            previous_downloaded_bytes = downloaded_bytes;
+            previous_sample_at = now;
+        }
 
         saw_peer |= peers > 0;
 
@@ -2785,13 +4050,41 @@ fn wait_for_stream_with_session_guard(
                 .unwrap_or(0);
             let ready_for_player = downloaded_bytes >= target_buffer
                 || (saw_peer && downloaded_bytes >= MIN_INITIAL_PLAYBACK_BUFFER_BYTES)
-                || target_age >= STREAM_TARGET_HANDOFF_MS;
+                || (saw_peer
+                    && downloaded_bytes > 0
+                    && target_age >= STREAM_TARGET_HANDOFF_MS.saturating_mul(3))
+                || target_age >= STREAM_TARGET_HANDOFF_MS.saturating_mul(4);
             if ready_for_player {
                 if let Some(ipc) = player_ipc {
-                    if downloaded_bytes >= MIN_INITIAL_PLAYBACK_BUFFER_BYTES || saw_peer {
-                        show_player_text(ipc, "Starting playback...");
+                    let progress = if total_bytes > 0 {
+                        Some(
+                            (downloaded_bytes as f64 / total_bytes as f64 * 100.0)
+                                .clamp(0.0, 100.0),
+                        )
                     } else {
-                        show_player_text(ipc, "Opening the player while the first buffer fills...");
+                        None
+                    };
+                    update_player_stream_metrics(
+                        ipc,
+                        "Ready",
+                        peers,
+                        downloaded_bytes,
+                        total_bytes,
+                        progress,
+                        download_rate,
+                    );
+                    if downloaded_bytes >= MIN_INITIAL_PLAYBACK_BUFFER_BYTES || saw_peer {
+                        show_player_text_with_title(
+                            ipc,
+                            Some(&request.anime_title),
+                            "Starting playback...",
+                        );
+                    } else {
+                        show_player_text_with_title(
+                            ipc,
+                            Some(&request.anime_title),
+                            "Opening the player while the first buffer fills...",
+                        );
                     }
                 }
                 return Ok(target);
@@ -2822,15 +4115,36 @@ fn wait_for_stream_with_session_guard(
             )
         };
         if let Some(ipc) = player_ipc {
-            show_player_text(ipc, &status_text);
+            let status_label = match (selected_target.is_some(), peers > 0) {
+                (false, false) => "Metadata",
+                (false, true) => "Matching",
+                (true, true) => "Buffering",
+                (true, false) => "Preparing",
+            };
+            let progress = if total_bytes > 0 {
+                Some((downloaded_bytes as f64 / total_bytes as f64 * 100.0).clamp(0.0, 100.0))
+            } else {
+                None
+            };
+            update_player_stream_metrics(
+                ipc,
+                status_label,
+                peers,
+                downloaded_bytes,
+                total_bytes,
+                progress,
+                download_rate,
+            );
+            show_player_text_with_title(ipc, Some(&request.anime_title), &status_text);
         }
         thread::sleep(Duration::from_millis(450));
     }
 
     if let Some(target) = selected_target {
         if let Some(ipc) = player_ipc {
-            show_player_text(
+            show_player_text_with_title(
                 ipc,
+                Some(&request.anime_title),
                 "Opening the player while the source keeps buffering...",
             );
         }
@@ -2962,14 +4276,22 @@ fn get_desktop_diagnostics(settings: Option<DesktopSettings>) -> Result<Diagnost
     })
 }
 
-fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
-    let _operation_guard = playback_operation_lock().try_lock().map_err(|_| {
-        "Another playback action is already running. Wait for it to finish.".to_string()
-    })?;
+fn start_stream(
+    request: PlaybackRequest,
+    playback_generation: u64,
+) -> Result<PlaybackStatus, String> {
+    let command_started_at = Instant::now();
+    let title = playback_title(&request);
+    let _operation_guard = acquire_playback_operation_for_switch(
+        playback_generation,
+        request.settings.clone(),
+        &title,
+    )?;
+    ensure_playback_generation_current(playback_generation)?;
     let source_inputs = playback_source_candidates(&request)?;
 
     let status = runtime_status(request.settings.clone());
-    let title = playback_title(&request);
+    ensure_playback_generation_current(playback_generation)?;
     if !status.ready {
         return Ok(PlaybackStatus {
             ok: false,
@@ -2986,6 +4308,10 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
     fs::create_dir_all(&cache_dir)
         .map_err(|error| format!("Could not prepare StreamNyaa cache: {}", error))?;
     log_info(format!("Starting playback: {}", title));
+    log_info(format!(
+        "Playback perf: command accepted in {} ms",
+        command_started_at.elapsed().as_millis()
+    ));
     let free_bytes = available_disk_bytes(&cache_dir);
     if let Some(free) = free_bytes {
         if free < MIN_PLAYBACK_FREE_BYTES {
@@ -3035,6 +4361,7 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
     let session_dir = session_dir(&cache_dir);
     let engine_dir = session_dir.join("engine");
     let media_dir = session_dir.join("media");
+    ensure_playback_generation_current(playback_generation)?;
     fs::create_dir_all(&session_dir)
         .map_err(|error| format!("Could not create stream session: {}", error))?;
     fs::create_dir_all(&engine_dir)
@@ -3063,21 +4390,44 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
         };
 
         if let Some(ipc) = existing_player_ipc.as_deref() {
-            show_player_text(ipc, "Stopping previous stream...");
+            show_player_text_with_title(ipc, Some(&title), "Stopping previous stream...");
             stop_player_stream_only(ipc);
         }
+
+        ensure_playback_generation_current(playback_generation)?;
+        let player_open_started = Instant::now();
+        let player_ipc = launch_or_reuse_player(player_path, &cache_dir, &request, &title)?;
+        show_player_text_with_title(&player_ipc, Some(&title), "Preparing torrent session...");
+        log_info(format!(
+            "Playback perf: player visible before engine prep in {} ms",
+            player_open_started.elapsed().as_millis()
+        ));
+
+        let cleanup_started = Instant::now();
         stop_active_session(true);
         cleanup_abandoned_sessions(&cache_dir, Some(&session_dir));
         prune_cache(&cache_dir, Some(&session_dir));
+        log_info(format!(
+            "Playback perf: previous session cleanup finished in {} ms",
+            cleanup_started.elapsed().as_millis()
+        ));
 
+        ensure_playback_generation_current(playback_generation)?;
         let engine_path = status
             .torrent_engine_path
             .as_deref()
             .ok_or_else(|| "Torrent engine path is missing.".to_string())?;
+        let engine_started = Instant::now();
         start_rqbit(engine_path, &engine_dir)?;
-        if let Some(ipc) = existing_player_ipc.as_deref() {
-            show_player_text(ipc, "Preparing torrent session...");
-        }
+        show_player_text_with_title(
+            &player_ipc,
+            Some(&title),
+            "Connecting to the local stream engine...",
+        );
+        log_info(format!(
+            "Playback perf: rqbit ready in {} ms",
+            engine_started.elapsed().as_millis()
+        ));
 
         let add_path = format!(
             "/torrents?output_folder={}",
@@ -3085,7 +4435,9 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
         );
         let mut add_payload = None;
         let last_index = source_inputs.len().saturating_sub(1);
+        let add_started = Instant::now();
         for (index, source_input) in source_inputs.iter().enumerate() {
+            ensure_playback_generation_current(playback_generation)?;
             match rqbit_post(&add_path, source_input) {
                 Ok(payload) => {
                     add_payload = Some(payload);
@@ -3103,6 +4455,10 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
         }
         let add_payload = add_payload
             .ok_or_else(|| "Desktop streaming could not add a playable source.".to_string())?;
+        log_info(format!(
+            "Playback perf: torrent accepted in {} ms",
+            add_started.elapsed().as_millis()
+        ));
         let add_json: serde_json::Value = serde_json::from_str(&add_payload)
             .map_err(|error| format!("Could not parse stream engine response: {}", error))?;
         let torrent_id = add_json
@@ -3133,8 +4489,8 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             });
         }
 
-        let player_ipc = launch_or_reuse_player(player_path, &cache_dir, &request, &title)?;
-        show_player_text(&player_ipc, "Preparing torrent session...");
+        show_player_text_with_title(&player_ipc, Some(&title), "Preparing torrent session...");
+        let target_started = Instant::now();
         let target = wait_for_stream_with_session_guard(
             &torrent_id,
             &request,
@@ -3142,8 +4498,14 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             &cache_dir,
             &session_dir,
             session_cache_limit,
+            playback_generation,
         )?;
+        log_info(format!(
+            "Playback perf: stream target ready in {} ms",
+            target_started.elapsed().as_millis()
+        ));
 
+        ensure_playback_generation_current(playback_generation)?;
         {
             let mut guard = manager()
                 .lock()
@@ -3153,7 +4515,11 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             }
         }
 
-        show_player_text(&player_ipc, "Opening the stream in the current player...");
+        show_player_text_with_title(
+            &player_ipc,
+            Some(&title),
+            "Opening the stream in the current player...",
+        );
         if !load_player_target(&player_ipc, &title, &target, request.resume_seconds) {
             let _ = relaunch_player_and_load_target(
                 player_path,
@@ -3168,6 +4534,10 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
             "Playback handed off to player for torrent {}",
             torrent_id
         ));
+        log_info(format!(
+            "Playback perf: command completed in {} ms",
+            command_started_at.elapsed().as_millis()
+        ));
 
         Ok(PlaybackStatus {
             ok: true,
@@ -3181,7 +4551,11 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
     })();
 
     if let Err(error) = &stream_result {
-        remember_error(format!("{}: {}", title, error));
+        if !error.contains("superseded by a newer source") {
+            remember_error(format!("{}: {}", title, error));
+        } else {
+            log_info(format!("Cancelled stale playback generation for {}", title));
+        }
         stop_active_session(true);
         safe_delete_dir(&session_dir);
         prune_cache(&cache_dir, None);
@@ -3192,7 +4566,14 @@ fn start_stream(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
 
 #[tauri::command]
 async fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || start_stream(request))
+    let playback_generation = next_playback_generation();
+    let title = playback_title(&request);
+    log_info(format!(
+        "Playback generation {} requested for {}",
+        playback_generation, title
+    ));
+    notify_player_source_switch(&title);
+    tauri::async_runtime::spawn_blocking(move || start_stream(request, playback_generation))
         .await
         .map_err(|error| {
             let message = format!("Playback task could not finish: {}", error);
@@ -3253,6 +4634,8 @@ async fn get_local_playback_progress(
                         progress: Some(100.0),
                         current_seconds: None,
                         duration_seconds: None,
+                        paused: None,
+                        volume: None,
                         downloaded_bytes: None,
                         total_bytes: None,
                         peers: None,
@@ -3293,6 +4676,12 @@ async fn get_local_playback_progress(
         let duration_seconds = player_ipc
             .as_deref()
             .and_then(|ipc| get_player_property_f64(ipc, "duration"));
+        let paused = player_ipc
+            .as_deref()
+            .and_then(|ipc| get_player_property_bool(ipc, "pause"));
+        let volume = player_ipc
+            .as_deref()
+            .and_then(|ipc| get_player_property_f64(ipc, "volume"));
         let state = if progress.unwrap_or(0.0) > 2.0 {
             "ready"
         } else if downloaded_bytes.unwrap_or(0) >= MIN_INITIAL_PLAYBACK_BUFFER_BYTES {
@@ -3302,6 +4691,23 @@ async fn get_local_playback_progress(
         } else {
             "fetching_metadata"
         };
+        if let Some(ipc) = player_ipc.as_deref() {
+            let label = match state {
+                "ready" => "Ready",
+                "buffering" => "Buffering",
+                "connecting" => "Peers",
+                _ => "Metadata",
+            };
+            update_player_stream_metrics(
+                ipc,
+                label,
+                peers.unwrap_or(0),
+                downloaded_bytes.unwrap_or(0),
+                total_bytes.unwrap_or(0),
+                progress,
+                download_speed.map(|value| value.max(0.0) as u64),
+            );
+        }
         Ok(LocalPlaybackProgress {
             ok: true,
             torrent_id,
@@ -3324,6 +4730,8 @@ async fn get_local_playback_progress(
             progress,
             current_seconds,
             duration_seconds,
+            paused,
+            volume,
             downloaded_bytes,
             total_bytes,
             peers,
@@ -3334,6 +4742,31 @@ async fn get_local_playback_progress(
     })
     .await
     .map_err(|error| format!("Progress task could not finish: {}", error))?
+}
+
+#[tauri::command]
+async fn control_local_player(
+    request: PlayerControlRequest,
+) -> Result<PlayerControlStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || control_player(request))
+        .await
+        .map_err(|error| format!("Player control task could not finish: {}", error))?
+}
+
+#[tauri::command]
+async fn import_subtitle_for_current_player() -> Result<PlayerControlStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ipc = active_player_ipc()?;
+        if !player_ipc_ready(&ipc, 1, 0) {
+            return Err("The StreamNyaa player is not ready for subtitle import yet.".to_string());
+        }
+        match import_subtitle_for_ipc_guarded(&ipc)? {
+            Some(_) => Ok(player_control_status(&ipc, "Subtitle import requested.")),
+            None => Ok(player_control_status(&ipc, "Subtitle import cancelled.")),
+        }
+    })
+    .await
+    .map_err(|error| format!("Subtitle import task could not finish: {}", error))?
 }
 
 fn find_number(value: &serde_json::Value, keys: &[&str]) -> Option<f64> {
@@ -3700,6 +5133,8 @@ fn main() {
             clear_playback_cache,
             get_desktop_diagnostics,
             get_desktop_runtime_status,
+            control_local_player,
+            import_subtitle_for_current_player,
             get_local_playback_progress,
             play_local_torrent,
             stop_local_playback
@@ -3740,6 +5175,96 @@ mod tests {
     }
 
     #[test]
+    fn player_control_bounds_are_safe_for_ipc() {
+        assert_eq!(clamp_player_volume(-10.0), 0.0);
+        assert_eq!(clamp_player_volume(160.0), 130.0);
+        assert_eq!(clamp_player_speed(0.1), 0.25);
+        assert_eq!(clamp_player_speed(4.0), 3.0);
+        assert_eq!(clamp_player_seek_delta(900.0), 600.0);
+        assert_eq!(clamp_player_seek_delta(f64::NAN), 0.0);
+        assert_eq!(clamp_player_seek_absolute(-8.0), 0.0);
+    }
+
+    #[test]
+    fn loading_frame_writes_supported_bitmap() {
+        let root = env::temp_dir().join(format!("streamnyaa-loading-test-{}", now_millis()));
+        fs::create_dir_all(&root).expect("create loading test dir");
+        let request = playback_request_for_episode("1");
+        let path =
+            loading_frame(&root, &request, "Example Anime - Episode 1").expect("loading frame");
+        let bytes = fs::read(&path).expect("read loading frame");
+        assert_eq!(&bytes[0..2], b"BM");
+        assert!(bytes.len() > 54);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn loading_frame_prefers_cover_placeholder_when_ready() {
+        let root = env::temp_dir().join(format!("streamnyaa-loading-cover-test-{}", now_millis()));
+        fs::create_dir_all(&root).expect("create loading cover test dir");
+        let request = playback_request_for_episode("1");
+        let cover_path = root.join("player-meta").join("loading-cover.jpg");
+        fs::create_dir_all(cover_path.parent().expect("cover parent")).expect("cover dir");
+        fs::write(&cover_path, b"not-empty-placeholder").expect("write cover placeholder");
+
+        let path = loading_frame_for_player(
+            &root,
+            &request,
+            "Example Anime - Episode 1",
+            Some(&cover_path),
+        )
+        .expect("loading frame selection");
+
+        assert_eq!(path, cover_path);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn player_cover_preparation_writes_valid_bgra() {
+        let root = env::temp_dir().join(format!("streamnyaa-cover-test-{}", now_millis()));
+        fs::create_dir_all(&root).expect("create cover test dir");
+        let source_path = root.join("cover.png");
+        let image = image::RgbaImage::from_fn(640, 360, |x, y| {
+            image::Rgba([(x % 255) as u8, (y % 255) as u8, ((x + y) % 255) as u8, 255])
+        });
+        image::DynamicImage::ImageRgba8(image)
+            .save(&source_path)
+            .expect("write test cover");
+        let mut request = playback_request_for_episode("1");
+        request.poster = Some(source_path.to_string_lossy().to_string());
+
+        let cover = prepare_player_cover(&root, &request)
+            .expect("prepare cover")
+            .expect("cover result");
+
+        let poster_len = fs::metadata(&cover.path).expect("poster metadata").len();
+        let poster_expected = cover.width as u64 * cover.height as u64 * 4;
+        assert_eq!(poster_len, poster_expected);
+        let background_len = fs::metadata(&cover.background_path)
+            .expect("background metadata")
+            .len();
+        let background_expected =
+            cover.background_width as u64 * cover.background_height as u64 * 4;
+        assert_eq!(background_len, background_expected);
+        assert_eq!(cover.background_width, PLAYER_COVER_BACKGROUND_WIDTH);
+        assert_eq!(cover.background_height, PLAYER_COVER_BACKGROUND_HEIGHT);
+        let loading_image_len = fs::metadata(&cover.loading_image_path)
+            .expect("loading image metadata")
+            .len();
+        assert!(loading_image_len > 1024);
+        assert_eq!(cover.loading_image_width, PLAYER_COVER_BACKGROUND_WIDTH);
+        assert_eq!(cover.loading_image_height, PLAYER_COVER_BACKGROUND_HEIGHT);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn bundled_player_skin_script_is_available() {
+        let script = bundled_player_skin_script().expect("player skin script");
+        assert!(script.ends_with("streamnyaa-player.lua"));
+    }
+
+    #[test]
     fn stream_session_limit_allows_large_episode_sources_when_space_exists() {
         let source_size = Some(7 * 1024 * 1024 * 1024);
         let free_space = Some(20 * 1024 * 1024 * 1024);
@@ -3773,7 +5298,8 @@ mod tests {
         };
 
         let candidates = playback_source_candidates(&request).expect("source input");
-        assert_eq!(candidates[0], format!("magnet:?xt=urn:btih:{}", hash));
+        assert!(candidates[0].starts_with(&format!("magnet:?xt=urn:btih:{}", hash)));
+        assert!(candidates[0].contains("&tr="));
     }
 
     #[test]
@@ -3795,8 +5321,10 @@ mod tests {
         .expect("request");
 
         let candidates = playback_source_candidates(&request).expect("source input");
-        assert_eq!(candidates.len(), 1);
-        assert_eq!(candidates[0], format!("magnet:?xt=urn:btih:{}", hash));
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates[0].starts_with(&format!("magnet:?xt=urn:btih:{}", hash)));
+        assert!(candidates[0].contains("&tr="));
+        assert_eq!(candidates[1], format!("magnet:?xt=urn:btih:{}", hash));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import { animeIdentity } from './animeIdentity';
+import { accountApiFetch } from './accountApi';
 import type { AuthSession } from './supabaseAuth';
 
 export type RecentAnime = {
@@ -103,7 +104,7 @@ export function mergeDownloadHistory(...lists: DownloadHistoryEntry[][]) {
 export async function fetchAccountDownloadHistory(session?: AuthSession | null, limit = 20) {
   if (!session?.access_token) return [];
 
-  const response = await fetch(`/api/download-history?limit=${encodeURIComponent(String(limit))}`, {
+  const response = await accountApiFetch(`/api/download-history?limit=${encodeURIComponent(String(limit))}`, {
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
   if (!response.ok) throw new Error('Saved source history could not be loaded.');
@@ -124,7 +125,7 @@ export async function saveDownloadHistory(entry: Omit<DownloadHistoryEntry, 'id'
 
   if (!session?.access_token) return;
   try {
-    await fetch('/api/download-history', {
+    await accountApiFetch('/api/download-history', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${session.access_token}`,
@@ -134,5 +135,24 @@ export async function saveDownloadHistory(entry: Omit<DownloadHistoryEntry, 'id'
     });
   } catch {
     // Keep the local entry even if the optional remote table is not configured yet.
+  }
+}
+
+export async function syncLocalDownloadHistoryToAccount(session?: AuthSession | null) {
+  if (!session?.access_token) return;
+  const localHistory = getDownloadHistory(30);
+  for (const entry of localHistory) {
+    try {
+      await accountApiFetch('/api/download-history', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(entry),
+      });
+    } catch {
+      // Download/source history sync is best-effort. Keep local history intact.
+    }
   }
 }

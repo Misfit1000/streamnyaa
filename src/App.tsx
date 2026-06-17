@@ -5,6 +5,7 @@ import Layout from './components/Layout';
 import Home from './pages/Home';
 import ScrollToTop from './components/ScrollToTop';
 import { AuthProvider } from './context/AuthContext';
+import { AccountSyncProvider } from './context/AccountSyncContext';
 import { createAppQueryClient } from './lib/queryClient';
 
 const Search = lazy(() => import('./pages/Search'));
@@ -42,10 +43,11 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
-          <ScrollToTop />
-          <Suspense fallback={<RouteFallback />}>
-            <Routes>
+        <AccountSyncProvider>
+          <BrowserRouter>
+            <ScrollToTop />
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
               <Route path="/" element={<Layout />}>
                 <Route index element={<Home />} />
                 <Route path="search" element={<Search />} />
@@ -75,9 +77,10 @@ export default function App() {
                 <Route path="terms" element={<Terms />} />
                 <Route path="disclaimer" element={<Disclaimer />} />
               </Route>
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
+        </AccountSyncProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

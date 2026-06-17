@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import ScrollToTop from './components/ScrollToTop';
 import DesktopShell from './components/DesktopShell';
 import { AuthProvider } from './context/AuthContext';
+import { AccountSyncProvider } from './context/AccountSyncContext';
 import { createAppQueryClient } from './lib/queryClient';
 
 const DesktopHome = lazy(() => import('./pages/DesktopHome'));
@@ -18,6 +19,7 @@ const AnimeDownloads = lazy(() => import('./pages/AnimeDownloads'));
 const AnimeCompare = lazy(() => import('./pages/AnimeCompare'));
 const DesktopSettings = lazy(() => import('./pages/DesktopSettings'));
 const DesktopHistory = lazy(() => import('./pages/DesktopHistory'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Login = lazy(() => import('./pages/Login'));
 
 const queryClient = createAppQueryClient();
@@ -77,11 +79,12 @@ export default function AppDesktop() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <BrowserRouter>
-          <ScrollToTop />
-          <DesktopRouteBoundary>
-            <Suspense fallback={<RouteFallback />}>
-              <Routes>
+        <AccountSyncProvider>
+          <BrowserRouter>
+            <ScrollToTop />
+            <DesktopRouteBoundary>
+              <Suspense fallback={<RouteFallback />}>
+                <Routes>
                 <Route path="/" element={<DesktopShell />}>
                   <Route index element={<DesktopHome />} />
                   <Route path="search" element={<DesktopExplore />} />
@@ -101,12 +104,14 @@ export default function AppDesktop() {
                   <Route path="login" element={<Login />} />
                   <Route path="reset-password" element={<Login />} />
                   <Route path="dashboard" element={<DesktopHistory />} />
+                  <Route path="profile" element={<Dashboard />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
-              </Routes>
-            </Suspense>
-          </DesktopRouteBoundary>
-        </BrowserRouter>
+                </Routes>
+              </Suspense>
+            </DesktopRouteBoundary>
+          </BrowserRouter>
+        </AccountSyncProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

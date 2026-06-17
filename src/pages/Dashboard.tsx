@@ -6,17 +6,20 @@ import {
   BookOpen,
   Bookmark,
   CalendarDays,
+  Cloud,
   Compass,
   Download,
   Heart,
   LogOut,
   Newspaper,
+  RefreshCw,
   Search,
   Shield,
   UserCircle,
 } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
+import { useAccountSync } from '../context/AccountSyncContext';
 import {
   fetchAccountDownloadHistory,
   getDownloadHistory,
@@ -71,6 +74,7 @@ function ToolRow({ to, icon: Icon, title, text }: {
 
 export default function Dashboard() {
   const { user, session, isAdmin, loading, signOut } = useAuth();
+  const { state: syncState, message: syncMessage, lastSyncedAt, syncNow } = useAccountSync();
   const { myList, likedAnimes, nsfwMode, toggleNsfwMode } = useStore();
   const [downloadHistory, setDownloadHistory] = useState<DownloadHistoryEntry[]>([]);
   const [historyState, setHistoryState] = useState<'local' | 'loading' | 'synced' | 'unavailable'>('local');
@@ -114,6 +118,12 @@ export default function Dashboard() {
   const collection = Array.from(combinedMap.values());
   const recentCollection = collection.slice(-5).reverse();
   const displayName = shortName(user.email);
+  const syncLabel = syncState === 'synced' ? 'Synced' : syncState === 'syncing' ? 'Syncing' : syncState === 'unavailable' ? 'Local fallback' : 'Local only';
+  const syncDetail = lastSyncedAt
+    ? `Last sync ${new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(lastSyncedAt))}`
+    : session?.access_token
+      ? 'Waiting for first sync'
+      : 'Sign in to sync';
   const heroImages = [
     ...recentCollection
       .map((anime) => anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url)
@@ -173,7 +183,7 @@ export default function Dashboard() {
         <Metric label="Saved anime" value={myList.length} detail="Titles added to your list" />
         <Metric label="Favorites" value={(likedAnimes || []).length} detail="Titles marked as favorites" />
         <Metric label="Collection size" value={collection.length} detail="Unique saved and liked titles" />
-        <Metric label="Access level" value={isAdmin ? 'Admin' : 'User'} detail={isAdmin ? 'Dashboard and admin tools' : 'Standard account tools'} />
+        <Metric label="Account sync" value={syncLabel} detail={syncDetail} />
       </section>
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_380px]">
@@ -294,6 +304,25 @@ export default function Dashboard() {
                 <dd className="font-bold text-foreground">{isAdmin ? 'Admin' : 'User'}</dd>
               </div>
             </dl>
+          </div>
+
+          <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
+            <div className="flex items-center gap-2 text-sm font-black text-foreground">
+              <Cloud className="h-4 w-4 text-primary" />
+              Cross-device sync
+            </div>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              {syncMessage || 'Saved anime, favorites, source history, and desktop watch progress stay local until you sign in.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => void syncNow()}
+              disabled={syncState === 'syncing'}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background/45 px-4 py-2.5 text-sm font-black text-foreground transition-colors hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${syncState === 'syncing' ? 'animate-spin' : ''}`} />
+              {syncState === 'syncing' ? 'Syncing...' : 'Sync now'}
+            </button>
           </div>
 
           <div className="rounded-lg border border-border bg-[var(--glass)] p-5">

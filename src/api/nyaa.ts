@@ -32,8 +32,10 @@ type SearchCacheEntry = {
   savedAt: number;
 };
 
-const SEARCH_CACHE_TTL = 1000 * 60 * 3;
+const SEARCH_CACHE_TTL = 1000 * 60 * 20;
+const SEARCH_CACHE_MAX_ENTRIES = 260;
 const inMemorySearchCache = new Map<string, SearchCacheEntry>();
+const inFlightSearches = new Map<string, Promise<NyaaItem[]>>();
 const DEFAULT_TRACKERS = [
   'http://nyaa.tracker.wf:7777/announce',
   'udp://open.stealth.si:80/announce',
@@ -103,13 +105,16 @@ export async function searchNyaa(
   page: string = '1',
   options: { deep?: boolean; pages?: number; wide?: boolean } = {}
 ): Promise<NyaaItem[]> {
-  try {
-    const cacheKey = JSON.stringify({ query, category, filter, page, options });
-    const cached = inMemorySearchCache.get(cacheKey);
-    if (cached && Date.now() - cached.savedAt < SEARCH_CACHE_TTL) {
-      return cached.items;
-    }
+  const cacheKey = JSON.stringify({ query, category, filter, page, options });
+  const cached = inMemorySearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.savedAt < SEARCH_CACHE_TTL) {
+    return cached.items;
+  }
 
+  const existingRequest = inFlightSearches.get(cacheKey);
+  if (existingRequest) return existingRequest;
+
+  const request = (async () => {
     const desktop = isDesktopApp();
     const url = new URL('/api/nyaa', desktop ? 'https://www.streamnyaa.xyz' : window.location.origin);
     if (query) url.searchParams.append('q', query);
@@ -185,9 +190,21 @@ export async function searchNyaa(
     }
 
     inMemorySearchCache.set(cacheKey, { items: results, savedAt: Date.now() });
+    while (inMemorySearchCache.size > SEARCH_CACHE_MAX_ENTRIES) {
+      const oldestKey = inMemorySearchCache.keys().next().value;
+      if (!oldestKey) break;
+      inMemorySearchCache.delete(oldestKey);
+    }
     return results;
+  })();
+
+  inFlightSearches.set(cacheKey, request);
+  try {
+    return await request;
   } catch (error) {
     console.error('Source search error:', error);
     return [];
+  } finally {
+    inFlightSearches.delete(cacheKey);
   }
 }
