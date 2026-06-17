@@ -75,7 +75,7 @@ const EPISODE_GRID_PAGE_SIZE = 120;
 const EPISODE_CARD_SEARCH_LIMIT = 36;
 const AUTO_COMPACT_EPISODE_THRESHOLD = 180;
 const TIMELINE_SKELETON_CARD_COUNT = 5;
-const SOURCE_QUERY_BATCH_SIZE = 2;
+const SOURCE_QUERY_BATCH_SIZE = 6;
 const SOURCE_RETRY_LIMIT = 5;
 const FAILED_SOURCE_MEMORY_KEY = 'streamnyaa.desktopFailedSources';
 const FAILED_SOURCE_MEMORY_TTL = 1000 * 60 * 60 * 24;
@@ -243,6 +243,23 @@ function compactAnimeType(value: unknown) {
   if (normalized === 'TV_SHORT') return 'TV Short';
   if (normalized === 'OVA' || normalized === 'ONA') return normalized;
   return formatCompactLabel(value);
+}
+
+function trailerUrlFor(anime: any) {
+  const trailer = anime?.trailer || {};
+  const direct = String(trailer.url || '').trim();
+  if (/^https?:\/\//i.test(direct)) return direct;
+  const youtubeId = String(trailer.youtube_id || trailer.id || '').trim();
+  if (youtubeId && (!trailer.site || String(trailer.site).toLowerCase() === 'youtube')) {
+    return `https://www.youtube.com/watch?v=${encodeURIComponent(youtubeId)}`;
+  }
+  return '';
+}
+
+function youtubeEmbedUrlFor(url = '') {
+  const trimmed = String(url || '').trim();
+  const match = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{6,})/);
+  return match?.[1] ? `https://www.youtube-nocookie.com/embed/${match[1]}?autoplay=1&rel=0&modestbranding=1` : '';
 }
 
 function animeStudiosFor(anime: any) {
@@ -1403,6 +1420,7 @@ export default function DesktopWatch() {
   const [episodeSearch, setEpisodeSearch] = useState('');
   const [episodeViewMode, setEpisodeViewMode] = useState<EpisodeViewMode>('cards');
   const [episodeJumpValue, setEpisodeJumpValue] = useState('');
+  const [trailerOpen, setTrailerOpen] = useState(false);
   const [episodeRailDragging, setEpisodeRailDragging] = useState(false);
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<{ torrentId: string; title: string; source: LocalPlaybackSource } | null>(null);
@@ -1741,6 +1759,8 @@ export default function DesktopWatch() {
     const totalGenres = Array.isArray(animeInfo?.genres) ? animeInfo.genres.length : genres.length;
 
     return {
+      trailerUrl: trailerUrlFor(animeInfo),
+      trailerYear: year ? String(year) : '',
       genres,
       extraGenreCount: Math.max(0, totalGenres - genres.length),
       primaryMeta: [
@@ -1761,6 +1781,24 @@ export default function DesktopWatch() {
       canExpandSynopsis,
     };
   }, [airedCount, anime, synopsisExpanded]);
+  const trailerEmbedUrl = useMemo(() => youtubeEmbedUrlFor(leftPanelInfo.trailerUrl), [leftPanelInfo.trailerUrl]);
+  const trailerPreviewImages = useMemo(
+    () => {
+      const animeInfo: any = anime;
+      return uniqueImageCandidates([
+        animeInfo?.trailer?.images?.maximum_image_url,
+        animeInfo?.trailer?.images?.large_image_url,
+        wideImageFor(animeInfo),
+        posterFor(animeInfo),
+      ]);
+    },
+    [anime],
+  );
+
+  useEffect(() => {
+    setTrailerOpen(false);
+  }, [anime?.mal_id, anime?.id, leftPanelInfo.trailerUrl]);
+
   const sourceSearchReady = useMemo(() => {
     if (selectedEpisode <= 0) return false;
     return sourceSearchTitleVariants(anime, id, selectedInstallment).some((title) => {
@@ -1773,7 +1811,7 @@ export default function DesktopWatch() {
     queryKey: ['desktop-watch-sources', anime?.title, anime?.title_english, anime?.title_romaji, selectedInstallment?.mal_id, selectedInstallment?.label, selectedEpisode, audioMode, audioPreference],
     queryFn: async () => {
       const epPadded = String(selectedEpisode).padStart(2, '0');
-      const titleCandidates = sourceSearchTitleVariants(anime, id, selectedInstallment).slice(0, 4);
+      const titleCandidates = sourceSearchTitleVariants(anime, id, selectedInstallment).slice(0, 6);
       const seasonHints = sourceSearchSeasonHints(anime, id, selectedInstallment);
       const partHints = sourceSearchPartHints(anime, id, selectedInstallment);
       const audioSuffix = audioMode === 'dub' ? ' dub' : '';
@@ -1848,7 +1886,7 @@ export default function DesktopWatch() {
           `${cleanedTitle} ep ${selectedEpisode}${audioSuffix}`,
         ];
       });
-      const exact = await tryQueries([...seasonCodeEpisodeQueries, ...exactEpisodeQueries], { pages: 1, wide: false, deep: false });
+      const exact = await tryQueries([...seasonCodeEpisodeQueries, ...exactEpisodeQueries], { pages: 2, wide: false, deep: false });
       if (exact.some((source) => source.matchTier === 'exact')) return exact;
 
       const seasonEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
@@ -1864,7 +1902,7 @@ export default function DesktopWatch() {
         });
         return queries;
       }));
-      const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 1, wide: false, deep: false });
+      const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 2, wide: true, deep: true });
       if (seasonEpisode.some((source) => source.matchTier === 'exact')) return combineSources([...exact, ...seasonEpisode]);
 
       const broadEpisodeQueries = titleCandidates.flatMap((title) => {
@@ -1875,11 +1913,11 @@ export default function DesktopWatch() {
           `${cleanedTitle} ${selectedEpisode}`,
         ];
       });
-      const broad = await tryQueries(broadEpisodeQueries, { pages: 3, wide: true, deep: true });
+      const broad = await tryQueries(broadEpisodeQueries, { pages: 5, wide: true, deep: true });
       const combinedEpisode = combineSources([...exact, ...seasonEpisode, ...broad]);
       if (combinedEpisode.some((source) => source.matchTier === 'exact' || source.matchTier === 'likely')) return combinedEpisode;
 
-      const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 2, wide: true, deep: true });
+      const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 5, wide: true, deep: true });
       if (fallback.length) return combineSources([...combinedEpisode, ...fallback]);
 
       return [];
@@ -2404,6 +2442,73 @@ export default function DesktopWatch() {
                     {synopsisExpanded ? 'Show less' : 'Read more'}
                   </button>
                 ) : null}
+              </div>
+            ) : null}
+            {leftPanelInfo.trailerUrl ? (
+              <div className="mt-5 overflow-hidden rounded-[18px] border border-white/[0.13] bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.024)_58%,rgba(244,63,94,0.075))] shadow-xl shadow-black/24 ring-1 ring-white/[0.025]">
+                <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] px-3.5 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-primary/30 bg-primary/16 text-primary">
+                      <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-[0.20em] text-primary">Trailer</p>
+                      <p className="mt-0.5 line-clamp-1 text-xs font-bold text-white/48">{anime.title}</p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {leftPanelInfo.trailerYear ? (
+                      <span className="rounded-full border border-white/[0.10] bg-black/30 px-2 py-1 text-[10px] font-black text-white/56">
+                        {leftPanelInfo.trailerYear}
+                      </span>
+                    ) : null}
+                    {trailerOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => setTrailerOpen(false)}
+                        className="rounded-full border border-white/[0.10] bg-white/[0.045] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/58 transition-colors hover:border-white/18 hover:text-white"
+                      >
+                        Close
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                {trailerOpen && trailerEmbedUrl ? (
+                  <iframe
+                    title={`${anime.title} trailer`}
+                    src={trailerEmbedUrl}
+                    className="aspect-video w-full bg-black"
+                    loading="lazy"
+                    allow="accelerometer; autoplay; encrypted-media; picture-in-picture"
+                    allowFullScreen
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (trailerEmbedUrl) {
+                        setTrailerOpen(true);
+                        return;
+                      }
+                      window.open(leftPanelInfo.trailerUrl, '_blank', 'noopener,noreferrer');
+                    }}
+                    className="group relative block h-28 w-full overflow-hidden text-left"
+                  >
+                    <SafeImage candidates={trailerPreviewImages} alt={`${anime.title} trailer`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.035]" />
+                    <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.76),rgba(0,0,0,0.22)_62%),radial-gradient(circle_at_50%_50%,rgba(244,63,94,0.22),transparent_36%)]" />
+                    <span className="absolute left-1/2 top-1/2 grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/16 bg-black/48 text-white shadow-lg shadow-black/30 transition-all group-hover:border-primary/45 group-hover:bg-primary group-hover:shadow-primary/24">
+                      <Play className="ml-0.5 h-4 w-4 fill-current" />
+                    </span>
+                    <span className="absolute bottom-2.5 left-3 right-3 flex items-end justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="block line-clamp-1 text-xs font-black text-white">{anime.title}</span>
+                        <span className="mt-0.5 block text-[10px] font-black uppercase tracking-[0.16em] text-white/48">
+                          {trailerEmbedUrl ? 'Play trailer' : 'Open trailer'}
+                        </span>
+                      </span>
+                    </span>
+                  </button>
+                )}
               </div>
             ) : null}
           </>
