@@ -1187,11 +1187,15 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
   };
 };
 
-export const fetchTopAnimeByYear = async (year: number) => {
+export const fetchTopAnimeByYear = async (year: number, maxPages = 1) => {
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
   const gqlQuery = `
-    query($seasonYear: Int) {
-      Page(page: 1, perPage: 18) {
+    query($page: Int, $seasonYear: Int) {
+      Page(page: $page, perPage: 24) {
+        pageInfo {
+          hasNextPage
+          lastPage
+        }
         media(type: ANIME, seasonYear: $seasonYear, sort: SCORE_DESC${isAdultArg}) {
           id
           idMal
@@ -1214,11 +1218,19 @@ export const fetchTopAnimeByYear = async (year: number) => {
     }
   `;
 
-  const res = await fetchAniList({ query: gqlQuery, variables: { seasonYear: year } }, 21600);
-  if (!res.ok) throw new Error('Failed to fetch yearly top anime');
-  const data = await res.json();
-  if (data.errors) throw new Error('Failed to fetch yearly top anime');
-  const rawData = (data.data.Page.media || []).map(mapAnilistToJikan);
+  const pages: any[] = [];
+  let page = 1;
+  let hasNext = true;
+  while (hasNext && page <= maxPages) {
+    const res = await fetchAniList({ query: gqlQuery, variables: { page, seasonYear: year } }, 21600);
+    if (!res.ok) throw new Error('Failed to fetch yearly top anime');
+    const data = await res.json();
+    if (data.errors) throw new Error('Failed to fetch yearly top anime');
+    pages.push(...(data.data.Page.media || []));
+    hasNext = Boolean(data.data.Page.pageInfo?.hasNextPage);
+    page += 1;
+  }
+  const rawData = pages.map(mapAnilistToJikan);
   return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.mal_id === anime.mal_id)) };
 };
 

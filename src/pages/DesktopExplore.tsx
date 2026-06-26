@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Filter, Search, SlidersHorizontal, X } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
-import AnimeCard from '../components/AnimeCard';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Filter, Heart, Search, SlidersHorizontal, Sparkles, Star, TrendingUp, Tv, X } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import Seo from '../components/Seo';
 import {
   fetchAnimeSeason,
@@ -15,10 +14,12 @@ import {
 } from '../api/jikan';
 import { getCurrentAnimeSeason } from '../lib/currentSeason';
 import { saveDesktopAudioPreference, type DesktopAudioPreference } from '../lib/desktop';
+import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 
 type ExploreMode = 'trending' | 'popular' | 'top' | 'airing' | 'upcoming' | 'year';
-type VisualFilterKey = 'genre' | 'season' | 'status' | 'format' | 'source' | 'yearRange' | 'audio' | 'rating' | 'episodes';
+type VisualFilterKey = 'genre' | 'season' | 'status' | 'format' | 'source' | 'yearRange' | 'audio' | 'rating' | 'episodes' | 'popularity';
 type LocalSortKey = 'best' | 'title' | 'score' | 'popularity' | 'newest' | 'episodes';
+type SelectOption = { label: string; value: string };
 
 const defaultVisualFilters: Record<VisualFilterKey, string> = {
   genre: 'Any',
@@ -30,6 +31,7 @@ const defaultVisualFilters: Record<VisualFilterKey, string> = {
   audio: 'Any',
   rating: 'Any',
   episodes: 'Any',
+  popularity: 'Any',
 };
 
 const visualFilterGroups: Array<{ key: VisualFilterKey; label: string; options: string[] }> = [
@@ -42,16 +44,26 @@ const visualFilterGroups: Array<{ key: VisualFilterKey; label: string; options: 
   { key: 'audio', label: 'Audio', options: ['Any', 'Sub', 'Dual Audio', 'Dub'] },
   { key: 'rating', label: 'Rating', options: ['Any', '8+', '8.5+', '9+'] },
   { key: 'episodes', label: 'Episodes', options: ['Any', 'Short', '12-24', '25+', 'Long-running'] },
+  { key: 'popularity', label: 'Popularity', options: ['Any', 'Mainstream', 'Popular', 'Hidden Gems'] },
 ];
 
 const sortModes: Array<{ label: string; mode: ExploreMode }> = [
   { label: 'Trending', mode: 'trending' },
   { label: 'Popular', mode: 'popular' },
-  { label: 'Highest Rated', mode: 'top' },
-  { label: 'Top Airing', mode: 'airing' },
+  { label: 'Top Rated', mode: 'top' },
+  { label: 'Airing', mode: 'airing' },
   { label: 'Upcoming', mode: 'upcoming' },
   { label: 'Top This Year', mode: 'year' },
 ];
+
+const modeIcons: Record<ExploreMode, typeof Sparkles> = {
+  trending: Sparkles,
+  popular: Star,
+  top: TrendingUp,
+  airing: Tv,
+  upcoming: CalendarDays,
+  year: CalendarDays,
+};
 
 const localSortModes: Array<{ label: string; value: LocalSortKey }> = [
   { label: 'Best Match', value: 'best' },
@@ -60,6 +72,81 @@ const localSortModes: Array<{ label: string; value: LocalSortKey }> = [
   { label: 'Most Popular', value: 'popularity' },
   { label: 'Newest', value: 'newest' },
   { label: 'Episode Count', value: 'episodes' },
+];
+
+const SEASONAL_SPOTLIGHT_CACHE_PREFIX = 'streamnyaa.desktop.seasonSpotlight.v1.';
+const SEASONAL_SPOTLIGHT_CACHE_TTL = 1000 * 60 * 60 * 24;
+const SEASONAL_SPOTLIGHT_MAX_PAGES = 5;
+const SPOTLIGHT_ROTATION_MS = 8000;
+const EXPLORE_SEARCH_PAGE_LIMIT = 3;
+const EXPLORE_INITIAL_RESULTS = 24;
+const EXPLORE_RESULTS_INCREMENT = 24;
+const EXPLORE_ROW_INITIAL_ITEMS = 12;
+const EXPLORE_ROW_INCREMENT = 12;
+
+const quickFormatFilters: Array<{ label: string; value: string; icon: typeof Tv }> = [
+  { label: 'TV Series', value: 'TV', icon: Tv },
+  { label: 'Movies', value: 'Movie', icon: Clapperboard },
+];
+
+const filterPresets: Array<{
+  label: string;
+  description: string;
+  mode?: ExploreMode;
+  sort?: LocalSortKey;
+  filters: Partial<Record<VisualFilterKey, string>>;
+  icon: typeof Sparkles;
+}> = [
+  {
+    label: 'Best new anime',
+    description: 'Airing, recent, and strongly rated.',
+    mode: 'airing',
+    sort: 'score',
+    filters: { status: 'Airing', yearRange: 'This Year', rating: '8+' },
+    icon: Sparkles,
+  },
+  {
+    label: 'High rated',
+    description: 'Strong scores first.',
+    mode: 'top',
+    sort: 'score',
+    filters: { rating: '8.5+' },
+    icon: Star,
+  },
+  {
+    label: 'Short series',
+    description: 'Fast watches and compact seasons.',
+    sort: 'best',
+    filters: { episodes: 'Short' },
+    icon: Tv,
+  },
+  {
+    label: 'Movies',
+    description: 'Feature-length anime only.',
+    sort: 'score',
+    filters: { format: 'Movie' },
+    icon: Clapperboard,
+  },
+  {
+    label: 'Hidden gems',
+    description: 'Lower popularity, good scores.',
+    sort: 'score',
+    filters: { popularity: 'Hidden Gems', rating: '8+' },
+    icon: Sparkles,
+  },
+];
+
+const filterSections: Array<{ title: string; description: string; keys: VisualFilterKey[] }> = [
+  {
+    title: 'Core',
+    description: 'The filters users adjust most often.',
+    keys: ['genre', 'format', 'status', 'yearRange'],
+  },
+  {
+    title: 'Discovery',
+    description: 'Narrow by source, length, season, and taste.',
+    keys: ['source', 'rating', 'episodes', 'popularity', 'season', 'audio'],
+  },
 ];
 
 const modeConfig: Record<ExploreMode, { label: string; sort: string; status: string; description: string }> = {
@@ -121,6 +208,76 @@ function fallbackAnime(id: number, malId: number | undefined, title: string, sco
     banner_image: cover,
     images: { jpg: { image_url: cover, large_image_url: cover }, webp: { image_url: cover, large_image_url: cover } },
   };
+}
+
+function readSeasonalSpotlightCache(season: string, year: number) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(`${SEASONAL_SPOTLIGHT_CACHE_PREFIX}${season}-${year}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.cachedAt || Date.now() - Number(parsed.cachedAt) > SEASONAL_SPOTLIGHT_CACHE_TTL) return null;
+    if (!Array.isArray(parsed.data)) return null;
+    return { data: parsed.data };
+  } catch {
+    return null;
+  }
+}
+
+function writeSeasonalSpotlightCache(season: string, year: number, data: any[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(`${SEASONAL_SPOTLIGHT_CACHE_PREFIX}${season}-${year}`, JSON.stringify({ cachedAt: Date.now(), data }));
+  } catch {
+    // Local cache is only a speed layer.
+  }
+}
+
+async function fetchSeasonalSpotlightCatalog(season: string, year: number) {
+  const cached = readSeasonalSpotlightCache(season, year);
+  if (cached?.data?.length) {
+    console.info(`[StreamNyaa] seasonal spotlight cache hit: ${season} ${year}, ${cached.data.length} titles`);
+    return cached;
+  }
+
+  console.info(`[StreamNyaa] seasonal spotlight fetch start: ${season} ${year}`);
+  const pages: any[] = [];
+  let page = 1;
+  let hasNext = true;
+
+  while (hasNext && page <= SEASONAL_SPOTLIGHT_MAX_PAGES) {
+    const response = await fetchAnimeSeason(season, year, page);
+    pages.push(...(response?.data || []));
+    hasNext = Boolean(response?.pagination?.has_next_page);
+    page += 1;
+  }
+
+  const data = uniqueAnime(pages);
+  writeSeasonalSpotlightCache(season, year, data);
+  console.info(`[StreamNyaa] seasonal spotlight fetch complete: ${season} ${year}, ${data.length} titles loaded`);
+  return { data };
+}
+
+async function fetchExploreSearchPages(
+  query: string,
+  type: string,
+  genres: string,
+  sort: string,
+  status: string,
+  maxPages = EXPLORE_SEARCH_PAGE_LIMIT,
+) {
+  const pages: any[] = [];
+  let page = 1;
+  let hasNext = true;
+
+  while (hasNext && page <= maxPages) {
+    const response = await searchAnime(query, page, type, '', genres, sort, status);
+    pages.push(...(response?.data || []));
+    hasNext = Boolean(response?.pagination?.has_next_page);
+    page += 1;
+  }
+
+  return { data: uniqueAnime(pages) };
 }
 
 const fallbackByMode: Record<ExploreMode, any[]> = {
@@ -277,6 +434,12 @@ function popularityFor(anime: any) {
   return Number.isFinite(popularity) ? popularity : 0;
 }
 
+function genreNamesFor(anime: any) {
+  return (Array.isArray(anime?.genres) ? anime.genres : [])
+    .map((item: any) => String(item?.name || item || '').trim())
+    .filter(Boolean);
+}
+
 function yearFor(anime: any) {
   const year = Number(anime?.year || anime?.seasonYear || anime?.aired?.prop?.from?.year || 0);
   return Number.isFinite(year) ? year : 0;
@@ -284,6 +447,18 @@ function yearFor(anime: any) {
 
 function formatFor(anime: any) {
   return normalizedValue(anime?.type || anime?.format).replace(/_/g, ' ');
+}
+
+function formatLabelFor(anime: any) {
+  return displayLabel(anime?.type || anime?.format || 'Anime');
+}
+
+function statusLabelFor(anime: any) {
+  const status = normalizedValue(anime?.status).replace(/_/g, ' ');
+  if (/releasing|airing|currently/.test(status)) return 'Airing';
+  if (/not yet|upcoming/.test(status)) return 'Upcoming';
+  if (/finished|complete/.test(status)) return 'Completed';
+  return displayLabel(anime?.status || '');
 }
 
 function sourceFor(anime: any) {
@@ -356,6 +531,14 @@ function matchesVisualFilters(anime: any, filters: Record<VisualFilterKey, strin
     if (filters.episodes === '12-24' && (episodes < 12 || episodes > 24)) return false;
     if (filters.episodes === '25+' && episodes < 25) return false;
     if (filters.episodes === 'Long-running' && episodes < 100) return false;
+  }
+
+  if (filters.popularity !== 'Any') {
+    const popularity = popularityFor(anime);
+    const score = scoreFor(anime);
+    if (filters.popularity === 'Mainstream' && popularity < 100000) return false;
+    if (filters.popularity === 'Popular' && popularity < 30000) return false;
+    if (filters.popularity === 'Hidden Gems' && (!popularity || popularity > 50000 || score < 7)) return false;
   }
 
   return true;
@@ -434,11 +617,282 @@ function SkeletonGrid() {
 
 function EmptyState({ text, children }: { text: string; children?: ReactNode }) {
   return (
-    <div className="rounded-3xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_52%,rgba(244,63,94,0.045))] px-6 py-14 text-center shadow-xl shadow-black/18">
+    <div className="rounded-3xl bg-[linear-gradient(135deg,rgba(255,255,255,0.052),rgba(255,255,255,0.024)_52%,rgba(244,63,94,0.045))] px-6 py-14 text-center shadow-xl shadow-black/18 ring-1 ring-white/[0.045]">
       <p className="text-lg font-black text-white">No anime found</p>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">{text}</p>
       {children ? <div className="mt-5 flex flex-wrap justify-center gap-2">{children}</div> : null}
     </div>
+  );
+}
+
+function PremiumSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  minWidth = 'min-w-[168px]',
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  ariaLabel: string;
+  minWidth?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selected = options.find((option) => option.value === value) || options[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className={`relative ${minWidth}`}>
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        className="inline-flex h-10 w-full items-center justify-between gap-3 rounded-xl bg-[#08080d]/76 px-3 text-left text-sm font-black text-white outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ring-1 ring-white/[0.055] transition duration-200 hover:-translate-y-0.5 hover:bg-white/[0.065] focus-visible:ring-primary/45 active:translate-y-0"
+      >
+        <span className="truncate">{selected?.label || value}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-white/50 transition ${open ? 'rotate-180 text-primary' : ''}`} />
+      </button>
+      {open ? (
+        <div
+          role="listbox"
+          className="absolute left-0 top-[calc(100%+8px)] z-50 max-h-72 w-full overflow-auto rounded-xl bg-[#111116]/98 p-1 shadow-2xl shadow-black/45 ring-1 ring-primary/18 backdrop-blur-xl"
+        >
+          {options.map((option) => {
+            const active = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="option"
+                aria-selected={active}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={`flex min-h-9 w-full items-center rounded-lg px-3 text-left text-sm font-black transition ${
+                  active
+                    ? 'bg-primary text-white shadow-[0_8px_22px_rgba(244,63,94,0.22)]'
+                    : 'text-white/70 hover:bg-white/[0.075] hover:text-white'
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function coverCandidatesFor(anime: any) {
+  const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
+  const fallbackCover = fallbackId > 0 ? `https://img.anili.st/media/${fallbackId}` : '';
+  const posterCandidates = [
+    anime?.coverImage?.extraLarge,
+    anime?.coverImage?.large,
+    anime?.coverImage?.medium,
+    anime?.cover_image,
+    anime?.cover,
+    anime?.poster,
+    anime?.posterImage,
+    anime?.poster_image,
+    anime?.images?.webp?.large_image_url,
+    anime?.images?.jpg?.large_image_url,
+    anime?.images?.webp?.image_url,
+    anime?.images?.jpg?.image_url,
+    fallbackCover,
+  ];
+  return posterCandidates
+    .map((value) => String(value || '').trim())
+    .filter((value) => !/\/banner\//i.test(value))
+    .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+}
+
+function spotlightArtworkCandidatesFor(anime: any) {
+  const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
+  const fallbackCover = fallbackId > 0 ? `https://img.anili.st/media/${fallbackId}` : '';
+  return [
+    anime?.banner_image,
+    anime?.bannerImage,
+    anime?.images?.webp?.large_image_url,
+    anime?.images?.jpg?.large_image_url,
+    anime?.images?.webp?.image_url,
+    anime?.images?.jpg?.image_url,
+    fallbackCover,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+}
+
+function spotlightQualityScore(anime: any) {
+  const hasBanner = Boolean(anime?.banner_image || anime?.bannerImage);
+  const status = normalizedValue(anime?.status);
+  const airingBoost = /releasing|airing/.test(status) ? 40 : 0;
+  const upcomingBoost = /not yet|upcoming/.test(status) ? 16 : 0;
+  return (hasBanner ? 120 : 0) + airingBoost + upcomingBoost + scoreFor(anime) * 8 + popularityFor(anime) / 20000;
+}
+
+function buildSpotlightItems(items: any[]) {
+  const withImages = uniqueAnime(items).filter((anime) => spotlightArtworkCandidatesFor(anime).length);
+  const candidates = withImages.length >= 8 ? withImages : uniqueAnime([...withImages, ...fallbackByMode.airing, ...fallbackByMode.trending]);
+  return [...candidates]
+    .sort((left, right) => spotlightQualityScore(right) - spotlightQualityScore(left))
+    .slice(0, 24);
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduced(media.matches);
+    const listener = () => setReduced(media.matches);
+    media.addEventListener?.('change', listener);
+    return () => media.removeEventListener?.('change', listener);
+  }, []);
+
+  return reduced;
+}
+
+function SpotlightArtwork({ anime, title }: { anime: any | null; title: string }) {
+  const candidates = useMemo(() => anime ? spotlightArtworkCandidatesFor(anime) : [], [anime]);
+  const animeKey = String(anime?.mal_id || anime?.id || anime?.title || '');
+  const [imageIndex, setImageIndex] = useState(0);
+  const [imageFailed, setImageFailed] = useState(false);
+  const currentImage = candidates[imageIndex] || '';
+
+  useEffect(() => {
+    setImageIndex(0);
+    setImageFailed(false);
+  }, [animeKey]);
+
+  if (!anime || !currentImage || imageFailed) {
+    return (
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_78%_10%,rgba(244,63,94,0.30),transparent_34%),radial-gradient(circle_at_18%_12%,rgba(99,102,241,0.13),transparent_34%),linear-gradient(135deg,#180711,#050507_68%,#07090d)]" />
+    );
+  }
+
+  return (
+    <>
+      <img
+        key={currentImage}
+        src={currentImage}
+        alt={title}
+        className="absolute inset-0 h-full w-full object-cover object-center opacity-95 transition duration-700"
+        loading="eager"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onError={() => {
+          if (imageIndex < candidates.length - 1) {
+            setImageIndex((value) => value + 1);
+          } else {
+            setImageFailed(true);
+          }
+        }}
+      />
+      {!anime?.banner_image && !anime?.bannerImage ? (
+        <img
+          src={currentImage}
+          alt=""
+          className="absolute inset-0 h-full w-full scale-110 object-cover object-center opacity-55 blur-2xl"
+          loading="eager"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          aria-hidden="true"
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ExploreAnimeCard({ anime, index }: { anime: any; index: number }) {
+  const candidates = useMemo(() => coverCandidatesFor(anime), [anime]);
+  const [imageIndex, setImageIndex] = useState(0);
+  const [imageFailed, setImageFailed] = useState(false);
+  const currentImage = candidates[imageIndex] || '';
+  const title = anime?.title || anime?.title_english || anime?.title_romaji || 'Anime';
+  const genres = genreNamesFor(anime).slice(0, 2);
+  const year = yearFor(anime);
+  const score = scoreFor(anime);
+  const status = statusLabelFor(anime);
+  const format = formatLabelFor(anime);
+  const episodes = episodeCountFor(anime);
+  const path = desktopWatchOrBrowsePath(anime);
+
+  useEffect(() => {
+    setImageIndex(0);
+    setImageFailed(false);
+  }, [String(anime?.mal_id || anime?.id || title), candidates.join('|'), title]);
+
+  return (
+    <Link
+      to={path}
+      aria-label={`Open ${title}`}
+      className="group relative block min-w-0 rounded-[18px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+    >
+      <div className="relative aspect-[2/3] overflow-hidden rounded-[18px] bg-[#101016] shadow-xl shadow-black/25 ring-1 ring-white/[0.045] transition duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_18px_45px_rgba(244,63,94,0.13)] group-hover:ring-primary/25">
+        {currentImage && !imageFailed ? (
+          <img
+            key={currentImage}
+            src={currentImage}
+            alt={title}
+            className="h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.045]"
+            loading={index < 8 ? 'eager' : 'lazy'}
+            decoding="async"
+            referrerPolicy="no-referrer"
+            onError={() => {
+              setImageIndex((value) => {
+                if (value < candidates.length - 1) return value + 1;
+                setImageFailed(true);
+                return value;
+              });
+            }}
+          />
+        ) : (
+          <div className="flex h-full w-full items-end bg-[radial-gradient(circle_at_24%_18%,rgba(244,63,94,0.38),transparent_32%),linear-gradient(145deg,#1f1119,#07070a)] p-4">
+            <span className="line-clamp-3 text-base font-black leading-tight text-white/82">{title}</span>
+          </div>
+        )}
+
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.04),transparent_25%,rgba(0,0,0,0.46)_58%,rgba(0,0,0,0.92))]" />
+        <span className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/44 text-white/76 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition duration-200 group-hover:bg-primary/18 group-hover:text-white">
+          <Heart className="h-4 w-4" />
+        </span>
+
+        <div className="absolute inset-x-0 bottom-0 p-3.5">
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            <span className="rounded-full border border-white/10 bg-white/[0.08] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/72">{format}</span>
+            {status ? <span className="rounded-full border border-primary/22 bg-primary/12 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-primary">{status}</span> : null}
+          </div>
+          <h3 className="line-clamp-2 min-h-[34px] text-[15px] font-black leading-[1.12] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]">{title}</h3>
+          <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-bold text-white/62">
+            <span className="truncate">{genres.length ? genres.join(' / ') : 'Anime'}</span>
+            <span className="shrink-0">{year || 'TBA'}</span>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-black text-white/66">
+            <span className="inline-flex items-center gap-1 text-yellow-300">
+              <Star className="h-3.5 w-3.5 fill-current" />
+              {score ? score.toFixed(1) : 'N/A'}
+            </span>
+            <span className="shrink-0">{episodes ? `${episodes} eps` : 'TBA'}</span>
+          </div>
+        </div>
+      </div>
+    </Link>
   );
 }
 
@@ -485,6 +939,12 @@ export default function DesktopExplore() {
   const [visualFilters, setVisualFilters] = useState<Record<VisualFilterKey, string>>(() => filtersFromSearchParams(searchParams));
   const [localSort, setLocalSort] = useState<LocalSortKey>(() => localSortFromSearchParams(searchParams));
   const [searchFocused, setSearchFocused] = useState(false);
+  const [spotlightIndex, setSpotlightIndex] = useState(0);
+  const [spotlightPaused, setSpotlightPaused] = useState(false);
+  const [yearMenuOpen, setYearMenuOpen] = useState(false);
+  const [visibleResultCount, setVisibleResultCount] = useState(EXPLORE_INITIAL_RESULTS);
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const prefersReducedMotion = usePrefersReducedMotion();
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     try {
       return JSON.parse(localStorage.getItem('streamnyaa.desktop.recentExploreSearches') || '[]').slice(0, 6);
@@ -532,11 +992,18 @@ export default function DesktopExplore() {
       if (event.key === 'Escape') {
         setSearchFocused(false);
         setFiltersOpen(false);
+        setYearMenuOpen(false);
       }
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
   }, []);
+
+  useEffect(() => {
+    setVisibleResultCount(EXPLORE_INITIAL_RESULTS);
+    setExpandedRows({});
+    setYearMenuOpen(false);
+  }, [localSort, mode, query, visualFilters, year]);
 
   const selected = modeConfig[mode];
   const activeVisualFilterCount = useMemo(
@@ -549,6 +1016,10 @@ export default function DesktopExplore() {
       .map((key) => ({ key, label: visualFilterGroups.find((group) => group.key === key)?.label || key, value: visualFilters[key] })),
     [visualFilters],
   );
+  const activePresetLabel = useMemo(() => {
+    const match = filterPresets.find((preset) => Object.entries(preset.filters).every(([key, value]) => visualFilters[key as VisualFilterKey] === value));
+    return match?.label || '';
+  }, [visualFilters]);
   const providerFormat = visualFilters.format === 'Any' ? '' : visualFilters.format.replace(/\s+/g, '_').toUpperCase();
   const providerGenre = visualFilters.genre === 'Any' ? '' : visualFilters.genre;
   const providerStatus = visualFilters.status === 'Airing'
@@ -564,14 +1035,43 @@ export default function DesktopExplore() {
       ? 'score'
       : selected.sort;
 
-  const updateVisualFilter = (key: VisualFilterKey, value: string) => {
-    setVisualFilters((current) => ({ ...current, [key]: value }));
+  const applyFilterState = (
+    nextFilters: Record<VisualFilterKey, string>,
+    options?: { mode?: ExploreMode; sort?: LocalSortKey; closeFilters?: boolean },
+  ) => {
+    setVisualFilters(nextFilters);
+    if (options?.mode) setMode(options.mode);
+    if (options?.sort) setLocalSort(options.sort);
+    if (options?.closeFilters) setFiltersOpen(false);
+
     const next = new URLSearchParams(searchParams);
-    if (value === 'Any') next.delete(key);
-    else next.set(key, value);
+    (Object.keys(defaultVisualFilters) as VisualFilterKey[]).forEach((key) => {
+      const value = nextFilters[key];
+      if (!value || value === 'Any') next.delete(key);
+      else next.set(key, value);
+    });
+    if (options?.mode) {
+      next.set('mode', options.mode);
+      if (options.mode === 'year') next.set('year', String(year));
+      else next.delete('year');
+    }
+    if (options?.sort && options.sort !== 'best') next.set('order', options.sort);
+    if (options?.sort === 'best') next.delete('order');
     setSearchParams(next, { replace: true });
-    const preference = key === 'audio' ? audioPreferenceFromFilter(value) : null;
+
+    const preference = audioPreferenceFromFilter(nextFilters.audio);
     if (preference) saveDesktopAudioPreference(preference);
+  };
+
+  const updateVisualFilter = (key: VisualFilterKey, value: string) => {
+    applyFilterState({ ...visualFilters, [key]: value });
+  };
+  const applyPreset = (preset: typeof filterPresets[number]) => {
+    applyFilterState({ ...defaultVisualFilters, ...preset.filters }, {
+      mode: preset.mode,
+      sort: preset.sort,
+      closeFilters: false,
+    });
   };
   const updateLocalSort = (value: LocalSortKey) => {
     setLocalSort(value);
@@ -581,10 +1081,7 @@ export default function DesktopExplore() {
     setSearchParams(next, { replace: true });
   };
   const clearAllFilters = () => {
-    setVisualFilters(defaultVisualFilters);
-    const next = new URLSearchParams(searchParams);
-    (Object.keys(defaultVisualFilters) as VisualFilterKey[]).forEach((key) => next.delete(key));
-    setSearchParams(next, { replace: true });
+    applyFilterState(defaultVisualFilters);
   };
   const updateMode = (item: ExploreMode) => {
     const next = new URLSearchParams(searchParams);
@@ -593,19 +1090,25 @@ export default function DesktopExplore() {
     else next.delete('year');
     setSearchParams(next, { replace: true });
   };
+  const updateYear = (nextYear: number) => {
+    setYear(nextYear);
+    setYearMenuOpen(false);
+    const next = new URLSearchParams(searchParams);
+    next.set('mode', 'year');
+    next.set('year', String(nextYear));
+    setSearchParams(next, { replace: true });
+  };
   const searchQuery = useQuery({
     queryKey: ['desktop-explore-results', query, mode, year, providerFormat, providerGenre, providerStatus, providerSort],
     queryFn: async () => {
-      if (query.trim()) return searchAnime(query, 1, providerFormat, '', providerGenre, providerSort, providerStatus);
-      if (mode === 'year') return fetchTopAnimeByYear(year);
-      if (mode === 'popular') return fetchPopularAnime();
-      if (mode === 'airing') return fetchTopAiring();
-      if (mode === 'upcoming') return fetchUpcomingAnime();
-      if (mode === 'trending') return searchAnime('', 1, providerFormat, '', providerGenre, providerSort, providerStatus || 'airing');
-      return searchAnime(query, 1, providerFormat, '', providerGenre, providerSort, providerStatus);
+      if (query.trim()) return fetchExploreSearchPages(query, providerFormat, providerGenre, providerSort, providerStatus, EXPLORE_SEARCH_PAGE_LIMIT);
+      if (mode === 'year') return fetchTopAnimeByYear(year, EXPLORE_SEARCH_PAGE_LIMIT);
+      if (mode === 'trending') return fetchExploreSearchPages('', providerFormat, providerGenre, providerSort, providerStatus || 'airing');
+      return fetchExploreSearchPages('', providerFormat, providerGenre, providerSort, providerStatus);
     },
     staleTime: 1000 * 60 * 20,
     retry: 1,
+    placeholderData: (previousData) => previousData,
   });
 
   useEffect(() => {
@@ -624,9 +1127,10 @@ export default function DesktopExplore() {
 
   const seasonalQuery = useQuery({
     queryKey: ['desktop-explore-seasonal', currentSeason.season, currentSeason.year],
-    queryFn: () => fetchAnimeSeason(currentSeason.season, currentSeason.year),
-    staleTime: 1000 * 60 * 15,
+    queryFn: () => fetchSeasonalSpotlightCatalog(currentSeason.season, currentSeason.year),
+    staleTime: SEASONAL_SPOTLIGHT_CACHE_TTL,
     retry: 1,
+    placeholderData: (previousData) => previousData,
   });
   const popularQuery = useQuery({
     queryKey: ['desktop-explore-popular'],
@@ -656,13 +1160,15 @@ export default function DesktopExplore() {
     () => filterAnimeList(rawResults, visualFilters, currentYear, localSort, query),
     [currentYear, localSort, query, rawResults, visualFilters],
   );
+  const visibleResults = useMemo(() => results.slice(0, visibleResultCount), [results, visibleResultCount]);
+  const canShowMoreResults = visibleResultCount < results.length;
   const rows = useMemo(() => {
     const used = new Set<string>();
     return [
-      { title: 'Seasonal Anime', data: buildExploreRow(seasonalQuery.data?.data || [], fallbackByMode.airing, 10, used), loading: seasonalQuery.isLoading },
-      { title: 'Popular Picks', data: buildExploreRow(popularQuery.data?.data || [], fallbackByMode.popular, 10, used), loading: popularQuery.isLoading },
-      { title: 'Top Airing', data: buildExploreRow(topAiringQuery.data?.data || [], fallbackByMode.top, 10, used), loading: topAiringQuery.isLoading },
-      { title: 'Upcoming', data: buildExploreRow(upcomingQuery.data?.data || [], fallbackByMode.upcoming, 10, used), loading: upcomingQuery.isLoading },
+      { title: 'Seasonal Anime', data: buildExploreRow(seasonalQuery.data?.data || [], fallbackByMode.airing, 24, used), loading: seasonalQuery.isLoading },
+      { title: 'Popular Picks', data: buildExploreRow(popularQuery.data?.data || [], fallbackByMode.popular, 24, used), loading: popularQuery.isLoading },
+      { title: 'Top Airing', data: buildExploreRow(topAiringQuery.data?.data || [], fallbackByMode.top, 24, used), loading: topAiringQuery.isLoading },
+      { title: 'Upcoming', data: buildExploreRow(upcomingQuery.data?.data || [], fallbackByMode.upcoming, 24, used), loading: upcomingQuery.isLoading },
     ];
   }, [
     popularQuery.data?.data,
@@ -678,6 +1184,52 @@ export default function DesktopExplore() {
     () => rows.map((row) => ({ ...row, data: filterAnimeList(row.data, visualFilters, currentYear, localSort) })),
     [currentYear, localSort, rows, visualFilters],
   );
+  const isUpdatingResults = searchQuery.isFetching && !searchQuery.isLoading;
+  const spotlightItems = useMemo(() => buildSpotlightItems(seasonalQuery.data?.data || []), [seasonalQuery.data?.data]);
+  const activeSpotlight = spotlightItems.length ? spotlightItems[spotlightIndex % spotlightItems.length] : null;
+  const activeSpotlightTitle = activeSpotlight?.title || activeSpotlight?.title_english || activeSpotlight?.title_romaji || 'current-season anime';
+  const resultsHeading = query ? `Results for "${query}"` : mode === 'trending' ? 'Trending Now' : selected.label;
+  const resultsSubtitle = query
+    ? 'Matched by title, English, Romaji, native names, and aliases.'
+    : mode === 'trending'
+      ? 'The most popular anime right now'
+      : selected.description;
+  const visibleSpotlightDotCount = Math.min(spotlightItems.length, 8);
+  const spotlightDotGroupSize = visibleSpotlightDotCount ? Math.ceil(spotlightItems.length / visibleSpotlightDotCount) : 1;
+  const activeSpotlightDot = visibleSpotlightDotCount ? Math.min(visibleSpotlightDotCount - 1, Math.floor((spotlightIndex % spotlightItems.length) / spotlightDotGroupSize)) : 0;
+
+  useEffect(() => {
+    setSpotlightIndex(0);
+  }, [currentSeason.season, currentSeason.year]);
+
+  useEffect(() => {
+    if (!spotlightItems.length) return;
+    setSpotlightIndex((value) => value % spotlightItems.length);
+  }, [spotlightItems.length]);
+
+  useEffect(() => {
+    if (prefersReducedMotion || spotlightPaused || spotlightItems.length < 2) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      setSpotlightIndex((value) => (value + 1) % spotlightItems.length);
+    }, SPOTLIGHT_ROTATION_MS);
+    return () => window.clearInterval(timer);
+  }, [prefersReducedMotion, spotlightItems.length, spotlightPaused]);
+
+  useEffect(() => {
+    if (!spotlightItems.length || typeof window === 'undefined') return;
+    const next = spotlightItems[(spotlightIndex + 1) % spotlightItems.length];
+    const source = spotlightArtworkCandidatesFor(next)[0];
+    if (!source) return;
+    const image = new Image();
+    image.referrerPolicy = 'no-referrer';
+    image.src = source;
+  }, [spotlightIndex, spotlightItems]);
+
+  const moveSpotlight = (direction: -1 | 1) => {
+    if (!spotlightItems.length) return;
+    setSpotlightIndex((value) => (value + direction + spotlightItems.length) % spotlightItems.length);
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -709,17 +1261,31 @@ export default function DesktopExplore() {
   }, [recentSearches]);
 
   return (
-    <div className="px-6 py-6">
+    <div className="px-5 py-4">
       <Seo title="Explore Anime | StreamNyaa Desktop" description="Desktop anime discovery." canonicalPath="/search" robots="noindex, nofollow" />
 
-      <section className="desktop-premium-surface overflow-hidden rounded-2xl p-6">
-        <div className="flex flex-wrap items-end justify-between gap-5">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Explore</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-white">Find anime that actually matches the category.</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">{selected.description}</p>
+      <section
+        className="relative min-h-[292px] overflow-hidden rounded-[28px] bg-[#07070b] p-5 pl-6 shadow-[0_24px_80px_rgba(0,0,0,0.38)] ring-1 ring-white/[0.045] lg:pl-8"
+        onMouseEnter={() => setSpotlightPaused(true)}
+        onMouseLeave={() => setSpotlightPaused(false)}
+        onFocus={() => setSpotlightPaused(true)}
+        onBlur={() => setSpotlightPaused(false)}
+      >
+        <SpotlightArtwork anime={activeSpotlight} title={activeSpotlightTitle} />
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(5,5,8,0.92)_0%,rgba(8,6,10,0.62)_40%,rgba(8,6,10,0.18)_72%,rgba(5,5,8,0.56)_100%)]" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_84%_6%,rgba(255,47,104,0.30),transparent_31%),radial-gradient(circle_at_55%_72%,rgba(255,190,90,0.12),transparent_28%),linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,0.26))]" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#07070b] to-transparent" />
+        <div className="relative grid gap-4 lg:grid-cols-[minmax(320px,0.8fr)_minmax(460px,1.2fr)] lg:items-start">
+          <div className="min-w-0 max-w-2xl">
+            <p className="text-[11px] font-black uppercase tracking-[0.28em] text-primary">Explore</p>
+            <h1 className="mt-2 text-4xl font-semibold tracking-[-0.055em] text-white xl:text-5xl">
+              Discover <span className="text-primary">anime</span>
+            </h1>
+            <p className="mt-2 max-w-[540px] text-sm leading-6 text-white/[0.78]">
+              Find your next obsession. Explore trending titles, timeless classics, and hidden gems from around the anime world.
+            </p>
           </div>
-          <form onSubmit={submit} className="relative flex w-full max-w-[680px] flex-1 gap-3 rounded-2xl border border-white/8 bg-black/18 p-2 backdrop-blur lg:min-w-[420px]">
+          <form onSubmit={submit} className="relative flex w-full max-w-[560px] gap-3 justify-self-end rounded-2xl bg-black/[0.36] p-1.5 shadow-[0_16px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.055] backdrop-blur-xl lg:mt-12">
             <label className="relative flex-1">
               <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/36" />
               <input
@@ -728,28 +1294,31 @@ export default function DesktopExplore() {
                 onChange={(event) => setInput(event.target.value)}
                 onFocus={() => setSearchFocused(true)}
                 aria-label="Search anime"
-                placeholder="Search title, alias, native name, or season..."
-                className="h-12 w-full rounded-xl border border-white/10 bg-black/32 pl-12 pr-12 text-sm text-white outline-none placeholder:text-white/36 focus:border-white/24"
+                placeholder="Search anime, characters, studios..."
+                className="h-12 w-full rounded-xl bg-black/[0.52] pl-12 pr-12 text-base text-white outline-none transition placeholder:text-white/38 focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.24)]"
               />
               {input ? (
                 <button
                   type="button"
                   aria-label="Clear search"
                   onClick={clearSearch}
-                  className="absolute right-3 top-1/2 rounded-full p-1 text-white/42 hover:bg-white/10 hover:text-white"
+                  className="absolute right-3 top-1/2 rounded-full p-1 text-white/42 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)]"
                 >
                   <X className="h-4 w-4" />
                 </button>
               ) : (
-                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded-md border border-white/8 bg-white/[0.04] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/34">Ctrl K</span>
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded-md bg-white/[0.06] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/42 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">Ctrl K</span>
               )}
             </label>
-            <button className="h-12 rounded-xl bg-primary px-6 text-sm font-black text-white shadow-lg shadow-primary/18 transition-colors hover:bg-primary/90">
-              Search
+            <button
+              type="submit"
+              className="h-12 rounded-xl bg-[linear-gradient(135deg,#ff3b63,#e11d48)] px-7 text-sm font-black text-white shadow-[0_12px_34px_rgba(244,63,94,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_40px_rgba(244,63,94,0.32)] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,255,255,0.16),0_16px_40px_rgba(244,63,94,0.32)] active:translate-y-0 active:scale-[0.98]"
+            >
+              {isUpdatingResults ? 'Updating' : 'Search'}
             </button>
             {searchFocused && suggestions.length ? (
               <div
-                className="absolute left-0 right-0 top-[calc(100%+10px)] z-30 rounded-2xl border border-white/10 bg-[#101014]/95 p-3 shadow-2xl shadow-black/40 backdrop-blur"
+                className="absolute left-0 right-0 top-[calc(100%+10px)] z-30 rounded-2xl bg-[#101014]/95 p-3 shadow-2xl shadow-black/40 ring-1 ring-white/[0.055] backdrop-blur"
                 onMouseDown={(event) => event.preventDefault()}
               >
                 <div className="mb-2 flex items-center justify-between">
@@ -772,7 +1341,7 @@ export default function DesktopExplore() {
                         next.set('mode', mode);
                         setSearchParams(next, { replace: true });
                       }}
-                      className="rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-xs font-bold text-white/62 hover:border-primary/40 hover:text-white"
+                      className="rounded-full bg-white/[0.055] px-3 py-1.5 text-xs font-bold text-white/62 transition hover:bg-primary/15 hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)]"
                     >
                       {item}
                     </button>
@@ -783,145 +1352,339 @@ export default function DesktopExplore() {
           </form>
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          <SlidersHorizontal className="h-4 w-4 text-primary" />
-          {(Object.keys(modeConfig) as ExploreMode[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => updateMode(item)}
-              className={`rounded-full border px-4 py-2 text-sm font-black transition-colors ${
-                mode === item
-                  ? 'border-transparent bg-primary text-white shadow-lg shadow-primary/12'
-                  : 'border-white/10 bg-white/[0.045] text-white/64 hover:border-white/18 hover:bg-white/[0.07] hover:text-white'
-              }`}
-            >
-              {modeConfig[item].label}
-            </button>
-          ))}
-          {mode === 'year' ? (
-            <select
-              value={year}
-              onChange={(event) => {
-                const nextYear = Number(event.target.value);
-                setYear(nextYear);
-                const next = new URLSearchParams(searchParams);
-                next.set('mode', 'year');
-                next.set('year', String(nextYear));
-                setSearchParams(next, { replace: true });
-              }}
-              className="ml-2 h-10 rounded-full border border-white/10 bg-black/35 px-3 text-sm font-black text-white outline-none"
-            >
-              {Array.from({ length: 8 }).map((_, index) => {
-                const item = currentYear - index;
-                return <option key={item} value={item}>{item}</option>;
-              })}
-            </select>
+        <div className="relative mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            {Array.from({ length: visibleSpotlightDotCount }).map((_, index) => (
+              <button
+                key={`spotlight-dot-${index}`}
+                type="button"
+                onClick={() => setSpotlightIndex(Math.min(index * spotlightDotGroupSize, spotlightItems.length - 1))}
+                className={`h-2.5 rounded-full transition-all duration-300 ${
+                  index === activeSpotlightDot
+                    ? 'w-7 bg-primary shadow-[0_0_16px_rgba(244,63,94,0.55)]'
+                    : 'w-2.5 bg-white/[0.22] hover:bg-white/[0.52]'
+                }`}
+                aria-label={`Show spotlight group ${index + 1}`}
+              />
+            ))}
+          </div>
+          {spotlightItems.length > 1 ? (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => moveSpotlight(-1)}
+                className="grid h-10 w-10 place-items-center rounded-2xl bg-black/[0.38] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition duration-200 hover:-translate-y-0.5 hover:bg-primary/[0.16] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                aria-label="Previous seasonal spotlight"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => moveSpotlight(1)}
+                className="grid h-10 w-10 place-items-center rounded-2xl bg-black/[0.38] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition duration-200 hover:-translate-y-0.5 hover:bg-primary/[0.16] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                aria-label="Next seasonal spotlight"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+            </div>
           ) : null}
+        </div>
+
+        <div className="relative mt-3 rounded-2xl bg-black/[0.24] p-2 shadow-2xl shadow-black/18 ring-1 ring-white/[0.035] backdrop-blur-xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex h-10 items-center gap-2 px-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/58">
+              <SlidersHorizontal className="h-4 w-4 text-primary" />
+              Refine your search
+            </span>
+            <PremiumSelect
+              value={mode}
+              onChange={(value) => updateMode(value as ExploreMode)}
+              ariaLabel="Category"
+              options={sortModes.map((item) => ({ label: item.label, value: item.mode }))}
+            />
+            <PremiumSelect
+              value={localSort}
+              onChange={(value) => updateLocalSort(value as LocalSortKey)}
+              ariaLabel="Order by"
+              options={localSortModes}
+            />
+            {(['genre', 'yearRange', 'status'] as VisualFilterKey[]).map((key) => {
+              const group = visualFilterGroups.find((item) => item.key === key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFiltersOpen(true)}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white/[0.055] px-4 text-sm font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition duration-200 hover:-translate-y-0.5 hover:bg-primary/[0.14] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                >
+                  {key === 'genre' ? <Sparkles className="h-4 w-4 text-primary" /> : key === 'yearRange' ? <CalendarDays className="h-4 w-4 text-primary" /> : <TrendingUp className="h-4 w-4 text-primary" />}
+                  {group?.label || key}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition duration-200 active:translate-y-0 ${
+                activeVisualFilterCount
+                  ? 'bg-white/[0.06] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] hover:-translate-y-0.5 hover:bg-primary/[0.14]'
+                  : 'cursor-default bg-white/[0.035] text-white/34'
+              }`}
+              disabled={!activeVisualFilterCount}
+            >
+              <X className={`h-4 w-4 ${activeVisualFilterCount ? 'text-primary' : 'text-white/28'}`} />
+              Clear
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div className="sticky top-3 z-20 mt-3 overflow-x-auto pb-1">
+        <div className="inline-flex min-w-full items-center gap-1 rounded-2xl bg-[#0d0d12]/82 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.045] backdrop-blur-xl">
+          {(Object.keys(modeConfig) as ExploreMode[]).map((item) => {
+            const Icon = modeIcons[item];
+            return (
+              <button
+                key={item}
+                type="button"
+                onClick={() => updateMode(item)}
+                className={`group relative inline-flex h-10 shrink-0 items-center gap-2 overflow-hidden rounded-xl px-4 text-sm font-black transition duration-200 active:scale-[0.98] ${
+                  mode === item
+                    ? 'bg-[linear-gradient(135deg,#ff3b63,#e11d48)] text-white shadow-[0_10px_26px_rgba(244,63,94,0.24)]'
+                    : 'text-white/62 hover:-translate-y-0.5 hover:bg-white/[0.06] hover:text-white'
+                }`}
+              >
+                <Icon className={`h-4 w-4 transition duration-200 ${mode === item ? 'text-white' : 'text-white/28 group-hover:text-primary/80'}`} />
+                {mode === item ? <span className="absolute inset-x-4 bottom-0 h-px bg-white/50" /> : null}
+                <span className="relative whitespace-nowrap">{modeConfig[item].label}</span>
+              </button>
+            );
+          })}
+          {mode === 'year' ? (
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setYearMenuOpen((value) => !value)}
+                aria-haspopup="listbox"
+                aria-expanded={yearMenuOpen}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-black/35 px-3 text-sm font-black text-white outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.055] transition duration-200 hover:-translate-y-0.5 hover:bg-white/[0.07] focus-visible:ring-primary/55 active:translate-y-0"
+              >
+                {year}
+                <ChevronDown className={`h-4 w-4 text-white/50 transition ${yearMenuOpen ? 'rotate-180 text-primary' : ''}`} />
+              </button>
+              {yearMenuOpen ? (
+                <div
+                  role="listbox"
+                  className="absolute left-0 top-[calc(100%+8px)] z-40 w-28 overflow-hidden rounded-xl bg-[#111116]/98 p-1 shadow-2xl shadow-black/45 ring-1 ring-primary/20 backdrop-blur-xl"
+                >
+                  {Array.from({ length: 10 }).map((_, index) => {
+                    const item = currentYear - index;
+                    const active = item === year;
+                    return (
+                      <button
+                        key={item}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        onClick={() => updateYear(item)}
+                        className={`flex h-9 w-full items-center rounded-lg px-3 text-left text-sm font-black transition ${
+                          active
+                            ? 'bg-primary text-white shadow-[0_8px_22px_rgba(244,63,94,0.22)]'
+                            : 'text-white/70 hover:bg-white/[0.075] hover:text-white'
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <span className="mx-1 hidden h-8 w-px shrink-0 bg-white/[0.055] lg:block" />
+          {quickFormatFilters.map((item) => {
+            const Icon = item.icon;
+            const active = visualFilters.format === item.value;
+            return (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => updateVisualFilter('format', active ? 'Any' : item.value)}
+                className={`group inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-3.5 text-sm font-black transition duration-200 active:scale-[0.98] ${
+                  active
+                    ? 'bg-white text-black shadow-[0_8px_22px_rgba(255,255,255,0.10)]'
+                    : 'text-white/58 hover:-translate-y-0.5 hover:bg-white/[0.075] hover:text-white'
+                }`}
+              >
+                <Icon className={`h-4 w-4 transition duration-200 ${active ? 'text-black/72' : 'text-white/34 group-hover:text-primary'}`} />
+                {item.label}
+              </button>
+            );
+          })}
           <button
             type="button"
             onClick={() => setFiltersOpen((value) => !value)}
-            className={`rounded-full border px-4 py-2 text-sm font-black transition-colors ${
+            className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-3.5 text-sm font-black transition duration-200 active:scale-[0.98] lg:ml-auto ${
               filtersOpen || activeVisualFilterCount
-                ? 'border-white/14 bg-white/[0.10] text-white'
-                : 'border-white/10 bg-white/[0.045] text-white/64 hover:border-white/18 hover:bg-white/[0.07] hover:text-white'
+                ? 'bg-primary/16 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(244,63,94,0.10)]'
+                : 'text-white/58 hover:-translate-y-0.5 hover:bg-white/[0.075] hover:text-white'
             }`}
           >
-            Filters{activeVisualFilterCount ? ` (${activeVisualFilterCount})` : ''}
+            <Filter className="h-4 w-4 text-primary/90" />
+            Filters
           </button>
-          <label className="ml-auto flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-white/34">
-            Category
-            <select
-              value={mode}
-              onChange={(event) => updateMode(event.target.value as ExploreMode)}
-              className="h-10 rounded-full border border-white/10 bg-black/35 px-3 text-sm font-black normal-case tracking-normal text-white outline-none"
-            >
-              {sortModes.map((item) => (
-                <option key={item.mode} value={item.mode}>{item.label}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-white/34">
-            Order
-            <select
-              value={localSort}
-              onChange={(event) => updateLocalSort(event.target.value as LocalSortKey)}
-              className="h-10 rounded-full border border-white/10 bg-black/35 px-3 text-sm font-black normal-case tracking-normal text-white outline-none"
-            >
-              {localSortModes.map((item) => (
-                <option key={item.value} value={item.value}>{item.label}</option>
-              ))}
-            </select>
-          </label>
         </div>
+      </div>
 
         {activeFilterEntries.length ? (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/38">
+          <div className="relative mt-2 flex flex-wrap items-center gap-2 rounded-2xl bg-white/[0.028] px-3 py-2 ring-1 ring-white/[0.035]">
+            <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/42">
               <Filter className="h-3.5 w-3.5 text-primary" />
-              Active
+              Active filters
             </span>
+            {activePresetLabel ? (
+              <span className="rounded-full bg-primary/15 px-3 py-1.5 text-xs font-black text-primary">
+                {activePresetLabel}
+              </span>
+            ) : null}
             {activeFilterEntries.map((item) => (
               <button
                 key={item.key}
                 type="button"
                 onClick={() => updateVisualFilter(item.key, 'Any')}
-                className="inline-flex items-center gap-2 rounded-full border border-primary/22 bg-primary/10 px-3 py-1.5 text-xs font-bold text-white/82 hover:border-primary/45 hover:bg-primary/16"
+                className="inline-flex items-center gap-2 rounded-full bg-white/[0.055] px-3 py-1.5 text-xs font-bold text-white/78 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] transition hover:-translate-y-0.5 hover:bg-primary/14 hover:text-white"
               >
                 {item.label}: {item.value}
                 <X className="h-3.5 w-3.5 text-white/52" />
               </button>
             ))}
-            <button type="button" onClick={clearAllFilters} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-xs font-black text-white/50 hover:text-white">
+            <button type="button" onClick={clearAllFilters} className="rounded-full bg-white/[0.04] px-3 py-1.5 text-xs font-black text-white/50 transition hover:bg-white/[0.07] hover:text-white">
               Clear all
             </button>
           </div>
         ) : null}
 
-        {filtersOpen ? (
-          <div className="mt-5 rounded-2xl border border-white/8 bg-black/24 p-4 shadow-xl shadow-black/20">
-            <div className="mb-4 flex items-center justify-between gap-3">
+        <div
+          className={`relative transition-[max-height,opacity,transform,margin] duration-300 ease-out ${
+            filtersOpen
+              ? 'mt-3 max-h-[720px] translate-y-0 overflow-visible opacity-100'
+              : 'mt-0 max-h-0 -translate-y-2 overflow-hidden opacity-0'
+          }`}
+          aria-hidden={!filtersOpen}
+        >
+          <div className="rounded-2xl bg-black/24 p-4 shadow-xl shadow-black/20 ring-1 ring-white/[0.04]">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-black text-white">Discovery filters</p>
-                <p className="mt-1 text-xs font-semibold text-white/42">Combine title search with genre, format, source, year, score, status, season, and episode length.</p>
+                <p className="mt-1 text-xs font-semibold text-white/42">Use presets for fast discovery, then refine only what matters.</p>
               </div>
-              <button
-                type="button"
-                onClick={clearAllFilters}
-                className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-black text-white/56 transition-colors hover:border-white/18 hover:text-white"
-              >
-                Clear
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen(false)}
+                  className="rounded-full bg-white/[0.04] px-3 py-1.5 text-xs font-black text-white/56 transition hover:bg-white/[0.07] hover:text-white"
+                >
+                  Done
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="rounded-full bg-white/[0.04] px-3 py-1.5 text-xs font-black text-white/56 transition hover:bg-white/[0.07] hover:text-white"
+                >
+                  Reset
+                </button>
+              </div>
             </div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {visualFilterGroups.map((group) => (
-                <label key={group.key} className="rounded-xl border border-white/8 bg-white/[0.035] p-3">
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-white/38">{group.label}</span>
-                  <select
-                    value={visualFilters[group.key]}
-                    onChange={(event) => updateVisualFilter(group.key, event.target.value)}
-                    className="mt-2 h-10 w-full rounded-lg border border-white/10 bg-black/35 px-3 text-sm font-bold text-white outline-none focus:border-white/22"
+
+            <div className="mb-4 flex flex-wrap gap-2">
+              {filterPresets.map((preset) => {
+                const Icon = preset.icon;
+                const active = activePresetLabel === preset.label;
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => applyPreset(preset)}
+                    className={`group inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 text-left text-sm font-black transition duration-200 active:scale-[0.98] ${
+                      active
+                        ? 'bg-[linear-gradient(135deg,#ff3b63,#e11d48)] text-white shadow-[0_10px_28px_rgba(244,63,94,0.22)]'
+                        : 'bg-white/[0.045] text-white/70 hover:-translate-y-0.5 hover:bg-white/[0.075] hover:text-white'
+                    }`}
+                    title={preset.description}
                   >
-                    {group.options.map((option) => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                </label>
+                    <Icon className={`h-4 w-4 ${active ? 'text-white' : 'text-primary/80 group-hover:text-primary'}`} />
+                    <span>{preset.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="grid gap-3 xl:grid-cols-2">
+              {filterSections.map((section) => (
+                <div key={section.title} className="rounded-2xl bg-white/[0.026] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] ring-1 ring-white/[0.026]">
+                  <div className="mb-3 flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">{section.title}</p>
+                      <p className="mt-1 text-[11px] font-semibold text-white/38">{section.description}</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {section.keys.map((key) => {
+                      const group = visualFilterGroups.find((item) => item.key === key);
+                      if (!group) return null;
+                      return (
+                        <div key={group.key} className="min-w-0 rounded-xl bg-[#08080d]/58 p-2.5 ring-1 ring-white/[0.035]">
+                          <span className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-white/36">{group.label}</span>
+                          <PremiumSelect
+                            value={visualFilters[group.key]}
+                            onChange={(value) => updateVisualFilter(group.key, value)}
+                            ariaLabel={group.label}
+                            minWidth="w-full"
+                            options={group.options.map((option) => ({ label: option, value: option }))}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
-        ) : null}
-      </section>
+        </div>
 
-      <section className="mt-8">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold tracking-[-0.01em] text-white">{query ? `Results for "${query}"` : selected.label}</h2>
-          <span className="rounded-full border border-white/10 bg-white/[0.045] px-3 py-1.5 text-sm font-bold text-white/42">{results.length} titles</span>
+      <section className="mt-4">
+        <div className="mb-4 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">{query ? 'Search results' : 'Browse category'}</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-white">{resultsHeading}</h2>
+            <p className="mt-1 text-xs font-semibold text-white/52">{isUpdatingResults ? 'Refreshing matching titles...' : resultsSubtitle}</p>
+          </div>
         </div>
         {searchQuery.isLoading ? <SkeletonGrid /> : results.length ? (
-          <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-            {results.map((anime) => <AnimeCard key={anime.mal_id || anime.id || anime.title} anime={anime} />)}
-          </div>
+          <>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
+              {visibleResults.map((anime, index) => <ExploreAnimeCard key={anime.mal_id || anime.id || anime.title} anime={anime} index={index} />)}
+            </div>
+            <div className="mt-5 flex justify-center">
+              {canShowMoreResults ? (
+                <button
+                  type="button"
+                  onClick={() => setVisibleResultCount((value) => value + EXPLORE_RESULTS_INCREMENT)}
+                  className="rounded-full bg-white/[0.06] px-5 py-2.5 text-sm font-black text-white/76 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition duration-200 hover:-translate-y-0.5 hover:bg-primary/16 hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                >
+                  Show more
+                </button>
+              ) : results.length > EXPLORE_INITIAL_RESULTS ? (
+                <button
+                  type="button"
+                  onClick={() => setVisibleResultCount(EXPLORE_INITIAL_RESULTS)}
+                  className="rounded-full bg-white/[0.045] px-5 py-2.5 text-sm font-black text-white/58 transition duration-200 hover:bg-white/[0.075] hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)]"
+                >
+                  Show less
+                </button>
+              ) : null}
+            </div>
+          </>
         ) : (
           <EmptyState text={searchQuery.isError ? 'Anime data could not load. Check your connection and try again.' : query ? `No results for "${query}". Try fewer filters, another title alias, or a broader category.` : 'Try removing filters or searching another title.'}>
             {query ? (
@@ -930,12 +1693,12 @@ export default function DesktopExplore() {
               </button>
             ) : null}
             {activeVisualFilterCount ? (
-              <button type="button" onClick={clearAllFilters} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70 hover:text-white">
+              <button type="button" onClick={clearAllFilters} className="rounded-full bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70 hover:bg-white/[0.08] hover:text-white">
                 Clear filters
               </button>
             ) : null}
             {searchQuery.isError ? (
-              <button type="button" onClick={() => searchQuery.refetch()} className="rounded-full border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70 hover:text-white">
+              <button type="button" onClick={() => searchQuery.refetch()} className="rounded-full bg-white/[0.06] px-4 py-2 text-sm font-black text-white/70 hover:bg-white/[0.08] hover:text-white">
                 Retry
               </button>
             ) : null}
@@ -944,19 +1707,34 @@ export default function DesktopExplore() {
       </section>
 
       {!query ? (
-        <div className="mt-10 space-y-9">
-          {filteredRows.map((row) => (
+        <div className="mt-8 space-y-8">
+          {filteredRows.map((row) => {
+            const rowExpanded = Boolean(expandedRows[row.title]);
+            const rowItems = rowExpanded ? row.data : row.data.slice(0, EXPLORE_ROW_INITIAL_ITEMS);
+            return (
             <section key={row.title}>
-              <h2 className="mb-4 text-xl font-semibold tracking-[-0.01em] text-white">{row.title}</h2>
+              <div className="mb-4 flex items-center justify-between gap-4">
+                <h2 className="text-xl font-semibold tracking-[-0.01em] text-white">{row.title}</h2>
+                {row.data.length > EXPLORE_ROW_INITIAL_ITEMS ? (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedRows((current) => ({ ...current, [row.title]: !rowExpanded }))}
+                    className="rounded-full bg-white/[0.045] px-3.5 py-2 text-xs font-black text-white/58 transition duration-200 hover:-translate-y-0.5 hover:bg-primary/14 hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                  >
+                    {rowExpanded ? 'Show less' : 'Show more'}
+                  </button>
+                ) : null}
+              </div>
               {row.loading ? <SkeletonGrid /> : row.data.length ? (
-                <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-                  {row.data.map((anime) => <AnimeCard key={`${row.title}-${anime.mal_id || anime.id || anime.title}`} anime={anime} />)}
+                <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
+                  {rowItems.map((anime, index) => <ExploreAnimeCard key={`${row.title}-${anime.mal_id || anime.id || anime.title}`} anime={anime} index={index} />)}
                 </div>
               ) : (
                 <EmptyState text={`${row.title} could not load right now.`} />
               )}
             </section>
-          ))}
+            );
+          })}
         </div>
       ) : null}
     </div>

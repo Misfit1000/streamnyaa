@@ -3,6 +3,7 @@ import {
   AuthSession,
   AuthUser,
   fetchAccount,
+  fetchSessionUser,
   loadStoredSession,
   normalizeOAuthSessionFromHash,
   refreshSession,
@@ -32,6 +33,11 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function isRecoverableAccountLookupError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /Could not reach StreamNyaa login services|Failed to fetch|NetworkError|Account status could not be checked/i.test(message);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -58,6 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const account = await fetchAccount(refreshedSession);
         setUser(account.user);
         setIsAdmin(Boolean(account.isAdmin));
+        return;
+      }
+      if (isRecoverableAccountLookupError(accountError)) {
+        const fallbackUser = nextSession.user || await fetchSessionUser(nextSession);
+        setUser(fallbackUser);
+        setIsAdmin(false);
         return;
       }
       throw accountError;

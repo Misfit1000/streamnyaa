@@ -192,6 +192,17 @@ select:focus-visible {
   }
 }
 
+@keyframes desktop-hero-copy {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes desktop-shimmer {
   from {
     background-position: 220% 0;

@@ -5,17 +5,21 @@ import {
   buildDesktopDiagnosticsReport,
   clearLocalPlaybackHistory,
   clearDesktopPlaybackCache,
+  controlLocalPlayer,
   copyDesktopDiagnosticsReport,
   DEFAULT_DESKTOP_AUDIO_PREFERENCE,
   DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE,
+  DEFAULT_DESKTOP_AUTO_PLAY_NEXT_EPISODE,
   getDesktopDiagnostics,
   getDesktopRuntimeStatus,
+  loadDesktopAutoPlayNextEpisode,
   loadDesktopAutoOpenBestSource,
   loadCachedDesktopRuntimeStatus,
   loadDesktopAudioPreference,
   loadDesktopPlaybackSettings,
   loadLocalPlaybackHistory,
   saveDesktopAutoOpenBestSource,
+  saveDesktopAutoPlayNextEpisode,
   saveDesktopAudioPreference,
   saveDesktopPlaybackSettings,
   stopDesktopPlayback,
@@ -42,6 +46,7 @@ export default function DesktopSettings() {
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
   const [autoOpenBestSource, setAutoOpenBestSource] = useState(() => loadDesktopAutoOpenBestSource());
+  const [autoPlayNextEpisode, setAutoPlayNextEpisode] = useState(() => loadDesktopAutoPlayNextEpisode());
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(() => loadCachedDesktopRuntimeStatus());
   const [diagnostics, setDiagnostics] = useState<DesktopDiagnosticsStatus | null>(null);
   const [historyCount, setHistoryCount] = useState(() => loadLocalPlaybackHistory().length);
@@ -85,6 +90,15 @@ export default function DesktopSettings() {
     setAutoOpenBestSource(enabled);
     saveDesktopAutoOpenBestSource(enabled);
     setMessage({ tone: 'success', text: enabled ? 'Episode clicks now open the best source directly.' : 'Episode clicks now select first, then wait for your play action.' });
+  };
+
+  const updateAutoPlayNextEpisode = (enabled: boolean) => {
+    setAutoPlayNextEpisode(enabled);
+    saveDesktopAutoPlayNextEpisode(enabled);
+    void controlLocalPlayer('auto_next_episode', enabled ? 1 : 0).catch(() => {
+      // No active player is normal on the settings screen; the watch page syncs this on playback start.
+    });
+    setMessage({ tone: 'success', text: enabled ? 'Finished episodes will open the next available episode automatically.' : 'Finished episodes will wait for your next-episode action.' });
   };
 
   const clearStorage = async () => {
@@ -251,6 +265,37 @@ export default function DesktopSettings() {
                 }`}
               >
                 Select episode first
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-[1.4rem] border border-white/10 bg-black/25 p-4">
+            <p className="text-[11px] font-black uppercase tracking-wider text-white/34">Next episode behavior</p>
+            <p className="mt-2 text-sm leading-6 text-white/54">
+              The MPV player next button always opens the next aired episode. Automatic next episode only runs when this is enabled.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => updateAutoPlayNextEpisode(true)}
+                className={`rounded-2xl border px-4 py-3 text-sm font-black transition-colors ${
+                  autoPlayNextEpisode
+                    ? 'border-primary/60 bg-primary text-white'
+                    : 'border-white/10 bg-black/35 text-white/70 hover:border-primary/40 hover:text-white'
+                }`}
+              >
+                Auto-play next episode
+              </button>
+              <button
+                type="button"
+                onClick={() => updateAutoPlayNextEpisode(DEFAULT_DESKTOP_AUTO_PLAY_NEXT_EPISODE)}
+                className={`rounded-2xl border px-4 py-3 text-sm font-black transition-colors ${
+                  !autoPlayNextEpisode
+                    ? 'border-primary/60 bg-primary text-white'
+                    : 'border-white/10 bg-black/35 text-white/70 hover:border-primary/40 hover:text-white'
+                }`}
+              >
+                Ask before next episode
               </button>
             </div>
           </div>

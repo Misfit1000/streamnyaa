@@ -17,7 +17,7 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const RQBIT_URL: &str = "http://127.0.0.1:3030";
 const PER_SESSION_CACHE_MAX_BYTES: u64 = 3 * 1024 * 1024 * 1024;
@@ -213,6 +213,8 @@ struct PlaybackProgressRequest {
 struct PlayerControlRequest {
     action: String,
     value: Option<f64>,
+    key: Option<String>,
+    text: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -223,6 +225,22 @@ struct PlayerControlStatus {
     volume: Option<f64>,
     current_seconds: Option<f64>,
     duration_seconds: Option<f64>,
+}
+
+#[derive(Clone, Serialize)]
+struct PlayerNextEpisodePayload {
+    reason: String,
+}
+
+#[derive(Clone, Serialize)]
+struct PlayerAutoNextPayload {
+    enabled: bool,
+}
+
+#[derive(Clone, Serialize)]
+struct PlayerSettingChangedPayload {
+    key: String,
+    value: String,
 }
 
 #[derive(Clone)]
@@ -271,6 +289,7 @@ struct SourceCacheEntry {
 }
 
 static MANAGER: OnceLock<Mutex<PlaybackManager>> = OnceLock::new();
+static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 static PLAYBACK_OPERATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static PLAYBACK_SWITCH_GENERATION: AtomicU64 = AtomicU64::new(0);
 static SOURCE_CACHE: OnceLock<Mutex<HashMap<String, SourceCacheEntry>>> = OnceLock::new();
@@ -435,7 +454,6 @@ fn candidate_paths(command: &str) -> Vec<String> {
     let manifest_bin = Path::new(env!("CARGO_MANIFEST_DIR")).join("bin");
 
     if command.eq_ignore_ascii_case("mpv") {
-        paths.push(manifest_bin.join("mpv.exe").to_string_lossy().to_string());
         if let Ok(exe) = env::current_exe() {
             if let Some(dir) = exe.parent() {
                 paths.push(
@@ -453,6 +471,7 @@ fn candidate_paths(command: &str) -> Vec<String> {
                 );
             }
         }
+        paths.push(manifest_bin.join("mpv.exe").to_string_lossy().to_string());
         push_env_candidate(
             &mut paths,
             env::var("ProgramW6432").ok(),
@@ -477,7 +496,6 @@ fn candidate_paths(command: &str) -> Vec<String> {
     }
 
     if command.eq_ignore_ascii_case("rqbit") {
-        paths.push(manifest_bin.join("rqbit.exe").to_string_lossy().to_string());
         if let Ok(exe) = env::current_exe() {
             if let Some(dir) = exe.parent() {
                 paths.push(
@@ -495,6 +513,7 @@ fn candidate_paths(command: &str) -> Vec<String> {
                 );
             }
         }
+        paths.push(manifest_bin.join("rqbit.exe").to_string_lossy().to_string());
         push_env_candidate(
             &mut paths,
             env::var("LOCALAPPDATA").ok(),
@@ -507,7 +526,7 @@ fn candidate_paths(command: &str) -> Vec<String> {
 
 fn bundled_player_skin_script() -> Option<PathBuf> {
     let manifest_bin = Path::new(env!("CARGO_MANIFEST_DIR")).join("bin");
-    let mut paths = vec![manifest_bin.join("streamnyaa-player.lua")];
+    let mut paths = Vec::new();
 
     if let Ok(exe) = env::current_exe() {
         if let Some(dir) = exe.parent() {
@@ -519,6 +538,8 @@ fn bundled_player_skin_script() -> Option<PathBuf> {
             );
         }
     }
+
+    paths.push(manifest_bin.join("streamnyaa-player.lua"));
 
     paths.into_iter().find(|path| path.exists())
 }
@@ -2943,8 +2964,32 @@ fn control_player(request: PlayerControlRequest) -> Result<PlayerControlStatus, 
         }
         "subtitle" => r#"{"command":["cycle","sub"],"request_id":71}"#.to_string(),
         "audio" => r#"{"command":["cycle","audio"],"request_id":72}"#.to_string(),
+        "auto_next_episode" => {
+            let enabled = request.value.unwrap_or(0.0) >= 0.5;
+            format!(
+                r#"{{"command":["script-message","streamnyaa-set-auto-next","{}"],"request_id":73}}"#,
+                if enabled { "true" } else { "false" }
+            )
+        }
+        "player_preference" => {
+            let key = request
+                .key
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "Missing player preference key.".to_string())?;
+            let value = request
+                .text
+                .clone()
+                .unwrap_or_else(|| request.value.map(|item| item.to_string()).unwrap_or_default());
+            format!(
+                r#"{{"command":["script-message","streamnyaa-set-player-preference",{},{}],"request_id":75}}"#,
+                json_string(key),
+                json_string(&value)
+            )
+        }
         "show_status" => {
-            r#"{"command":["show-text","StreamNyaa player ready",1200],"request_id":73}"#
+            r#"{"command":["show-text","StreamNyaa player ready",1200],"request_id":74}"#
                 .to_string()
         }
         other => return Err(format!("Unsupported player control: {}", other)),
@@ -3238,6 +3283,47 @@ fn spawn_subtitle_import_request_watcher(ipc: String, request_file: PathBuf) {
     });
 }
 
+fn emit_player_next_episode_request(reason: &str) {
+    let payload = PlayerNextEpisodePayload {
+        reason: reason.trim().to_string(),
+    };
+    if let Some(app) = APP_HANDLE.get() {
+        if let Err(error) = app.emit("streamnyaa-player-next-episode", payload) {
+            log_info(format!("Could not emit next-episode request: {}", error));
+        }
+    } else {
+        log_info("Could not emit next-episode request: app handle is unavailable");
+    }
+}
+
+fn emit_player_auto_next_changed(enabled: bool) {
+    let payload = PlayerAutoNextPayload { enabled };
+    if let Some(app) = APP_HANDLE.get() {
+        if let Err(error) = app.emit("streamnyaa-player-auto-next-changed", payload) {
+            log_info(format!("Could not emit auto-next change: {}", error));
+        }
+    } else {
+        log_info("Could not emit auto-next change: app handle is unavailable");
+    }
+}
+
+fn emit_player_setting_changed(key: &str, value: &str) {
+    let payload = PlayerSettingChangedPayload {
+        key: key.trim().to_string(),
+        value: value.to_string(),
+    };
+    if payload.key.is_empty() {
+        return;
+    }
+    if let Some(app) = APP_HANDLE.get() {
+        if let Err(error) = app.emit("streamnyaa-player-setting-changed", payload) {
+            log_info(format!("Could not emit player setting change: {}", error));
+        }
+    } else {
+        log_info("Could not emit player setting change: app handle is unavailable");
+    }
+}
+
 fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
     let event = value.get("event").and_then(|item| item.as_str());
     if event != Some("client-message") {
@@ -3258,6 +3344,46 @@ fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
         }
     }
     if message == Some("streamnyaa-lua-ready") {
+        return;
+    }
+    if message == Some("streamnyaa-next-episode-request") {
+        if !player_ipc_is_active(ipc) {
+            return;
+        }
+        let reason = args
+            .get(1)
+            .and_then(|item| item.as_str())
+            .unwrap_or("manual");
+        log_info(format!("MPV requested next episode: {}", reason));
+        emit_player_next_episode_request(reason);
+        return;
+    }
+    if message == Some("streamnyaa-auto-next-changed") {
+        if !player_ipc_is_active(ipc) {
+            return;
+        }
+        let enabled = args
+            .get(1)
+            .and_then(|item| item.as_str())
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "true" | "1" | "yes" | "on"
+                )
+            })
+            .unwrap_or(false);
+        log_info(format!("MPV changed auto-next preference: {}", enabled));
+        emit_player_auto_next_changed(enabled);
+        return;
+    }
+    if message == Some("streamnyaa-player-setting-changed") {
+        if !player_ipc_is_active(ipc) {
+            return;
+        }
+        let key = args.get(1).and_then(|item| item.as_str()).unwrap_or_default();
+        let value = args.get(2).and_then(|item| item.as_str()).unwrap_or_default();
+        log_info(format!("MPV changed player setting: {}={}", key, value));
+        emit_player_setting_changed(key, value);
         return;
     }
     if message != Some("streamnyaa-import-subtitle-request") {
@@ -5098,6 +5224,7 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             log_info("StreamNyaa desktop app starting");
+            let _ = APP_HANDLE.set(app.handle().clone());
             if let (Some(window), Some(icon)) = (
                 app.get_webview_window("main"),
                 app.default_window_icon().cloned(),

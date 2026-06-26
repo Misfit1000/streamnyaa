@@ -19,7 +19,7 @@ const AnimeDownloads = lazy(() => import('./pages/AnimeDownloads'));
 const AnimeCompare = lazy(() => import('./pages/AnimeCompare'));
 const DesktopSettings = lazy(() => import('./pages/DesktopSettings'));
 const DesktopHistory = lazy(() => import('./pages/DesktopHistory'));
-const Dashboard = lazy(() => import('./pages/Dashboard'));
+const DesktopProfile = lazy(() => import('./pages/DesktopProfile'));
 const Login = lazy(() => import('./pages/Login'));
 
 const queryClient = createAppQueryClient();
@@ -104,7 +104,7 @@ export default function AppDesktop() {
                   <Route path="login" element={<Login />} />
                   <Route path="reset-password" element={<Login />} />
                   <Route path="dashboard" element={<DesktopHistory />} />
-                  <Route path="profile" element={<Dashboard />} />
+                  <Route path="profile" element={<DesktopProfile />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
                 </Routes>

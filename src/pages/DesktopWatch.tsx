@@ -12,11 +12,21 @@ import {
   formatPlaybackTime,
   controlLocalPlayer,
   getLocalPlaybackProgress,
+  listenDesktopPlayerAutoNextChanged,
+  listenDesktopPlayerNextEpisode,
+  listenDesktopPlayerSettingChanged,
+  loadDesktopPlayerPreferences,
+  loadDesktopAutoPlayNextEpisode,
   loadDesktopAutoOpenBestSource,
   loadDesktopAudioPreference,
   openLocalSourceNow,
+  saveDesktopPlayerSetting,
+  subscribeDesktopAutoPlayNextEpisode,
+  subscribeDesktopPlayerPreferences,
+  saveDesktopAutoPlayNextEpisode,
   saveDesktopAutoOpenBestSource,
   saveDesktopAudioPreference,
+  syncDesktopPlayerPreferencesToPlayer,
   stopDesktopPlayback,
   subscribeDesktopAutoOpenBestSource,
   updateLocalPlaybackHistoryProgress,
@@ -272,6 +282,198 @@ function cleanTitle(value = '') {
   return value.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+const SOURCE_TITLE_STOP_TOKENS = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'from',
+  'season',
+  'episode',
+  'movie',
+  'film',
+  'ova',
+  'ona',
+  'special',
+  'part',
+  'cour',
+  'english',
+  'japanese',
+  'sub',
+  'subs',
+  'dub',
+  'dual',
+  'audio',
+  'multi',
+  'web',
+  'webrip',
+  'webdl',
+  'bluray',
+  'bdrip',
+  'hevc',
+  'x264',
+  'x265',
+  'h264',
+  'h265',
+  'aac',
+  'flac',
+]);
+
+function normalizeSourceMatchText(value = '') {
+  return cleanTitle(
+    String(value || '')
+      .replace(/&#39;|&apos;/g, "'")
+      .replace(/&amp;/g, ' and ')
+      .replace(/[’‘`´]/g, "'")
+      .replace(/[×]/g, ' x '),
+  ).toLowerCase();
+}
+
+function uniqueSourceTokens(value = '') {
+  const seen = new Set<string>();
+  return normalizeSourceMatchText(value)
+    .split(' ')
+    .filter((token) => {
+      if (!token || token.length < 3 || SOURCE_TITLE_STOP_TOKENS.has(token) || /^\d+$/.test(token)) return false;
+      if (seen.has(token)) return false;
+      seen.add(token);
+      return true;
+    });
+}
+
+function sourceAliasForms(value = '') {
+  const normalized = normalizeSourceMatchText(value);
+  if (!normalized) return [];
+  const withoutSeason = normalizeSourceMatchText(stripSeasonDecorators(value));
+  const withoutJoinerX = normalizeSourceMatchText(normalized.replace(/\bx\b/g, ' '));
+  return uniqueTextValues([normalized, withoutSeason, withoutJoinerX])
+    .filter((title) => title.length >= 4);
+}
+
+function parseSourceAnimeTitle(value = '') {
+  let title = String(value || '')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/g, ' and ')
+    .replace(/[’‘`´]/g, "'")
+    .replace(/[×]/g, ' x ')
+    .trim();
+
+  title = title.replace(/^\s*(?:\[[^\]]+\]|\([^)]+\))\s*/g, ' ');
+
+  const splitPatterns = [
+    /\bS\d{1,2}E\d{1,4}\b/i,
+    /\b(?:ep|episode)\.?\s*0?\d{1,4}\b/i,
+    /\s+-\s+0?\d{1,4}(?:v\d+)?\b/i,
+    /\s+-\s+\[[^\]]*(?:480|720|1080|2160)p[^\]]*\]/i,
+    /\s+-\s+\([^)]+(?:480|720|1080|2160)p[^)]*\)/i,
+  ];
+  const splitAt = splitPatterns
+    .map((pattern) => {
+      const match = title.match(pattern);
+      return typeof match?.index === 'number' && match.index > 0 ? match.index : -1;
+    })
+    .filter((index) => index > 0)
+    .sort((left, right) => left - right)[0];
+  if (splitAt) title = title.slice(0, splitAt);
+
+  title = title
+    .replace(/\b(?:480|720|1080|2160)p\b.*$/i, ' ')
+    .replace(/\b(?:x26[45]|h\.?26[45]|avc|hevc|aac|flac|opus|ddp\d?(?:\.\d)?|10bits?|8bits?)\b.*$/i, ' ')
+    .replace(/\b(?:web(?:rip|dl)?|blu(?:ray)?|bd(?:rip)?|hdtv|amzn|cr|netflix|nf)\b.*$/i, ' ')
+    .replace(/\b(?:dual|multi)[\s-]?audio\b.*$/i, ' ')
+    .replace(/\b(?:multi|eng|english)[\s-]?(?:sub|subs|dub)\b.*$/i, ' ');
+
+  return normalizeSourceMatchText(title);
+}
+
+function sourceTitleCompatibility(title = '', aliases: string[]) {
+  const parsedTitle = parseSourceAnimeTitle(title);
+  const aliasForms = uniqueTextValues(aliases.flatMap((alias) => sourceAliasForms(alias)));
+  const sourceTokens = uniqueSourceTokens(parsedTitle);
+  let bestScore = 0;
+  let bestSharedTokens: string[] = [];
+
+  for (const alias of aliasForms) {
+    const aliasTokens = uniqueSourceTokens(alias);
+    if (parsedTitle && alias && parsedTitle.includes(alias)) {
+      return {
+        compatible: true,
+        score: 100,
+        parsedTitle,
+        sharedTokens: aliasTokens,
+        reason: 'accepted:exact-title',
+      };
+    }
+    if (parsedTitle && alias && alias.includes(parsedTitle) && sourceTokens.length >= 2) {
+      return {
+        compatible: true,
+        score: 92,
+        parsedTitle,
+        sharedTokens: sourceTokens,
+        reason: 'accepted:source-title-contained',
+      };
+    }
+    if (aliasTokens.length < 2 || sourceTokens.length < 2) continue;
+    const sharedTokens = aliasTokens.filter((token) => sourceTokens.includes(token));
+    const score = sharedTokens.length / Math.max(aliasTokens.length, 1);
+    if (score > bestScore) {
+      bestScore = score;
+      bestSharedTokens = sharedTokens;
+    }
+    if (sharedTokens.length >= 2 && score >= 0.78) {
+      return {
+        compatible: true,
+        score: Math.round(score * 100),
+        parsedTitle,
+        sharedTokens,
+        reason: 'accepted:token-title',
+      };
+    }
+  }
+
+  const reason = bestSharedTokens.length === 1
+    ? 'rejected:single-token-overlap'
+    : 'rejected:title-mismatch';
+  return {
+    compatible: false,
+    score: Math.round(bestScore * 100),
+    parsedTitle,
+    sharedTokens: bestSharedTokens,
+    reason,
+  };
+}
+
+function debugSourceDecision(payload: Record<string, unknown>) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (localStorage.getItem('streamnyaa.debugSourceMatching') !== 'true') return;
+    console.debug('[StreamNyaa source match]', payload);
+  } catch {
+    // Debug logging should never affect source filtering.
+  }
+}
+
+function debugSourceLoading(step: string, payload: Record<string, unknown>) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (localStorage.getItem('streamnyaa.debugSourceLoading') !== 'true') return;
+    console.debug(`[StreamNyaa Watch] source-load ${step}`, payload);
+  } catch {
+    // Timing logs are optional diagnostics and must never affect source loading.
+  }
+}
+
+function isSafeSourceQueryTitle(value = '') {
+  const normalized = normalizeSourceMatchText(value);
+  if (!normalized || normalized === 'anime') return false;
+  const rawTokens = normalized.split(' ').filter(Boolean);
+  const distinctiveTokens = uniqueSourceTokens(normalized);
+  if (rawTokens.length >= 2) return true;
+  return distinctiveTokens.length === 1
+    && distinctiveTokens[0].length >= 5
+    && !['hunter', 'journey', 'piece'].includes(distinctiveTokens[0]);
+}
+
 function titleForInstallment(item: any) {
   const structuredTitle = item?.title && typeof item.title === 'object'
     ? item.title?.english || item.title?.romaji || item.title?.native
@@ -473,18 +675,32 @@ function hasSeasonTitleSignal(value = '') {
 
 function sourceSearchTitleVariants(anime: any, routeId = '', installment?: InstallmentItem | null) {
   const routeTitle = titleFromRoute(routeId);
+  const structuredTitle = anime?.title && typeof anime.title === 'object'
+    ? [anime.title?.english, anime.title?.romaji, anime.title?.native]
+    : [];
+  const listedTitles = Array.isArray(anime?.titles)
+    ? anime.titles.flatMap((item: any) => [item?.title, item?.name, item])
+    : [];
+  const synonyms = Array.isArray(anime?.synonyms) ? anime.synonyms : [];
+  const titleSynonyms = Array.isArray(anime?.title_synonyms) ? anime.title_synonyms : [];
   const raw = uniqueTextValues([
     installment?.name,
     anime?.title_romaji,
     anime?.title_english,
+    anime?.title_japanese,
     anime?.title,
     routeTitle,
-  ]);
+    ...structuredTitle,
+    ...listedTitles,
+    ...synonyms,
+    ...titleSynonyms,
+  ].map((value) => (typeof value === 'string' ? value : '')));
 
   return uniqueTextValues(raw.flatMap((title) => {
     const cleaned = cleanTitle(title);
     const stripped = stripSeasonDecorators(title);
-    return [title, cleaned, stripped];
+    const withoutJoinerX = cleaned.replace(/\bx\b/ig, ' ');
+    return [title, cleaned, stripped, withoutJoinerX];
   }));
 }
 
@@ -523,15 +739,7 @@ function sourceAliasVariants(anime: any, routeId = '', installment?: Installment
 }
 
 function sourceTitleMatchesAlias(title = '', aliases: string[]) {
-  const normalizedTitle = cleanTitle(title).toLowerCase();
-  if (!normalizedTitle || !aliases.length) return false;
-  return aliases.some((alias) => {
-    if (normalizedTitle.includes(alias)) return true;
-    const tokens = alias.split(' ').filter((token) => token.length >= 3);
-    if (tokens.length < 2) return false;
-    const matched = tokens.filter((token) => normalizedTitle.includes(token)).length;
-    return matched / tokens.length >= 0.78;
-  });
+  return sourceTitleCompatibility(title, aliases).compatible;
 }
 
 function isDubSource(title = '') {
@@ -688,7 +896,8 @@ function classifySource(
   const reasons: string[] = [];
   const title = source.title || '';
   const aliases = sourceAliasVariants(context.anime, context.routeId, context.installment);
-  const titleMatch = sourceTitleMatchesAlias(title, aliases);
+  const titleCompatibility = sourceTitleCompatibility(title, aliases);
+  const titleMatch = titleCompatibility.compatible;
   const explicitKind = sourceInstallmentKind(title);
   const sourceSeason = sourceSeasonNumber(title);
   const sourcePart = sourcePartNumber(title);
@@ -714,7 +923,9 @@ function classifySource(
   if (isAncillarySource(title)) reasons.push('Non-episode extra');
   if (!validInput) reasons.push('Torrent hash missing');
   if (!seeded) reasons.push('No seeders');
-  if (!titleMatch) reasons.push('Loose title match');
+  if (titleMatch) reasons.push(titleCompatibility.reason);
+  else reasons.push(titleCompatibility.reason);
+  if (titleCompatibility.parsedTitle) reasons.push(`Parsed title: ${titleCompatibility.parsedTitle}`);
   if (mismatchReason) reasons.push(mismatchReason);
   if (episodeMatch) reasons.push(context.installment?.kind === 'movie' ? 'Movie match' : 'Exact episode');
   if (explicitKind) reasons.push(explicitKind === 'season' ? 'TV season' : explicitKind.toUpperCase());
@@ -723,12 +934,22 @@ function classifySource(
   if (context.installment?.label) reasons.push(context.installment.label);
   if (videoSized) reasons.push('Sane size');
 
+  debugSourceDecision({
+    selectedAnime: context.anime?.title || context.anime?.title_english || context.anime?.title_romaji,
+    selectedEpisode: context.episode,
+    searchQuery: source.matchedQuery || '',
+    rawSourceTitle: title,
+    parsedSourceAnimeTitle: titleCompatibility.parsedTitle,
+    titleMatchScore: titleCompatibility.score,
+    sharedTokens: titleCompatibility.sharedTokens,
+    episodeMatch,
+    rejectionReason: titleCompatibility.compatible ? '' : titleCompatibility.reason,
+  });
+
   if (!isAncillarySource(title) && validInput && titleMatch && !mismatchReason) {
     if (episodeMatch && seeded && hasRequiredSeasonSignal && hasRequiredPartSignal) matchTier = isBatchSource(title) ? 'likely' : 'exact';
     else if (episodeMatch || seeded) matchTier = 'likely';
     else matchTier = 'broad';
-  } else if (!isAncillarySource(title) && validInput && !mismatchReason && episodeMatch) {
-    matchTier = 'broad';
   }
 
   const structurallyPlayable = validInput
@@ -738,7 +959,7 @@ function classifySource(
     && matchTier !== 'rejected';
   const playableStatus: SourcePlayableStatus = !validInput
     ? 'unsupported'
-    : mismatchReason || (!titleMatch && matchTier !== 'broad')
+    : mismatchReason || !titleMatch
       ? 'likely-wrong'
       : !seeded
         ? 'low-seed'
@@ -1409,6 +1630,8 @@ export default function DesktopWatch() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
   const [autoOpenBestSource, setAutoOpenBestSource] = useState(() => loadDesktopAutoOpenBestSource());
+  const [autoPlayNextEpisode, setAutoPlayNextEpisode] = useState(() => loadDesktopAutoPlayNextEpisode());
+  const [playerPreferences, setPlayerPreferences] = useState(() => loadDesktopPlayerPreferences());
   const [audioMode, setAudioMode] = useState<AudioMode>(() => {
     const requestedType = searchParams.get('type');
     if (requestedType === 'dub' || requestedType === 'sub') return requestedType;
@@ -1444,6 +1667,8 @@ export default function DesktopWatch() {
   const playbackRequestIdRef = useRef(0);
   const [pendingAutoPlayEpisode, setPendingAutoPlayEpisode] = useState<number | null>(null);
   const requestedType = searchParams.get('type');
+  const autoPlayNextEpisodeRef = useRef(autoPlayNextEpisode);
+  const lastNextEpisodeRequestRef = useRef<{ episode: number; reason: string; at: number } | null>(null);
 
   const toggleSourceDetails = useCallback((sourceId: string) => {
     setExpandedSourceIds((current) => {
@@ -1457,6 +1682,77 @@ export default function DesktopWatch() {
   useEffect(() => subscribeDesktopAutoOpenBestSource(() => {
     setAutoOpenBestSource(loadDesktopAutoOpenBestSource());
   }), []);
+
+  useEffect(() => subscribeDesktopAutoPlayNextEpisode(() => {
+    const preferences = loadDesktopPlayerPreferences();
+    setPlayerPreferences(preferences);
+    setAutoPlayNextEpisode(preferences.autoNextEpisode);
+  }), []);
+
+  useEffect(() => subscribeDesktopPlayerPreferences(() => {
+    const preferences = loadDesktopPlayerPreferences();
+    setPlayerPreferences(preferences);
+    setAutoPlayNextEpisode(preferences.autoNextEpisode);
+  }), []);
+
+  useEffect(() => {
+    autoPlayNextEpisodeRef.current = autoPlayNextEpisode;
+  }, [autoPlayNextEpisode]);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void listenDesktopPlayerAutoNextChanged((event) => {
+      if (!mounted) return;
+      const enabled = Boolean(event.enabled);
+      autoPlayNextEpisodeRef.current = enabled;
+      const preferences = saveDesktopAutoPlayNextEpisode(enabled);
+      setPlayerPreferences(preferences);
+      setAutoPlayNextEpisode(enabled);
+      void controlLocalPlayer('auto_next_episode', enabled ? 1 : 0).catch(() => {
+        // The player can close while the preference event is in flight.
+      });
+    }).then((cleanup) => {
+      if (!mounted) {
+        cleanup();
+        return;
+      }
+      unlisten = cleanup;
+    });
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!playback) return;
+    void syncDesktopPlayerPreferencesToPlayer(playerPreferences).catch(() => {
+      // The player can still be opening while the watch page is syncing preferences.
+    });
+  }, [playerPreferences, playback]);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void listenDesktopPlayerSettingChanged((event) => {
+      if (!mounted || !event.key) return;
+      const preferences = saveDesktopPlayerSetting(event.key, event.value ?? '');
+      setPlayerPreferences(preferences);
+      setAutoPlayNextEpisode(preferences.autoNextEpisode);
+      autoPlayNextEpisodeRef.current = preferences.autoNextEpisode;
+    }).then((cleanup) => {
+      if (!mounted) {
+        cleanup();
+        return;
+      }
+      unlisten = cleanup;
+    });
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     setSynopsisExpanded(false);
@@ -1803,18 +2099,46 @@ export default function DesktopWatch() {
     if (selectedEpisode <= 0) return false;
     return sourceSearchTitleVariants(anime, id, selectedInstallment).some((title) => {
       const cleaned = cleanTitle(title).trim().toLowerCase();
-      return Boolean(cleaned && cleaned !== 'anime');
+      return Boolean(cleaned && isSafeSourceQueryTitle(cleaned));
     });
   }, [anime, id, selectedEpisode, selectedInstallment]);
 
   const { data: sources, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
-    queryKey: ['desktop-watch-sources', anime?.title, anime?.title_english, anime?.title_romaji, selectedInstallment?.mal_id, selectedInstallment?.label, selectedEpisode, audioMode, audioPreference],
-    queryFn: async () => {
+    queryKey: ['desktop-watch-sources', anime?.title, anime?.title_english, anime?.title_romaji, selectedInstallment?.mal_id, selectedInstallment?.label, selectedEpisode, audioMode, audioPreference, sourceMode],
+    queryFn: async ({ signal }) => {
       const epPadded = String(selectedEpisode).padStart(2, '0');
-      const titleCandidates = sourceSearchTitleVariants(anime, id, selectedInstallment).slice(0, 6);
+      const titleCandidates = sourceSearchTitleVariants(anime, id, selectedInstallment)
+        .filter(isSafeSourceQueryTitle)
+        .slice(0, 6);
       const seasonHints = sourceSearchSeasonHints(anime, id, selectedInstallment);
       const partHints = sourceSearchPartHints(anime, id, selectedInstallment);
       const audioSuffix = audioMode === 'dub' ? ' dub' : '';
+      const requestId = `${Date.now().toString(36)}-${selectedEpisode}-${sourceMode}`;
+      const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const elapsedMs = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+      const isAborted = () => Boolean(signal?.aborted);
+      const finish = (items: RankedNyaaItem[], stage: string) => {
+        debugSourceLoading('done', {
+          request: requestId,
+          stage,
+          anime: anime?.title || anime?.title_english || anime?.title_romaji || id,
+          episode: selectedEpisode,
+          mode: sourceMode,
+          count: items.length,
+          totalMs: elapsedMs(),
+          aborted: isAborted(),
+        });
+        return items;
+      };
+
+      debugSourceLoading('start', {
+        request: requestId,
+        anime: anime?.title || anime?.title_english || anime?.title_romaji || id,
+        episode: selectedEpisode,
+        mode: sourceMode,
+        audioMode,
+        titleCandidates: titleCandidates.length,
+      });
 
       const normalizeSourcePool = (items: NyaaItem[]) => {
         const deduped = dedupeNyaaItems(items)
@@ -1843,8 +2167,17 @@ export default function DesktopWatch() {
       const combineSources = (items: RankedNyaaItem[]) => dedupeNyaaItems(items) as RankedNyaaItem[];
 
       const runQuery = async (query: string, options: { pages?: number; wide?: boolean; deep?: boolean }) => {
+        if (isAborted()) return [];
+        const queryStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         const result = await searchNyaa(query, '1_2', '0', '1', options);
-        return normalizeSourcePool(result);
+        const queryMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - queryStartedAt);
+        if (isAborted()) {
+          debugSourceLoading('stale-query', { request: requestId, query, ms: queryMs });
+          return [];
+        }
+        const normalized = normalizeSourcePool(result);
+        debugSourceLoading('provider', { request: requestId, query, raw: result.length, usable: normalized.length, ms: queryMs });
+        return normalized;
       };
 
       const attemptedQueries = new Set<string>();
@@ -1860,8 +2193,10 @@ export default function DesktopWatch() {
         }
 
         for (let index = 0; index < pending.length; index += SOURCE_QUERY_BATCH_SIZE) {
+          if (isAborted()) return [];
           const batch = pending.slice(index, index + SOURCE_QUERY_BATCH_SIZE);
           const results = await Promise.all(batch.map(async (query) => ({ query, items: await runQuery(query, options) })));
+          if (isAborted()) return [];
           const hitItems = combineSources(results.flatMap((result) => result.items));
           if (hitItems.length) return hitItems;
         }
@@ -1887,7 +2222,8 @@ export default function DesktopWatch() {
         ];
       });
       const exact = await tryQueries([...seasonCodeEpisodeQueries, ...exactEpisodeQueries], { pages: 2, wide: false, deep: false });
-      if (exact.some((source) => source.matchTier === 'exact')) return exact;
+      if (isAborted()) return finish([], 'aborted-after-exact');
+      if (exact.some((source) => source.matchTier === 'exact')) return finish(exact, 'exact');
 
       const seasonEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
         const stripped = stripSeasonDecorators(title) || cleanTitle(title);
@@ -1903,7 +2239,10 @@ export default function DesktopWatch() {
         return queries;
       }));
       const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 2, wide: true, deep: true });
-      if (seasonEpisode.some((source) => source.matchTier === 'exact')) return combineSources([...exact, ...seasonEpisode]);
+      if (isAborted()) return finish([], 'aborted-after-season');
+      const combinedSeason = combineSources([...exact, ...seasonEpisode]);
+      if (sourceMode === 'strict') return finish(combinedSeason, 'strict-season');
+      if (combinedSeason.some((source) => source.matchTier === 'exact' || source.matchTier === 'likely')) return finish(combinedSeason, 'exact-or-likely');
 
       const broadEpisodeQueries = titleCandidates.flatMap((title) => {
         const cleanedTitle = cleanTitle(title);
@@ -1915,16 +2254,17 @@ export default function DesktopWatch() {
       });
       const broad = await tryQueries(broadEpisodeQueries, { pages: 5, wide: true, deep: true });
       const combinedEpisode = combineSources([...exact, ...seasonEpisode, ...broad]);
-      if (combinedEpisode.some((source) => source.matchTier === 'exact' || source.matchTier === 'likely')) return combinedEpisode;
+      if (isAborted()) return finish([], 'aborted-after-broad');
+      if (combinedEpisode.some((source) => source.matchTier === 'exact' || source.matchTier === 'likely') || (sourceMode === 'balanced' && combinedEpisode.length)) return finish(combinedEpisode, 'broad-needed');
 
       const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 5, wide: true, deep: true });
-      if (fallback.length) return combineSources([...combinedEpisode, ...fallback]);
+      if (isAborted()) return finish([], 'aborted-after-fallback');
+      if (fallback.length) return finish(combineSources([...combinedEpisode, ...fallback]), 'fallback');
 
-      return [];
+      return finish([], 'empty');
     },
     enabled: sourceSearchReady,
     staleTime: 1000 * 60 * 15,
-    placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,
   });
 
@@ -2249,12 +2589,12 @@ export default function DesktopWatch() {
     }
     if (activeSourceId || playActionLockRef.current) {
       setPendingAutoPlayEpisode(targetEpisode);
-      setPlaybackNotice({ tone: 'loading', text: 'Current player handoff is still starting. The selected episode will open next.' });
+      setPlaybackNotice({ tone: 'loading', text: `Finding a verified source for episode ${targetEpisode}...` });
       return;
     }
     if (sourcesBusy) {
       setPendingAutoPlayEpisode(targetEpisode);
-      setPlaybackNotice({ tone: 'loading', text: 'Finding a verified same-episode source before opening playback...' });
+      setPlaybackNotice({ tone: 'loading', text: `Finding a verified source for episode ${targetEpisode}...` });
       return;
     }
     if (playableSources[0]) {
@@ -2263,6 +2603,55 @@ export default function DesktopWatch() {
     }
     setPendingAutoPlayEpisode(targetEpisode);
   }, [activeSourceId, airedCount, playSource, playableSources, selectEpisode, selectedEpisode, sourcesBusy]);
+
+  const playNextEpisode = useCallback((reason: 'manual' | 'ended' | string = 'manual') => {
+    const maxEpisode = Math.max(airedCount || 0, allEpisodes.length || 0, selectedEpisode || 1);
+    const nextEpisode = selectedEpisode + 1;
+    if (nextEpisode > maxEpisode) {
+      setPlaybackNotice({ tone: 'error', text: 'No next aired episode is available yet.' });
+      return;
+    }
+    if (reason === 'ended' && !autoPlayNextEpisodeRef.current) {
+      setPlaybackNotice({ tone: 'success', text: 'Episode finished. Use the next-episode button or enable Auto-play next episode in Settings.' });
+      return;
+    }
+    if (reason === 'ended') {
+      const now = Date.now();
+      const lastRequest = lastNextEpisodeRequestRef.current;
+      if (lastRequest && lastRequest.episode === nextEpisode && lastRequest.reason === reason && now - lastRequest.at < 3500) {
+        return;
+      }
+      lastNextEpisodeRequestRef.current = { episode: nextEpisode, reason, at: now };
+    } else {
+      lastNextEpisodeRequestRef.current = { episode: nextEpisode, reason, at: Date.now() };
+    }
+    setPlaybackNotice({
+      tone: 'loading',
+      text: reason === 'ended'
+        ? `Auto-opening episode ${nextEpisode}...`
+        : `Opening episode ${nextEpisode}...`,
+    });
+    playEpisodeNumber(nextEpisode);
+  }, [airedCount, allEpisodes.length, playEpisodeNumber, selectedEpisode]);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void listenDesktopPlayerNextEpisode((event) => {
+      if (!mounted) return;
+      playNextEpisode(event.reason || 'manual');
+    }).then((cleanup) => {
+      if (!mounted) {
+        cleanup();
+        return;
+      }
+      unlisten = cleanup;
+    });
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, [playNextEpisode]);
 
   const chooseEpisode = useCallback((episodeNumber: number) => {
     if (autoOpenBestSource) {
@@ -3185,8 +3574,8 @@ export default function DesktopWatch() {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Finding best source</p>
-                      <p className="mt-1 text-sm font-black text-white">Checking episode match, seed health, audio preference, and release quality.</p>
-                      <p className="mt-1 text-xs font-bold text-white/50">The first playable source will be ranked above the full list.</p>
+                      <p className="mt-1 text-sm font-black text-white">Searching sources for Episode {selectedEpisode}...</p>
+                      <p className="mt-1 text-xs font-bold text-white/50">Checking episode match, seed health, audio preference, and release quality.</p>
                     </div>
                     <Loader2 className="h-5 w-5 animate-spin text-primary" />
                   </div>
@@ -3309,8 +3698,8 @@ export default function DesktopWatch() {
                 <p className="text-lg font-black text-white">{sourceQuality === 'auto' ? 'No playable source found' : `No ${sourceQualityLabel(sourceQuality)} source found`}</p>
                 <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/50">
                   {sourceQuality === 'auto'
-                    ? 'Try switching audio mode, lowering quality expectations, or opening the manual source search for this title.'
-                    : 'This episode has sources in other qualities. Switch back to Auto or pick another quality to keep browsing.'}
+                    ? 'No confident title-compatible sources were found for this anime and episode. Try switching audio mode, using Broad, or opening manual source search.'
+                    : 'This episode has title-compatible sources in other qualities. Switch back to Auto or pick another quality to keep browsing.'}
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-3">
                   {sourceQuality !== 'auto' ? (

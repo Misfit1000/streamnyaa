@@ -73,7 +73,34 @@ export type DesktopPlayerControlAction =
   | 'speed'
   | 'subtitle'
   | 'audio'
+  | 'auto_next_episode'
+  | 'player_preference'
   | 'show_status';
+
+export type DesktopSubtitleStylePreferences = {
+  fontSize: string;
+  position: string;
+  textColor: string;
+  outline: string;
+  shadow: string;
+  background: string;
+  custom: boolean;
+};
+
+export type DesktopPlayerPreferences = {
+  autoNextEpisode: boolean;
+  autoSkipIntro: boolean;
+  autoSkipOutro: boolean;
+  rememberSpeed: boolean;
+  playbackSpeed: number;
+  volume: number;
+  muted: boolean;
+  subtitleStyle: DesktopSubtitleStylePreferences;
+};
+
+export type DesktopPlayerPreferencesPatch = Partial<Omit<DesktopPlayerPreferences, 'subtitleStyle'>> & {
+  subtitleStyle?: Partial<DesktopSubtitleStylePreferences>;
+};
 
 export type DesktopPlayerControlStatus = {
   ok: boolean;
@@ -141,8 +168,12 @@ const DESKTOP_SETTINGS_KEY = 'streamnyaa.desktopSettings';
 const DESKTOP_RUNTIME_STATUS_KEY = 'streamnyaa.desktopRuntimeStatus';
 const DESKTOP_AUDIO_PREFERENCE_KEY = 'streamnyaa.desktopAudioPreference';
 const DESKTOP_AUTO_OPEN_BEST_SOURCE_KEY = 'streamnyaa.desktopAutoOpenBestSource';
+const DESKTOP_AUTO_PLAY_NEXT_EPISODE_KEY = 'streamnyaa.desktopAutoPlayNextEpisode';
+const DESKTOP_PLAYER_PREFERENCES_KEY = 'streamnyaa.desktopPlayerPreferences';
 const DESKTOP_AUDIO_PREFERENCE_EVENT = 'streamnyaa:desktop-audio-preference';
 const DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT = 'streamnyaa:desktop-auto-open-best-source';
+const DESKTOP_AUTO_PLAY_NEXT_EPISODE_EVENT = 'streamnyaa:desktop-auto-play-next-episode';
+const DESKTOP_PLAYER_PREFERENCES_EVENT = 'streamnyaa:desktop-player-preferences';
 const LOCAL_PLAYBACK_HISTORY_EVENT = 'streamnyaa:local-playback-history';
 const LOCAL_PLAYBACK_HISTORY_LIMIT = 18;
 const COMPLETION_PERCENT_THRESHOLD = 92;
@@ -155,6 +186,25 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
 
 export const DEFAULT_DESKTOP_AUDIO_PREFERENCE: DesktopAudioPreference = 'sub-preferred';
 export const DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE = false;
+export const DEFAULT_DESKTOP_AUTO_PLAY_NEXT_EPISODE = false;
+export const DEFAULT_DESKTOP_PLAYER_PREFERENCES: DesktopPlayerPreferences = {
+  autoNextEpisode: DEFAULT_DESKTOP_AUTO_PLAY_NEXT_EPISODE,
+  autoSkipIntro: false,
+  autoSkipOutro: false,
+  rememberSpeed: true,
+  playbackSpeed: 1,
+  volume: 100,
+  muted: false,
+  subtitleStyle: {
+    fontSize: 'medium',
+    position: 'normal',
+    textColor: 'white',
+    outline: 'medium',
+    shadow: 'soft',
+    background: 'off',
+    custom: false,
+  },
+};
 
 function emitDesktopEvent(eventName: string) {
   if (typeof window === 'undefined') return;
@@ -175,6 +225,20 @@ export function subscribeDesktopAutoOpenBestSource(listener: () => void) {
   return () => window.removeEventListener(DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT, wrapped);
 }
 
+export function subscribeDesktopAutoPlayNextEpisode(listener: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const wrapped = () => listener();
+  window.addEventListener(DESKTOP_AUTO_PLAY_NEXT_EPISODE_EVENT, wrapped);
+  return () => window.removeEventListener(DESKTOP_AUTO_PLAY_NEXT_EPISODE_EVENT, wrapped);
+}
+
+export function subscribeDesktopPlayerPreferences(listener: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const wrapped = () => listener();
+  window.addEventListener(DESKTOP_PLAYER_PREFERENCES_EVENT, wrapped);
+  return () => window.removeEventListener(DESKTOP_PLAYER_PREFERENCES_EVENT, wrapped);
+}
+
 export function subscribeLocalPlaybackHistory(listener: () => void) {
   if (typeof window === 'undefined') return () => {};
   const wrapped = () => listener();
@@ -182,11 +246,33 @@ export function subscribeLocalPlaybackHistory(listener: () => void) {
   return () => window.removeEventListener(LOCAL_PLAYBACK_HISTORY_EVENT, wrapped);
 }
 
+export type DesktopPlayerNextEpisodeEvent = {
+  reason?: 'manual' | 'ended' | string;
+};
+
+export type DesktopPlayerAutoNextChangedEvent = {
+  enabled?: boolean;
+};
+
+export type DesktopPlayerSettingChangedEvent = {
+  key?: string;
+  value?: string;
+};
+
+type TauriListenEvent<T> = {
+  payload: T;
+};
+
+type TauriUnlisten = () => void;
+
 type TauriGlobal = {
   core?: {
     invoke?: <T = unknown>(command: string, args?: Record<string, unknown>) => Promise<T>;
   };
   invoke?: <T = unknown>(command: string, args?: Record<string, unknown>) => Promise<T>;
+  event?: {
+    listen?: <T = unknown>(event: string, handler: (event: TauriListenEvent<T>) => void) => Promise<TauriUnlisten>;
+  };
 };
 
 declare global {
@@ -422,6 +508,132 @@ export function saveDesktopAutoOpenBestSource(enabled: boolean) {
   emitDesktopEvent(DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT);
 }
 
+function asBooleanPreference(value: unknown, fallback = false) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value >= 0.5;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function asNumberPreference(value: unknown, fallback: number, min: number, max: number) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function normalizeDesktopPlayerPreferences(value: DesktopPlayerPreferencesPatch = {}): DesktopPlayerPreferences {
+  const subtitleStyle = value.subtitleStyle || {};
+  return {
+    autoNextEpisode: asBooleanPreference(value.autoNextEpisode, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoNextEpisode),
+    autoSkipIntro: asBooleanPreference(value.autoSkipIntro, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoSkipIntro),
+    autoSkipOutro: asBooleanPreference(value.autoSkipOutro, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoSkipOutro),
+    rememberSpeed: asBooleanPreference(value.rememberSpeed, DEFAULT_DESKTOP_PLAYER_PREFERENCES.rememberSpeed),
+    playbackSpeed: asNumberPreference(value.playbackSpeed, DEFAULT_DESKTOP_PLAYER_PREFERENCES.playbackSpeed, 0.25, 4),
+    volume: asNumberPreference(value.volume, DEFAULT_DESKTOP_PLAYER_PREFERENCES.volume, 0, 130),
+    muted: asBooleanPreference(value.muted, DEFAULT_DESKTOP_PLAYER_PREFERENCES.muted),
+    subtitleStyle: {
+      fontSize: typeof subtitleStyle.fontSize === 'string' ? subtitleStyle.fontSize : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.fontSize,
+      position: typeof subtitleStyle.position === 'string' ? subtitleStyle.position : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.position,
+      textColor: typeof subtitleStyle.textColor === 'string' ? subtitleStyle.textColor : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.textColor,
+      outline: typeof subtitleStyle.outline === 'string' ? subtitleStyle.outline : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.outline,
+      shadow: typeof subtitleStyle.shadow === 'string' ? subtitleStyle.shadow : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.shadow,
+      background: typeof subtitleStyle.background === 'string' ? subtitleStyle.background : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.background,
+      custom: asBooleanPreference(subtitleStyle.custom, DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.custom),
+    },
+  };
+}
+
+export function loadDesktopPlayerPreferences(): DesktopPlayerPreferences {
+  try {
+    const raw = localStorage.getItem(DESKTOP_PLAYER_PREFERENCES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const legacyAutoNext = localStorage.getItem(DESKTOP_AUTO_PLAY_NEXT_EPISODE_KEY);
+    const preferences = normalizeDesktopPlayerPreferences({
+      ...parsed,
+      autoNextEpisode: typeof parsed?.autoNextEpisode === 'undefined'
+        ? asBooleanPreference(legacyAutoNext, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoNextEpisode)
+        : parsed.autoNextEpisode,
+    });
+    localStorage.setItem(DESKTOP_PLAYER_PREFERENCES_KEY, JSON.stringify(preferences));
+    localStorage.setItem(DESKTOP_AUTO_PLAY_NEXT_EPISODE_KEY, preferences.autoNextEpisode ? 'true' : 'false');
+    return preferences;
+  } catch {
+    return DEFAULT_DESKTOP_PLAYER_PREFERENCES;
+  }
+}
+
+export function saveDesktopPlayerPreferences(next: DesktopPlayerPreferencesPatch) {
+  const current = loadDesktopPlayerPreferences();
+  const preferences = normalizeDesktopPlayerPreferences({
+    ...current,
+    ...next,
+    subtitleStyle: {
+      ...current.subtitleStyle,
+      ...(next.subtitleStyle || {}),
+    },
+  });
+  localStorage.setItem(DESKTOP_PLAYER_PREFERENCES_KEY, JSON.stringify(preferences));
+  localStorage.setItem(DESKTOP_AUTO_PLAY_NEXT_EPISODE_KEY, preferences.autoNextEpisode ? 'true' : 'false');
+  emitDesktopEvent(DESKTOP_PLAYER_PREFERENCES_EVENT);
+  if (typeof next.autoNextEpisode !== 'undefined') {
+    emitDesktopEvent(DESKTOP_AUTO_PLAY_NEXT_EPISODE_EVENT);
+  }
+  return preferences;
+}
+
+export function saveDesktopPlayerSetting(key: string, value: unknown) {
+  const current = loadDesktopPlayerPreferences();
+  switch (key) {
+    case 'autoNextEpisode':
+    case 'auto_next_episode':
+      return saveDesktopPlayerPreferences({ autoNextEpisode: asBooleanPreference(value, current.autoNextEpisode) });
+    case 'autoSkipIntro':
+    case 'auto_skip_intro':
+      return saveDesktopPlayerPreferences({ autoSkipIntro: asBooleanPreference(value, current.autoSkipIntro) });
+    case 'autoSkipOutro':
+    case 'auto_skip_outro':
+      return saveDesktopPlayerPreferences({ autoSkipOutro: asBooleanPreference(value, current.autoSkipOutro) });
+    case 'rememberSpeed':
+    case 'remember_speed':
+      return saveDesktopPlayerPreferences({ rememberSpeed: asBooleanPreference(value, current.rememberSpeed) });
+    case 'playbackSpeed':
+    case 'playback_speed':
+      return saveDesktopPlayerPreferences({ playbackSpeed: asNumberPreference(value, current.playbackSpeed, 0.25, 4) });
+    case 'volume':
+      return saveDesktopPlayerPreferences({ volume: asNumberPreference(value, current.volume, 0, 130) });
+    case 'muted':
+      return saveDesktopPlayerPreferences({ muted: asBooleanPreference(value, current.muted) });
+    case 'subtitleStyle.fontSize':
+      return saveDesktopPlayerPreferences({ subtitleStyle: { fontSize: String(value || current.subtitleStyle.fontSize) } });
+    case 'subtitleStyle.position':
+      return saveDesktopPlayerPreferences({ subtitleStyle: { position: String(value || current.subtitleStyle.position) } });
+    case 'subtitleStyle.textColor':
+      return saveDesktopPlayerPreferences({ subtitleStyle: { textColor: String(value || current.subtitleStyle.textColor) } });
+    case 'subtitleStyle.outline':
+      return saveDesktopPlayerPreferences({ subtitleStyle: { outline: String(value || current.subtitleStyle.outline) } });
+    case 'subtitleStyle.shadow':
+      return saveDesktopPlayerPreferences({ subtitleStyle: { shadow: String(value || current.subtitleStyle.shadow) } });
+    case 'subtitleStyle.background':
+      return saveDesktopPlayerPreferences({ subtitleStyle: { background: String(value || current.subtitleStyle.background) } });
+    case 'subtitleStyle.custom':
+      return saveDesktopPlayerPreferences({ subtitleStyle: { custom: asBooleanPreference(value, current.subtitleStyle.custom) } });
+    default:
+      return current;
+  }
+}
+
+export function loadDesktopAutoPlayNextEpisode() {
+  return loadDesktopPlayerPreferences().autoNextEpisode;
+}
+
+export function saveDesktopAutoPlayNextEpisode(enabled: boolean) {
+  return saveDesktopPlayerPreferences({ autoNextEpisode: enabled });
+}
+
 export function watchTypeForAudioPreference(preference: DesktopAudioPreference) {
   return preference === 'sub-preferred' ? 'sub' : 'dub';
 }
@@ -647,6 +859,38 @@ export async function controlLocalPlayer(action: DesktopPlayerControlAction, val
   });
 }
 
+export async function controlLocalPlayerPreference(key: string, value: string | number | boolean) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Player controls are only available inside the StreamNyaa desktop app.');
+  }
+
+  return invoke<DesktopPlayerControlStatus>('control_local_player', {
+    request: {
+      action: 'player_preference',
+      key,
+      text: String(value),
+    },
+  });
+}
+
+export async function syncDesktopPlayerPreferencesToPlayer(preferences = loadDesktopPlayerPreferences()) {
+  await controlLocalPlayer('auto_next_episode', preferences.autoNextEpisode ? 1 : 0);
+  await controlLocalPlayerPreference('autoSkipIntro', preferences.autoSkipIntro);
+  await controlLocalPlayerPreference('autoSkipOutro', preferences.autoSkipOutro);
+  await controlLocalPlayerPreference('rememberSpeed', preferences.rememberSpeed);
+  await controlLocalPlayerPreference('playbackSpeed', preferences.playbackSpeed);
+  await controlLocalPlayerPreference('volume', preferences.volume);
+  await controlLocalPlayerPreference('muted', preferences.muted);
+  await controlLocalPlayerPreference('subtitleStyle.fontSize', preferences.subtitleStyle.fontSize);
+  await controlLocalPlayerPreference('subtitleStyle.position', preferences.subtitleStyle.position);
+  await controlLocalPlayerPreference('subtitleStyle.textColor', preferences.subtitleStyle.textColor);
+  await controlLocalPlayerPreference('subtitleStyle.outline', preferences.subtitleStyle.outline);
+  await controlLocalPlayerPreference('subtitleStyle.shadow', preferences.subtitleStyle.shadow);
+  await controlLocalPlayerPreference('subtitleStyle.background', preferences.subtitleStyle.background);
+  await controlLocalPlayerPreference('subtitleStyle.custom', preferences.subtitleStyle.custom);
+}
+
 export async function importSubtitleForCurrentDesktopPlayer() {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
@@ -654,6 +898,33 @@ export async function importSubtitleForCurrentDesktopPlayer() {
   }
 
   return invoke<DesktopPlayerControlStatus>('import_subtitle_for_current_player');
+}
+
+export async function listenDesktopPlayerNextEpisode(listener: (event: DesktopPlayerNextEpisodeEvent) => void) {
+  if (typeof window === 'undefined') return () => {};
+  const listen = window.__TAURI__?.event?.listen;
+  if (!listen) return () => {};
+  return listen<DesktopPlayerNextEpisodeEvent>('streamnyaa-player-next-episode', (event) => {
+    listener(event.payload || {});
+  });
+}
+
+export async function listenDesktopPlayerAutoNextChanged(listener: (event: DesktopPlayerAutoNextChangedEvent) => void) {
+  if (typeof window === 'undefined') return () => {};
+  const listen = window.__TAURI__?.event?.listen;
+  if (!listen) return () => {};
+  return listen<DesktopPlayerAutoNextChangedEvent>('streamnyaa-player-auto-next-changed', (event) => {
+    listener(event.payload || {});
+  });
+}
+
+export async function listenDesktopPlayerSettingChanged(listener: (event: DesktopPlayerSettingChangedEvent) => void) {
+  if (typeof window === 'undefined') return () => {};
+  const listen = window.__TAURI__?.event?.listen;
+  if (!listen) return () => {};
+  return listen<DesktopPlayerSettingChangedEvent>('streamnyaa-player-setting-changed', (event) => {
+    listener(event.payload || {});
+  });
 }
 
 export async function fetchDesktopSourceApi(url: string) {

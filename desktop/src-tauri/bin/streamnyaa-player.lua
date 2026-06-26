@@ -64,6 +64,11 @@ local state = {
   filename = "",
   title = "",
   cache_percent = 0,
+  cache_buffering_percent = nil,
+  cache_buffering_active = false,
+  demuxer_buffering_percent = nil,
+  demuxer_cache_duration = nil,
+  demuxer_underrun = false,
   cache_end = 0,
   chapters = {},
   sid = "no",
@@ -76,8 +81,9 @@ local state = {
   loop_file = false,
   remember_speed = true,
   tracks = {},
-  autoplay = true,
+  autoplay = false,
   skip_intro = false,
+  skip_outro = false,
   mini_player = false,
   theater_mode = false,
   subtitle_style = {
@@ -98,6 +104,10 @@ local ui = {
   submenu = "main",
   dragging = nil,
   drag_ratio = nil,
+  drag_preview_ratio = nil,
+  drag_started_at = 0,
+  last_drag_command_at = 0,
+  last_drag_draw_at = 0,
   mouse_down_region = nil,
   last_interaction = mp.get_time(),
   last_draw_at = 0,
@@ -109,6 +119,7 @@ local ui = {
   region_height = 0,
   anim_started = mp.get_time(),
   skip_intro_applied = false,
+  skip_outro_applied = false,
   loading_override_until = 0,
   hover_region_id = "",
   subtitle_menu_scroll = 0,
@@ -120,6 +131,15 @@ local ui = {
   native_loading_osd_cleared = false,
   initialized = false,
   render_has_run = false,
+  marker_log_key = "",
+  chapter_state_key = "",
+  last_next_episode_request_at = 0,
+  end_overlay = false,
+  end_overlay_key = "",
+  eof_handled_key = "",
+  last_buffering_active = false,
+  last_buffering_percent = nil,
+  skip_range_state = {},
 }
 
 local regions = {}
@@ -160,6 +180,9 @@ local cached_audio_tracks = {}
 local track_cache_generation = 0
 
 local AUTO_HIDE_SECONDS = 3.0
+local SEEK_DRAG_COMMAND_INTERVAL = 0.16
+local VOLUME_DRAG_COMMAND_INTERVAL = 0.075
+local DRAG_DRAW_INTERVAL = 0.016
 local SPEEDS = { 0.5, 0.75, 1, 1.25, 1.5, 2 }
 local VIDEO_ASPECT_OPTIONS = {
   { label = "Default", value = "default", property = "-1" },
@@ -176,6 +199,18 @@ local VIDEO_ZOOM_OPTIONS = {
 }
 local INTRO_SKIP_FALLBACK_SECONDS = 85
 local INTRO_EDGE_TOLERANCE_SECONDS = 1.25
+local OUTRO_SKIP_FALLBACK_SECONDS = 90
+local OUTRO_EDGE_TOLERANCE_SECONDS = 1.25
+local NORMAL_EPISODE_MIN_SECONDS = 18 * 60
+local NORMAL_EPISODE_MAX_SECONDS = 30 * 60
+local FALLBACK_HIGH_CONFIDENCE_MIN_SECONDS = 20 * 60
+local FALLBACK_HIGH_CONFIDENCE_MAX_SECONDS = 26 * 60
+local INTRO_FALLBACK_START_SECONDS = 75
+local INTRO_FALLBACK_END_SECONDS = 165
+local INTRO_FALLBACK_NEARBY_END_SECONDS = 210
+local OUTRO_FALLBACK_START_FROM_END_SECONDS = 150
+local OUTRO_FALLBACK_END_FROM_END_SECONDS = 18
+local MANUAL_SKIP_BUTTON_SECONDS = 7.0
 local MINI_GEOMETRY = "520x292-36-78"
 local THEATER_GEOMETRY = "1280x720"
 local NORMAL_GEOMETRY = "1120x630"
@@ -1185,6 +1220,108 @@ settings_notice = function(message)
   safe_commandv("show-text", message, "1700")
 end
 
+function player_setting_bool(value)
+  local normalized = tostring(value or ""):lower()
+  return normalized == "true" or normalized == "1" or normalized == "yes" or normalized == "on"
+end
+
+function emit_player_setting_changed(key, value)
+  safe_commandv("script-message", "streamnyaa-player-setting-changed", tostring(key or ""), tostring(value or ""))
+end
+
+function subtitle_style_preference_key(kind)
+  local mapping = {
+    font_size = "subtitleStyle.fontSize",
+    position = "subtitleStyle.position",
+    text_color = "subtitleStyle.textColor",
+    outline = "subtitleStyle.outline",
+    shadow = "subtitleStyle.shadow",
+    background = "subtitleStyle.background",
+  }
+  return mapping[tostring(kind or "")]
+end
+
+function emit_subtitle_style_preferences()
+  local style = state.subtitle_style or {}
+  emit_player_setting_changed("subtitleStyle.fontSize", style.font_size or SUBTITLE_STYLE_DEFAULT.font_size)
+  emit_player_setting_changed("subtitleStyle.position", style.position or SUBTITLE_STYLE_DEFAULT.position)
+  emit_player_setting_changed("subtitleStyle.textColor", style.text_color or SUBTITLE_STYLE_DEFAULT.text_color)
+  emit_player_setting_changed("subtitleStyle.outline", style.outline or SUBTITLE_STYLE_DEFAULT.outline)
+  emit_player_setting_changed("subtitleStyle.shadow", style.shadow or SUBTITLE_STYLE_DEFAULT.shadow)
+  emit_player_setting_changed("subtitleStyle.background", style.background or SUBTITLE_STYLE_DEFAULT.background)
+  emit_player_setting_changed("subtitleStyle.custom", style.custom and "true" or "false")
+end
+
+function apply_player_preference(key, value)
+  key = tostring(key or "")
+  if key == "autoNextEpisode" or key == "auto_next_episode" then
+    state.autoplay = player_setting_bool(value)
+    mark_menu_dirty("main")
+  elseif key == "autoSkipIntro" or key == "auto_skip_intro" then
+    state.skip_intro = player_setting_bool(value)
+    if not state.skip_intro then reset_skip_range_state() end
+    mark_menu_dirty("main")
+  elseif key == "autoSkipOutro" or key == "auto_skip_outro" then
+    state.skip_outro = player_setting_bool(value)
+    if not state.skip_outro then reset_skip_range_state() end
+    mark_menu_dirty("main")
+  elseif key == "rememberSpeed" or key == "remember_speed" then
+    state.remember_speed = player_setting_bool(value)
+    mark_menus_dirty("main", "playback")
+  elseif key == "playbackSpeed" or key == "playback_speed" then
+    local next_speed = clamp(tonumber(value) or state.speed or 1, 0.25, 4)
+    state.speed = next_speed
+    safe_set_property_number("speed", next_speed)
+    mark_menus_dirty("main", "speed", "playback")
+  elseif key == "volume" then
+    local next_volume = clamp(tonumber(value) or state.volume or 100, 0, 130)
+    state.volume = next_volume
+    safe_set_property_number("volume", next_volume)
+  elseif key == "muted" then
+    state.muted = player_setting_bool(value)
+    safe_set_property("mute", state.muted and "yes" or "no")
+  elseif key == "subtitleStyle.fontSize" then
+    state.subtitle_style.font_size = tostring(value or SUBTITLE_STYLE_DEFAULT.font_size)
+    state.subtitle_style.custom = true
+    apply_subtitle_style()
+    mark_menus_dirty("main", "appearance", "appearance_font_size")
+  elseif key == "subtitleStyle.position" then
+    state.subtitle_style.position = tostring(value or SUBTITLE_STYLE_DEFAULT.position)
+    state.subtitle_style.custom = true
+    apply_subtitle_style()
+    mark_menus_dirty("main", "appearance", "appearance_position")
+  elseif key == "subtitleStyle.textColor" then
+    state.subtitle_style.text_color = tostring(value or SUBTITLE_STYLE_DEFAULT.text_color)
+    state.subtitle_style.custom = true
+    apply_subtitle_style()
+    mark_menus_dirty("main", "appearance", "appearance_text_color")
+  elseif key == "subtitleStyle.outline" then
+    state.subtitle_style.outline = tostring(value or SUBTITLE_STYLE_DEFAULT.outline)
+    state.subtitle_style.custom = true
+    apply_subtitle_style()
+    mark_menus_dirty("main", "appearance", "appearance_outline")
+  elseif key == "subtitleStyle.shadow" then
+    state.subtitle_style.shadow = tostring(value or SUBTITLE_STYLE_DEFAULT.shadow)
+    state.subtitle_style.custom = true
+    apply_subtitle_style()
+    mark_menus_dirty("main", "appearance", "appearance_shadow")
+  elseif key == "subtitleStyle.background" then
+    state.subtitle_style.background = tostring(value or SUBTITLE_STYLE_DEFAULT.background)
+    state.subtitle_style.custom = true
+    apply_subtitle_style()
+    mark_menus_dirty("main", "appearance", "appearance_background")
+  elseif key == "subtitleStyle.custom" then
+    state.subtitle_style.custom = player_setting_bool(value)
+    apply_subtitle_style()
+    mark_menus_dirty("main", "appearance")
+  else
+    msg.warn("Unknown StreamNyaa player preference: " .. key)
+    return false
+  end
+  draw(true, "player-preference")
+  return true
+end
+
 function is_placeholder_media()
   return tostring(state.path or ""):find("streamnyaa%-loading%.bmp") ~= nil
 end
@@ -1193,15 +1330,29 @@ function has_playable_media()
   return (tonumber(state.duration) or 0) > 0 and not is_placeholder_media()
 end
 
-function is_buffering()
-  local cache = tonumber(state.cache_percent) or 0
+function has_valid_playhead()
+  return (tonumber(state.duration) or 0) > 0 and (tonumber(state.pos) or -1) >= 0
+end
+
+function is_midplayback_buffering()
+  if ui.end_overlay then return false end
+  if not state.has_started_playback then return false end
+  if not has_playable_media() or not has_valid_playhead() then return false end
+  if is_placeholder_media() or state.idle or state.core_idle then return false end
+  if ui.dragging == "seek" then return false end
+  if state.paused and not state.paused_for_cache then return false end
   if state.paused_for_cache then return true end
-  if state.paused and has_playable_media() then return false end
-  return cache > 0 and cache < 99 and not state.core_idle and not state.idle
+  if state.cache_buffering_active then return true end
+  return state.demuxer_underrun == true
+end
+
+function is_buffering()
+  return is_midplayback_buffering()
 end
 
 function is_loading()
-  if state.paused_for_cache then return true end
+  if is_midplayback_buffering() then return false end
+  if state.paused_for_cache and not has_playable_media() then return true end
   if is_placeholder_media() then return true end
   if ui.loading_override_until and mp.get_time() < ui.loading_override_until then return true end
   if has_playable_media() then return false end
@@ -1216,6 +1367,60 @@ function stream_progress()
     return clamp((state.cache_end / state.duration) * 100, 0, 100)
   end
   return 0
+end
+
+function buffering_display_percent()
+  local percent = tonumber(state.cache_buffering_percent)
+  if not percent then percent = tonumber(state.demuxer_buffering_percent) end
+  if not percent or percent <= 0 or percent >= 100 then return nil end
+  return math.floor(clamp(percent, 0, 100) + 0.5)
+end
+
+function buffered_seconds()
+  local seconds = tonumber(state.demuxer_cache_duration)
+  if seconds and seconds > 0 then return seconds end
+  local cache_end = tonumber(state.cache_end) or 0
+  local pos = tonumber(state.pos) or 0
+  if cache_end > pos then return cache_end - pos end
+  return nil
+end
+
+function buffering_status_label()
+  local percent = buffering_display_percent()
+  local cached = buffered_seconds()
+  local label = percent and string.format("BUFFERING %d%%", percent) or "BUFFERING..."
+  if percent and cached and cached >= 1 then
+    label = string.format("%s - %ds cached", label, math.floor(cached + 0.5))
+  end
+  return label
+end
+
+function log_buffering_transition()
+  local active = is_midplayback_buffering()
+  local percent = buffering_display_percent()
+  if active ~= ui.last_buffering_active then
+    if active then
+      msg.info(string.format("[StreamNyaa Lua] Buffering started percent=%s", percent and tostring(percent) or "unknown"))
+    else
+      msg.info("[StreamNyaa Lua] Buffering ended")
+    end
+    ui.last_buffering_active = active
+    ui.last_buffering_percent = percent
+  elseif active and percent and percent ~= ui.last_buffering_percent then
+    ui.last_buffering_percent = percent
+  end
+end
+
+function reset_buffering_state()
+  state.cache_percent = 0
+  state.cache_buffering_percent = nil
+  state.cache_buffering_active = false
+  state.demuxer_buffering_percent = nil
+  state.demuxer_cache_duration = nil
+  state.demuxer_underrun = false
+  state.cache_end = 0
+  ui.last_buffering_active = false
+  ui.last_buffering_percent = nil
 end
 
 function stream_status_label()
@@ -1247,20 +1452,48 @@ function is_intro_chapter(chapter)
   end
   return title:find(" intro ", 1, true) ~= nil
     or title:find(" opening ", 1, true) ~= nil
+    or title:find(" opening theme ", 1, true) ~= nil
+    or title:find(" opening song ", 1, true) ~= nil
     or title:find(" op ", 1, true) ~= nil
     or title:find(" ncop ", 1, true) ~= nil
     or title:find(" creditless op ", 1, true) ~= nil
     or title:find(" opening credits ", 1, true) ~= nil
+    or title:find(" op %d+ ") ~= nil
     or title:find(" op%d+ ") ~= nil
 end
 
-function intro_chapter_range_for_position(pos, allow_nearby)
+function is_outro_chapter(chapter)
+  local title = normalized_chapter_title(chapter)
+  if title:find(" preview ", 1, true)
+    or title:find(" next episode ", 1, true)
+    or title:find(" next ep ", 1, true)
+    or title:find(" intro ", 1, true)
+    or title:find(" opening ", 1, true)
+    or title:find(" op ", 1, true)
+    or title:find(" ncop ", 1, true)
+    or title:find(" creditless op ", 1, true) then
+    return false
+  end
+  return title:find(" ending ", 1, true) ~= nil
+    or title:find(" ending theme ", 1, true) ~= nil
+    or title:find(" ending song ", 1, true) ~= nil
+    or title:find(" end credits ", 1, true) ~= nil
+    or title:find(" outro ", 1, true) ~= nil
+    or title:find(" ed ", 1, true) ~= nil
+    or title:find(" nced ", 1, true) ~= nil
+    or title:find(" creditless ed ", 1, true) ~= nil
+    or title:find(" ending credits ", 1, true) ~= nil
+    or title:find(" ed %d+ ") ~= nil
+    or title:find(" ed%d+ ") ~= nil
+end
+
+function chapter_range_for_position(pos, allow_nearby, matcher, fallback_seconds, edge_tolerance)
   pos = tonumber(pos) or 0
   local chapters = state.chapters or {}
   local duration = tonumber(state.duration) or 0
   for index, chapter in ipairs(chapters) do
     local start_time = tonumber(chapter.time)
-    if start_time and is_intro_chapter(chapter) then
+    if start_time and matcher and matcher(chapter) then
       local end_time = nil
       for next_index = index + 1, #chapters do
         local next_time = tonumber(chapters[next_index].time)
@@ -1270,13 +1503,13 @@ function intro_chapter_range_for_position(pos, allow_nearby)
         end
       end
       if not end_time then
-        end_time = start_time + INTRO_SKIP_FALLBACK_SECONDS
+        end_time = start_time + fallback_seconds
         if duration > 0 then end_time = math.min(end_time, duration - 0.1) end
       end
-      local intro_length = end_time - start_time
-      if intro_length >= 8 and intro_length <= 210 then
-        local early = allow_nearby and 8 or INTRO_EDGE_TOLERANCE_SECONDS
-        if pos >= start_time - early and pos < end_time - INTRO_EDGE_TOLERANCE_SECONDS then
+      local marker_length = end_time - start_time
+      if marker_length >= 8 and marker_length <= 210 then
+        local early = allow_nearby and 8 or edge_tolerance
+        if pos >= start_time - early and pos < end_time - edge_tolerance then
           return start_time, end_time
         end
       end
@@ -1285,9 +1518,209 @@ function intro_chapter_range_for_position(pos, allow_nearby)
   return nil, nil
 end
 
+function intro_chapter_range_for_position(pos, allow_nearby)
+  return chapter_range_for_position(pos, allow_nearby, is_intro_chapter, INTRO_SKIP_FALLBACK_SECONDS, INTRO_EDGE_TOLERANCE_SECONDS)
+end
+
+function outro_chapter_range_for_position(pos, allow_nearby)
+  return chapter_range_for_position(pos, allow_nearby, is_outro_chapter, OUTRO_SKIP_FALLBACK_SECONDS, OUTRO_EDGE_TOLERANCE_SECONDS)
+end
+
+function normal_episode_duration()
+  local duration = tonumber(state.duration) or 0
+  return duration >= NORMAL_EPISODE_MIN_SECONDS and duration <= NORMAL_EPISODE_MAX_SECONDS
+end
+
+function high_confidence_fallback_duration()
+  local duration = tonumber(state.duration) or 0
+  return duration >= FALLBACK_HIGH_CONFIDENCE_MIN_SECONDS and duration <= FALLBACK_HIGH_CONFIDENCE_MAX_SECONDS
+end
+
+function has_matching_chapter(matcher)
+  if not matcher then return false end
+  for _, chapter in ipairs(state.chapters or {}) do
+    if tonumber(chapter.time) and matcher(chapter) then return true end
+  end
+  return false
+end
+
+function valid_skip_range(start_time, end_time)
+  local duration = tonumber(state.duration) or 0
+  start_time = tonumber(start_time)
+  end_time = tonumber(end_time)
+  if not start_time or not end_time then return false end
+  if duration <= 0 then return false end
+  if start_time < 0 or end_time <= start_time then return false end
+  if end_time - start_time < 8 then return false end
+  if start_time >= duration - 1 then return false end
+  if end_time > duration + 1 then return false end
+  return true
+end
+
+function skip_range_key(kind, start_time, end_time)
+  return tostring(kind or "skip")
+    .. ":"
+    .. tostring(math.floor(tonumber(start_time) or 0))
+    .. ":"
+    .. tostring(math.floor(tonumber(end_time) or 0))
+end
+
+function skip_state_for(key)
+  key = tostring(key or "")
+  if key == "" then return nil end
+  ui.skip_range_state[key] = ui.skip_range_state[key] or {}
+  return ui.skip_range_state[key]
+end
+
+function reset_skip_range_state()
+  ui.skip_intro_applied = false
+  ui.skip_outro_applied = false
+  ui.skip_range_state = {}
+end
+
+function explicit_skip_range(kind, pos, allow_nearby)
+  local matcher = kind == "outro" and is_outro_chapter or is_intro_chapter
+  local fallback = kind == "outro" and OUTRO_SKIP_FALLBACK_SECONDS or INTRO_SKIP_FALLBACK_SECONDS
+  local tolerance = kind == "outro" and OUTRO_EDGE_TOLERANCE_SECONDS or INTRO_EDGE_TOLERANCE_SECONDS
+  local start_time, end_time = chapter_range_for_position(pos, allow_nearby, matcher, fallback, tolerance)
+  if not valid_skip_range(start_time, end_time) then return nil end
+  return {
+    kind = kind,
+    start_time = start_time,
+    end_time = end_time,
+    source = "chapter",
+    high_confidence = true,
+    key = skip_range_key(kind, start_time, end_time),
+  }
+end
+
+function fallback_skip_range(kind, pos, allow_nearby)
+  local duration = tonumber(state.duration) or 0
+  pos = tonumber(pos) or 0
+  if not normal_episode_duration() then return nil end
+  if kind == "intro" then
+    if has_matching_chapter(is_intro_chapter) then return nil end
+    local start_time = INTRO_FALLBACK_START_SECONDS
+    local end_time = math.min(INTRO_FALLBACK_END_SECONDS, duration - 0.1)
+    local nearby_end = math.min(INTRO_FALLBACK_NEARBY_END_SECONDS, duration - 0.1)
+    local trigger_end = allow_nearby and nearby_end or (end_time - INTRO_EDGE_TOLERANCE_SECONDS)
+    if pos < start_time or pos >= trigger_end then return nil end
+    if not valid_skip_range(start_time, end_time) or end_time <= pos + 0.2 then return nil end
+    return {
+      kind = kind,
+      start_time = start_time,
+      end_time = end_time,
+      source = "fallback",
+      high_confidence = high_confidence_fallback_duration(),
+      key = skip_range_key(kind, start_time, end_time),
+    }
+  end
+
+  if has_matching_chapter(is_outro_chapter) then return nil end
+  local start_time = math.max(0, duration - OUTRO_FALLBACK_START_FROM_END_SECONDS)
+  local end_time = math.max(start_time + 8, duration - OUTRO_FALLBACK_END_FROM_END_SECONDS)
+  if pos < start_time or pos >= end_time - OUTRO_EDGE_TOLERANCE_SECONDS then return nil end
+  if not valid_skip_range(start_time, end_time) or end_time <= pos + 0.2 then return nil end
+  return {
+    kind = kind,
+    start_time = start_time,
+    end_time = end_time,
+    source = "fallback",
+    high_confidence = false,
+    key = skip_range_key(kind, start_time, end_time),
+  }
+end
+
+function skip_range_for_position(kind, pos, allow_nearby)
+  local range = explicit_skip_range(kind, pos, allow_nearby)
+  if range then return range end
+  return fallback_skip_range(kind, pos, allow_nearby)
+end
+
+function can_auto_skip_now(range)
+  if not range then return false end
+  if state.paused or is_loading() or is_buffering() then return false end
+  if ui.dragging then return false end
+  if not valid_skip_range(range.start_time, range.end_time) then return false end
+  local pos = tonumber(state.pos)
+  local duration = tonumber(state.duration)
+  if not pos or not duration or duration <= 0 then return false end
+  if range.end_time <= pos + 0.2 then return false end
+  if range.end_time > duration + 1 then return false end
+  if range.source ~= "chapter" and not range.high_confidence then return false end
+  return true
+end
+
+function chapter_marker_end_at(index, fallback_seconds)
+  local chapters = state.chapters or {}
+  local chapter = chapters[index]
+  local start_time = tonumber(chapter and chapter.time)
+  if not start_time then return nil end
+  local duration = tonumber(state.duration) or 0
+  local end_time = nil
+  for next_index = index + 1, #chapters do
+    local next_time = tonumber(chapters[next_index].time)
+    if next_time and next_time > start_time + 3 then
+      end_time = next_time
+      break
+    end
+  end
+  if not end_time then
+    end_time = start_time + (fallback_seconds or 90)
+    if duration > 0 then end_time = math.min(end_time, duration - 0.1) end
+  end
+  if not end_time or end_time <= start_time then return nil end
+  return end_time
+end
+
+function log_op_ed_markers()
+  local chapters = state.chapters or {}
+  local key = tostring(#chapters) .. ":" .. tostring(math.floor(tonumber(state.duration) or 0))
+  if ui.marker_log_key == key then return end
+  ui.marker_log_key = key
+
+  local count = 0
+  for index, chapter in ipairs(chapters) do
+    local start_time = tonumber(chapter.time)
+    if start_time and is_intro_chapter(chapter) then
+      local end_time = chapter_marker_end_at(index, INTRO_SKIP_FALLBACK_SECONDS)
+      count = count + 1
+      msg.info(string.format("[StreamNyaa Lua] Opening marker: start=%.2f end=%.2f source=chapter", start_time, end_time or start_time))
+    elseif start_time and is_outro_chapter(chapter) then
+      local end_time = chapter_marker_end_at(index, OUTRO_SKIP_FALLBACK_SECONDS)
+      count = count + 1
+      msg.info(string.format("[StreamNyaa Lua] Ending marker: start=%.2f end=%.2f source=chapter", start_time, end_time or start_time))
+    end
+  end
+
+  if count > 0 then
+    msg.info("[StreamNyaa Lua] OP/ED markers loaded: " .. tostring(count))
+  else
+    msg.info("[StreamNyaa Lua] No OP/ED markers found; generic seekbar markers disabled")
+  end
+end
+
 function show_overlay()
   ui.visible = true
   ui.last_interaction = mp.get_time()
+end
+
+function current_media_key()
+  local path = tostring(state.path or "")
+  local title = tostring(state.title or state.filename or "")
+  local duration = math.floor(tonumber(state.duration) or 0)
+  return table.concat({ path, title, tostring(duration) }, "|")
+end
+
+function reset_end_overlay_state()
+  ui.end_overlay = false
+  ui.end_overlay_key = ""
+  ui.eof_handled_key = ""
+end
+
+function hide_end_overlay()
+  ui.end_overlay = false
+  ui.end_overlay_key = ""
 end
 
 function scaled(width, height)
@@ -1319,6 +1752,32 @@ function request_external_subtitle_import()
   end
 
   safe_commandv("script-message", "streamnyaa-import-subtitle-request")
+end
+
+function request_next_episode(reason)
+  local now = mp.get_time()
+  if now - (ui.last_next_episode_request_at or 0) < 1.0 then return end
+  ui.last_next_episode_request_at = now
+  hide_end_overlay()
+  local next_reason = tostring(reason or "manual")
+  safe_commandv("script-message", "streamnyaa-next-episode-request", next_reason)
+  settings_notice(next_reason == "ended" and "Opening next episode..." or "Next episode requested")
+end
+
+function handle_episode_eof()
+  if not state.has_started_playback or is_placeholder_media() or not has_playable_media() then return end
+  local key = current_media_key()
+  if key == "" or ui.eof_handled_key == key then return end
+  ui.eof_handled_key = key
+  show_overlay()
+  if state.autoplay then
+    msg.info("[StreamNyaa Lua] EOF reached; requesting auto next episode")
+    request_next_episode("ended")
+  else
+    msg.info("[StreamNyaa Lua] EOF reached; showing manual end overlay")
+    ui.end_overlay = true
+    ui.end_overlay_key = key
+  end
 end
 
 function draw_gradient_bottom(ass, width, height, s)
@@ -1514,6 +1973,12 @@ function icon_skip_compact(ass, cx, cy, size, color)
   icon_line(ass, cx, cy, size, 4.2, 7.2, 4.2, 16.8, color, t)
 end
 
+function icon_next_episode(ass, cx, cy, size, color)
+  local t = icon_stroke(size, 0.085)
+  icon_triangle(ass, cx - size * 0.05, cy, size, {{6.8, 6.2}, {6.8, 17.8}, {15.4, 12}}, color)
+  icon_line(ass, cx, cy, size, 18.1, 6.7, 18.1, 17.3, color, t)
+end
+
 function icon_toggle_dot(ass, cx, cy, size, color)
   circle(ass, cx, cy, size * 0.23, color, 0)
 end
@@ -1584,7 +2049,7 @@ end
 
 function volume_bounds(width, height, s)
   local y = height - 42 * s
-  return 306 * s, y, math.min(456 * s, width * 0.42), y
+  return 376 * s, y, math.min(526 * s, width * 0.42), y
 end
 
 function draw_title_area(ass, width, height, s)
@@ -1619,6 +2084,49 @@ function volume_ratio(mouse, width, height, s)
   return clamp((mouse.x - x1) / math.max(1, x2 - x1), 0, 1)
 end
 
+function current_drag_ratio()
+  return ui.drag_preview_ratio or ui.drag_ratio
+end
+
+function set_drag_preview_ratio(ratio)
+  local next_ratio = clamp(tonumber(ratio) or 0, 0, 1)
+  ui.drag_ratio = next_ratio
+  ui.drag_preview_ratio = next_ratio
+  return next_ratio
+end
+
+function clear_drag_preview()
+  ui.drag_ratio = nil
+  ui.drag_preview_ratio = nil
+end
+
+function begin_drag(kind)
+  ui.dragging = kind
+  ui.drag_started_at = mp.get_time()
+  ui.last_drag_command_at = -999
+  ui.last_drag_draw_at = 0
+end
+
+function drag_command_due(interval, final)
+  if final then return true end
+  local now = mp.get_time()
+  if now - (ui.last_drag_command_at or 0) >= interval then
+    ui.last_drag_command_at = now
+    return true
+  end
+  return false
+end
+
+function draw_drag(reason)
+  local now = mp.get_time()
+  if now - (ui.last_drag_draw_at or 0) >= DRAG_DRAW_INTERVAL then
+    ui.last_drag_draw_at = now
+    draw(false, reason)
+  else
+    ui.pending_draw = true
+  end
+end
+
 function draw_timeline(ass, width, height, mouse, s)
   local x1, y, x2 = seek_bounds(width, height, s)
   local w = x2 - x1
@@ -1627,7 +2135,7 @@ function draw_timeline(ass, width, height, mouse, s)
   local dragging = ui.dragging == "seek"
   local h = (seek_hot or dragging) and 7 * s or 4 * s
   local ratio = state.duration > 0 and clamp(state.pos / state.duration, 0, 1) or 0
-  if dragging and ui.drag_ratio then ratio = ui.drag_ratio end
+  if dragging and current_drag_ratio() then ratio = current_drag_ratio() end
   local buffered = ratio
   if state.duration > 0 and (tonumber(state.cache_end) or 0) > 0 then
     buffered = clamp(state.cache_end / state.duration, ratio, 1)
@@ -1644,13 +2152,13 @@ function draw_timeline(ass, width, height, mouse, s)
       local mx = x1 + w * clamp(chapter.time / state.duration, 0, 1)
       if is_intro_chapter(chapter) then
         rounded_rect(ass, mx - 2 * s, y - 10 * s, mx + 2 * s, y + 10 * s, 2 * s, C.accent, 0)
-      else
-        rect(ass, mx - 1 * s, y - 7 * s, mx + 1 * s, y + 7 * s, C.white, 88)
+      elseif is_outro_chapter(chapter) then
+        rounded_rect(ass, mx - 2 * s, y - 9 * s, mx + 2 * s, y + 9 * s, 2 * s, C.hover, 34)
       end
     end
   end
 
-  circle(ass, x1 + w * ratio, y, (seek_hot or dragging) and 10 * s or 7 * s, C.accent, 0)
+  circle(ass, x1 + w * ratio, y, dragging and 12 * s or ((seek_hot and 10 * s) or 7 * s), C.accent, 0)
   local display_pos = dragging and state.duration * ratio or state.pos
   draw_text(ass, x2, y + 34 * s, 6, font_px(s, 17, 16, 19), C.white, 0, string.format("%s / %s", format_time(display_pos), state.duration > 0 and format_time(state.duration) or "--:--"), false, "Segoe UI")
   add_region("seek", x1, y - seek_hit_y, x2, y + seek_hit_y)
@@ -1677,15 +2185,17 @@ function draw_controls(ass, width, height, mouse, s)
   end)
   button(ass, mouse, "back", left + 82 * s, y, hit, skip_icon, function(a, x, yy, size, color) icon_skip(a, x, yy, size, color, false) end)
   button(ass, mouse, "forward", left + 158 * s, y, hit, skip_icon, function(a, x, yy, size, color) icon_skip(a, x, yy, size, color, true) end)
-  button(ass, mouse, "mute", left + 226 * s, y, hit, icon, icon_volume)
+  button(ass, mouse, "next_episode", left + 226 * s, y, hit, icon, icon_next_episode)
+  button(ass, mouse, "mute", left + 294 * s, y, hit, icon, icon_volume)
 
   local vx1, vy, vx2 = volume_bounds(width, height, s)
   if vx2 > vx1 + 68 * s then
-    local vr = ui.dragging == "volume" and (ui.drag_ratio or 0) or clamp((state.volume or 0) / 130, 0, 1)
-    local vh = ui.dragging == "volume" and 6 * s or 4 * s
+    local volume_dragging = ui.dragging == "volume"
+    local vr = volume_dragging and (current_drag_ratio() or 0) or clamp((state.volume or 0) / 130, 0, 1)
+    local vh = volume_dragging and 6 * s or 4 * s
     rounded_rect(ass, vx1, vy - vh / 2, vx2, vy + vh / 2, vh / 2, C.track, 184)
     rounded_rect(ass, vx1, vy - vh / 2, vx1 + (vx2 - vx1) * vr, vy + vh / 2, vh / 2, C.accent, 0)
-    circle(ass, vx1 + (vx2 - vx1) * vr, vy, ui.dragging == "volume" and 8 * s or 6 * s, C.accent, 0)
+    circle(ass, vx1 + (vx2 - vx1) * vr, vy, volume_dragging and 9.5 * s or 6 * s, C.accent, 0)
     local volume_hit_y = math.max(18, math.min(26, 22 * s))
     add_region("volume", vx1 - 10 * s, vy - volume_hit_y, vx2 + 10 * s, vy + volume_hit_y)
   end
@@ -1698,9 +2208,141 @@ function draw_controls(ass, width, height, mouse, s)
   button(ass, mouse, "fullscreen", right - 24 * s, y, hit, icon, icon_fullscreen, state.fullscreen)
 end
 
+function manual_skip_range(kind)
+  if ui.settings_open or ui.dragging then return nil end
+  if is_loading() or is_buffering() then return nil end
+  if kind == "intro" and state.skip_intro then return nil end
+  if kind == "outro" and state.skip_outro then return nil end
+  local range = skip_range_for_position(kind, tonumber(state.pos) or 0, true)
+  if not range then return nil end
+  local entry = skip_state_for(range.key)
+  if not entry or entry.clicked or entry.auto_skipped or entry.dismissed then return nil end
+  local now = mp.get_time()
+  if not entry.shown then
+    entry.shown = true
+    entry.shown_at = now
+    entry.visible_until = now + MANUAL_SKIP_BUTTON_SECONDS
+    msg.info(string.format(
+      "[StreamNyaa Lua] Showing manual Skip %s button source=%s",
+      kind == "outro" and "Outro" or "Intro",
+      tostring(range.source)
+    ))
+  elseif entry.visible_until and now > entry.visible_until then
+    entry.dismissed = true
+    return nil
+  end
+  range.state = entry
+  return range
+end
+
+function wake_manual_skip_buttons()
+  if ui.settings_open or ui.dragging then return false end
+  if is_loading() or is_buffering() then return false end
+  local woke = false
+  for _, kind in ipairs({ "intro", "outro" }) do
+    if not ((kind == "intro" and state.skip_intro) or (kind == "outro" and state.skip_outro)) then
+      local range = skip_range_for_position(kind, tonumber(state.pos) or 0, true)
+      if range then
+        local entry = skip_state_for(range.key)
+        local now = mp.get_time()
+        if entry and not entry.clicked and not entry.auto_skipped and not entry.dismissed then
+          if not entry.shown then
+            entry.shown = true
+            entry.shown_at = now
+            entry.visible_until = now + MANUAL_SKIP_BUTTON_SECONDS
+            msg.info(string.format(
+              "[StreamNyaa Lua] Showing manual Skip %s button source=%s",
+              kind == "outro" and "Outro" or "Intro",
+              tostring(range.source)
+            ))
+          elseif entry.visible_until and now > entry.visible_until then
+            entry.dismissed = true
+          end
+          if not entry.dismissed and now <= (entry.visible_until or 0) then
+            show_overlay()
+            woke = true
+          end
+        end
+      end
+    end
+  end
+  return woke
+end
+
+function draw_manual_skip_button(ass, mouse, range, index, width, height, s)
+  if not range then return end
+  local label = range.kind == "outro" and "SKIP OUTRO" or "SKIP INTRO"
+  local button_w = 148 * s
+  local button_h = 42 * s
+  local x2 = width - 64 * s
+  local y2 = height - (138 + (index or 0) * 52) * s
+  local x1 = x2 - button_w
+  local y1 = y2 - button_h
+  local hot = inside(mouse, x1, y1, x2, y2)
+
+  rounded_rect(ass, x1 - 7 * s, y1 - 7 * s, x2 + 7 * s, y2 + 7 * s, 18 * s, C.accent, hot and 222 or 236)
+  rounded_rect(ass, x1, y1, x2, y2, 18 * s, C.panel, hot and 8 or 22)
+  rounded_rect(ass, x1 + 2 * s, y1 + 2 * s, x2 - 2 * s, y2 - 2 * s, 16 * s, C.white, hot and 224 or 238)
+  draw_text(ass, (x1 + x2) / 2, y1 + 27 * s, 5, font_px(s, 13, 12, 15), C.white, 0, label, true, "Segoe UI Semibold")
+  add_region("manual_skip_" .. tostring(range.kind), x1, y1, x2, y2, {
+    key = range.key,
+    kind = range.kind,
+    start_time = range.start_time,
+    end_time = range.end_time,
+    source = range.source,
+  })
+end
+
+function draw_manual_skip_buttons(ass, width, height, mouse, s)
+  local intro = manual_skip_range("intro")
+  local outro = manual_skip_range("outro")
+  if outro then draw_manual_skip_button(ass, mouse, outro, intro and 1 or 0, width, height, s) end
+  if intro then draw_manual_skip_button(ass, mouse, intro, 0, width, height, s) end
+end
+
+function draw_end_button(ass, mouse, id, x1, y1, x2, y2, label, primary, s)
+  local hot = inside(mouse, x1, y1, x2, y2)
+  rounded_rect(ass, x1 - 5 * s, y1 - 5 * s, x2 + 5 * s, y2 + 5 * s, 17 * s, primary and C.accent or C.white, hot and 226 or 242)
+  rounded_rect(ass, x1, y1, x2, y2, 14 * s, primary and C.accent or C.panel_2, hot and 0 or (primary and 8 or 18))
+  rounded_outline(ass, x1, y1, x2, y2, 14 * s, 1.2 * s, primary and C.hover or C.white, hot and 42 or 150)
+  draw_text(ass, (x1 + x2) / 2, y1 + 29 * s, 5, font_px(s, 14, 13, 16), C.white, 0, label, true, "Segoe UI Semibold")
+  add_region(id, x1, y1, x2, y2)
+end
+
+function draw_end_overlay(ass, width, height, mouse, s)
+  if not ui.end_overlay then return end
+  local panel_w = math.min(width - 80 * s, 530 * s)
+  local panel_h = 230 * s
+  local x1 = (width - panel_w) / 2
+  local y1 = (height - panel_h) / 2
+  local x2 = x1 + panel_w
+  local y2 = y1 + panel_h
+
+  rounded_rect(ass, x1 - 14 * s, y1 - 14 * s, x2 + 14 * s, y2 + 14 * s, 30 * s, C.accent, 238)
+  rounded_rect(ass, x1, y1, x2, y2, 24 * s, C.panel, 12)
+  rounded_outline(ass, x1, y1, x2, y2, 24 * s, 1.3 * s, C.white, 214)
+  draw_spaced_text(ass, (x1 + x2) / 2, y1 + 48 * s, 5, font_px(s, 13, 12, 15), C.accent, 0, "EPISODE FINISHED", 3 * s, true, "Segoe UI Semibold")
+  draw_text(ass, (x1 + x2) / 2, y1 + 91 * s, 5, font_px(s, 25, 22, 28), C.white, 0, "Continue watching?", true, "Segoe UI Semibold")
+  draw_text(ass, (x1 + x2) / 2, y1 + 122 * s, 5, font_px(s, 15, 14, 17), C.secondary, 20, "Play the next aired episode or replay this one.", false, "Segoe UI")
+
+  local gap = 14 * s
+  local button_h = 44 * s
+  local next_w = 158 * s
+  local replay_w = 118 * s
+  local close_w = 98 * s
+  local total_w = next_w + replay_w + close_w + gap * 2
+  local bx = (width - total_w) / 2
+  local by = y2 - 66 * s
+  draw_end_button(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, "NEXT EPISODE", true, s)
+  bx = bx + next_w + gap
+  draw_end_button(ass, mouse, "end_replay", bx, by, bx + replay_w, by + button_h, "REPLAY", false, s)
+  bx = bx + replay_w + gap
+  draw_end_button(ass, mouse, "end_close", bx, by, bx + close_w, by + button_h, "CLOSE", false, s)
+end
+
 function loading_status_text()
-  if state.paused_for_cache or is_buffering() then
-    return "BUFFERING..."
+  if is_midplayback_buffering() then
+    return buffering_status_label()
   elseif is_placeholder_media() then
     return "OPENING PLAYER..."
   elseif state.idle or state.core_idle then
@@ -1711,6 +2353,26 @@ end
 
 function draw_loading_required_content(ass, width, height, s, status)
   local cx = width / 2
+  if is_midplayback_buffering() then
+    local t = (mp.get_time() - ui.anim_started)
+    local spinner_y = height * 0.48
+    local spinner_r = 20 * s
+    local start_angle = (t * 260) % 360
+    local card_w = math.min(width * 0.36, 430 * s)
+    local card_h = 108 * s
+    local x1 = cx - card_w / 2
+    local y1 = spinner_y - card_h / 2
+    rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 22 * s, C.black, 120)
+    rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 22 * s, C.white, 238)
+    draw_arc(ass, cx - 98 * s, spinner_y, spinner_r, 0, 360, 2.0 * s, C.white, 232)
+    draw_arc(ass, cx - 98 * s, spinner_y, spinner_r, start_angle, 284, 3.4 * s, C.accent, 0)
+    draw_text(ass, cx - 54 * s, spinner_y - 2 * s, 4, font_px(s, 19, 16, 23), C.white, 0, status, false, "Segoe UI Semibold")
+    local cached = buffered_seconds()
+    local secondary = cached and cached >= 1 and "Keeping playback smooth" or "Waiting for local buffer"
+    draw_text(ass, cx - 54 * s, spinner_y + 24 * s, 4, font_px(s, 13, 12, 15), C.secondary, 12, secondary, false, "Segoe UI")
+    return
+  end
+
   local layout = loading_title_layout(loading_media_title(), width, height, s)
   local title_size = clamp(layout.size * 0.74, 30 * s, 62 * s)
   local line_gap = title_size * 1.13
@@ -1747,10 +2409,13 @@ function draw_loading(ass, width, height, s, cover_info)
   if not (is_loading() or is_buffering()) then return end
   local cx = width / 2
   local status = loading_status_text()
+  local buffering_only = is_midplayback_buffering()
   local before_len = #ass.text
 
   local ok, err = pcall(function()
-    if not cover_info then
+    if buffering_only then
+      rect(ass, 0, 0, width, height, C.black, 214)
+    elseif not cover_info then
       rect(ass, 0, 0, width, height, C.black, 0)
       circle(ass, width * 0.36, height * 0.48, height * 0.56, C.accent, 242)
       circle(ass, width * 0.70, height * 0.30, height * 0.40, "7C2DFF", 248)
@@ -1758,7 +2423,9 @@ function draw_loading(ass, width, height, s, cover_info)
       rect(ass, 0, 0, width, height, C.black, 126)
     end
     rect(ass, 0, 0, width, height, C.accent, 246)
-    circle(ass, cx, height * 0.43 + 48 * s, height * 0.36, C.black, 210)
+    if not buffering_only then
+      circle(ass, cx, height * 0.43 + 48 * s, height * 0.36, C.black, 210)
+    end
     draw_loading_required_content(ass, width, height, s, status)
   end)
 
@@ -1879,6 +2546,7 @@ function menu_cache_key(menu)
       tostring(state.loop_file),
       tostring(state.autoplay),
       tostring(state.skip_intro),
+      tostring(state.skip_outro),
       tostring(state.mini_player),
       tostring(state.theater_mode),
       tostring(state.fullscreen),
@@ -1947,8 +2615,9 @@ function build_main_settings_rows()
     { id = "settings:audio", icon = "audio", label = "Audio", value = current_track_label("audio", "Auto") .. " / " .. format_audio_delay(state.audio_delay), type = "submenu", active = math.abs(tonumber(state.audio_delay) or 0) >= 0.005 },
     { id = "settings:video", icon = "video", label = "Video", value = video_aspect_label() .. " / " .. video_zoom_label(), type = "submenu", active = state.video_aspect ~= "default" or math.abs(tonumber(state.video_zoom) or 0) >= 0.005 },
     { id = "settings:playback", icon = "speed", label = "Playback Speed", value = speed_label(), type = "submenu", active = state.loop_file or math.abs((tonumber(state.speed) or 1) - 1) >= 0.03 },
-    { id = "settings:autoplay", icon = "autoplay", label = "Auto Play", value = "", type = "toggle", active = state.autoplay },
+    { id = "settings:autoplay", icon = "autoplay", label = "Auto Next Episode", value = "", type = "toggle", active = state.autoplay },
     { id = "settings:skip", icon = "skip", label = "Auto Skip Marked Intro", value = "", type = "toggle", active = state.skip_intro },
+    { id = "settings:skip_outro", icon = "skip", label = "Auto Skip Marked Outro", value = "", type = "toggle", active = state.skip_outro },
     { id = "settings:mini", icon = "mini", label = "Mini Player", value = "", type = "toggle", active = state.mini_player },
     { id = "settings:theater", icon = "theater", label = "Theater Mode", value = "", type = "toggle", active = state.theater_mode },
     { id = "settings:fullscreen", icon = "full", label = "Full Screen", value = state.fullscreen and "On" or "Off", type = "action", active = state.fullscreen },
@@ -2233,7 +2902,7 @@ function draw(immediate, reason)
   end
   local force_minimal_osd = DEBUG_FORCE_MINIMAL_OSD
   local loading = is_loading() or is_buffering()
-  if not force_minimal_osd and not immediate and not ui.visible and not loading and not ui.pending_draw then
+  if not force_minimal_osd and not immediate and not ui.visible and not loading and not ui.pending_draw and not ui.end_overlay then
     return
   end
   local active_interaction = ui.dragging
@@ -2250,14 +2919,14 @@ function draw(immediate, reason)
   ui.pending_draw = false
   ui.last_draw_at = now
   ui.draw_count = (ui.draw_count or 0) + 1
-  if ui.visible and not loading and not state.paused and not ui.settings_open and not ui.dragging and mp.get_time() - ui.last_interaction > AUTO_HIDE_SECONDS then
+  if ui.visible and not loading and not state.paused and not ui.settings_open and not ui.dragging and not ui.end_overlay and mp.get_time() - ui.last_interaction > AUTO_HIDE_SECONDS then
     ui.visible = false
     reset_regions()
     mp.set_osd_ass(width, height, "")
     clear_cover_overlay()
     return
   end
-  if not ui.visible and not loading then
+  if not ui.visible and not loading and not ui.end_overlay then
     reset_regions()
     clear_cover_overlay()
     return
@@ -2306,6 +2975,8 @@ function draw(immediate, reason)
   draw_settings_panel(ass, width, height, mouse, s)
   draw_timeline(ass, width, height, mouse, s)
   draw_controls(ass, width, height, mouse, s)
+  draw_manual_skip_buttons(ass, width, height, mouse, s)
+  draw_end_overlay(ass, width, height, mouse, s)
 
   ui.regions_ready = #regions > 0
   ui.region_width = width
@@ -2346,21 +3017,34 @@ function set_seek_from_mouse(mouse, final)
   local width, height = mp.get_osd_size()
   local s = scaled(width, height)
   local ratio = timeline_ratio(mouse, width, height, s)
-  ui.drag_ratio = ratio
+  ratio = set_drag_preview_ratio(ratio)
+  local target = ratio * state.duration
   if final then
-    mp.commandv("seek", tostring(ratio * state.duration), "absolute+exact")
-    ui.drag_ratio = nil
+    mp.commandv("seek", tostring(target), "absolute+exact")
+    state.pos = target
+    clear_drag_preview()
+  elseif drag_command_due(SEEK_DRAG_COMMAND_INTERVAL, false) then
+    mp.commandv("seek", tostring(target), "absolute+keyframes")
   end
 end
 
-function set_volume_from_mouse(mouse)
+function set_volume_from_mouse(mouse, final)
   if not mouse then return end
   local width, height = mp.get_osd_size()
   local s = scaled(width, height)
   local ratio = volume_ratio(mouse, width, height, s)
-  ui.drag_ratio = ratio
-  mp.commandv("set", "volume", tostring(math.floor(ratio * 130)))
-  if state.muted and ratio > 0 then mp.commandv("set", "mute", "no") end
+  ratio = set_drag_preview_ratio(ratio)
+  local next_volume = clamp(math.floor(ratio * 130 + 0.5), 0, 130)
+  state.volume = next_volume
+  if final or drag_command_due(VOLUME_DRAG_COMMAND_INTERVAL, false) then
+    mp.commandv("set", "volume", tostring(next_volume))
+    if state.muted and next_volume > 0 then mp.commandv("set", "mute", "no") end
+  end
+  if final then
+    emit_player_setting_changed("volume", tostring(next_volume))
+    if state.muted and next_volume > 0 then emit_player_setting_changed("muted", "false") end
+    clear_drag_preview()
+  end
 end
 
 function toggle_subtitles()
@@ -2403,28 +3087,78 @@ function seek_relative(seconds)
   end
 end
 
-function skip_intro(close_menu)
+function perform_skip_range(range, mode, close_menu)
+  if not range or not valid_skip_range(range.start_time, range.end_time) then return false end
   local pos = tonumber(state.pos) or 0
-  local _, intro_end = intro_chapter_range_for_position(pos, true)
-  if not intro_end then
-    safe_commandv("show-text", "No intro marker found for this file.", "1700")
-    return
+  local duration = tonumber(state.duration) or 0
+  local target = range.end_time
+  if duration > 0 then target = clamp(target, 0, math.max(0, duration - 0.1)) end
+  if target <= pos + 0.2 then return false end
+
+  local entry = skip_state_for(range.key)
+  if not entry then return false end
+  if mode == "auto" then
+    entry.auto_skipped = true
+  else
+    entry.clicked = true
+    entry.dismissed = true
   end
-  safe_commandv("seek", tostring(intro_end), "absolute+exact")
-  ui.skip_intro_applied = true
+
+  if range.kind == "outro" then
+    ui.skip_outro_applied = true
+  else
+    ui.skip_intro_applied = true
+  end
+
+  safe_commandv("seek", tostring(target), "absolute+exact")
+  msg.info(string.format(
+    "[StreamNyaa Lua] %s skipped %s: %.1f -> %.1f source=%s",
+    mode == "auto" and "Auto" or "Manual",
+    range.kind == "outro" and "ending" or "opening",
+    pos,
+    target,
+    tostring(range.source)
+  ))
+
   if close_menu ~= false then
     ui.settings_open = false
     ui.submenu = "main"
   end
+  return true
+end
+
+function skip_intro(close_menu)
+  local range = skip_range_for_position("intro", tonumber(state.pos) or 0, true)
+  if not perform_skip_range(range, "manual", close_menu) then
+    safe_commandv("show-text", "No intro marker found for this file.", "1700")
+  end
+end
+
+function skip_outro(close_menu)
+  local range = skip_range_for_position("outro", tonumber(state.pos) or 0, true)
+  if not perform_skip_range(range, "manual", close_menu) then
+    safe_commandv("show-text", "No outro marker found for this file.", "1700")
+  end
 end
 
 function maybe_auto_skip_intro()
-  if not state.skip_intro or ui.skip_intro_applied then return end
-  if is_loading() or is_buffering() or state.paused then return end
-  local pos = tonumber(state.pos) or 0
-  local _, intro_end = intro_chapter_range_for_position(pos, false)
-  if intro_end then
-    skip_intro(false)
+  if not state.skip_intro then return end
+  local range = skip_range_for_position("intro", tonumber(state.pos) or 0, false)
+  if not can_auto_skip_now(range) then return end
+  local entry = skip_state_for(range.key)
+  if entry and not entry.auto_skipped and not entry.clicked then
+    perform_skip_range(range, "auto", false)
+    show_overlay()
+  end
+end
+
+function maybe_auto_skip_outro()
+  if not state.skip_outro then return end
+  local range = skip_range_for_position("outro", tonumber(state.pos) or 0, false)
+  if not can_auto_skip_now(range) then return end
+  local entry = skip_state_for(range.key)
+  if entry and not entry.auto_skipped and not entry.clicked then
+    perform_skip_range(range, "auto", false)
     show_overlay()
   end
 end
@@ -2469,10 +3203,16 @@ end
 
 function update_demuxer_cache(value)
   local cache_end = 0
+  local cache_duration = nil
+  local demuxer_percent = nil
+  local underrun = false
   if type(value) == "table" then
     if tonumber(value["cache-end"]) then
       cache_end = tonumber(value["cache-end"]) or 0
     end
+    cache_duration = tonumber(value["cache-duration"]) or tonumber(value["fw-duration"])
+    demuxer_percent = tonumber(value["cache-percent"]) or tonumber(value["buffering-percent"])
+    underrun = value["underrun"] == true
     local ranges = value["seekable-ranges"]
     if type(ranges) == "table" then
       for _, range in ipairs(ranges) do
@@ -2483,6 +3223,14 @@ function update_demuxer_cache(value)
     end
   end
   state.cache_end = cache_end
+  state.demuxer_cache_duration = cache_duration
+  state.demuxer_underrun = underrun
+  if demuxer_percent and demuxer_percent > 0 and demuxer_percent < 100 then
+    state.demuxer_buffering_percent = clamp(demuxer_percent, 0, 100)
+  else
+    state.demuxer_buffering_percent = nil
+  end
+  log_buffering_transition()
   if not ui.settings_open or is_loading() or is_buffering() then
     draw(false, "demuxer-cache")
   end
@@ -2492,7 +3240,7 @@ function activate_region(region, mouse)
   if not region then
     debug_input("activate none; closing settings")
     ui.dragging = nil
-    ui.drag_ratio = nil
+    clear_drag_preview()
     ui.mouse_down_region = nil
     ui.settings_open = false
     ui.submenu = "main"
@@ -2516,19 +3264,48 @@ function activate_region(region, mouse)
     ui.submenu = "main"
   end
 
-  if id == "play" or id == "center_play" then
+  if id == "end_next_episode" then
+    request_next_episode("manual")
+  elseif id == "end_replay" then
+    hide_end_overlay()
+    ui.eof_handled_key = ""
+    safe_commandv("seek", "0", "absolute+exact")
+    safe_set_property_bool("pause", false)
+    settings_notice("Replaying episode")
+  elseif id == "end_close" then
+    hide_end_overlay()
+    settings_notice("Episode finished")
+  elseif id == "play" or id == "center_play" then
+    if ui.end_overlay then hide_end_overlay() end
     mp.commandv("cycle", "pause")
   elseif id == "back" then
     seek_relative(-10)
   elseif id == "forward" then
     seek_relative(10)
+  elseif id == "next_episode" then
+    request_next_episode("manual")
+  elseif id == "manual_skip_intro" or id == "manual_skip_outro" then
+    local data = region.data or {}
+    local kind = tostring(data.kind or (id == "manual_skip_outro" and "outro" or "intro"))
+    local range = {
+      kind = kind,
+      start_time = tonumber(data.start_time),
+      end_time = tonumber(data.end_time),
+      source = tostring(data.source or "button"),
+      key = tostring(data.key or ""),
+      high_confidence = true,
+    }
+    if range.key == "" then range.key = skip_range_key(kind, range.start_time, range.end_time) end
+    perform_skip_range(range, "manual", false)
   elseif id == "mute" then
     mp.commandv("cycle", "mute")
+    mp.add_timeout(0.05, function()
+      emit_player_setting_changed("muted", mp.get_property_bool("mute") and "true" or "false")
+    end)
   elseif id == "seek" then
     set_seek_from_mouse(mouse, true)
   elseif id == "volume" then
-    set_volume_from_mouse(mouse)
-    ui.drag_ratio = nil
+    set_volume_from_mouse(mouse, true)
   elseif id == "subs" then
     toggle_subtitles()
   elseif id == "settings" then
@@ -2565,15 +3342,30 @@ function activate_region(region, mouse)
     ui.submenu = "playback"
   elseif id == "settings:autoplay" then
     state.autoplay = not state.autoplay
+    safe_commandv("script-message", "streamnyaa-auto-next-changed", state.autoplay and "true" or "false")
+    emit_player_setting_changed("autoNextEpisode", state.autoplay and "true" or "false")
+    mark_menu_dirty("main")
+    settings_notice(state.autoplay and "Auto next episode on" or "Auto next episode off")
   elseif id == "settings:skip" then
     state.skip_intro = not state.skip_intro
-    if not state.skip_intro then ui.skip_intro_applied = false end
+    if not state.skip_intro then reset_skip_range_state() end
+    emit_player_setting_changed("autoSkipIntro", state.skip_intro and "true" or "false")
+    mark_menu_dirty("main")
+    settings_notice(state.skip_intro and "Auto skip intro on" or "Auto skip intro off")
+  elseif id == "settings:skip_outro" then
+    state.skip_outro = not state.skip_outro
+    if not state.skip_outro then reset_skip_range_state() end
+    emit_player_setting_changed("autoSkipOutro", state.skip_outro and "true" or "false")
+    mark_menu_dirty("main")
+    settings_notice(state.skip_outro and "Auto skip outro on" or "Auto skip outro off")
   elseif id == "settings:mini" then
     toggle_mini_player()
   elseif id == "settings:theater" then
     toggle_theater_mode()
   elseif starts_with(id, "speed:") then
-    safe_set_property_number("speed", tonumber(region.data and region.data.value) or 1)
+    local selected_speed = tonumber(region.data and region.data.value) or 1
+    safe_set_property_number("speed", selected_speed)
+    emit_player_setting_changed("playbackSpeed", tostring(selected_speed))
     ui.submenu = "main"
   elseif starts_with(id, "sub:") then
     local value = region.data and region.data.value or "no"
@@ -2604,6 +3396,7 @@ function activate_region(region, mouse)
     local value = tostring(region.data and region.data.value or "")
     if value == "reset" then
       reset_subtitle_style()
+      emit_subtitle_style_preferences()
       settings_notice("Subtitle style reset")
       ui.submenu = "appearance"
     elseif SUBTITLE_STYLE_OPTIONS[value] then
@@ -2622,6 +3415,9 @@ function activate_region(region, mouse)
       else
         settings_notice("Subtitle style updated with limited MPV support")
       end
+      local preference_key = subtitle_style_preference_key(kind)
+      if preference_key then emit_player_setting_changed(preference_key, tostring(value)) end
+      emit_player_setting_changed("subtitleStyle.custom", "true")
       ui.submenu = "appearance"
     end
   elseif starts_with(id, "audio:") then
@@ -2669,6 +3465,7 @@ function activate_region(region, mouse)
     if starts_with(value, "speed_") then
       local speed = tonumber(value:gsub("^speed_", "")) or 1
       safe_set_property_number("speed", speed)
+      emit_player_setting_changed("playbackSpeed", tostring(speed))
       settings_notice("Playback speed: " .. speed_label(speed))
     elseif value == "loop" then
       state.loop_file = not state.loop_file
@@ -2676,9 +3473,12 @@ function activate_region(region, mouse)
       settings_notice(state.loop_file and "Loop episode on" or "Loop episode off")
     elseif value == "remember_speed" then
       state.remember_speed = not state.remember_speed
+      emit_player_setting_changed("rememberSpeed", state.remember_speed and "true" or "false")
       settings_notice(state.remember_speed and "Remember speed on" or "Remember speed off")
     elseif value == "reset" then
       reset_playback_settings()
+      emit_player_setting_changed("playbackSpeed", "1")
+      emit_player_setting_changed("rememberSpeed", state.remember_speed and "true" or "false")
     end
     ui.submenu = "playback"
   end
@@ -2690,18 +3490,18 @@ function handle_mouse_move()
   if not mouse and ui.dragging then
     debug_input("mouse lost while dragging; clearing drag state")
     ui.dragging = nil
-    ui.drag_ratio = nil
+    clear_drag_preview()
     ui.mouse_down_region = nil
     draw(true, "mouse-drag-cancel")
     return
   end
   if ui.dragging == "seek" then
     set_seek_from_mouse(mouse, false)
-    draw(true, "mouse-drag-seek")
+    draw_drag("mouse-drag-seek")
     return
   elseif ui.dragging == "volume" then
-    set_volume_from_mouse(mouse)
-    draw(true, "mouse-drag-volume")
+    set_volume_from_mouse(mouse, false)
+    draw_drag("mouse-drag-volume")
     return
   end
   if ui.settings_open then
@@ -2724,14 +3524,14 @@ function handle_mouse_down()
   local region, mouse = redraw_for_input()
   debug_input("down target=" .. tostring(region and region.id or "none"))
   ui.dragging = nil
-  ui.drag_ratio = nil
+  clear_drag_preview()
   ui.mouse_down_region = region
   if region and region.id == "seek" then
-    ui.dragging = "seek"
+    begin_drag("seek")
     set_seek_from_mouse(mouse, false)
   elseif region and region.id == "volume" then
-    ui.dragging = "volume"
-    set_volume_from_mouse(mouse)
+    begin_drag("volume")
+    set_volume_from_mouse(mouse, false)
   end
   if ui.dragging then
     draw(true, "mouse-down")
@@ -2744,8 +3544,7 @@ function handle_mouse_up()
   if ui.dragging == "seek" then
     set_seek_from_mouse(mouse, true)
   elseif ui.dragging == "volume" then
-    set_volume_from_mouse(mouse)
-    ui.drag_ratio = nil
+    set_volume_from_mouse(mouse, true)
   else
     local down_region = ui.mouse_down_region
     local target = region
@@ -2761,7 +3560,7 @@ function handle_mouse_up()
     activate_region(target, mouse)
   end
   ui.dragging = nil
-  ui.drag_ratio = nil
+  clear_drag_preview()
   ui.mouse_down_region = nil
   draw(true, "mouse-up")
 end
@@ -2783,7 +3582,7 @@ function handle_mouse_press(event)
     ui.settings_open = false
     ui.submenu = "main"
     ui.dragging = nil
-    ui.drag_ratio = nil
+    clear_drag_preview()
     ui.mouse_down_region = nil
     safe_commandv("cycle", "fullscreen")
     draw(true, "mouse-double")
@@ -2821,8 +3620,13 @@ end
 
 function close_menu_or_overlay()
   ui.dragging = nil
-  ui.drag_ratio = nil
+  clear_drag_preview()
   ui.mouse_down_region = nil
+  if ui.end_overlay then
+    hide_end_overlay()
+    draw(true, "escape-end-overlay")
+    return
+  end
   if ui.settings_open then
     if starts_with(ui.submenu, "appearance_") then
       ui.submenu = "appearance"
@@ -2856,6 +3660,8 @@ mp.observe_property("time-pos", "number", function(_, value)
     ui.loading_override_until = 0
   end
   maybe_auto_skip_intro()
+  maybe_auto_skip_outro()
+  wake_manual_skip_buttons()
   if not ui.settings_open then
     draw(false, "time-pos")
   end
@@ -2869,7 +3675,10 @@ mp.observe_property("speed", "number", function(_, value)
 end)
 mp.observe_property("idle-active", "bool", function(_, value) update_property("idle", value or false, true) end)
 mp.observe_property("core-idle", "bool", function(_, value) update_property("core_idle", value or false, true) end)
-mp.observe_property("paused-for-cache", "bool", function(_, value) update_property("paused_for_cache", value or false, true) end)
+mp.observe_property("paused-for-cache", "bool", function(_, value)
+  update_property("paused_for_cache", value or false, true)
+  log_buffering_transition()
+end)
 mp.observe_property("fullscreen", "bool", function(_, value)
   if value then
     state.mini_player = false
@@ -2881,7 +3690,11 @@ end)
 mp.observe_property("path", "string", function(_, value)
   local next_path = value or ""
   if next_path ~= state.path then
-    ui.skip_intro_applied = false
+    reset_skip_range_state()
+    reset_end_overlay_state()
+    reset_buffering_state()
+    ui.marker_log_key = ""
+    ui.chapter_state_key = ""
     ui.anim_started = mp.get_time()
     state.has_started_playback = false
     ui.loading_override_until = mp.get_time() + 2.5
@@ -2891,7 +3704,16 @@ end)
 mp.observe_property("filename", "string", function(_, value) update_property("filename", value or "", false) end)
 mp.observe_property("media-title", "string", function(_, value) update_property("title", value or "", true) end)
 mp.observe_property("cache-buffering-state", "number", function(_, value)
-  state.cache_percent = value or 0
+  local percent = tonumber(value)
+  state.cache_percent = percent or 0
+  if percent and percent > 0 and percent < 100 then
+    state.cache_buffering_active = true
+    state.cache_buffering_percent = clamp(percent, 0, 100)
+  else
+    state.cache_buffering_active = false
+    state.cache_buffering_percent = nil
+  end
+  log_buffering_transition()
   if not ui.settings_open or is_loading() or is_buffering() then
     draw(false, "cache-buffering")
   end
@@ -2899,6 +3721,12 @@ end)
 mp.observe_property("demuxer-cache-state", "native", function(_, value) update_demuxer_cache(value) end)
 mp.observe_property("chapter-list", "native", function(_, value)
   state.chapters = value or {}
+  local chapter_key = tostring(#(state.chapters or {})) .. ":" .. tostring(math.floor(tonumber(state.duration) or 0))
+  if chapter_key ~= ui.chapter_state_key then
+    reset_skip_range_state()
+    ui.chapter_state_key = chapter_key
+  end
+  log_op_ed_markers()
   if not ui.settings_open then draw(false, "chapter-list") end
 end)
 mp.observe_property("sid", "native", function(_, value)
@@ -2958,7 +3786,7 @@ bind("MBTN_LEFT_DBL", "streamnyaa-double-click", function()
   ui.settings_open = false
   ui.submenu = "main"
   ui.dragging = nil
-  ui.drag_ratio = nil
+  clear_drag_preview()
   ui.mouse_down_region = nil
   safe_commandv("cycle", "fullscreen")
   draw(true, "double-click-binding")
@@ -2971,19 +3799,44 @@ bind_key("ESC", "streamnyaa-escape", close_menu_or_overlay)
 bind_key("SPACE", "streamnyaa-space", function() show_overlay(); safe_commandv("cycle", "pause"); draw(true, "key-space") end)
 bind_key("LEFT", "streamnyaa-left", function() show_overlay(); seek_relative(-10); draw(true, "key-left") end)
 bind_key("RIGHT", "streamnyaa-right", function() show_overlay(); seek_relative(10); draw(true, "key-right") end)
-bind_key("UP", "streamnyaa-up", function() show_overlay(); safe_commandv("add", "volume", "5"); draw(true, "key-up") end)
-bind_key("DOWN", "streamnyaa-down", function() show_overlay(); safe_commandv("add", "volume", "-5"); draw(true, "key-down") end)
-bind_key("m", "streamnyaa-mute", function() show_overlay(); safe_commandv("cycle", "mute"); draw(true, "key-mute") end)
+bind_key("UP", "streamnyaa-up", function()
+  show_overlay()
+  safe_commandv("add", "volume", "5")
+  mp.add_timeout(0.05, function() emit_player_setting_changed("volume", tostring(mp.get_property_number("volume") or state.volume or 100)) end)
+  draw(true, "key-up")
+end)
+bind_key("DOWN", "streamnyaa-down", function()
+  show_overlay()
+  safe_commandv("add", "volume", "-5")
+  mp.add_timeout(0.05, function() emit_player_setting_changed("volume", tostring(mp.get_property_number("volume") or state.volume or 100)) end)
+  draw(true, "key-down")
+end)
+bind_key("m", "streamnyaa-mute", function()
+  show_overlay()
+  safe_commandv("cycle", "mute")
+  mp.add_timeout(0.05, function() emit_player_setting_changed("muted", mp.get_property_bool("mute") and "true" or "false") end)
+  draw(true, "key-mute")
+end)
 bind_key("c", "streamnyaa-cc", function() show_overlay(); toggle_subtitles(); draw(true, "key-cc") end)
 bind_key("C", "streamnyaa-cc-shift", function() show_overlay(); toggle_subtitles(); draw(true, "key-cc-shift") end)
 bind_key("a", "streamnyaa-audio", function() show_overlay(); safe_commandv("cycle", "audio"); draw(true, "key-audio") end)
-bind_key("S", "streamnyaa-settings", function() show_overlay(); ui.dragging = nil; ui.drag_ratio = nil; ui.settings_open = not ui.settings_open; ui.submenu = "main"; draw(true, "key-settings") end)
+bind_key("S", "streamnyaa-settings", function() show_overlay(); ui.dragging = nil; clear_drag_preview(); ui.settings_open = not ui.settings_open; ui.submenu = "main"; draw(true, "key-settings") end)
 bind_key("i", "streamnyaa-skip-intro", function() show_overlay(); skip_intro(); draw(true, "key-skip-intro") end)
 bind_key("p", "streamnyaa-pip", function() show_overlay(); toggle_mini_player(); draw(true, "key-mini") end)
 bind_key("t", "streamnyaa-theater", function() show_overlay(); toggle_theater_mode(); draw(true, "key-theater") end)
 bind_key("f", "streamnyaa-fullscreen", function() show_overlay(); safe_commandv("cycle", "fullscreen"); draw(true, "key-fullscreen") end)
-bind_key("[", "streamnyaa-speed-down", function() show_overlay(); safe_commandv("multiply", "speed", "0.9091"); draw(true, "key-speed-down") end)
-bind_key("]", "streamnyaa-speed-up", function() show_overlay(); safe_commandv("multiply", "speed", "1.1"); draw(true, "key-speed-up") end)
+bind_key("[", "streamnyaa-speed-down", function()
+  show_overlay()
+  safe_commandv("multiply", "speed", "0.9091")
+  mp.add_timeout(0.05, function() emit_player_setting_changed("playbackSpeed", tostring(mp.get_property_number("speed") or state.speed or 1)) end)
+  draw(true, "key-speed-down")
+end)
+bind_key("]", "streamnyaa-speed-up", function()
+  show_overlay()
+  safe_commandv("multiply", "speed", "1.1")
+  mp.add_timeout(0.05, function() emit_player_setting_changed("playbackSpeed", tostring(mp.get_property_number("speed") or state.speed or 1)) end)
+  draw(true, "key-speed-up")
+end)
 
 function log_script_message(name, ...)
   if not DEBUG_SCRIPT_MESSAGES then return end
@@ -3030,18 +3883,54 @@ mp.register_script_message("streamnyaa-import-subtitle-path", function(path)
   end
 end)
 
+mp.register_script_message("streamnyaa-set-auto-next", function(enabled)
+  log_script_message("streamnyaa-set-auto-next", enabled)
+  apply_player_preference("autoNextEpisode", enabled)
+end)
+
+mp.register_script_message("streamnyaa-set-player-preference", function(key, value)
+  log_script_message("streamnyaa-set-player-preference", key, value)
+  apply_player_preference(key, value)
+end)
+
 mp.register_event("file-loaded", function()
   show_overlay()
   ui.settings_open = false
   ui.submenu = "main"
-  ui.skip_intro_applied = false
+  hide_end_overlay()
+  ui.eof_handled_key = ""
+  reset_buffering_state()
+  reset_skip_range_state()
+  ui.marker_log_key = ""
+  ui.chapter_state_key = ""
   if not state.remember_speed then
     safe_set_property_number("speed", 1)
   end
   draw(true, "file-loaded")
 end)
-mp.register_event("end-file", function() show_overlay(); ui.settings_open = false; ui.submenu = "main"; ui.skip_intro_applied = false; draw(true, "end-file") end)
-mp.register_event("playback-restart", function() show_overlay(); ui.skip_intro_applied = false; draw(true, "playback-restart") end)
+mp.register_event("end-file", function(event)
+  show_overlay()
+  ui.settings_open = false
+  ui.submenu = "main"
+  reset_skip_range_state()
+  reset_buffering_state()
+  ui.marker_log_key = ""
+  ui.chapter_state_key = ""
+  if event and event.reason == "eof" then
+    handle_episode_eof()
+  else
+    hide_end_overlay()
+  end
+  draw(true, "end-file")
+end)
+mp.register_event("playback-restart", function()
+  show_overlay()
+  hide_end_overlay()
+  ui.eof_handled_key = ""
+  reset_buffering_state()
+  reset_skip_range_state()
+  draw(true, "playback-restart")
+end)
 
 mp.add_periodic_timer(0.05, function()
   local loading = is_loading() or is_buffering()
@@ -3051,7 +3940,7 @@ mp.add_periodic_timer(0.05, function()
     draw(true, "timer-drag")
   elseif ui.pending_draw then
     draw(false, "timer-pending")
-  elseif ui.visible and not ui.settings_open and not state.paused and mp.get_time() - ui.last_interaction > AUTO_HIDE_SECONDS then
+  elseif ui.visible and not ui.settings_open and not state.paused and not ui.end_overlay and mp.get_time() - ui.last_interaction > AUTO_HIDE_SECONDS then
     draw(true, "timer-autohide")
   end
 end)

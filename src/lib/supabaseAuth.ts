@@ -1,6 +1,8 @@
 import { accountApiFetch, accountApiUrl } from './accountApi';
 
 const STORAGE_KEY = 'streamnyaa.auth.session';
+const FALLBACK_SUPABASE_URL = 'https://opteiijnvuwstpdjxwlk.supabase.co';
+const FALLBACK_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_oHAwXtg1wXcPybVYfLBUuQ_GiYz3Fxv';
 
 export interface AuthUser {
   id: string;
@@ -23,26 +25,87 @@ interface AuthConfig {
 
 let cachedConfig: AuthConfig | null = null;
 
+type RuntimeEnv = Partial<Record<string, string>>;
+
+function runtimeEnv(): RuntimeEnv {
+  return ((import.meta as unknown as { env?: RuntimeEnv }).env) || {};
+}
+
+function cleanSupabaseUrl(value?: string) {
+  return String(value || '').trim().replace(/\/+$/, '').replace(/\/rest\/v1$/i, '');
+}
+
+function envAuthConfig(): AuthConfig | null {
+  const env = runtimeEnv();
+  const supabaseUrl = cleanSupabaseUrl(
+    env.VITE_SUPABASE_URL
+      || env.VITE_PUBLIC_SUPABASE_URL
+      || env.VITE_SUPABASE_PROJECT_URL,
+  );
+  const publishableKey = String(
+    env.VITE_SUPABASE_ANON_KEY
+      || env.VITE_SUPABASE_PUBLISHABLE_KEY
+      || env.VITE_PUBLIC_SUPABASE_ANON_KEY
+      || '',
+  ).trim();
+
+  return supabaseUrl && publishableKey ? { supabaseUrl, publishableKey } : null;
+}
+
+function hostedFallbackConfig(): AuthConfig {
+  return {
+    supabaseUrl: FALLBACK_SUPABASE_URL,
+    publishableKey: FALLBACK_SUPABASE_PUBLISHABLE_KEY,
+  };
+}
+
+function normalizeAuthNetworkError(error: unknown) {
+  if (error instanceof TypeError || /Failed to fetch|NetworkError|Load failed/i.test(String((error as any)?.message || error))) {
+    return new Error('Could not reach StreamNyaa login services. Check your connection and try again.');
+  }
+  return error instanceof Error ? error : new Error('Authentication request failed.');
+}
+
 async function authConfig() {
   if (cachedConfig) return cachedConfig;
 
-  const response = await accountApiFetch('/api/auth/config');
-  if (!response.ok) throw new Error('Login is not configured yet.');
-  cachedConfig = await response.json();
+  const directConfig = envAuthConfig();
+  if (directConfig) {
+    cachedConfig = directConfig;
+    return cachedConfig;
+  }
+
+  try {
+    const response = await accountApiFetch('/api/auth/config');
+    if (!response.ok) throw new Error('Login is not configured yet.');
+    const data = await response.json();
+    const supabaseUrl = cleanSupabaseUrl(data?.supabaseUrl);
+    const publishableKey = String(data?.publishableKey || '').trim();
+    if (!supabaseUrl || !publishableKey) throw new Error('Login is not configured yet.');
+    cachedConfig = { supabaseUrl, publishableKey };
+  } catch {
+    cachedConfig = hostedFallbackConfig();
+  }
+
   return cachedConfig!;
 }
 
 async function authFetch(path: string, options: RequestInit = {}) {
   const config = await authConfig();
-  const response = await fetch(`${config.supabaseUrl}/auth/v1/${path}`, {
-    ...options,
-    headers: {
-      apikey: config.publishableKey,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...(options.headers || {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${config.supabaseUrl}/auth/v1/${path}`, {
+      ...options,
+      headers: {
+        apikey: config.publishableKey,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    throw normalizeAuthNetworkError(error);
+  }
 
   const text = await response.text();
   let data: any = null;
@@ -83,9 +146,16 @@ function normalizeSession(data: any): AuthSession {
 }
 
 function siteRedirectUrl(path = '/login') {
-  const origin = typeof window !== 'undefined' && window.location?.origin
+  const env = runtimeEnv();
+  const configuredOrigin = String(
+    env.VITE_AUTH_REDIRECT_ORIGIN
+      || env.VITE_APP_URL
+      || env.VITE_PUBLIC_APP_URL
+      || '',
+  ).trim().replace(/\/+$/, '');
+  const origin = configuredOrigin || (typeof window !== 'undefined' && window.location?.origin
     ? window.location.origin
-    : 'https://www.streamnyaa.xyz';
+    : 'https://www.streamnyaa.xyz');
   return `${origin}${path}`;
 }
 
@@ -158,6 +228,15 @@ export async function updatePassword(accessToken: string, password: string) {
   });
 }
 
+export async function fetchSessionUser(session: AuthSession) {
+  const data = await authFetch('user', {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  const user = data?.user || data;
+  if (!user?.id) throw new Error('Your account profile could not be loaded.');
+  return user as AuthUser;
+}
+
 export async function refreshSession(session: AuthSession) {
   if (!session.refresh_token) return session;
   const data = await authFetch('token?grant_type=refresh_token', {
@@ -184,9 +263,14 @@ export async function signOutSession(session: AuthSession | null) {
 }
 
 export async function fetchAccount(session: AuthSession) {
-  const response = await fetch(accountApiUrl('/api/auth/me'), {
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(accountApiUrl('/api/auth/me'), {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+  } catch (error) {
+    throw normalizeAuthNetworkError(error);
+  }
   if (!response.ok) {
     const text = await response.text();
     let data: any = null;
