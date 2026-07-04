@@ -1,7 +1,3 @@
-<div align="center">
-<img width="1200" height="475" alt="StreamNyaa banner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
 # StreamNyaa
 
 StreamNyaa is a React anime discovery and torrent streaming app. It combines anime metadata from AniList/Jikan-style APIs with Nyaa torrent search, magnet generation, watch/download pages, a local list, theme switching, and browser-based torrent player options.
