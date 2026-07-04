@@ -37,15 +37,31 @@ const DesktopNavItem = memo(function DesktopNavItem({
       end={to === '/'}
       title={collapsed ? label : undefined}
       className={({ isActive }) => [
-        'group flex h-11 items-center rounded-xl text-[15px] font-semibold transition-all duration-200',
+        'group relative flex h-11 items-center overflow-hidden rounded-xl text-[15px] font-semibold transition-all duration-200',
         collapsed ? 'justify-center px-0' : 'gap-3 px-4',
         isActive
-          ? 'bg-[linear-gradient(135deg,rgba(244,63,94,0.28),rgba(244,63,94,0.12))] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_14px_34px_rgba(244,63,94,0.12)]'
-          : 'text-white/58 hover:bg-white/[0.055] hover:text-white',
+          ? 'bg-[linear-gradient(135deg,rgba(255,63,95,0.36),rgba(255,63,95,0.16))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_18px_42px_rgba(255,47,79,0.18)]'
+          : 'text-white/58 hover:bg-white/[0.060] hover:text-white',
       ].join(' ')}
     >
-      <Icon className="h-5 w-5 shrink-0" />
-      {!collapsed ? <span>{label}</span> : null}
+      {({ isActive }) => (
+        <>
+          <span
+            className={`absolute left-0 top-2 h-7 w-1 rounded-r-full bg-primary shadow-[0_0_18px_rgba(244,63,94,0.65)] transition-opacity duration-200 ${
+              isActive ? 'opacity-100' : 'opacity-0'
+            }`}
+            aria-hidden="true"
+          />
+          <span
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg transition duration-200 ${
+              isActive ? 'bg-primary/16 text-white' : 'text-white/58 group-hover:text-white'
+            }`}
+          >
+            <Icon className="h-[19px] w-[19px]" />
+          </span>
+          {!collapsed ? <span className="truncate">{label}</span> : null}
+        </>
+      )}
     </NavLink>
   );
 });
@@ -76,7 +92,7 @@ export default function DesktopShell() {
     <div className="desktop-app-shell min-h-screen overflow-hidden text-white">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_62%_10%,rgba(244,63,94,0.14),transparent_28%),radial-gradient(circle_at_18%_0%,rgba(99,102,241,0.10),transparent_26%)]" />
       <div className={`relative grid min-h-screen w-screen overflow-hidden bg-black/20 shadow-2xl shadow-black/40 transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? 'grid-cols-[86px_minmax(0,1fr)]' : 'grid-cols-[258px_minmax(0,1fr)]'}`}>
-        <aside className={`desktop-glass-panel flex h-screen flex-col border-r py-6 transition-[padding] duration-300 ${sidebarCollapsed ? 'px-3' : 'px-5'}`}>
+        <aside className={`sn-sidebar-panel flex h-screen flex-col py-6 transition-[padding] duration-300 ${sidebarCollapsed ? 'px-3' : 'px-5'}`}>
           <Link to="/" className={`flex h-[58px] items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-1'}`}>
             {logoFailed ? (
               <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[18px] bg-primary text-[21px] font-black text-white">S</span>
@@ -111,7 +127,7 @@ export default function DesktopShell() {
         </aside>
 
         <div className="min-w-0">
-          <header className="desktop-glass-panel sticky top-0 z-30 flex h-[70px] items-center gap-4 border-b px-6">
+          <header className="sn-topbar sticky top-0 z-30 flex h-[70px] items-center gap-4 px-6">
             <button
               type="button"
               title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -126,26 +142,32 @@ export default function DesktopShell() {
                   return next;
                 });
               }}
-              className="grid h-11 w-11 place-items-center rounded-xl border border-white/[0.07] bg-white/[0.045] text-white/80 shadow-lg shadow-black/20 transition-colors hover:border-white/14 hover:bg-white/[0.075] hover:text-white"
+              className="sn-icon-action h-11 w-11"
             >
               <Menu className="h-5 w-5" />
             </button>
-            <Link to="/search" className="flex h-11 min-w-[340px] max-w-[600px] flex-1 items-center gap-3 rounded-xl border border-white/[0.07] bg-black/28 px-4 text-sm text-white/48 shadow-lg shadow-black/20 transition-colors hover:border-white/14 hover:bg-white/[0.05] hover:text-white/72">
+            <Link to="/search" className="sn-input flex h-11 min-w-[340px] max-w-[600px] flex-1 items-center gap-3 px-4 text-sm text-white/48 transition-all hover:text-white/74 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
               <Search className="h-5 w-5" />
-              <span>Search anime...</span>
-              <kbd className="ml-auto rounded bg-white/8 px-2 py-1 text-[11px] text-white/42">Ctrl K</kbd>
+              <span>Search anime, episodes, sources...</span>
+              <kbd className="ml-auto rounded-md bg-white/8 px-2 py-1 text-[11px] font-bold text-white/42">Ctrl K</kbd>
             </Link>
             <div className="ml-auto flex items-center gap-3">
-              <button type="button" className="relative grid h-10 w-10 place-items-center rounded-full border border-white/[0.07] bg-white/[0.045] text-white/72 shadow-lg shadow-black/20 transition-colors hover:bg-white/[0.075] hover:text-white">
+              <button type="button" className="sn-icon-action relative h-10 w-10 rounded-full">
                 <Bell className="h-5 w-5" />
-                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
+                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary shadow-[0_0_0_4px_rgba(244,63,94,0.14)]" />
               </button>
               <Link
                 to={user ? '/profile' : '/login?next=/profile'}
                 title={user ? 'Profile' : 'Sign in'}
-                className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.08] bg-white/[0.055] text-white/80 shadow-lg shadow-black/20 transition-colors hover:bg-white/[0.08] hover:text-white"
+                className="sn-icon-action relative h-10 w-10 rounded-full"
               >
                 <UserCircle className="h-6 w-6" />
+                <span
+                  className={`absolute bottom-1.5 right-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-[#101014] ${
+                    user ? 'bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.65)]' : 'bg-primary shadow-[0_0_12px_rgba(244,63,94,0.65)]'
+                  }`}
+                  aria-hidden="true"
+                />
               </Link>
             </div>
           </header>

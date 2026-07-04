@@ -1,10 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
 import { Eye, EyeOff, KeyRound, Lock, LogIn, Mail, UserPlus } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
-import { fetchSeasonalAnime } from '../api/jikan';
+import { useSeasonalAnimeQuery } from '../lib/seasonalAnime';
 
 type LoginProps = {
   adminOnly?: boolean;
@@ -33,6 +32,11 @@ const FALLBACK_VISUALS = [
   },
 ];
 
+function isDesktopRuntime() {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.__STREAMNYAA_DESKTOP__ || window.__TAURI__ || window.__TAURI_INTERNALS__);
+}
+
 export default function Login({ adminOnly = false }: LoginProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -47,9 +51,9 @@ export default function Login({ adminOnly = false }: LoginProps) {
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [activeVisualIndex, setActiveVisualIndex] = useState(0);
-  const { data: seasonalData } = useQuery({
-    queryKey: ['login-seasonal-visuals'],
-    queryFn: fetchSeasonalAnime,
+  const { data: seasonalData } = useSeasonalAnimeQuery({
+    limit: 8,
+    queryKeyPrefix: 'login-seasonal-visuals',
     staleTime: 1000 * 60 * 60 * 6,
   });
   const seasonalVisuals = useMemo(() => {
@@ -63,13 +67,14 @@ export default function Login({ adminOnly = false }: LoginProps) {
       .slice(0, 8);
     return apiVisuals.length >= 3 ? apiVisuals : FALLBACK_VISUALS;
   }, [seasonalData]);
+  const defaultAuthenticatedRoute = isDesktopRuntime() ? '/profile' : '/dashboard';
   const redirectTarget = useMemo(() => {
     if (adminOnly) return '/admin';
     const rawNext = new URLSearchParams(location.search).get('next') || '';
-    if (!rawNext || !rawNext.startsWith('/') || rawNext.startsWith('//')) return '/dashboard';
-    if (rawNext === '/login' || rawNext.startsWith('/login?') || rawNext === '/reset-password') return '/dashboard';
+    if (!rawNext || !rawNext.startsWith('/') || rawNext.startsWith('//')) return defaultAuthenticatedRoute;
+    if (rawNext === '/login' || rawNext.startsWith('/login?') || rawNext === '/reset-password') return defaultAuthenticatedRoute;
     return rawNext;
-  }, [adminOnly, location.search]);
+  }, [adminOnly, defaultAuthenticatedRoute, location.search]);
   const activeVisual = seasonalVisuals[activeVisualIndex % seasonalVisuals.length] || FALLBACK_VISUALS[0];
   const previewVisuals = Array.from({ length: 3 }, (_, index) => seasonalVisuals[(activeVisualIndex + index + 1) % seasonalVisuals.length]).filter(Boolean);
 
@@ -112,7 +117,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
     setMessage('');
     setSubmitting(true);
     try {
-      const loginRedirect = redirectTarget === '/dashboard'
+      const loginRedirect = redirectTarget === defaultAuthenticatedRoute
         ? '/login'
         : `/login?next=${encodeURIComponent(redirectTarget)}`;
       await signInGoogle(loginRedirect);
@@ -235,11 +240,11 @@ export default function Login({ adminOnly = false }: LoginProps) {
         </div>
       </div>
 
-      <div className="mx-auto grid w-full max-w-5xl overflow-hidden rounded-[30px] border border-white/14 bg-black/54 shadow-2xl shadow-black/45 backdrop-blur-2xl md:min-h-[520px] md:grid-cols-[0.95fr_1.05fr] lg:min-h-[560px]">
+      <div className="sn-glass-panel mx-auto grid w-full max-w-5xl overflow-hidden rounded-[30px] bg-black/54 md:min-h-[520px] md:grid-cols-[0.95fr_1.05fr] lg:min-h-[560px]">
         <section className="flex min-h-0 items-center bg-black/20 px-5 py-6 backdrop-blur-xl sm:px-8 md:px-10">
           <div className="mx-auto w-full max-w-[360px]">
             <div className="mb-6 text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/25 bg-primary/12 text-primary">
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/12 text-primary ring-1 ring-primary/25">
                 <Lock className="h-5 w-5" />
               </div>
               <h1 className="text-2xl font-black tracking-tight md:text-3xl">{modeCopy.title}</h1>
@@ -247,7 +252,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
             </div>
 
             {!adminOnly ? (
-              <div className="mb-4 grid grid-cols-2 rounded-full border border-white/10 bg-white/5 p-1 shadow-inner">
+              <div className="sn-glass-card mb-4 grid grid-cols-2 rounded-full p-1 shadow-inner">
                 <button type="button" onClick={() => setMode('login')} className={`rounded-full px-3 py-2.5 text-sm font-black transition-colors ${mode === 'login' || mode === 'forgot' || mode === 'reset' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-white/56 hover:text-white'}`}>Login</button>
                 <button type="button" onClick={() => setMode('signup')} className={`rounded-full px-3 py-2.5 text-sm font-black transition-colors ${mode === 'signup' ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'text-white/56 hover:text-white'}`}>Sign up</button>
               </div>
@@ -259,7 +264,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
                   type="button"
                   onClick={startGoogleLogin}
                   disabled={submitting}
-                  className="flex w-full items-center justify-center gap-3 rounded-full border border-white/10 bg-white px-4 py-3 text-sm font-black text-black transition-colors hover:bg-white/90 disabled:opacity-60"
+                  className="flex w-full items-center justify-center gap-3 rounded-full bg-white px-4 py-3 text-sm font-black text-black transition-colors hover:bg-white/90 disabled:opacity-60"
                 >
                   <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -288,7 +293,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     required
-                    className="w-full rounded-full border border-white/15 bg-white/[0.07] py-3 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-primary/70"
+                    className="sn-input w-full rounded-full py-3 pl-11 pr-4"
                     placeholder="you@example.com"
                   />
                 </div>
@@ -305,7 +310,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
                     onChange={(event) => setPassword(event.target.value)}
                     required
                     minLength={6}
-                    className="w-full rounded-full border border-white/15 bg-white/[0.07] py-3 pl-4 pr-12 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-primary/70"
+                    className="sn-input w-full rounded-full py-3 pl-4 pr-12"
                     placeholder="At least 6 characters"
                   />
                   <button
@@ -331,7 +336,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
                       onChange={(event) => setConfirmPassword(event.target.value)}
                       required
                       minLength={6}
-                      className="w-full rounded-full border border-white/15 bg-white/[0.07] py-3 pl-11 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/38 focus:border-primary/70"
+                      className="sn-input w-full rounded-full py-3 pl-11 pr-4"
                       placeholder="Repeat new password"
                     />
                   </div>
@@ -341,7 +346,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
               {error ? <p className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm font-semibold text-red-400">{error}</p> : null}
               {message ? <p className="rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm font-semibold text-green-400">{message}</p> : null}
 
-              <button disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-black text-white shadow-lg shadow-primary/25 transition-colors hover:bg-primary/90 disabled:opacity-60">
+              <button disabled={submitting} className="sn-primary-action flex w-full rounded-full px-4 py-3 text-sm disabled:opacity-60">
                 {mode === 'forgot' || mode === 'reset' ? <KeyRound className="h-4 w-4" /> : adminOnly || mode === 'login' ? <LogIn className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                 {submitting ? 'Please wait...' : modeCopy.action}
               </button>
@@ -374,7 +379,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
             ) : null}
 
             {adminOnly ? (
-              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="sn-glass-card mt-4 p-4">
                 <p className="text-sm font-black text-white">Admin-only entry</p>
                 <p className="mt-1 text-sm leading-6 text-white/55">If this email is not on the admin list, the dashboard will stay locked after sign-in.</p>
               </div>
@@ -389,7 +394,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
         <section className="relative hidden items-center justify-center bg-white/[0.035] p-5 backdrop-blur-xl md:flex lg:p-7">
           <div className="absolute bottom-10 left-0 h-px w-20 bg-primary/50" />
           <div className="w-full max-w-[330px]">
-            <div className="overflow-hidden rounded-[30px] border border-primary/20 bg-zinc-950 p-2 shadow-2xl shadow-black/45">
+            <div className="overflow-hidden rounded-[30px] bg-zinc-950 p-2 shadow-2xl shadow-black/45 ring-1 ring-primary/20">
               <div className="aspect-[3/4] overflow-hidden rounded-[24px] bg-zinc-900">
                 <img
                   key={activeVisual.cover}
@@ -407,7 +412,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
                   key={`${visual.cover}-${index}`}
                   type="button"
                   onClick={() => setActiveVisualIndex((activeVisualIndex + index + 1) % seasonalVisuals.length)}
-                  className="aspect-[3/4] overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition-transform hover:-translate-y-0.5"
+                  className="sn-card-hover aspect-[3/4] overflow-hidden rounded-2xl transition-transform hover:-translate-y-0.5"
                   aria-label={`Show ${visual.title} artwork`}
                 >
                   <img src={visual.cover} alt={`${visual.title} anime cover`} className="h-full w-full object-cover object-center" loading="lazy" referrerPolicy="no-referrer" />

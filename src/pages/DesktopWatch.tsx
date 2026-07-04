@@ -5,7 +5,7 @@ import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Load
 import Seo from '../components/Seo';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
-import { desktopWatchPath } from '../lib/desktopAnimeRoute';
+import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 import {
   findLocalPlaybackHistoryItem,
@@ -14,6 +14,7 @@ import {
   getLocalPlaybackProgress,
   listenDesktopPlayerAutoNextChanged,
   listenDesktopPlayerNextEpisode,
+  listenDesktopPlayerReady,
   listenDesktopPlayerSettingChanged,
   loadDesktopPlayerPreferences,
   loadDesktopAutoPlayNextEpisode,
@@ -84,6 +85,7 @@ const EPISODE_WINDOW_SIZE = 72;
 const EPISODE_GRID_PAGE_SIZE = 120;
 const EPISODE_CARD_SEARCH_LIMIT = 36;
 const AUTO_COMPACT_EPISODE_THRESHOLD = 180;
+const EPISODE_RAIL_DRAG_THRESHOLD = 8;
 const TIMELINE_SKELETON_CARD_COUNT = 5;
 const SOURCE_QUERY_BATCH_SIZE = 6;
 const SOURCE_RETRY_LIMIT = 5;
@@ -1287,6 +1289,10 @@ function sourceQualityLabel(quality: SourceQualityFilter) {
   return quality;
 }
 
+function sourceCountLabel(count: number, label: string) {
+  return `${count} ${label} match${count === 1 ? '' : 'es'}`;
+}
+
 function torrentUrlFor(source: NyaaItem) {
   const link = String(source.link || '').trim();
   const viewMatch = link.match(/nyaa\.si\/view\/(\d+)/i);
@@ -1631,7 +1637,6 @@ export default function DesktopWatch() {
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
   const [autoOpenBestSource, setAutoOpenBestSource] = useState(() => loadDesktopAutoOpenBestSource());
   const [autoPlayNextEpisode, setAutoPlayNextEpisode] = useState(() => loadDesktopAutoPlayNextEpisode());
-  const [playerPreferences, setPlayerPreferences] = useState(() => loadDesktopPlayerPreferences());
   const [audioMode, setAudioMode] = useState<AudioMode>(() => {
     const requestedType = searchParams.get('type');
     if (requestedType === 'dub' || requestedType === 'sub') return requestedType;
@@ -1662,13 +1667,23 @@ export default function DesktopWatch() {
   const suppressEpisodeClickRef = useRef(false);
   const sourceSectionRef = useRef<HTMLElement | null>(null);
   const selectedSeasonRef = useRef<HTMLButtonElement | null>(null);
-  const selectedEpisodeRef = useRef<HTMLButtonElement | null>(null);
+  const selectedEpisodeRef = useRef<HTMLDivElement | null>(null);
   const playActionLockRef = useRef(false);
   const playbackRequestIdRef = useRef(0);
   const [pendingAutoPlayEpisode, setPendingAutoPlayEpisode] = useState<number | null>(null);
   const requestedType = searchParams.get('type');
+  const routeMarkedUpcoming = searchParams.get('upcoming') === '1';
   const autoPlayNextEpisodeRef = useRef(autoPlayNextEpisode);
   const lastNextEpisodeRequestRef = useRef<{ episode: number; reason: string; at: number } | null>(null);
+  const selectedEpisodeNumberRef = useRef(1);
+  const maxEpisodeRef = useRef(1);
+  const activeSourceIdValueRef = useRef<string | null>(null);
+  const sourcesBusyRef = useRef(false);
+  const playableSourcesRef = useRef<RankedNyaaItem[]>([]);
+  const playSourceRef = useRef<(source: RankedNyaaItem) => void | Promise<void>>(() => {});
+  const playNextEpisodeRef = useRef<(reason?: 'manual' | 'ended' | string) => void>(() => {});
+  const pendingAutoPlayEpisodeRef = useRef<number | null>(null);
+  const preferenceSyncRetryRef = useRef<number | null>(null);
 
   const toggleSourceDetails = useCallback((sourceId: string) => {
     setExpandedSourceIds((current) => {
@@ -1685,19 +1700,55 @@ export default function DesktopWatch() {
 
   useEffect(() => subscribeDesktopAutoPlayNextEpisode(() => {
     const preferences = loadDesktopPlayerPreferences();
-    setPlayerPreferences(preferences);
     setAutoPlayNextEpisode(preferences.autoNextEpisode);
   }), []);
 
   useEffect(() => subscribeDesktopPlayerPreferences(() => {
     const preferences = loadDesktopPlayerPreferences();
-    setPlayerPreferences(preferences);
     setAutoPlayNextEpisode(preferences.autoNextEpisode);
   }), []);
 
   useEffect(() => {
     autoPlayNextEpisodeRef.current = autoPlayNextEpisode;
   }, [autoPlayNextEpisode]);
+
+  const syncPlayerPreferences = useCallback((reason: string, retry = true) => {
+    const preferences = loadDesktopPlayerPreferences();
+    setAutoPlayNextEpisode(preferences.autoNextEpisode);
+    autoPlayNextEpisodeRef.current = preferences.autoNextEpisode;
+    void syncDesktopPlayerPreferencesToPlayer(preferences).then((result) => {
+      if (!result.ok && retry) {
+        if (preferenceSyncRetryRef.current !== null) {
+          window.clearTimeout(preferenceSyncRetryRef.current);
+        }
+        preferenceSyncRetryRef.current = window.setTimeout(() => {
+          preferenceSyncRetryRef.current = null;
+          syncPlayerPreferences(`${reason}:retry`, false);
+        }, 650);
+      }
+      if (result.ok) {
+        console.info(`[StreamNyaa Watch] Synced desktop player settings to MPV reason=${reason}`);
+      } else {
+        console.info(`[StreamNyaa Watch] Desktop player settings sync incomplete reason=${reason} failed=${result.failed.join(',')}`);
+      }
+    }).catch(() => {
+      if (!retry) return;
+      if (preferenceSyncRetryRef.current !== null) {
+        window.clearTimeout(preferenceSyncRetryRef.current);
+      }
+      preferenceSyncRetryRef.current = window.setTimeout(() => {
+        preferenceSyncRetryRef.current = null;
+        syncPlayerPreferences(`${reason}:retry`, false);
+      }, 650);
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (preferenceSyncRetryRef.current !== null) {
+      window.clearTimeout(preferenceSyncRetryRef.current);
+      preferenceSyncRetryRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -1707,7 +1758,7 @@ export default function DesktopWatch() {
       const enabled = Boolean(event.enabled);
       autoPlayNextEpisodeRef.current = enabled;
       const preferences = saveDesktopAutoPlayNextEpisode(enabled);
-      setPlayerPreferences(preferences);
+      console.info(`[StreamNyaa Watch] Saved desktop player setting key=autoNextEpisode value=${enabled}`);
       setAutoPlayNextEpisode(enabled);
       void controlLocalPlayer('auto_next_episode', enabled ? 1 : 0).catch(() => {
         // The player can close while the preference event is in flight.
@@ -1726,11 +1777,28 @@ export default function DesktopWatch() {
   }, []);
 
   useEffect(() => {
-    if (!playback) return;
-    void syncDesktopPlayerPreferencesToPlayer(playerPreferences).catch(() => {
-      // The player can still be opening while the watch page is syncing preferences.
+    if (!playback?.torrentId) return;
+    syncPlayerPreferences('playback-state');
+  }, [playback?.torrentId, syncPlayerPreferences]);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void listenDesktopPlayerReady(() => {
+      if (!mounted) return;
+      syncPlayerPreferences('lua-ready');
+    }).then((cleanup) => {
+      if (!mounted) {
+        cleanup();
+        return;
+      }
+      unlisten = cleanup;
     });
-  }, [playerPreferences, playback]);
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, [syncPlayerPreferences]);
 
   useEffect(() => {
     let mounted = true;
@@ -1738,7 +1806,7 @@ export default function DesktopWatch() {
     void listenDesktopPlayerSettingChanged((event) => {
       if (!mounted || !event.key) return;
       const preferences = saveDesktopPlayerSetting(event.key, event.value ?? '');
-      setPlayerPreferences(preferences);
+      console.info(`[StreamNyaa Watch] Saved desktop player setting key=${event.key} value=${event.value ?? ''}`);
       setAutoPlayNextEpisode(preferences.autoNextEpisode);
       autoPlayNextEpisodeRef.current = preferences.autoNextEpisode;
     }).then((cleanup) => {
@@ -1767,6 +1835,16 @@ export default function DesktopWatch() {
     setAudioMode((current) => (current === nextMode ? current : nextMode));
   }, [requestedType, id]);
 
+  const setSourceAudioPreference = useCallback((preference: DesktopAudioPreference) => {
+    setAudioPreference(preference);
+    saveDesktopAudioPreference(preference);
+    const nextMode = watchTypeForAudioPreference(preference);
+    setAudioMode(nextMode);
+    const next = new URLSearchParams(searchParams);
+    next.set('type', nextMode);
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
   const detailsQuery = useQuery({
     queryKey: ['anime', id, routeAniListId, routeMalId],
     queryFn: () => fetchAnimeDetails(id!, {
@@ -1784,6 +1862,7 @@ export default function DesktopWatch() {
   const usingPlaceholderDetails = Boolean((detailsQuery as { isPlaceholderData?: boolean }).isPlaceholderData);
   const resolvedAnime = usingPlaceholderDetails ? null : detailsQuery.data?.data;
   const anime = resolvedAnime || fallbackAnime;
+  const animeNotYetAired = routeMarkedUpcoming || isUpcomingAnime(anime);
   const hasFullMetadata = Boolean(resolvedAnime);
   const metadataFailed = detailsQuery.isError && !usingPlaceholderDetails;
   const metadataLoading = Boolean(id)
@@ -2096,12 +2175,13 @@ export default function DesktopWatch() {
   }, [anime?.mal_id, anime?.id, leftPanelInfo.trailerUrl]);
 
   const sourceSearchReady = useMemo(() => {
+    if (animeNotYetAired) return false;
     if (selectedEpisode <= 0) return false;
     return sourceSearchTitleVariants(anime, id, selectedInstallment).some((title) => {
       const cleaned = cleanTitle(title).trim().toLowerCase();
       return Boolean(cleaned && isSafeSourceQueryTitle(cleaned));
     });
-  }, [anime, id, selectedEpisode, selectedInstallment]);
+  }, [anime, animeNotYetAired, id, selectedEpisode, selectedInstallment]);
 
   const { data: sources, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
     queryKey: ['desktop-watch-sources', anime?.title, anime?.title_english, anime?.title_romaji, selectedInstallment?.mal_id, selectedInstallment?.label, selectedEpisode, audioMode, audioPreference, sourceMode],
@@ -2340,11 +2420,56 @@ export default function DesktopWatch() {
     likely: sortedSources.filter((source) => source.matchTier === 'likely').length,
     broad: sortedSources.filter((source) => source.matchTier === 'broad').length,
   }), [sortedSources]);
+  const sourceMatchSummary = useMemo(() => {
+    const parts = [
+      visibleTierCounts.exact > 0 ? sourceCountLabel(visibleTierCounts.exact, 'exact') : '',
+      visibleTierCounts.likely > 0 ? sourceCountLabel(visibleTierCounts.likely, 'likely') : '',
+      sourceMode === 'broad' || visibleTierCounts.broad > 0 ? sourceCountLabel(visibleTierCounts.broad, 'broad') : '',
+    ].filter(Boolean);
+    return parts.length ? parts.join(' • ') : 'No matches in this view';
+  }, [sourceMode, visibleTierCounts]);
+  const sourceSectionTitle = animeNotYetAired
+    ? 'Still not aired'
+    : sourcesLoading || (sourcesFetching && !sources?.length)
+    ? `Finding sources for Episode ${selectedEpisode}...`
+    : sortedSources.length
+      ? `Sources for Episode ${selectedEpisode}`
+      : `No reliable sources found for Episode ${selectedEpisode}`;
+  const sourceSectionSubtitle = animeNotYetAired
+    ? 'This title is listed as upcoming. StreamNyaa will enable source search after episodes are released.'
+    : sortedSources.length
+    ? 'Ranked by episode accuracy, quality, seeds, and subtitle preference.'
+    : sourcesLoading || (sourcesFetching && !sources?.length)
+      ? 'Checking episode match, seed health, audio preference, and release quality.'
+    : sourceMode === 'broad'
+      ? 'Try another episode, audio preference, or refresh the source list.'
+      : 'Try Broad mode to include less certain matches.';
   const sourcesBusy = sourcesLoading || (sourcesFetching && !sources?.length);
   const nextPlayableSource = useMemo(
     () => playableSources.find((source) => !sourceFailureFor(source, failedSourceRecords)) || playableSources[0] || null,
     [failedSourceRecords, playableSources],
   );
+
+  useEffect(() => {
+    selectedEpisodeNumberRef.current = selectedEpisode;
+    maxEpisodeRef.current = Math.max(airedCount || 0, allEpisodes.length || 0, selectedEpisode || 1);
+  }, [airedCount, allEpisodes.length, selectedEpisode]);
+
+  useEffect(() => {
+    activeSourceIdValueRef.current = activeSourceId;
+  }, [activeSourceId]);
+
+  useEffect(() => {
+    sourcesBusyRef.current = sourcesBusy;
+  }, [sourcesBusy]);
+
+  useEffect(() => {
+    playableSourcesRef.current = playableSources;
+  }, [playableSources]);
+
+  useEffect(() => {
+    pendingAutoPlayEpisodeRef.current = pendingAutoPlayEpisode;
+  }, [pendingAutoPlayEpisode]);
 
   const { data: playbackProgress } = useQuery<DesktopPlaybackProgress>({
     queryKey: ['desktop-playback-progress', playback?.torrentId],
@@ -2484,8 +2609,8 @@ export default function DesktopWatch() {
     setPlaybackNotice({
       tone: 'loading',
       text: activeSourceId && activeSourceId !== initialSourceId
-        ? 'Switching source and cancelling the previous loading attempt...'
-        : `Opening the player and preparing this release${retryPool.length > 1 ? ' with backup sources ready' : ''}...`,
+        ? 'Switching to selected source...'
+        : `Opening best source${retryPool.length > 1 ? ' with backups ready' : ''}...`,
     });
     try {
       for (let index = 0; index < retryPool.length; index += 1) {
@@ -2496,9 +2621,7 @@ export default function DesktopWatch() {
         if (index > 0) {
           setPlaybackNotice({
             tone: 'loading',
-            text: index === 1
-              ? `Selected source failed, trying backup source ${index + 1} of ${retryPool.length}...`
-              : `Trying backup source ${index + 1} of ${retryPool.length}...`,
+            text: `Opening backup source ${index + 1} of ${retryPool.length}...`,
           });
         }
 
@@ -2508,11 +2631,12 @@ export default function DesktopWatch() {
           rememberSourceSuccess(candidate);
           setFailedSourceVersion((value) => value + 1);
           setPlayback({ torrentId: result.torrent_id!, title: result.title || candidate.title, source: playbackSource });
+          syncPlayerPreferences('player-opened');
           setPlaybackNotice({
             tone: 'success',
             text: index === 0
-              ? 'Player opened. StreamNyaa keeps the same window active while the first playback buffer fills.'
-              : `Selected source failed. StreamNyaa opened backup source ${index + 1} automatically.`,
+              ? 'Player opened. StreamNyaa keeps the same window active while playback starts.'
+              : `Backup source ${index + 1} opened.`,
           });
           return;
         } catch (error) {
@@ -2546,7 +2670,11 @@ export default function DesktopWatch() {
         playActionLockRef.current = false;
       }
     }
-  }, [activeSourceId, anime?.id, anime?.mal_id, exactSources.length, likelySources.length, openOneSource, playableSources, selectedEpisode, sourceMode]);
+  }, [activeSourceId, anime?.id, anime?.mal_id, exactSources.length, likelySources.length, openOneSource, playableSources, selectedEpisode, sourceMode, syncPlayerPreferences]);
+
+  useEffect(() => {
+    playSourceRef.current = playSource;
+  }, [playSource]);
 
   const playNextPlayableSource = useCallback(() => {
     if (!nextPlayableSource) return;
@@ -2580,66 +2708,92 @@ export default function DesktopWatch() {
   }, [runPlayerControl]);
 
   const playEpisodeNumber = useCallback((episodeNumber: number) => {
-    const targetEpisode = clampNumber(Math.round(episodeNumber), 1, Math.max(1, airedCount || selectedEpisode || 1));
+    const currentEpisode = selectedEpisodeNumberRef.current;
+    const targetEpisode = clampNumber(Math.round(episodeNumber), 1, Math.max(1, maxEpisodeRef.current || currentEpisode || 1));
     sourceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    if (targetEpisode !== selectedEpisode) {
+    if (animeNotYetAired) {
+      setPendingAutoPlayEpisode(null);
+      setPlaybackNotice({ tone: 'error', text: 'This anime has not aired yet. Sources will appear after release.' });
+      return;
+    }
+    if (targetEpisode !== currentEpisode) {
       setPendingAutoPlayEpisode(targetEpisode);
+      console.info(`[StreamNyaa Watch] Waiting for next episode sources episode=${targetEpisode}`);
       selectEpisode(targetEpisode);
       return;
     }
-    if (activeSourceId || playActionLockRef.current) {
+    if (activeSourceIdValueRef.current || playActionLockRef.current) {
       setPendingAutoPlayEpisode(targetEpisode);
+      console.info(`[StreamNyaa Watch] Waiting for next episode sources episode=${targetEpisode}`);
       setPlaybackNotice({ tone: 'loading', text: `Finding a verified source for episode ${targetEpisode}...` });
       return;
     }
-    if (sourcesBusy) {
+    if (sourcesBusyRef.current) {
       setPendingAutoPlayEpisode(targetEpisode);
+      console.info(`[StreamNyaa Watch] Waiting for next episode sources episode=${targetEpisode}`);
       setPlaybackNotice({ tone: 'loading', text: `Finding a verified source for episode ${targetEpisode}...` });
       return;
     }
-    if (playableSources[0]) {
-      void playSource(playableSources[0]);
+    const bestSource = playableSourcesRef.current[0];
+    if (bestSource) {
+      void playSourceRef.current(bestSource);
       return;
     }
     setPendingAutoPlayEpisode(targetEpisode);
-  }, [activeSourceId, airedCount, playSource, playableSources, selectEpisode, selectedEpisode, sourcesBusy]);
+    console.info(`[StreamNyaa Watch] Waiting for next episode sources episode=${targetEpisode}`);
+  }, [animeNotYetAired, selectEpisode]);
 
   const playNextEpisode = useCallback((reason: 'manual' | 'ended' | string = 'manual') => {
-    const maxEpisode = Math.max(airedCount || 0, allEpisodes.length || 0, selectedEpisode || 1);
-    const nextEpisode = selectedEpisode + 1;
+    const normalizedReason = reason === 'ended' ? 'ended' : 'manual';
+    const currentEpisode = selectedEpisodeNumberRef.current;
+    const maxEpisode = Math.max(maxEpisodeRef.current || 0, currentEpisode || 1);
+    const nextEpisode = currentEpisode + 1;
+    console.info(`[StreamNyaa Watch] Received next episode event reason=${normalizedReason} autoNext=${autoPlayNextEpisodeRef.current}`);
     if (nextEpisode > maxEpisode) {
       setPlaybackNotice({ tone: 'error', text: 'No next aired episode is available yet.' });
       return;
     }
-    if (reason === 'ended' && !autoPlayNextEpisodeRef.current) {
+    if (normalizedReason === 'ended' && !autoPlayNextEpisodeRef.current) {
+      console.info('[StreamNyaa Watch] Ignored ended request because autoNext=false');
       setPlaybackNotice({ tone: 'success', text: 'Episode finished. Use the next-episode button or enable Auto-play next episode in Settings.' });
       return;
     }
-    if (reason === 'ended') {
+    if (normalizedReason === 'ended') {
       const now = Date.now();
       const lastRequest = lastNextEpisodeRequestRef.current;
-      if (lastRequest && lastRequest.episode === nextEpisode && lastRequest.reason === reason && now - lastRequest.at < 3500) {
+      if (lastRequest && lastRequest.episode === nextEpisode && lastRequest.reason === normalizedReason && now - lastRequest.at < 3500) {
         return;
       }
-      lastNextEpisodeRequestRef.current = { episode: nextEpisode, reason, at: now };
+      lastNextEpisodeRequestRef.current = { episode: nextEpisode, reason: normalizedReason, at: now };
     } else {
-      lastNextEpisodeRequestRef.current = { episode: nextEpisode, reason, at: Date.now() };
+      console.info('[StreamNyaa Watch] Manual next requested');
+      lastNextEpisodeRequestRef.current = { episode: nextEpisode, reason: normalizedReason, at: Date.now() };
     }
+    console.info(`[StreamNyaa Watch] Resolved next episode current=${currentEpisode} next=${nextEpisode}`);
     setPlaybackNotice({
       tone: 'loading',
-      text: reason === 'ended'
+      text: normalizedReason === 'ended'
         ? `Auto-opening episode ${nextEpisode}...`
         : `Opening episode ${nextEpisode}...`,
     });
+    playbackRequestIdRef.current += 1;
+    playActionLockRef.current = false;
+    activeSourceIdValueRef.current = null;
+    setActiveSourceId(null);
+    setPlayback(null);
     playEpisodeNumber(nextEpisode);
-  }, [airedCount, allEpisodes.length, playEpisodeNumber, selectedEpisode]);
+  }, [playEpisodeNumber]);
+
+  useEffect(() => {
+    playNextEpisodeRef.current = playNextEpisode;
+  }, [playNextEpisode]);
 
   useEffect(() => {
     let mounted = true;
     let unlisten: (() => void) | undefined;
     void listenDesktopPlayerNextEpisode((event) => {
       if (!mounted) return;
-      playNextEpisode(event.reason || 'manual');
+      playNextEpisodeRef.current(event.reason || 'manual');
     }).then((cleanup) => {
       if (!mounted) {
         cleanup();
@@ -2651,7 +2805,7 @@ export default function DesktopWatch() {
       mounted = false;
       unlisten?.();
     };
-  }, [playNextEpisode]);
+  }, []);
 
   const chooseEpisode = useCallback((episodeNumber: number) => {
     if (autoOpenBestSource) {
@@ -2685,10 +2839,12 @@ export default function DesktopWatch() {
     const drag = episodeDragRef.current;
     if (!rail || !drag.dragging || drag.pointerId !== event.pointerId) return;
     const delta = event.clientX - drag.startX;
-    if (Math.abs(delta) > 4) {
+    if (!drag.moved && Math.abs(delta) <= EPISODE_RAIL_DRAG_THRESHOLD) return;
+    if (!drag.moved) {
       drag.moved = true;
-      event.preventDefault();
+      suppressEpisodeClickRef.current = true;
     }
+    event.preventDefault();
     rail.scrollLeft = drag.scrollLeft - delta;
   }, []);
 
@@ -2696,18 +2852,31 @@ export default function DesktopWatch() {
     const rail = episodesRailRef.current;
     const drag = episodeDragRef.current;
     if (!drag.dragging || drag.pointerId !== event.pointerId) return;
+    const didDrag = drag.moved;
     if (drag.moved) {
+      event.preventDefault();
       suppressEpisodeClickRef.current = true;
       window.setTimeout(() => {
         suppressEpisodeClickRef.current = false;
-      }, 120);
+      }, 0);
+    } else {
+      suppressEpisodeClickRef.current = false;
     }
-    episodeDragRef.current = { ...drag, dragging: false };
+    episodeDragRef.current = {
+      dragging: false,
+      moved: false,
+      pointerId: 0,
+      startX: 0,
+      scrollLeft: rail?.scrollLeft ?? drag.scrollLeft,
+    };
     setEpisodeRailDragging(false);
     try {
       rail?.releasePointerCapture(event.pointerId);
     } catch {
       // Safe no-op when the pointer was already released.
+    }
+    if (!didDrag) {
+      suppressEpisodeClickRef.current = false;
     }
   }, []);
 
@@ -2738,6 +2907,7 @@ export default function DesktopWatch() {
     if (playableSources[0]) {
       const bestSource = playableSources[0];
       setPendingAutoPlayEpisode(null);
+      console.info(`[StreamNyaa Watch] Starting pending next episode source=${bestSource.title || bestSource.infoHash || bestSource.magnet}`);
       void playSource(bestSource);
       return;
     }
@@ -2765,16 +2935,16 @@ export default function DesktopWatch() {
       <SafeImage candidates={imageCandidatesFor(anime, true)} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-[0.11] blur-2xl" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_14%,rgba(14,165,233,0.12),transparent_28%),radial-gradient(circle_at_64%_38%,rgba(244,63,94,0.14),transparent_36%),linear-gradient(90deg,#050507_0%,rgba(5,5,8,0.97)_29%,rgba(6,7,10,0.90)_100%)]" />
 
-      <div className="relative grid min-h-screen grid-cols-[360px_1fr] gap-7 px-5 py-6">
-        <aside className="border-r border-white/[0.075] pr-7">
-          <Link to="/" className="mb-6 grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-black/42 text-white/86 shadow-lg shadow-black/30 backdrop-blur-xl transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.97]">
+      <div className="sn-page relative grid min-h-screen grid-cols-[360px_1fr] gap-7 py-6">
+        <aside className="sn-glass-panel rounded-[24px] p-5">
+          <Link to="/" className="sn-icon-action mb-6 h-11 w-11 rounded-full">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div className="relative">
             <div className="pointer-events-none absolute -inset-4 overflow-hidden rounded-[2rem] opacity-30 blur-2xl">
               <SafeImage candidates={imageCandidatesFor(anime)} alt="" className="h-full w-full object-cover" fallbackClassName="h-full w-full" />
             </div>
-            <div className="relative overflow-hidden rounded-[22px] border border-white/[0.12] bg-[#111217] shadow-2xl shadow-black/50 ring-1 ring-white/[0.035]">
+            <div className="sn-poster-card relative rounded-[22px] shadow-2xl shadow-black/50">
               <SafeImage candidates={imageCandidatesFor(anime)} alt={anime.title} className="aspect-[2/3] w-full object-cover" />
             </div>
           </div>
@@ -2810,10 +2980,10 @@ export default function DesktopWatch() {
             {leftPanelInfo.genres.length ? (
               <div className="mt-4 flex flex-wrap gap-2">
                 {leftPanelInfo.genres.map((genre: any) => (
-                  <span key={genre.name} className="rounded-full border border-white/14 bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-white/82 shadow-sm shadow-black/20">{genre.name}</span>
+                  <span key={genre.name} className="rounded-full bg-white/[0.07] px-3 py-1.5 text-xs font-bold text-white/82 shadow-sm shadow-black/20">{genre.name}</span>
                 ))}
                 {leftPanelInfo.extraGenreCount > 0 ? (
-                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-bold text-white/46">+{leftPanelInfo.extraGenreCount} more</span>
+                  <span className="rounded-full bg-white/[0.045] px-3 py-1.5 text-xs font-bold text-white/46">+{leftPanelInfo.extraGenreCount} more</span>
                 ) : null}
               </div>
             ) : null}
@@ -2834,7 +3004,7 @@ export default function DesktopWatch() {
               </div>
             ) : null}
             {leftPanelInfo.trailerUrl ? (
-              <div className="mt-5 overflow-hidden rounded-[18px] border border-white/[0.13] bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.024)_58%,rgba(244,63,94,0.075))] shadow-xl shadow-black/24 ring-1 ring-white/[0.025]">
+              <div className="sn-glass-card mt-5 overflow-hidden rounded-[18px]">
                 <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] px-3.5 py-2.5">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-primary/30 bg-primary/16 text-primary">
@@ -2905,7 +3075,7 @@ export default function DesktopWatch() {
 
         <main className="min-w-0 py-8">
           <section>
-            <div className="mb-5 overflow-hidden rounded-[28px] border border-white/[0.075] bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.022)),radial-gradient(circle_at_0%_0%,rgba(244,63,94,0.17),transparent_34%),radial-gradient(circle_at_92%_12%,rgba(14,165,233,0.10),transparent_30%),#0E1016] p-5 shadow-2xl shadow-black/30 ring-1 ring-white/[0.025] backdrop-blur-xl">
+            <div className="sn-glass-panel mb-5 overflow-hidden rounded-[28px] p-5">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-primary">
@@ -2918,7 +3088,7 @@ export default function DesktopWatch() {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                <div className="hidden rounded-full border border-white/[0.12] bg-black/38 p-1 shadow-lg shadow-black/25 md:inline-flex">
+                <div className="sn-glass-card hidden rounded-full p-1 md:inline-flex">
                   {(['sub', 'dub'] as AudioMode[]).map((mode) => (
                     <button
                       key={mode}
@@ -2946,7 +3116,7 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => railScroll(seasonRailRef, 'left', 520)}
-                    className="grid h-11 w-11 place-items-center rounded-full border border-white/[0.12] bg-black/36 text-white/74 shadow-lg shadow-black/22 transition-all hover:border-primary/45 hover:bg-primary/[0.10] hover:text-white active:scale-[0.96]"
+                    className="sn-icon-action h-11 w-11 rounded-full"
                     aria-label="Scroll related entries left"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -2954,7 +3124,7 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => railScroll(seasonRailRef, 'right', 520)}
-                    className="grid h-11 w-11 place-items-center rounded-full border border-white/[0.12] bg-black/36 text-white/74 shadow-lg shadow-black/22 transition-all hover:border-primary/45 hover:bg-primary/[0.10] hover:text-white active:scale-[0.96]"
+                    className="sn-icon-action h-11 w-11 rounded-full"
                     aria-label="Scroll related entries right"
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -3046,7 +3216,7 @@ export default function DesktopWatch() {
               </div>
             </div>
 
-            <div className="sticky top-3 z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-2xl border border-white/[0.07] bg-[#090A0E]/82 px-3 py-3 shadow-xl shadow-black/18 backdrop-blur-xl">
+            <div className="sn-glass-card sticky top-3 z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-2xl px-3 py-3">
               <div className="flex items-center gap-2 text-lg font-black">
                 <Download className="h-4 w-4 text-primary" />
                 <span>{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'} ({airedCount || allEpisodes.length || 0})</span>
@@ -3091,7 +3261,7 @@ export default function DesktopWatch() {
                       type="button"
                       disabled={currentEpisodeRangeIndex <= 0}
                       onClick={() => goEpisodeRange(-1)}
-                      className="grid h-10 w-10 place-items-center rounded-lg text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                      className="sn-icon-action h-10 w-10 rounded-lg disabled:cursor-not-allowed disabled:opacity-30"
                       aria-label="Previous episode range"
                     >
                       <ChevronLeft className="h-4 w-4" />
@@ -3109,7 +3279,7 @@ export default function DesktopWatch() {
                       type="button"
                       disabled={currentEpisodeRangeIndex >= episodeRanges.length - 1}
                       onClick={() => goEpisodeRange(1)}
-                      className="grid h-10 w-10 place-items-center rounded-lg text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                      className="sn-icon-action h-10 w-10 rounded-lg disabled:cursor-not-allowed disabled:opacity-30"
                       aria-label="Next episode range"
                     >
                       <ChevronRight className="h-4 w-4" />
@@ -3135,7 +3305,7 @@ export default function DesktopWatch() {
                     <button
                       type="button"
                       onClick={submitEpisodeJump}
-                      className="rounded-lg bg-primary px-3 py-2 text-xs font-black text-white shadow-md shadow-primary/18 transition-all hover:bg-[#ff3345] active:scale-[0.98]"
+                      className="sn-primary-action min-h-0 rounded-lg px-3 py-2 text-xs"
                     >
                       Go
                     </button>
@@ -3143,11 +3313,12 @@ export default function DesktopWatch() {
                 ) : null}
                 <button
                   type="button"
-                  disabled={Boolean(activeSourceId) || sourcesBusy}
+                  disabled={animeNotYetAired || Boolean(activeSourceId) || sourcesBusy}
                   onClick={() => playEpisodeNumber(selectedEpisode)}
                   className="hidden rounded-xl bg-primary px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white shadow-lg shadow-primary/24 transition-all hover:bg-[#ff3345] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
+                  aria-label={`Play best source for episode ${selectedEpisode}`}
                 >
-                  {Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : 'Play Episode'}
+                  {animeNotYetAired ? 'Not aired yet' : Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : 'Play Best Source'}
                 </button>
                 <button
                   type="button"
@@ -3168,7 +3339,7 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => railScroll(episodesRailRef, 'left', 520)}
-                    className="grid h-11 w-11 place-items-center rounded-full border border-white/[0.12] bg-black/36 text-white/74 shadow-lg shadow-black/22 transition-all hover:border-primary/45 hover:bg-primary/[0.10] hover:text-white active:scale-[0.96]"
+                    className="sn-icon-action h-11 w-11 rounded-full"
                     aria-label="Scroll episodes left"
                   >
                     <ChevronLeft className="h-4 w-4" />
@@ -3176,7 +3347,7 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => railScroll(episodesRailRef, 'right', 520)}
-                    className="grid h-11 w-11 place-items-center rounded-full border border-white/[0.12] bg-black/36 text-white/74 shadow-lg shadow-black/22 transition-all hover:border-primary/45 hover:bg-primary/[0.10] hover:text-white active:scale-[0.96]"
+                    className="sn-icon-action h-11 w-11 rounded-full"
                     aria-label="Scroll episodes right"
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -3193,26 +3364,42 @@ export default function DesktopWatch() {
                 {displayedEpisodes.map((episode) => (
                   <div
                     key={episode.number}
-                    className={`rounded-xl border px-3 py-3 text-left transition-all ${
+                    ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
+                    className={`group rounded-xl border px-3 py-3 text-left transition-all focus-within:ring-1 focus-within:ring-primary/40 ${
                       episode.number === selectedEpisode
                         ? 'border-primary/55 bg-primary/[0.11] shadow-lg shadow-primary/14 ring-1 ring-primary/30'
                         : 'border-white/[0.10] bg-white/[0.035] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/[0.045]'
                     }`}
                   >
                     <button
-                      ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
                       type="button"
-                      onClick={() => chooseEpisode(episode.number)}
-                      className="w-full text-left"
+                      onClick={() => {
+                        if (suppressEpisodeClickRef.current) return;
+                        chooseEpisode(episode.number);
+                      }}
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        if (!suppressEpisodeClickRef.current && !autoOpenBestSource) {
+                          void playEpisodeNumber(episode.number);
+                        }
+                      }}
+                      className="min-h-[72px] w-full cursor-pointer rounded-lg text-left outline-none transition-transform focus-visible:ring-1 focus-visible:ring-primary/45 active:scale-[0.99]"
+                      aria-label={`Select episode ${episode.number}`}
                     >
                       <p className={`text-base font-black ${episode.number === selectedEpisode ? 'text-white' : 'text-white/86'}`}>Ep {episode.number}</p>
                       <p className="mt-1 line-clamp-2 text-[11px] font-bold leading-5 text-white/48">{episode.title}</p>
                     </button>
                     <button
                       type="button"
-                      disabled={Boolean(activeSourceId)}
-                      onClick={() => playEpisodeNumber(episode.number)}
-                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void playEpisodeNumber(episode.number);
+                      }}
+                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition-all hover:bg-primary hover:text-white active:scale-[0.98] group-focus-within:bg-primary/90"
+                      aria-label={`Play episode ${episode.number}`}
                     >
                       <Play className="h-3 w-3 fill-current" />
                       Play
@@ -3231,22 +3418,54 @@ export default function DesktopWatch() {
                 className={`flex gap-3 overflow-x-auto overscroll-x-contain pb-3 hide-scrollbar ${episodeRailDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
               >
                 {displayedEpisodes.map((episode) => (
-                  <button
+                  <div
                     key={episode.number}
                     ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
-                    type="button"
-                    onClick={() => chooseEpisodeFromRail(episode.number)}
-                    className={`group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-xl border text-left shadow-lg shadow-black/18 transition-all ${
+                    className={`group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-xl border text-left shadow-lg shadow-black/18 transition-all focus-within:ring-1 focus-within:ring-primary/42 ${
                       episode.number === selectedEpisode
                         ? 'border-primary/70 bg-primary/[0.10] ring-1 ring-primary/32'
                         : 'border-white/[0.10] hover:-translate-y-0.5 hover:border-primary/42'
                     }`}
                   >
-                    <SafeImage candidates={uniqueImageCandidates([episode.image, wideImageFor(anime), posterFor(anime)])} alt={episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
-                    <div className={`absolute inset-0 ${episode.number === selectedEpisode ? 'bg-[linear-gradient(0deg,rgba(48,8,16,0.90),rgba(0,0,0,0.06)_62%)]' : 'bg-[linear-gradient(0deg,rgba(0,0,0,0.80),rgba(0,0,0,0.08)_62%)]'}`} />
-                    <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-black shadow-md shadow-black/25 ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/72 text-white'}`}>{episode.number}</span>
-                    <p className="absolute bottom-3 left-3 right-3 line-clamp-1 text-sm font-black">{episode.title}</p>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        chooseEpisodeFromRail(episode.number);
+                      }}
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        if (!suppressEpisodeClickRef.current && !autoOpenBestSource) {
+                          void playEpisodeNumber(episode.number);
+                        }
+                      }}
+                      className="absolute inset-0 cursor-pointer text-left outline-none focus-visible:ring-1 focus-visible:ring-primary/45"
+                      aria-label={`Select episode ${episode.number}`}
+                    >
+                      <SafeImage candidates={uniqueImageCandidates([episode.image, wideImageFor(anime), posterFor(anime)])} alt={episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
+                      <div className={`absolute inset-0 ${episode.number === selectedEpisode ? 'bg-[linear-gradient(0deg,rgba(48,8,16,0.90),rgba(0,0,0,0.06)_62%)]' : 'bg-[linear-gradient(0deg,rgba(0,0,0,0.80),rgba(0,0,0,0.08)_62%)]'}`} />
+                      <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-black shadow-md shadow-black/25 ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/72 text-white'}`}>{episode.number}</span>
+                      <p className="absolute bottom-3 left-3 right-14 line-clamp-1 text-sm font-black">{episode.title}</p>
+                    </button>
+                    <button
+                      type="button"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void playEpisodeNumber(episode.number);
+                      }}
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      className="absolute bottom-2.5 right-2.5 grid h-9 w-9 place-items-center rounded-full border border-white/[0.14] bg-black/62 text-white shadow-lg shadow-black/30 backdrop-blur transition-all hover:border-primary/55 hover:bg-primary hover:shadow-primary/24 active:scale-[0.94]"
+                      aria-label={`Play episode ${episode.number}`}
+                    >
+                      <Play className="h-3.5 w-3.5 fill-current" />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -3254,65 +3473,165 @@ export default function DesktopWatch() {
               {episodeSearchTerm
                 ? `Found ${displayedEpisodes.length} matching episode${displayedEpisodes.length === 1 ? '' : 's'}. Press Enter to open the first match quickly.`
                 : episodeViewMode === 'grid' && longEpisodeRun
-                  ? `Compact view shows episodes ${currentEpisodeRange?.start || displayedEpisodes[0]?.number || 1}-${currentEpisodeRange?.end || displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click a tile to select it, or use Play to open the best source directly.`
+                  ? `Compact view shows episodes ${currentEpisodeRange?.start || displayedEpisodes[0]?.number || 1}-${currentEpisodeRange?.end || displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start the best source.`
                   : airedCount > displayedEpisodes.length
-                    ? `Showing episodes ${displayedEpisodes[0]?.number || 1}-${displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Use mouse wheel, the arrow buttons, search, or jump directly to an episode.`
-                    : 'Use mouse wheel, search, or the arrow buttons to browse every aired episode in this season.'}
+                    ? `Showing episodes ${displayedEpisodes[0]?.number || 1}-${displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start the best source.`
+                    : 'Click an episode to select it. Use Play or double-click to start the best source.'}
             </p>
           </section>
 
           <section ref={sourceSectionRef} className="mt-8 pb-24">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => sourceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                  className="inline-flex items-center rounded-full bg-primary px-5 py-3 text-sm font-black text-white shadow-lg shadow-primary/28 transition-all hover:bg-[#ff3345] hover:shadow-primary/38 active:scale-[0.98]"
-                >
-                  <SlidersHorizontal className="mr-2 inline h-4 w-4" />
-                  Source Links
-                </button>
-                <button
-                  type="button"
-                  disabled={!playableSources[0] || Boolean(activeSourceId) || sourcesBusy}
-                  onClick={() => playableSources[0] && void playSource(playableSources[0])}
-                  className="inline-flex items-center rounded-full bg-white px-5 py-3 text-sm font-black text-black shadow-lg shadow-white/10 transition-all hover:bg-white/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {Boolean(activeSourceId) ? 'Opening...' : 'Play Episode'}
-                </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="rounded-xl border border-white/[0.11] bg-black/40 p-1 shadow-lg shadow-black/22">
-                  {(['strict', 'balanced', 'broad'] as SourceFilterMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setSourceMode(mode)}
-                      className={`rounded-lg px-3 py-2 text-xs font-black uppercase tracking-[0.14em] transition-all ${
-                        sourceMode === mode
-                          ? 'bg-primary text-white shadow-md shadow-primary/24'
-                          : 'text-white/56 hover:bg-white/[0.07] hover:text-white active:scale-[0.98]'
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                  ))}
+            <div className="sn-glass-panel mb-5 rounded-[28px] p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Source List</p>
+                  <h2 className="mt-1 text-2xl font-black tracking-[-0.03em] text-white">{sourceSectionTitle}</h2>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/52">{sourceSectionSubtitle}</p>
                 </div>
-                <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SourceSort)} className="rounded-xl border border-white/[0.12] bg-black/48 px-4 py-3 text-sm font-black text-white outline-none shadow-lg shadow-black/18 transition-colors hover:border-white/20 focus:border-primary/55">
-                  <option value="best">Best Match</option>
-                  <option value="seeders">Seeders (High to Low)</option>
-                  <option value="size">Smaller Files First</option>
-                </select>
+                <div className="flex shrink-0 flex-wrap items-center gap-3">
+                  {animeNotYetAired ? (
+                    <Link
+                      to="/calendar"
+                      className="sn-secondary-action h-12 rounded-2xl bg-white px-5 text-sm text-black shadow-lg shadow-white/10 hover:bg-white/90"
+                    >
+                      View airing schedule
+                    </Link>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!playableSources[0] || Boolean(activeSourceId) || sourcesBusy}
+                        onClick={() => playableSources[0] && void playSource(playableSources[0])}
+                        className="sn-primary-action h-12 rounded-2xl px-5 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                        aria-label={`Play best source for episode ${selectedEpisode}`}
+                      >
+                        <Play className="mr-2 h-4 w-4 fill-current" />
+                        {Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : sourcesBusy ? 'Finding...' : 'Play Best Source'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => sourceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                        className="sn-secondary-action h-12 rounded-2xl px-5 text-sm"
+                        aria-label={`View source list for episode ${selectedEpisode}`}
+                      >
+                        <SlidersHorizontal className="mr-2 h-4 w-4" />
+                        Source List
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
+
+              {animeNotYetAired ? (
+                <div className="mt-5 rounded-2xl bg-black/28 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.06]">
+                  <p className="text-sm font-black text-white">Episodes are not available yet.</p>
+                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/48">
+                    This listing can be bookmarked and reviewed, but StreamNyaa will not search torrent sources until the anime has aired.
+                  </p>
+                </div>
+              ) : (
+                <>
+              <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
+                <div className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
+                  <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Match</p>
+                  <div className="flex rounded-xl bg-black/34 p-1">
+                    {(['strict', 'balanced', 'broad'] as SourceFilterMode[]).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setSourceMode(mode)}
+                        aria-pressed={sourceMode === mode}
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-black capitalize transition-all active:scale-[0.98] ${
+                          sourceMode === mode
+                            ? 'bg-primary text-white shadow-md shadow-primary/24'
+                            : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
+                  <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Audio</p>
+                  <div className="flex rounded-xl bg-black/34 p-1">
+                    {([
+                      { label: 'Sub', preference: 'sub-preferred' },
+                      { label: 'Dub', preference: 'dub-only' },
+                      { label: 'Any', preference: 'dual-preferred' },
+                    ] as const).map((option) => (
+                      <button
+                        key={option.preference}
+                        type="button"
+                        onClick={() => setSourceAudioPreference(option.preference)}
+                        aria-pressed={audioPreference === option.preference}
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all active:scale-[0.98] ${
+                          audioPreference === option.preference
+                            ? 'bg-primary text-white shadow-md shadow-primary/24'
+                            : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
+                  <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Quality</p>
+                  <div className="flex flex-wrap gap-1 rounded-xl bg-black/34 p-1">
+                    {sourceQualityOptions.map((quality) => {
+                      const active = sourceQuality === quality;
+                      const count = quality === 'auto' ? modeSortedSources.length : qualityCounts.get(quality) || 0;
+                      return (
+                        <button
+                          key={quality}
+                          type="button"
+                          onClick={() => setSourceQuality(quality)}
+                          aria-pressed={active}
+                          className={`rounded-lg px-3 py-2 text-xs font-black transition-all active:scale-[0.98] ${
+                            active
+                              ? 'bg-primary text-white shadow-md shadow-primary/24'
+                              : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
+                          }`}
+                        >
+                          {sourceQualityLabel(quality)}
+                          {count > 0 ? <span className={active ? 'ml-1 text-white/70' : 'ml-1 text-white/34'}>{count}</span> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <label className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
+                  <span className="mb-2 block px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Order</span>
+                  <span className="flex h-[42px] items-center rounded-xl bg-black/34 px-3">
+                    <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SourceSort)} className="w-full bg-transparent text-sm font-black text-white outline-none">
+                      <option value="best">Best Match</option>
+                      <option value="seeders">Seeders</option>
+                      <option value="size">Smaller Files</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none ml-2 h-4 w-4 text-white/42" />
+                  </span>
+                </label>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-4 text-sm">
+                <p className="font-bold text-white/56">{sourceMatchSummary}</p>
+                <p className="text-xs font-semibold text-white/36">Best source uses the same ranking and fallback logic as before.</p>
+              </div>
+                </>
+              )}
             </div>
 
             {playbackNotice ? (
-              <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-sm font-bold ${
+              <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-bold shadow-lg shadow-black/14 ${
                 playbackNotice.tone === 'error'
                   ? 'border-red-400/25 bg-red-500/10 text-red-100'
                   : playbackNotice.tone === 'success'
                     ? 'border-emerald-400/25 bg-emerald-500/10 text-emerald-100'
-                    : 'border-primary/25 bg-primary/10 text-white/76'
+                    : 'border-amber-300/18 bg-amber-300/[0.08] text-amber-50/86'
               }`}>
                 <span>{playbackNotice.text}</span>
                 {playbackNotice.tone === 'error' && nextPlayableSource ? (
@@ -3522,53 +3841,7 @@ export default function DesktopWatch() {
               );
             })() : null}
 
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-primary">Smart source selector</p>
-                <h2 className="mt-1 text-lg font-black">Available Sources <span className="text-white/35">- Episode {selectedEpisode}</span></h2>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs font-black">
-                {sourceQualityOptions.map((quality) => {
-                  const active = sourceQuality === quality;
-                  const count = quality === 'auto' ? modeSortedSources.length : qualityCounts.get(quality) || 0;
-                  return (
-                    <button
-                      key={quality}
-                      type="button"
-                      onClick={() => setSourceQuality(quality)}
-                      className={`rounded-full border px-3 py-1.5 transition-all active:scale-[0.98] ${
-                        active
-                          ? 'border-primary/45 bg-primary text-white shadow-md shadow-primary/22'
-                          : 'border-white/[0.10] bg-white/[0.055] text-white/60 hover:border-white/20 hover:bg-white/[0.09] hover:text-white'
-                      }`}
-                    >
-                      {sourceQualityLabel(quality)}
-                      <span className={active ? 'ml-1 text-white/70' : 'ml-1 text-white/34'}>{count}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="mb-4 flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/46">
-              <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-3 py-1.5">
-                Sort: {sortBy === 'seeders' ? 'Seed health' : sortBy === 'size' ? 'Small files' : 'Best match'}
-              </span>
-              <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-3 py-1.5">
-                Audio: {audioPreference === 'sub-preferred' ? 'Sub preferred' : audioPreference === 'dub-only' ? 'Dub only' : 'Dual preferred'}
-              </span>
-              <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-3 py-1.5">Exact episode first</span>
-              <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-3 py-1.5">
-                Showing {sourceMode === 'strict' ? 'exact only' : sourceMode === 'balanced' ? 'exact + likely' : 'all tiers'}
-              </span>
-              <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-3 py-1.5">
-                Quality: {sourceQualityLabel(sourceQuality)}
-              </span>
-              <span className="rounded-full border border-white/[0.08] bg-white/[0.035] px-3 py-1.5">
-                Exact {exactSources.length} / Likely {likelySources.length} / Broad {broadSources.length}
-              </span>
-            </div>
-
-            {sourcesBusy ? (
+            {animeNotYetAired ? null : sourcesBusy ? (
               <div className="grid gap-3">
                 <div className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.065))] p-4 shadow-lg shadow-black/20">
                   <div className="flex flex-wrap items-center justify-between gap-3">

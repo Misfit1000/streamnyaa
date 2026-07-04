@@ -15,6 +15,10 @@ export function isUpcomingAnime(anime: any) {
 }
 
 export function desktopUpcomingPath(anime?: any) {
+  if (anime) {
+    return desktopWatchPath(anime, { upcoming: 1 });
+  }
+
   const params = new URLSearchParams({ mode: 'upcoming' });
   const title = String(anime?.title || anime?.title_english || anime?.title_romaji || '').trim();
   if (title) {

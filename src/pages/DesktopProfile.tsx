@@ -163,7 +163,7 @@ function StatCard({
   detail: string;
 }) {
   return (
-    <article className="rounded-2xl border border-white/[0.07] bg-white/[0.045] p-4 shadow-xl shadow-black/18">
+    <article className="sn-glass-card p-4">
       <div className="flex items-center justify-between gap-3">
         <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/12 text-primary">
           <Icon className="h-5 w-5" />
@@ -190,7 +190,7 @@ function ActionCard({
   return (
     <Link
       to={to}
-      className="group flex items-center justify-between gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.045] p-4 shadow-xl shadow-black/18 transition-colors hover:border-primary/32 hover:bg-primary/10"
+      className="sn-card-hover group flex items-center justify-between gap-4 p-4 hover:bg-primary/10"
     >
       <span className="flex min-w-0 items-center gap-3">
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-black/30 text-primary">
@@ -230,7 +230,7 @@ export default function DesktopProfile() {
   if (loading) {
     return (
       <div className="grid min-h-[60vh] place-items-center px-6">
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.04] px-6 py-5 shadow-2xl shadow-black/25">
+        <div className="sn-glass-panel px-6 py-5 shadow-2xl shadow-black/25">
           <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
           <p className="mt-4 text-sm font-semibold text-white/60">Loading desktop profile...</p>
         </div>
@@ -260,10 +260,10 @@ export default function DesktopProfile() {
   };
 
   return (
-    <div className="px-6 py-6">
+    <div className="sn-page py-6">
       <Seo title="Profile | StreamNyaa Desktop" description="StreamNyaa Desktop profile and sync." canonicalPath="/profile" robots="noindex, nofollow" />
 
-      <section className="desktop-premium-surface overflow-hidden rounded-3xl">
+      <section className="sn-hero-panel overflow-hidden rounded-3xl">
         <div className="relative p-6 md:p-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_22%,rgba(244,63,94,0.22),transparent_30%),radial-gradient(circle_at_16%_12%,rgba(99,102,241,0.16),transparent_32%)]" />
           <div className="relative flex flex-wrap items-center justify-between gap-6">
@@ -286,7 +286,7 @@ export default function DesktopProfile() {
                 type="button"
                 onClick={() => void syncNow()}
                 disabled={syncState === 'syncing'}
-                className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.055] px-4 text-sm font-black text-white/72 transition-colors hover:border-primary/32 hover:text-white disabled:cursor-wait disabled:opacity-60"
+                className="sn-secondary-action h-11 px-4 disabled:cursor-wait disabled:opacity-60"
               >
                 <RefreshCw className={`h-4 w-4 ${syncState === 'syncing' ? 'animate-spin' : ''}`} />
                 Sync now
@@ -295,7 +295,7 @@ export default function DesktopProfile() {
                 type="button"
                 onClick={() => void handleSignOut()}
                 disabled={signingOut}
-                className="inline-flex h-11 items-center gap-2 rounded-xl border border-primary/25 bg-primary/10 px-4 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-white disabled:cursor-wait disabled:opacity-60"
+                className="sn-primary-action h-11 px-4 disabled:cursor-wait disabled:opacity-60"
               >
                 <LogOut className="h-4 w-4" />
                 {signingOut ? 'Signing out...' : 'Sign out'}
@@ -317,7 +317,7 @@ export default function DesktopProfile() {
       </section>
 
       <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-        <div className="desktop-premium-surface rounded-2xl p-5">
+        <div className="sn-glass-panel rounded-2xl p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Data Sync</p>
@@ -347,7 +347,7 @@ export default function DesktopProfile() {
           ) : null}
         </div>
 
-        <div className="desktop-premium-surface rounded-2xl p-5">
+        <div className="sn-glass-panel rounded-2xl p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Recent History</p>
@@ -366,7 +366,7 @@ export default function DesktopProfile() {
                 <Link
                   key={`${source.animeId || title}-${source.episode || ''}-${source.infoHash || source.magnet || source.title}`}
                   to="/dashboard"
-                  className="group flex gap-3 rounded-2xl border border-white/[0.07] bg-black/24 p-3 transition-colors hover:border-primary/28 hover:bg-primary/10"
+                  className="sn-card-hover group flex gap-3 p-3 hover:bg-primary/10"
                 >
                   <div className="relative h-20 w-32 shrink-0 overflow-hidden rounded-xl bg-white/[0.04]">
                     <PreviewImage candidates={sourceImageCandidates(source)} title={title} />
@@ -385,7 +385,7 @@ export default function DesktopProfile() {
                 </Link>
               );
             }) : (
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.035] px-4 py-8 text-center">
+              <div className="sn-empty-state px-4 py-8 text-center">
                 <p className="text-sm font-black text-white">No synced watch history yet.</p>
                 <p className="mt-2 text-sm leading-6 text-white/48">Open a source from a watch page and it will appear here after sync.</p>
               </div>
@@ -394,7 +394,7 @@ export default function DesktopProfile() {
         </div>
       </section>
 
-      <section className="mt-5 desktop-premium-surface rounded-2xl p-5">
+      <section className="sn-glass-panel mt-5 rounded-2xl p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Library Preview</p>
@@ -411,7 +411,7 @@ export default function DesktopProfile() {
               <Link
                 key={`profile-library-${animeIdentity(anime)}`}
                 to={animeWatchPath(anime)}
-                className="group overflow-hidden rounded-2xl border border-white/[0.07] bg-black/28 shadow-xl shadow-black/18 transition-colors hover:border-primary/30"
+                className="sn-card-hover group overflow-hidden rounded-2xl"
               >
                 <div className="aspect-[2/3] overflow-hidden bg-white/[0.04]">
                   <PreviewImage candidates={animeImageCandidates(anime)} title={animeTitle(anime)} portrait />
@@ -426,10 +426,10 @@ export default function DesktopProfile() {
             ))}
           </div>
         ) : (
-          <div className="mt-5 rounded-2xl border border-white/[0.07] bg-white/[0.035] px-4 py-10 text-center">
+          <div className="sn-empty-state mt-5 px-4 py-10 text-center">
             <p className="text-sm font-black text-white">No saved anime yet.</p>
             <p className="mt-2 text-sm leading-6 text-white/48">Use Explore or a watch page to bookmark anime into your synced desktop library.</p>
-            <Link to="/search" className="mt-5 inline-flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-black text-white shadow-lg shadow-primary/18">
+            <Link to="/search" className="sn-primary-action mt-5 h-11 px-5">
               Explore anime
             </Link>
           </div>

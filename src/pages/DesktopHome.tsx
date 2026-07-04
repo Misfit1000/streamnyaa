@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Play, Star } from 'lucide-react';
 import Seo from '../components/Seo';
-import { fetchAnimeSeason, fetchPopularAnime, fetchRecentEpisodes, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
+import { fetchPopularAnime, fetchRecentEpisodes, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
 import {
   formatPlaybackTime,
   latestUnwatchedEpisodeForAnime,
@@ -18,8 +18,8 @@ import {
   watchTypeForAudioPreference,
 } from '../lib/desktop';
 import { animeIdentity, animeTitleKey } from '../lib/animeIdentity';
-import { getCurrentAnimeSeason } from '../lib/currentSeason';
 import { desktopUpcomingPath, desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
+import { useSeasonalAnimeQuery } from '../lib/seasonalAnime';
 
 function fallbackCover(anilistId: number) {
   return `https://img.anili.st/media/${anilistId}`;
@@ -302,12 +302,11 @@ function bannerImageCandidates(anime: any) {
 
 function heroImageCandidates(anime: any) {
   return uniqueValues([
-    ...bannerImageCandidates(anime),
-    anime?.coverImage?.extraLarge,
-    anime?.coverImage?.large,
-    anime?.images?.webp?.large_image_url,
-    anime?.images?.jpg?.large_image_url,
-    imageFallbackCandidate(anime),
+    anime?.banner_image,
+    anime?.bannerImage,
+    anime?.backdrop,
+    anime?.trailer?.images?.maximum_image_url,
+    anime?.trailer?.images?.large_image_url,
   ]);
 }
 
@@ -483,18 +482,10 @@ function watchPathFor(
   });
 }
 
-function heroEpisodeHint(anime: any, history: LocalPlaybackSource[]) {
-  if (!anime || isUpcomingAnime(anime)) return '';
-  const fallback = Number(preferredEpisodeFor(anime) || 1) || 1;
-  const episode = watchEpisodeFor(anime, history, fallback);
-  return episode ? `Starts at Episode ${episode}` : '';
-}
-
 const RailHeader = memo(function RailHeader({
   title,
   subtitle,
   to,
-  count,
 }: {
   title: string;
   subtitle?: string;
@@ -504,18 +495,11 @@ const RailHeader = memo(function RailHeader({
   return (
     <div className="mb-3 flex items-end justify-between gap-4">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[20px] font-bold tracking-[-0.02em] text-white">{title}</h2>
-          {typeof count === 'number' && count > 0 ? (
-            <span className="rounded-full bg-white/[0.055] px-2 py-0.5 text-[11px] font-black text-white/48">
-              {count}
-            </span>
-          ) : null}
-        </div>
-        {subtitle ? <p className="mt-1 text-[12px] font-semibold text-white/42">{subtitle}</p> : null}
+        <h2 className="text-[20px] font-black tracking-[-0.025em] text-white">{title}</h2>
+        {subtitle ? <p className="mt-1 text-[12px] font-semibold text-white/46">{subtitle}</p> : null}
       </div>
       {to ? (
-        <Link to={to} className="mb-0.5 inline-flex shrink-0 items-center gap-1 text-[13px] font-semibold text-white/58 transition-colors hover:text-white">
+        <Link to={to} className="mb-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold text-white/58 transition-colors hover:bg-white/[0.055] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
           View All
           <ChevronRight className="h-4 w-4" />
         </Link>
@@ -554,7 +538,7 @@ const MediaRail = memo(function MediaRail({ children }: { children: ReactNode })
 
   return (
     <div className="group/rail relative">
-      <div ref={ref} onScroll={updateScrollState} className="flex gap-4 overflow-x-auto pb-2 hide-scrollbar scroll-smooth">
+      <div ref={ref} onScroll={updateScrollState} className="sn-scroll-rail flex gap-4 pb-2">
         {children}
       </div>
       {scrollState.canScroll ? (
@@ -563,7 +547,7 @@ const MediaRail = memo(function MediaRail({ children }: { children: ReactNode })
           type="button"
           onClick={() => scroll(-1)}
           disabled={!scrollState.canLeft}
-          className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full border border-white/[0.08] bg-black/60 text-white/76 shadow-lg shadow-black/25 backdrop-blur transition-colors hover:bg-white/[0.14] hover:text-white disabled:pointer-events-none disabled:opacity-0"
+          className="sn-icon-action pointer-events-auto h-10 w-10 rounded-full disabled:pointer-events-none disabled:opacity-0"
           aria-label="Scroll rail left"
         >
           <ChevronLeft className="h-5 w-5" />
@@ -572,7 +556,7 @@ const MediaRail = memo(function MediaRail({ children }: { children: ReactNode })
           type="button"
           onClick={() => scroll(1)}
           disabled={!scrollState.canRight}
-          className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full border border-white/[0.08] bg-black/60 text-white/76 shadow-lg shadow-black/25 backdrop-blur transition-colors hover:bg-white/[0.14] hover:text-white disabled:pointer-events-none disabled:opacity-0"
+          className="sn-icon-action pointer-events-auto h-10 w-10 rounded-full disabled:pointer-events-none disabled:opacity-0"
           aria-label="Scroll rail right"
         >
           <ChevronRight className="h-5 w-5" />
@@ -602,15 +586,15 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
     showNew ? 'NEW' : '',
   ].filter(Boolean);
   return (
-    <Link to={to} className="group w-[190px] shrink-0 transition-transform duration-200 hover:-translate-y-1 2xl:w-[210px]">
-      <div className="relative h-[278px] overflow-hidden rounded-2xl bg-[#111217] shadow-[0_18px_42px_rgba(0,0,0,0.30)] ring-1 ring-white/[0.055] transition-all duration-200 group-hover:shadow-[0_20px_50px_rgba(244,63,94,0.13)] group-hover:ring-white/14 2xl:h-[304px]">
+    <Link to={to} className="sn-card-hover group w-[190px] shrink-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 2xl:w-[210px]">
+      <div className="sn-poster-card relative h-[278px] transition-all duration-200 group-focus-visible:ring-primary/40 2xl:h-[304px]">
         <DesktopImage
           candidates={posterImageCandidates(anime)}
           alt={anime.title}
           className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.045]"
           forceKey={`${anime?.mal_id || anime?.id || anime?.title || 'poster'}-poster`}
         />
-        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(5,6,10,0.78)_0%,rgba(5,6,10,0.32)_34%,rgba(5,6,10,0.03)_72%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(5,6,10,0.86)_0%,rgba(5,6,10,0.38)_38%,rgba(5,6,10,0.03)_76%)]" />
         <div className="absolute left-3 top-3 flex max-w-[calc(100%-24px)] items-center gap-1.5">
           {badges.length ? (
             <span className="max-w-full truncate rounded-full bg-black/58 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-white shadow-lg shadow-black/20 backdrop-blur">
@@ -618,6 +602,9 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
             </span>
           ) : null}
         </div>
+        <span className="absolute right-3 top-3 grid h-8 w-8 translate-y-1 place-items-center rounded-full border border-white/[0.10] bg-black/56 text-white opacity-0 shadow-lg shadow-black/22 backdrop-blur transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+          <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
+        </span>
         <div className="absolute inset-x-0 bottom-0 p-3.5">
           <p className="line-clamp-2 text-[14px] font-black leading-tight tracking-[-0.02em] text-white drop-shadow">{anime.title}</p>
           <p className="mt-1 line-clamp-1 text-[12px] font-semibold text-white/58">{animeGenre(anime)}{year ? ` - ${year}` : ''}</p>
@@ -658,51 +645,62 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
       console.warn(error instanceof Error ? error.message : String(error || 'Source link could not open.'));
     });
   };
+  const resume = () => {
+    void openLocalSourceNow(source).catch((error) => {
+      console.warn(error instanceof Error ? error.message : String(error || 'Source link could not open.'));
+    });
+  };
   return (
-    <div className="group w-[282px] shrink-0 text-left transition-transform duration-200 hover:-translate-y-1 2xl:w-[302px]">
-      <div className="relative aspect-video overflow-hidden rounded-2xl bg-[#111217] shadow-[0_16px_38px_rgba(0,0,0,0.28)] ring-1 ring-white/[0.055] transition-all duration-200 group-hover:shadow-[0_20px_46px_rgba(244,63,94,0.12)] group-hover:ring-white/14">
-        <DesktopImage
-          candidates={images}
-          alt={source.animeTitle || source.title}
-          className="absolute inset-0 h-full w-full object-cover opacity-95 transition-transform duration-500 group-hover:scale-[1.045]"
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.74),rgba(7,8,12,0.28)_38%,rgba(7,8,12,0.02)_76%)]" />
+    <div
+      className="sn-card-hover group w-[282px] shrink-0 cursor-pointer rounded-2xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 2xl:w-[302px]"
+    >
+      <div className="sn-landscape-card relative aspect-video transition-all duration-200">
         <button
           type="button"
-          onClick={() => {
-            void openLocalSourceNow(source).catch((error) => {
-              console.warn(error instanceof Error ? error.message : String(error || 'Source link could not open.'));
-            });
-          }}
-          className="absolute left-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/58 text-white shadow-lg shadow-black/18 backdrop-blur transition-colors group-hover:bg-primary"
+          onClick={resume}
+          className="absolute inset-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
           aria-label={`Resume ${source.animeTitle || source.title}`}
         >
-          <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
+          <DesktopImage
+            candidates={images}
+            alt={source.animeTitle || source.title}
+            className="absolute inset-0 h-full w-full object-cover opacity-95 transition-transform duration-500 group-hover:scale-[1.045]"
+          />
+          <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.84),rgba(7,8,12,0.34)_42%,rgba(7,8,12,0.02)_78%)]" />
+          <span className="absolute left-3 top-3 grid h-9 w-9 place-items-center rounded-full border border-white/[0.10] bg-black/58 text-white shadow-lg shadow-black/18 backdrop-blur transition-all group-hover:bg-primary group-hover:shadow-primary/20">
+            <Play className="ml-0.5 h-4 w-4 fill-current" />
+          </span>
+          <span className="absolute inset-x-0 bottom-0 block p-3.5">
+            <span className="block line-clamp-1 text-[13px] font-black text-white drop-shadow">{source.animeTitle || source.title}</span>
+            <span className="mt-1 block line-clamp-1 text-[11px] font-semibold text-white/64">{episodeLabel} - {resumeText}</span>
+            <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-white/14">
+              <span className="block h-full rounded-full bg-gradient-to-r from-primary to-[#ff647d]" style={{ width: `${progressWidth}%` }} />
+            </span>
+          </span>
         </button>
         <div className="absolute right-3 top-3 flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           <button
             type="button"
-            onClick={restart}
-            className="rounded-full border border-white/[0.08] bg-black/60 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-white/78 backdrop-blur transition-colors hover:bg-white/12 hover:text-white"
+            onClick={(event) => {
+              event.stopPropagation();
+              restart();
+            }}
+            className="sn-ghost-action min-h-0 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em]"
             aria-label={`Restart ${source.animeTitle || source.title}`}
           >
             Restart
           </button>
           <button
             type="button"
-            onClick={() => removeLocalPlaybackHistoryItem(source)}
-            className="rounded-full border border-white/[0.08] bg-black/60 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-white/78 backdrop-blur transition-colors hover:bg-primary hover:text-white"
+            onClick={(event) => {
+              event.stopPropagation();
+              removeLocalPlaybackHistoryItem(source);
+            }}
+            className="sn-ghost-action min-h-0 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] hover:bg-primary"
             aria-label={`Remove ${source.animeTitle || source.title} from Continue Watching`}
           >
             Remove
           </button>
-        </div>
-        <div className="absolute inset-x-0 bottom-0 p-3.5">
-          <p className="line-clamp-1 text-[13px] font-black text-white">{source.animeTitle || source.title}</p>
-          <p className="mt-1 line-clamp-1 text-[11px] font-semibold text-white/60">{episodeLabel} - {resumeText}</p>
-          <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/14">
-            <div className="h-full rounded-full bg-primary" style={{ width: `${progressWidth}%` }} />
-          </div>
         </div>
       </div>
     </div>
@@ -742,14 +740,16 @@ export default function DesktopHome() {
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
   const recentSources = useMemo(() => uniqueRecentSources(history).slice(0, 6), [history]);
   const [heroIndex, setHeroIndex] = useState(0);
-  const currentSeason = useMemo(() => getCurrentAnimeSeason(), []);
-  const { data: seasonalData } = useQuery({
-    queryKey: ['desktop-seasonal', currentSeason.season, currentSeason.year],
-    queryFn: () => fetchAnimeSeason(currentSeason.season, currentSeason.year),
-    retry: 1,
+  // useSeasonalAnimeQuery wraps fetchAnimeSeason so Home always follows the current season/year key.
+  const {
+    currentSeason,
+    data: seasonalData,
+    isError: seasonalError,
+    isSuccess: seasonalSuccess,
+  } = useSeasonalAnimeQuery({
+    limit: 18,
+    queryKeyPrefix: 'desktop-seasonal',
     staleTime: 1000 * 60 * 10,
-    refetchOnWindowFocus: false,
-    select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
   });
   const { data: trendingData } = useQuery({
     queryKey: ['desktop-trending-airing'],
@@ -818,14 +818,29 @@ export default function DesktopHome() {
   const topAiringItems = topAiringData?.data || [];
   const upcomingItems = upcomingData?.data || [];
   const yearlyTopItems = yearlyTopData?.data || [];
+  const seasonalFallbackItems = useMemo(
+    () => (seasonalError || (seasonalSuccess && !seasonalItems.length) ? FALLBACK_SEASONAL : []),
+    [seasonalError, seasonalItems.length, seasonalSuccess],
+  );
 
   const heroPool = useMemo(() => {
-    const seasonal = (seasonalItems.length ? seasonalItems : FALLBACK_SEASONAL).filter((anime: any) => heroImageCandidates(anime).length);
-    const topSeasonal = [...seasonal]
+    const liveSeasonal = seasonalItems.filter((anime: any) => heroImageCandidates(anime).length);
+    const fallbackSeasonal = seasonalFallbackItems.filter((anime: any) => heroImageCandidates(anime).length);
+    const candidates = liveSeasonal.length
+      ? liveSeasonal
+      : topAiringItems.length
+        ? topAiringItems
+        : trendingItems.length
+          ? trendingItems
+          : fallbackSeasonal.length
+            ? fallbackSeasonal
+            : FALLBACK_DESKTOP_ANIME;
+    const topSeasonal = [...candidates]
+      .filter((anime: any) => heroImageCandidates(anime).length)
       .sort((a: any, b: any) => (b.score || 0) - (a.score || 0))
       .slice(0, 8);
     return topSeasonal;
-  }, [seasonalItems]);
+  }, [seasonalFallbackItems, seasonalItems, topAiringItems, trendingItems]);
   const hero = heroPool[heroIndex] || heroPool[0];
   useEffect(() => subscribeLocalPlaybackHistory(() => setHistory(loadLocalPlaybackHistory())), []);
   useEffect(() => subscribeDesktopAudioPreference(() => setAudioPreference(loadDesktopAudioPreference())), []);
@@ -833,7 +848,7 @@ export default function DesktopHome() {
     const latestEpisodes = buildRailItems(recentEpisodeItems, FALLBACK_LATEST, 8);
     const trending = buildRailItems(trendingItems, FALLBACK_TRENDING, 8, keysForItems(latestEpisodes));
     const topAiring = buildRailItems(topAiringItems, FALLBACK_TOP_AIRING, 8, keysForItems(trending));
-    const seasonalPicks = buildRailItems(seasonalItems, FALLBACK_SEASONAL, 8, keysForItems(topAiring));
+    const seasonalPicks = buildRailItems(seasonalItems, seasonalFallbackItems, 8, keysForItems(topAiring));
     const upcoming = buildRailItems(upcomingItems, FALLBACK_UPCOMING, 8);
     const popular = buildRailItems(popularItems, FALLBACK_POPULAR, 8, keysForItems(seasonalPicks));
     const yearlyTop = buildRailItems(yearlyTopItems, FALLBACK_YEARLY, 8, keysForItems(popular));
@@ -846,7 +861,7 @@ export default function DesktopHome() {
       popular,
       yearlyTop,
     };
-  }, [popularItems, recentEpisodeItems, seasonalItems, topAiringItems, trendingItems, upcomingItems, yearlyTopItems]);
+  }, [popularItems, recentEpisodeItems, seasonalFallbackItems, seasonalItems, topAiringItems, trendingItems, upcomingItems, yearlyTopItems]);
   const latestEpisodes = rails.latestEpisodes;
   const trending = rails.trending;
   const topAiring = rails.topAiring;
@@ -884,11 +899,11 @@ export default function DesktopHome() {
   };
 
   return (
-    <div className="desktop-home-cinema px-6 pb-9 pt-4">
+    <div className="desktop-home-cinema sn-page pb-9 pt-4">
       <Seo title="StreamNyaa Desktop Cinema" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
 
-      <section className="relative overflow-hidden rounded-[24px] bg-[#0b0c10] shadow-2xl shadow-black/45 ring-1 ring-white/[0.06]">
-        <div className="relative h-[340px]">
+      <section className="sn-hero-panel relative">
+        <div className="relative h-[326px]">
           {heroPool.map((item: any, index: number) => (
             <div
               key={animeIdentity(item) || `${item?.title || 'hero'}-${index}`}
@@ -897,54 +912,46 @@ export default function DesktopHome() {
               <DesktopImage
                 candidates={heroImageCandidates(item)}
                 alt={item.title}
-                className="absolute inset-0 h-full w-full scale-[1.10] object-cover object-[66%_center] opacity-45 blur-2xl saturate-[1.08]"
-                loading={index === heroIndex || index === (heroIndex + 1) % Math.max(heroCount, 1) ? 'eager' : 'lazy'}
-                forceKey={`${item?.mal_id || item?.id || item?.title || index}-${index}-blur`}
-              />
-              <DesktopImage
-                candidates={heroImageCandidates(item)}
-                alt={item.title}
-                className={`absolute inset-y-0 right-0 h-full w-[78%] object-cover object-[70%_center] saturate-[1.10] contrast-[1.03] transition-transform duration-700 ease-out [mask-image:linear-gradient(90deg,transparent_0%,black_20%,black_100%)] ${index === heroIndex ? 'scale-100' : 'scale-[1.025]'}`}
+                className={`absolute inset-y-0 right-0 h-full w-[82%] object-cover object-[68%_center] saturate-[1.06] contrast-[1.03] transition-transform duration-700 ease-out [mask-image:linear-gradient(90deg,transparent_0%,black_18%,black_100%)] ${index === heroIndex ? 'scale-100' : 'scale-[1.012]'}`}
                 loading={index === heroIndex || index === (heroIndex + 1) % Math.max(heroCount, 1) ? 'eager' : 'lazy'}
                 forceKey={`${item?.mal_id || item?.id || item?.title || index}-${index}`}
               />
             </div>
           ))}
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(4,5,9,0.98)_0%,rgba(4,5,9,0.92)_30%,rgba(4,5,9,0.50)_58%,rgba(4,5,9,0.18)_100%),linear-gradient(0deg,rgba(4,5,9,0.88)_0%,rgba(4,5,9,0.18)_48%,rgba(4,5,9,0.34)_100%)]" />
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_28%,rgba(244,63,94,0.20),transparent_26%),radial-gradient(circle_at_10%_84%,rgba(244,63,94,0.13),transparent_34%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,6,10,0.98)_0%,rgba(5,6,10,0.91)_31%,rgba(5,6,10,0.48)_57%,rgba(5,6,10,0.12)_100%),linear-gradient(0deg,rgba(5,6,10,0.46)_0%,rgba(5,6,10,0.02)_54%,rgba(5,6,10,0.10)_100%)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_28%,rgba(244,63,94,0.10),transparent_30%),radial-gradient(circle_at_12%_82%,rgba(244,63,94,0.11),transparent_31%)]" />
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
 
-          <div className="relative flex h-full items-center px-14 xl:px-16">
+          <div className="relative flex h-full items-center px-9 xl:px-12">
             <div
               key={animeIdentity(hero) || heroIndex}
-              className="flex h-[286px] w-full max-w-[585px] flex-col animate-[desktop-hero-copy_520ms_cubic-bezier(0.25,1,0.5,1)]"
+              className="flex h-[282px] w-full max-w-[610px] flex-col animate-[desktop-hero-copy_520ms_cubic-bezier(0.25,1,0.5,1)]"
             >
-              <div className="min-h-0">
-                <p className="mb-2 text-[10px] font-black uppercase tracking-[0.36em] text-primary">Featured Anime</p>
-                <h1 className="line-clamp-2 max-w-[585px] text-[34px] font-black leading-[1.03] tracking-[-0.045em] text-white drop-shadow-[0_5px_20px_rgba(0,0,0,0.56)] md:text-[38px] xl:text-[40px]">
+              <div className="min-h-0 overflow-hidden">
+                <p className="mb-3 text-[10px] font-black uppercase tracking-[0.36em] text-primary">Featured Anime</p>
+                <h1 className="line-clamp-2 max-w-[570px] overflow-hidden break-words text-[27px] font-black leading-[1.06] tracking-[-0.03em] text-white drop-shadow-[0_5px_20px_rgba(0,0,0,0.58)] md:text-[30px] xl:text-[32px]">
                   {hero?.title || 'StreamNyaa'}
                 </h1>
-                <p className="mt-2 line-clamp-1 max-w-[535px] text-[15px] font-semibold text-white/72">
+                <p className="mt-2 line-clamp-1 max-w-[520px] overflow-hidden text-[13px] font-semibold leading-5 text-white/72">
                   {hero?.title_english || hero?.title_japanese || 'Desktop anime cinema'}
                 </p>
-                <div className="mt-4 flex max-w-[560px] shrink-0 gap-2 overflow-hidden">
+                <div className="mt-3 flex max-h-[28px] max-w-[520px] gap-2 overflow-hidden">
                   {heroMetadata(hero).slice(0, 4).map((item) => (
                     <span key={item} className="shrink-0 rounded-md bg-white/[0.09] px-2.5 py-1 text-[11px] font-bold text-white/76 backdrop-blur ring-1 ring-white/[0.045]">
                       {item}
                     </span>
                   ))}
                 </div>
-                <p className="mt-4 line-clamp-2 max-w-[545px] text-[14px] leading-6 text-white/76">{heroDescription(hero)}</p>
+                <p className="mt-4 line-clamp-2 max-w-[540px] overflow-hidden text-[13px] leading-5 text-white/78">{heroDescription(hero)}</p>
               </div>
-              <div className="hero-cta mt-auto flex shrink-0 flex-col items-start gap-3 pt-4">
-                <p className="line-clamp-1 text-[11px] font-black uppercase tracking-[0.22em] text-white/50">
-                  {heroEpisodeHint(hero, history) || 'Ready in desktop mode'}
-                </p>
+              <div className="hero-cta mt-auto flex shrink-0 items-end pt-5">
                 <Link
                   to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))}
-                  className="inline-flex h-[50px] min-w-[178px] items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-primary to-[#ff4d68] px-7 text-[15px] font-black text-white shadow-[0_18px_42px_rgba(244,63,94,0.28)] ring-1 ring-white/10 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_48px_rgba(244,63,94,0.36)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 active:translate-y-0"
+                  className="sn-primary-action group/watch h-[50px] min-w-[176px] rounded-[16px] px-7 text-[15px]"
                 >
-                  <Play className="h-[18px] w-[18px] fill-current" />
+                  <span className="grid h-7 w-7 place-items-center rounded-full bg-white/18 ring-1 ring-white/14 transition-colors group-hover/watch:bg-white/24">
+                    <Play className="ml-0.5 h-[14px] w-[14px] fill-current" />
+                  </span>
                   Watch Now
                 </Link>
               </div>
@@ -955,7 +962,7 @@ export default function DesktopHome() {
             <button
               type="button"
               onClick={() => moveHero(-1)}
-              className="grid h-11 w-11 place-items-center rounded-full border border-white/8 bg-black/38 text-white/76 shadow-lg shadow-black/20 backdrop-blur transition-colors hover:bg-white/[0.14] hover:text-white"
+              className="sn-icon-action h-11 w-11 rounded-full"
               aria-label="Previous seasonal pick"
             >
               <ChevronLeft className="h-5 w-5" />
@@ -963,7 +970,7 @@ export default function DesktopHome() {
             <button
               type="button"
               onClick={() => moveHero(1)}
-              className="grid h-11 w-11 place-items-center rounded-full border border-white/8 bg-black/38 text-white/76 shadow-lg shadow-black/20 backdrop-blur transition-colors hover:bg-white/[0.14] hover:text-white"
+              className="sn-icon-action h-11 w-11 rounded-full"
               aria-label="Next seasonal pick"
             >
               <ChevronRight className="h-5 w-5" />
@@ -1039,7 +1046,7 @@ export default function DesktopHome() {
       </section>
 
       <section className="mt-7 desktop-section-enter">
-        <RailHeader title="Seasonal Anime" subtitle={`${currentSeason.season} ${currentSeason.year} picks`} to="/search?status=airing" count={seasonalPicks.length} />
+        <RailHeader title="Seasonal Anime" subtitle={`${currentSeason.label} picks`} to="/search?status=airing" count={seasonalPicks.length} />
         <MediaRail>
           {seasonalPicks.map((anime: any, index: number) => (
             <PosterAnimeCard

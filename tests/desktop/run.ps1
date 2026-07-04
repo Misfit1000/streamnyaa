@@ -15,6 +15,18 @@ function Assert-Match {
   }
 }
 
+function Assert-NotMatch {
+  param(
+    [string]$Value,
+    [string]$Pattern,
+    [string]$Message
+  )
+
+  if ($Value -match $Pattern) {
+    throw $Message
+  }
+}
+
 $desktopBridge = Get-Content -Raw (Join-Path $repo 'src\lib\desktop.ts')
 $watchPage = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopWatch.tsx')
 $appDesktop = Get-Content -Raw (Join-Path $repo 'src\AppDesktop.tsx')
@@ -27,6 +39,8 @@ $desktopExplore = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopExplore.ts
 $desktopSources = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSources.tsx')
 $desktopSettings = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSettings.tsx')
 $desktopSchedule = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSchedule.tsx')
+$loginPage = Get-Content -Raw (Join-Path $repo 'src\pages\Login.tsx')
+$supabaseAuth = Get-Content -Raw (Join-Path $repo 'src\lib\supabaseAuth.ts')
 $nyaaApi = Get-Content -Raw (Join-Path $repo 'src\api\nyaa.ts')
 $metadataApi = Get-Content -Raw (Join-Path $repo 'src\api\jikan.ts')
 $streamSourcesApi = Get-Content -Raw (Join-Path $repo 'api\stream-sources.ts')
@@ -54,15 +68,25 @@ Assert-Match $desktopShell 'setSidebarCollapsed' 'Desktop shell menu button shou
 Assert-Match $appDesktop "path=`"search`" element=\{<DesktopExplore />\}" 'Desktop Explore must use the desktop-native page.'
 Assert-Match $appDesktop "path=`"nyaa`" element=\{<DesktopSources />\}" 'Desktop Sources must use the desktop-native page.'
 Assert-Match $appDesktop "path=`"schedule`" element=\{<DesktopSchedule />\}" 'Desktop Schedule must use the desktop-native page.'
+Assert-Match $appDesktop "path=`"profile`" element=\{<DesktopProfile />\}" 'Desktop Profile must use the desktop-native profile page.'
+Assert-Match $appDesktop "path=`"login`" element=\{<Login />\}" 'Desktop Login route should stay inside AppDesktop and DesktopShell.'
 if ($appDesktop -match "import\\('./pages/AnimeDetails'\\)") {
   throw 'Desktop app must not mount the web anime details page.'
 }
+Assert-Match $loginPage "isDesktopRuntime\(\) \? '/profile' : '/dashboard'" 'Desktop login should default successful auth to the native profile route.'
+Assert-Match $supabaseAuth 'if \(isDesktopRuntime\(\)\)' 'Supabase auth redirects must branch for the desktop runtime before using hosted web origins.'
+Assert-Match $supabaseAuth 'currentRuntimeOrigin\(\)' 'Desktop OAuth redirects should use the current Tauri/WebView origin instead of the public web app.'
+Assert-Match $supabaseAuth 'safeAuthRedirectPath' 'Auth redirects should sanitize callback paths before building redirect URLs.'
 Assert-Match $animeCard 'desktopWatchOrBrowsePath\(anime\)' 'Desktop anime cards must use the desktop-specific watch routing helper.'
 Assert-Match $desktopHome 'desktopWatchPath\(anime' 'Desktop home should build watch links through the desktop-specific route helper.'
 Assert-Match $desktopHome 'loadDesktopAudioPreference' 'Desktop home should respect the pinned audio preference.'
 Assert-Match $desktopHome 'watchEpisodeFor' 'Desktop home should open the latest unwatched episode when possible.'
-Assert-Match $watchPage 'Available Sources' 'Desktop watch page source section is missing.'
-Assert-Match $watchPage '(Open Source|Play Episode)' 'Desktop watch page primary open action is missing.'
+Assert-Match $watchPage 'Source List' 'Desktop watch page source section is missing.'
+Assert-Match $watchPage 'Play Best Source' 'Desktop watch page primary open action is missing.'
+Assert-NotMatch $watchPage 'Source Links' 'Desktop watch page must not render the old Source Links label.'
+Assert-NotMatch $watchPage 'Smart Source Selector|Smart source selector' 'Desktop watch page must not render the old smart source selector label.'
+Assert-NotMatch $watchPage 'Available Sources' 'Desktop watch page must not render the old Available Sources label.'
+Assert-NotMatch $watchPage '>[\s\r\n]*Play Episode[\s\r\n]*<' 'Desktop watch page must not render the old Play Episode action.'
 Assert-Match $watchPage 'saveDesktopAudioPreference' 'Desktop watch page should persist audio preference changes.'
 Assert-Match $watchPage 'saveDesktopAutoOpenBestSource' 'Desktop watch page should persist episode click behavior changes.'
 Assert-Match $watchPage 'sourceQualityReasons' 'Desktop watch page should explain why source matches are ranked.'
@@ -121,6 +145,14 @@ Assert-Match $desktopSources 'Batch sources hidden' 'Desktop Sources should hide
 Assert-Match $desktopSources 'loadDesktopAudioPreference' 'Desktop Sources should start from the pinned audio preference.'
 Assert-Match $desktopSettings 'Auto-open best source' 'Desktop Settings should expose the episode click behavior preference.'
 Assert-Match $desktopSchedule 'fetchSchedule' 'Desktop Schedule should load live airing data.'
+Assert-Match $desktopSchedule 'streamnyaa\.desktop\.scheduleReminders\.v1' 'Desktop Schedule should persist airing reminders with the expected storage key.'
+Assert-Match $desktopSchedule 'getScheduleNotificationPermission' 'Desktop Schedule should use an explicit notification permission helper.'
+Assert-Match $desktopSchedule "delivery:\s*ScheduleReminderDelivery" 'Desktop Schedule reminders should store a system/in-app delivery mode.'
+Assert-Match $desktopSchedule 'Test notification' 'Desktop Schedule should expose a test notification action.'
+Assert-Match $desktopSchedule 'Notifications are blocked\. You can still use in-app reminders while StreamNyaa is open\.' 'Desktop Schedule should explain blocked notifications and offer in-app fallback.'
+Assert-Match $desktopSchedule 'Save in-app reminder' 'Desktop Schedule should offer an in-app reminder fallback when system notifications are blocked.'
+Assert-Match $desktopSchedule 'System notifications enabled' 'Desktop Schedule should show system notification status.'
+Assert-Match $desktopSchedule 'Notifications unsupported; using in-app reminders' 'Desktop Schedule should show unsupported notification status.'
 Assert-Match $nyaaApi 'inMemorySearchCache' 'Desktop source fetch cache is missing.'
 Assert-Match $metadataApi 'inFlightMetadataRequests' 'Desktop metadata requests should be coalesced to prevent provider rate-limit bursts.'
 Assert-Match $metadataApi 'providerCooldowns' 'Desktop metadata layer should cool down providers after rate-limit/server errors.'

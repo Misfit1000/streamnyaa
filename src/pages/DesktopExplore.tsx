@@ -19,6 +19,7 @@ import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 type ExploreMode = 'trending' | 'popular' | 'top' | 'airing' | 'upcoming' | 'year';
 type VisualFilterKey = 'genre' | 'season' | 'status' | 'format' | 'source' | 'yearRange' | 'audio' | 'rating' | 'episodes' | 'popularity';
 type LocalSortKey = 'best' | 'title' | 'score' | 'popularity' | 'newest' | 'episodes';
+type ExploreDensity = 'poster' | 'compact' | 'list';
 type SelectOption = { label: string; value: string };
 
 const defaultVisualFilters: Record<VisualFilterKey, string> = {
@@ -609,7 +610,7 @@ function SkeletonGrid() {
   return (
     <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
       {Array.from({ length: 10 }).map((_, index) => (
-        <div key={index} className="aspect-[2/3] animate-pulse rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]" />
+        <div key={index} className="sn-poster-card aspect-[2/3] animate-pulse bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]" />
       ))}
     </div>
   );
@@ -617,7 +618,7 @@ function SkeletonGrid() {
 
 function EmptyState({ text, children }: { text: string; children?: ReactNode }) {
   return (
-    <div className="rounded-3xl bg-[linear-gradient(135deg,rgba(255,255,255,0.052),rgba(255,255,255,0.024)_52%,rgba(244,63,94,0.045))] px-6 py-14 text-center shadow-xl shadow-black/18 ring-1 ring-white/[0.045]">
+    <div className="sn-empty-state px-6 py-14 text-center">
       <p className="text-lg font-black text-white">No anime found</p>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">{text}</p>
       {children ? <div className="mt-5 flex flex-wrap justify-center gap-2">{children}</div> : null}
@@ -659,7 +660,7 @@ function PremiumSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-10 w-full items-center justify-between gap-3 rounded-xl bg-[#08080d]/76 px-3 text-left text-sm font-black text-white outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ring-1 ring-white/[0.055] transition duration-200 hover:-translate-y-0.5 hover:bg-white/[0.065] focus-visible:ring-primary/45 active:translate-y-0"
+        className="sn-secondary-action sn-action-between h-10 w-full rounded-xl px-3 text-left text-sm"
       >
         <span className="truncate">{selected?.label || value}</span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-white/50 transition ${open ? 'rotate-180 text-primary' : ''}`} />
@@ -697,10 +698,16 @@ function PremiumSelect({
   );
 }
 
+function uniqueExploreImages(values: any[]) {
+  return values
+    .map((value) => String(value || '').trim())
+    .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+}
+
 function coverCandidatesFor(anime: any) {
   const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
   const fallbackCover = fallbackId > 0 ? `https://img.anili.st/media/${fallbackId}` : '';
-  const posterCandidates = [
+  const posterCandidates = uniqueExploreImages([
     anime?.coverImage?.extraLarge,
     anime?.coverImage?.large,
     anime?.coverImage?.medium,
@@ -713,12 +720,23 @@ function coverCandidatesFor(anime: any) {
     anime?.images?.jpg?.large_image_url,
     anime?.images?.webp?.image_url,
     anime?.images?.jpg?.image_url,
+    anime?.thumbnail,
+    anime?.image_url,
+    anime?.image,
+  ]).filter((value) => !/\/banner\//i.test(value));
+
+  const bannerFallbacks = uniqueExploreImages([
+    anime?.banner_image,
+    anime?.bannerImage,
+    anime?.backdrop,
+    anime?.background,
+  ]);
+
+  return uniqueExploreImages([
+    ...posterCandidates,
     fallbackCover,
-  ];
-  return posterCandidates
-    .map((value) => String(value || '').trim())
-    .filter((value) => !/\/banner\//i.test(value))
-    .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
+    ...bannerFallbacks,
+  ]);
 }
 
 function spotlightArtworkCandidatesFor(anime: any) {
@@ -819,12 +837,13 @@ function SpotlightArtwork({ anime, title }: { anime: any | null; title: string }
   );
 }
 
-function ExploreAnimeCard({ anime, index }: { anime: any; index: number }) {
+function ExploreAnimeCard({ anime, index, density = 'poster' }: { anime: any; index: number; density?: ExploreDensity }) {
   const candidates = useMemo(() => coverCandidatesFor(anime), [anime]);
   const [imageIndex, setImageIndex] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
   const currentImage = candidates[imageIndex] || '';
   const title = anime?.title || anime?.title_english || anime?.title_romaji || 'Anime';
+  const description = anime?.synopsis || anime?.description || '';
   const genres = genreNamesFor(anime).slice(0, 2);
   const year = yearFor(anime);
   const score = scoreFor(anime);
@@ -832,19 +851,74 @@ function ExploreAnimeCard({ anime, index }: { anime: any; index: number }) {
   const format = formatLabelFor(anime);
   const episodes = episodeCountFor(anime);
   const path = desktopWatchOrBrowsePath(anime);
+  const compact = density === 'compact';
 
   useEffect(() => {
     setImageIndex(0);
     setImageFailed(false);
   }, [String(anime?.mal_id || anime?.id || title), candidates.join('|'), title]);
 
+  if (density === 'list') {
+    return (
+      <Link
+        to={path}
+        aria-label={`Open ${title}`}
+        className="sn-card-hover group grid min-h-[132px] grid-cols-[86px_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl p-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+      >
+        <div className="sn-poster-card relative h-[112px]">
+          {currentImage && !imageFailed ? (
+            <img
+              key={currentImage}
+              src={currentImage}
+              alt={title}
+              className="h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.04]"
+              loading={index < 8 ? 'eager' : 'lazy'}
+              decoding="async"
+              referrerPolicy="no-referrer"
+              onError={() => {
+                setImageIndex((value) => {
+                  if (value < candidates.length - 1) return value + 1;
+                  setImageFailed(true);
+                  return value;
+                });
+              }}
+            />
+          ) : (
+            <div className="h-full w-full bg-[radial-gradient(circle_at_24%_18%,rgba(244,63,94,0.38),transparent_32%),linear-gradient(145deg,#1f1119,#07070a)]" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/52 to-transparent" />
+        </div>
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="rounded-full bg-white/[0.075] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/70">{format}</span>
+            {status ? <span className="rounded-full bg-primary/13 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-primary">{status}</span> : null}
+            <span className="rounded-full bg-white/[0.055] px-2 py-1 text-[10px] font-bold text-white/50">{year || 'TBA'}</span>
+          </div>
+          <h3 className="line-clamp-1 text-[17px] font-black tracking-[-0.01em] text-white">{title}</h3>
+          <p className="mt-1 line-clamp-2 max-w-3xl text-sm leading-6 text-white/54">{description || genres.join(' / ') || 'Anime'}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-bold text-white/58">
+            <span className="inline-flex items-center gap-1 text-yellow-300">
+              <Star className="h-3.5 w-3.5 fill-current" />
+              {score ? score.toFixed(1) : 'N/A'}
+            </span>
+            <span>{episodes ? `${episodes} episodes` : 'Episodes TBA'}</span>
+            <span>{genres.length ? genres.join(' / ') : 'Anime'}</span>
+          </div>
+        </div>
+        <span className="hidden rounded-full bg-primary px-4 py-2 text-sm font-black text-white shadow-lg shadow-primary/20 transition group-hover:bg-[#ff365c] md:inline-flex">
+          Open
+        </span>
+      </Link>
+    );
+  }
+
   return (
     <Link
       to={path}
       aria-label={`Open ${title}`}
-      className="group relative block min-w-0 rounded-[18px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+      className="sn-card-hover group relative block min-w-0 rounded-[18px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-[18px] bg-[#101016] shadow-xl shadow-black/25 ring-1 ring-white/[0.045] transition duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_18px_45px_rgba(244,63,94,0.13)] group-hover:ring-primary/25">
+      <div className={`sn-poster-card relative ${compact ? 'aspect-[5/7]' : 'aspect-[2/3]'} transition duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_18px_45px_rgba(244,63,94,0.13)] group-hover:ring-primary/25`}>
         {currentImage && !imageFailed ? (
           <img
             key={currentImage}
@@ -863,8 +937,9 @@ function ExploreAnimeCard({ anime, index }: { anime: any; index: number }) {
             }}
           />
         ) : (
-          <div className="flex h-full w-full items-end bg-[radial-gradient(circle_at_24%_18%,rgba(244,63,94,0.38),transparent_32%),linear-gradient(145deg,#1f1119,#07070a)] p-4">
-            <span className="line-clamp-3 text-base font-black leading-tight text-white/82">{title}</span>
+          <div className="flex h-full w-full flex-col justify-end bg-[radial-gradient(circle_at_22%_14%,rgba(244,63,94,0.24),transparent_34%),linear-gradient(145deg,#151018,#06070b)] p-4">
+            <span className="mb-2 w-fit rounded-full bg-white/[0.075] px-2 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-white/52">{format}</span>
+            <span className="line-clamp-3 text-sm font-black leading-tight text-white/84">{title}</span>
           </div>
         )}
 
@@ -878,7 +953,7 @@ function ExploreAnimeCard({ anime, index }: { anime: any; index: number }) {
             <span className="rounded-full border border-white/10 bg-white/[0.08] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/72">{format}</span>
             {status ? <span className="rounded-full border border-primary/22 bg-primary/12 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-primary">{status}</span> : null}
           </div>
-          <h3 className="line-clamp-2 min-h-[34px] text-[15px] font-black leading-[1.12] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]">{title}</h3>
+          <h3 className={`line-clamp-2 ${compact ? 'min-h-[30px] text-[13px]' : 'min-h-[34px] text-[15px]'} font-black leading-[1.12] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]`}>{title}</h3>
           <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-bold text-white/62">
             <span className="truncate">{genres.length ? genres.join(' / ') : 'Anime'}</span>
             <span className="shrink-0">{year || 'TBA'}</span>
@@ -944,6 +1019,7 @@ export default function DesktopExplore() {
   const [yearMenuOpen, setYearMenuOpen] = useState(false);
   const [visibleResultCount, setVisibleResultCount] = useState(EXPLORE_INITIAL_RESULTS);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [density, setDensity] = useState<ExploreDensity>('poster');
   const prefersReducedMotion = usePrefersReducedMotion();
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     try {
@@ -1162,6 +1238,11 @@ export default function DesktopExplore() {
   );
   const visibleResults = useMemo(() => results.slice(0, visibleResultCount), [results, visibleResultCount]);
   const canShowMoreResults = visibleResultCount < results.length;
+  const densityGridClass = density === 'list'
+    ? 'grid gap-3'
+    : density === 'compact'
+      ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8'
+      : 'grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6';
   const rows = useMemo(() => {
     const used = new Set<string>();
     return [
@@ -1261,11 +1342,11 @@ export default function DesktopExplore() {
   }, [recentSearches]);
 
   return (
-    <div className="px-5 py-4">
+    <div className="sn-page py-4">
       <Seo title="Explore Anime | StreamNyaa Desktop" description="Desktop anime discovery." canonicalPath="/search" robots="noindex, nofollow" />
 
       <section
-        className="relative min-h-[292px] overflow-hidden rounded-[28px] bg-[#07070b] p-5 pl-6 shadow-[0_24px_80px_rgba(0,0,0,0.38)] ring-1 ring-white/[0.045] lg:pl-8"
+        className="sn-hero-panel relative min-h-[292px] p-5 pl-6 lg:pl-8"
         onMouseEnter={() => setSpotlightPaused(true)}
         onMouseLeave={() => setSpotlightPaused(false)}
         onFocus={() => setSpotlightPaused(true)}
@@ -1285,7 +1366,7 @@ export default function DesktopExplore() {
               Find your next obsession. Explore trending titles, timeless classics, and hidden gems from around the anime world.
             </p>
           </div>
-          <form onSubmit={submit} className="relative flex w-full max-w-[560px] gap-3 justify-self-end rounded-2xl bg-black/[0.36] p-1.5 shadow-[0_16px_45px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-white/[0.055] backdrop-blur-xl lg:mt-12">
+          <form onSubmit={submit} className="sn-glass-card relative flex w-full max-w-[560px] gap-3 justify-self-end rounded-2xl p-1.5 lg:mt-12">
             <label className="relative flex-1">
               <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/36" />
               <input
@@ -1295,7 +1376,7 @@ export default function DesktopExplore() {
                 onFocus={() => setSearchFocused(true)}
                 aria-label="Search anime"
                 placeholder="Search anime, characters, studios..."
-                className="h-12 w-full rounded-xl bg-black/[0.52] pl-12 pr-12 text-base text-white outline-none transition placeholder:text-white/38 focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.24)]"
+                className="sn-input h-12 w-full rounded-xl pl-12 pr-12 text-base"
               />
               {input ? (
                 <button
@@ -1312,7 +1393,7 @@ export default function DesktopExplore() {
             </label>
             <button
               type="submit"
-              className="h-12 rounded-xl bg-[linear-gradient(135deg,#ff3b63,#e11d48)] px-7 text-sm font-black text-white shadow-[0_12px_34px_rgba(244,63,94,0.24)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_40px_rgba(244,63,94,0.32)] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,255,255,0.16),0_16px_40px_rgba(244,63,94,0.32)] active:translate-y-0 active:scale-[0.98]"
+              className="sn-primary-action h-12 rounded-xl px-7 text-sm"
             >
               {isUpdatingResults ? 'Updating' : 'Search'}
             </button>
@@ -1373,7 +1454,7 @@ export default function DesktopExplore() {
               <button
                 type="button"
                 onClick={() => moveSpotlight(-1)}
-                className="grid h-10 w-10 place-items-center rounded-2xl bg-black/[0.38] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition duration-200 hover:-translate-y-0.5 hover:bg-primary/[0.16] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                className="sn-icon-action h-10 w-10 rounded-2xl"
                 aria-label="Previous seasonal spotlight"
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -1381,7 +1462,7 @@ export default function DesktopExplore() {
               <button
                 type="button"
                 onClick={() => moveSpotlight(1)}
-                className="grid h-10 w-10 place-items-center rounded-2xl bg-black/[0.38] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] transition duration-200 hover:-translate-y-0.5 hover:bg-primary/[0.16] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                className="sn-icon-action h-10 w-10 rounded-2xl"
                 aria-label="Next seasonal spotlight"
               >
                 <ChevronRight className="h-5 w-5" />
@@ -1390,7 +1471,7 @@ export default function DesktopExplore() {
           ) : null}
         </div>
 
-        <div className="relative mt-3 rounded-2xl bg-black/[0.24] p-2 shadow-2xl shadow-black/18 ring-1 ring-white/[0.035] backdrop-blur-xl">
+        <div className="sn-glass-card relative mt-3 rounded-2xl p-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex h-10 items-center gap-2 px-2 text-[11px] font-black uppercase tracking-[0.14em] text-white/58">
               <SlidersHorizontal className="h-4 w-4 text-primary" />
@@ -1415,7 +1496,7 @@ export default function DesktopExplore() {
                   key={key}
                   type="button"
                   onClick={() => setFiltersOpen(true)}
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-white/[0.055] px-4 text-sm font-black text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition duration-200 hover:-translate-y-0.5 hover:bg-primary/[0.14] focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                  className="sn-secondary-action h-10 rounded-xl px-4 text-sm"
                 >
                   {key === 'genre' ? <Sparkles className="h-4 w-4 text-primary" /> : key === 'yearRange' ? <CalendarDays className="h-4 w-4 text-primary" /> : <TrendingUp className="h-4 w-4 text-primary" />}
                   {group?.label || key}
@@ -1440,7 +1521,7 @@ export default function DesktopExplore() {
       </section>
 
       <div className="sticky top-3 z-20 mt-3 overflow-x-auto pb-1">
-        <div className="inline-flex min-w-full items-center gap-1 rounded-2xl bg-[#0d0d12]/82 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.045] backdrop-blur-xl">
+        <div className="sn-glass-card inline-flex min-w-full items-center gap-1 rounded-[18px] p-1.5">
           {(Object.keys(modeConfig) as ExploreMode[]).map((item) => {
             const Icon = modeIcons[item];
             return (
@@ -1450,8 +1531,8 @@ export default function DesktopExplore() {
                 onClick={() => updateMode(item)}
                 className={`group relative inline-flex h-10 shrink-0 items-center gap-2 overflow-hidden rounded-xl px-4 text-sm font-black transition duration-200 active:scale-[0.98] ${
                   mode === item
-                    ? 'bg-[linear-gradient(135deg,#ff3b63,#e11d48)] text-white shadow-[0_10px_26px_rgba(244,63,94,0.24)]'
-                    : 'text-white/62 hover:-translate-y-0.5 hover:bg-white/[0.06] hover:text-white'
+                    ? 'sn-category-chip-active'
+                    : 'sn-category-chip'
                 }`}
               >
                 <Icon className={`h-4 w-4 transition duration-200 ${mode === item ? 'text-white' : 'text-white/28 group-hover:text-primary/80'}`} />
@@ -1572,7 +1653,7 @@ export default function DesktopExplore() {
           }`}
           aria-hidden={!filtersOpen}
         >
-          <div className="rounded-2xl bg-black/24 p-4 shadow-xl shadow-black/20 ring-1 ring-white/[0.04]">
+            <div className="sn-glass-panel rounded-2xl p-4">
             <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-black text-white">Discovery filters</p>
@@ -1659,28 +1740,48 @@ export default function DesktopExplore() {
             <h2 className="mt-1 text-2xl font-semibold tracking-[-0.035em] text-white">{resultsHeading}</h2>
             <p className="mt-1 text-xs font-semibold text-white/52">{isUpdatingResults ? 'Refreshing matching titles...' : resultsSubtitle}</p>
           </div>
+          <div className="sn-glass-card hidden shrink-0 items-center rounded-2xl p-1 lg:flex">
+            {([
+              ['poster', 'Poster Grid'],
+              ['compact', 'Compact'],
+              ['list', 'List'],
+            ] as Array<[ExploreDensity, string]>).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setDensity(value)}
+                className={`h-9 rounded-xl px-3 text-xs font-black transition duration-200 ${
+                  density === value
+                    ? 'bg-primary text-white shadow-[0_10px_24px_rgba(244,63,94,0.22)]'
+                    : 'text-white/50 hover:bg-white/[0.06] hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         {searchQuery.isLoading ? <SkeletonGrid /> : results.length ? (
           <>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
-              {visibleResults.map((anime, index) => <ExploreAnimeCard key={anime.mal_id || anime.id || anime.title} anime={anime} index={index} />)}
+            <div className={densityGridClass}>
+              {visibleResults.map((anime, index) => <ExploreAnimeCard key={anime.mal_id || anime.id || anime.title} anime={anime} index={index} density={density} />)}
             </div>
             <div className="mt-5 flex justify-center">
               {canShowMoreResults ? (
                 <button
                   type="button"
                   onClick={() => setVisibleResultCount((value) => value + EXPLORE_RESULTS_INCREMENT)}
-                  className="rounded-full bg-white/[0.06] px-5 py-2.5 text-sm font-black text-white/76 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition duration-200 hover:-translate-y-0.5 hover:bg-primary/16 hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                  className="sn-secondary-action rounded-xl px-5 py-2.5 text-sm"
                 >
-                  Show more
+                  Load more
                 </button>
               ) : results.length > EXPLORE_INITIAL_RESULTS ? (
                 <button
                   type="button"
                   onClick={() => setVisibleResultCount(EXPLORE_INITIAL_RESULTS)}
-                  className="rounded-full bg-white/[0.045] px-5 py-2.5 text-sm font-black text-white/58 transition duration-200 hover:bg-white/[0.075] hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)]"
+                  className="sn-secondary-action rounded-xl px-5 py-2.5 text-sm"
                 >
-                  Show less
+                  Collapse
                 </button>
               ) : null}
             </div>
@@ -1719,15 +1820,15 @@ export default function DesktopExplore() {
                   <button
                     type="button"
                     onClick={() => setExpandedRows((current) => ({ ...current, [row.title]: !rowExpanded }))}
-                    className="rounded-full bg-white/[0.045] px-3.5 py-2 text-xs font-black text-white/58 transition duration-200 hover:-translate-y-0.5 hover:bg-primary/14 hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
+                    className="rounded-xl bg-white/[0.045] px-3.5 py-2 text-xs font-black text-white/58 transition duration-200 hover:-translate-y-0.5 hover:bg-primary/14 hover:text-white focus-visible:outline-none focus-visible:shadow-[0_0_0_2px_rgba(255,47,104,0.28)] active:translate-y-0"
                   >
-                    {rowExpanded ? 'Show less' : 'Show more'}
+                    {rowExpanded ? 'Collapse' : 'Load more'}
                   </button>
                 ) : null}
               </div>
               {row.loading ? <SkeletonGrid /> : row.data.length ? (
-                <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
-                  {rowItems.map((anime, index) => <ExploreAnimeCard key={`${row.title}-${anime.mal_id || anime.id || anime.title}`} anime={anime} index={index} />)}
+                <div className={densityGridClass}>
+                  {rowItems.map((anime, index) => <ExploreAnimeCard key={`${row.title}-${anime.mal_id || anime.id || anime.title}`} anime={anime} index={index} density={density} />)}
                 </div>
               ) : (
                 <EmptyState text={`${row.title} could not load right now.`} />

@@ -67,7 +67,7 @@ function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle
   };
 
   return (
-    <article className="group rounded-2xl border border-white/8 bg-[#111217]/82 p-4 shadow-xl shadow-black/18 transition-all hover:-translate-y-0.5 hover:border-white/16 hover:bg-[#181a22]/82">
+    <article className="sn-card-hover sn-glass-card group p-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -103,7 +103,7 @@ function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle
               void navigator.clipboard?.writeText(item.magnet);
               onStatus('Source link copied.');
             }}
-            className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/[0.045] text-white/66 transition-colors hover:border-white/18 hover:text-white"
+            className="sn-icon-action h-11 min-h-0 w-11 min-w-0 rounded-xl p-0"
             title="Copy source link"
           >
             <Copy className="h-4 w-4" />
@@ -111,7 +111,7 @@ function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle
           <button
             type="button"
             onClick={play}
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-black text-white shadow-lg shadow-primary/18 transition-colors hover:bg-primary/90"
+            className="sn-primary-action h-11 px-5"
           >
             <Play className="h-4 w-4 fill-current" />
             Play
@@ -215,10 +215,10 @@ export default function DesktopSources() {
   };
 
   return (
-    <div className="px-6 py-6">
+    <div className="sn-page py-6">
       <Seo title="Source Browser | StreamNyaa Desktop" description="Desktop source search." canonicalPath="/nyaa" robots="noindex, nofollow" />
 
-      <section className="desktop-premium-surface rounded-2xl p-6">
+      <section className="sn-hero-panel p-6">
         <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Sources</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-white">Search episode sources without batch clutter.</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">
@@ -232,10 +232,10 @@ export default function DesktopSources() {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder="Search anime title and episode..."
-              className="h-12 w-full rounded-xl border border-white/10 bg-black/32 pl-12 pr-4 text-sm text-white outline-none placeholder:text-white/36 focus:border-white/24"
+              className="sn-input h-12 w-full pl-12 pr-4"
             />
           </label>
-          <button className="h-12 rounded-xl bg-primary px-6 text-sm font-black text-white shadow-lg shadow-primary/18 transition-colors hover:bg-primary/90">
+          <button className="sn-primary-action h-12 px-6">
             Search Sources
           </button>
         </form>
@@ -249,7 +249,7 @@ export default function DesktopSources() {
               onClick={() => {
                 runSearch(example);
               }}
-              className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 transition-colors hover:border-white/18 hover:bg-white/[0.07] hover:text-white"
+              className="sn-category-chip px-3 py-1.5"
             >
               {example}
             </button>
@@ -264,7 +264,7 @@ export default function DesktopSources() {
                 key={item}
                 type="button"
                 onClick={() => runSearch(item)}
-                className="rounded-full border border-white/10 bg-black/22 px-3 py-1.5 transition-colors hover:border-white/18 hover:bg-white/[0.07] hover:text-white"
+                className="sn-category-chip px-3 py-1.5"
               >
                 {item}
               </button>
@@ -283,7 +283,7 @@ export default function DesktopSources() {
               key={preset}
               type="button"
               onClick={() => applyPreset(preset as 'quality' | 'fastest' | 'small' | 'dual')}
-              className="group rounded-2xl border border-white/8 bg-white/[0.035] p-4 text-left shadow-lg shadow-black/12 transition-all hover:-translate-y-0.5 hover:border-white/16 hover:bg-white/[0.06]"
+              className="sn-card-hover sn-glass-card group p-4 text-left"
             >
               <span className="text-sm font-black text-white">{label}</span>
               <span className="mt-1 block text-xs font-semibold leading-5 text-white/42 group-hover:text-white/55">{detail}</span>
@@ -301,7 +301,7 @@ export default function DesktopSources() {
                 setAudioMode(item);
                 saveDesktopAudioPreference(item === 'sub' ? 'sub-preferred' : 'dual-preferred');
               }}
-              className={`rounded-full border px-4 py-2 text-sm font-black transition-colors ${audioMode === item ? 'border-transparent bg-primary text-white shadow-lg shadow-primary/12' : 'border-white/10 bg-white/[0.045] text-white/64 hover:border-white/18 hover:text-white'}`}
+              className={`sn-category-chip px-4 py-2 text-sm ${audioMode === item ? 'sn-category-chip-active' : ''}`}
             >
               {item === 'dual' ? 'Dual Audio' : 'Sub'}
             </button>
@@ -318,7 +318,7 @@ export default function DesktopSources() {
               key={value}
               type="button"
               onClick={() => setSourceFilter(sourceFilter === value ? '' : value as TorrentSourceFilter)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-black transition-colors ${sourceFilter === value ? 'border-transparent bg-white/[0.14] text-white' : 'border-white/10 bg-white/[0.045] text-white/58 hover:border-white/18 hover:text-white'}`}
+              className={`sn-category-chip px-3 py-1.5 text-xs ${sourceFilter === value ? 'sn-category-chip-active' : ''}`}
             >
               {label}
             </button>
@@ -326,7 +326,7 @@ export default function DesktopSources() {
           <select
             value={sort}
             onChange={(event) => setSort(event.target.value as typeof sort)}
-            className="ml-auto h-10 rounded-xl border border-white/10 bg-black/35 px-3 text-sm font-black text-white outline-none"
+            className="sn-select ml-auto h-10 px-3"
           >
             <option value="best">Best Match</option>
             <option value="seeders">Seeders</option>
@@ -335,7 +335,7 @@ export default function DesktopSources() {
           <button
             type="button"
             onClick={clearSourceControls}
-            className="h-10 rounded-xl border border-white/10 bg-white/[0.045] px-4 text-sm font-black text-white/60 transition-colors hover:border-white/18 hover:bg-white/[0.07] hover:text-white"
+            className="sn-secondary-action h-10 px-4 text-sm"
           >
             Clear
           </button>
@@ -343,16 +343,16 @@ export default function DesktopSources() {
       </section>
 
       {status ? (
-        <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm font-bold text-white/70">{status}</div>
+        <div className="sn-glass-card mt-4 px-4 py-3 text-sm font-bold text-white/70">{status}</div>
       ) : null}
 
       <section className="mt-6">
         {!query ? (
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.04] px-6 py-16 text-center text-white/56">
+          <div className="sn-empty-state px-6 py-16 text-center text-white/56">
             Search by title plus episode, for example: <span className="font-black text-white">Witch Hat Atelier 07</span>
           </div>
         ) : searchQuery.isLoading ? (
-          <div className="flex items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.04] py-20 text-white/60">
+          <div className="sn-empty-state flex items-center justify-center py-20 text-white/60">
             <Loader2 className="mr-3 h-6 w-6 animate-spin text-primary" />
             Searching sources...
           </div>
@@ -362,7 +362,7 @@ export default function DesktopSources() {
               <span>{results.length} individual sources found</span>
               <span>Batch sources hidden</span>
             </div>
-            <div className="rounded-2xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.055))] p-4">
+            <div className="sn-glass-panel p-4">
               <p className="mb-3 text-[11px] font-black uppercase tracking-[0.22em] text-primary">Recommended Source</p>
               <SourceCard item={results[0]} animeTitle={query} onStatus={setStatus} />
             </div>
@@ -381,7 +381,7 @@ export default function DesktopSources() {
             ) : null}
           </div>
         ) : (
-          <div className="rounded-2xl border border-white/[0.06] bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_52%,rgba(244,63,94,0.045))] px-6 py-16 text-center shadow-xl shadow-black/18">
+          <div className="sn-empty-state px-6 py-16 text-center">
             <p className="text-lg font-black text-white">No individual episode sources found.</p>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Try the romanized title, remove the episode number, or search a different release spelling.</p>
           </div>

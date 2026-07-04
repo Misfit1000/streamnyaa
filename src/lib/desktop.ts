@@ -259,6 +259,11 @@ export type DesktopPlayerSettingChangedEvent = {
   value?: string;
 };
 
+export type DesktopPlayerReadyEvent = {
+  ready?: boolean;
+  at?: number;
+};
+
 type TauriListenEvent<T> = {
   payload: T;
 };
@@ -875,20 +880,34 @@ export async function controlLocalPlayerPreference(key: string, value: string | 
 }
 
 export async function syncDesktopPlayerPreferencesToPlayer(preferences = loadDesktopPlayerPreferences()) {
-  await controlLocalPlayer('auto_next_episode', preferences.autoNextEpisode ? 1 : 0);
-  await controlLocalPlayerPreference('autoSkipIntro', preferences.autoSkipIntro);
-  await controlLocalPlayerPreference('autoSkipOutro', preferences.autoSkipOutro);
-  await controlLocalPlayerPreference('rememberSpeed', preferences.rememberSpeed);
-  await controlLocalPlayerPreference('playbackSpeed', preferences.playbackSpeed);
-  await controlLocalPlayerPreference('volume', preferences.volume);
-  await controlLocalPlayerPreference('muted', preferences.muted);
-  await controlLocalPlayerPreference('subtitleStyle.fontSize', preferences.subtitleStyle.fontSize);
-  await controlLocalPlayerPreference('subtitleStyle.position', preferences.subtitleStyle.position);
-  await controlLocalPlayerPreference('subtitleStyle.textColor', preferences.subtitleStyle.textColor);
-  await controlLocalPlayerPreference('subtitleStyle.outline', preferences.subtitleStyle.outline);
-  await controlLocalPlayerPreference('subtitleStyle.shadow', preferences.subtitleStyle.shadow);
-  await controlLocalPlayerPreference('subtitleStyle.background', preferences.subtitleStyle.background);
-  await controlLocalPlayerPreference('subtitleStyle.custom', preferences.subtitleStyle.custom);
+  const failed: string[] = [];
+  const run = async (key: string, task: () => Promise<unknown>) => {
+    try {
+      await task();
+    } catch {
+      failed.push(key);
+    }
+  };
+
+  await run('autoNextEpisode', () => controlLocalPlayer('auto_next_episode', preferences.autoNextEpisode ? 1 : 0));
+  await run('autoSkipIntro', () => controlLocalPlayerPreference('autoSkipIntro', preferences.autoSkipIntro));
+  await run('autoSkipOutro', () => controlLocalPlayerPreference('autoSkipOutro', preferences.autoSkipOutro));
+  await run('rememberSpeed', () => controlLocalPlayerPreference('rememberSpeed', preferences.rememberSpeed));
+  await run('playbackSpeed', () => controlLocalPlayerPreference('playbackSpeed', preferences.playbackSpeed));
+  await run('volume', () => controlLocalPlayerPreference('volume', preferences.volume));
+  await run('muted', () => controlLocalPlayerPreference('muted', preferences.muted));
+  await run('subtitleStyle.fontSize', () => controlLocalPlayerPreference('subtitleStyle.fontSize', preferences.subtitleStyle.fontSize));
+  await run('subtitleStyle.position', () => controlLocalPlayerPreference('subtitleStyle.position', preferences.subtitleStyle.position));
+  await run('subtitleStyle.textColor', () => controlLocalPlayerPreference('subtitleStyle.textColor', preferences.subtitleStyle.textColor));
+  await run('subtitleStyle.outline', () => controlLocalPlayerPreference('subtitleStyle.outline', preferences.subtitleStyle.outline));
+  await run('subtitleStyle.shadow', () => controlLocalPlayerPreference('subtitleStyle.shadow', preferences.subtitleStyle.shadow));
+  await run('subtitleStyle.background', () => controlLocalPlayerPreference('subtitleStyle.background', preferences.subtitleStyle.background));
+  await run('subtitleStyle.custom', () => controlLocalPlayerPreference('subtitleStyle.custom', preferences.subtitleStyle.custom));
+
+  return {
+    ok: failed.length === 0,
+    failed,
+  };
 }
 
 export async function importSubtitleForCurrentDesktopPlayer() {
@@ -923,6 +942,15 @@ export async function listenDesktopPlayerSettingChanged(listener: (event: Deskto
   const listen = window.__TAURI__?.event?.listen;
   if (!listen) return () => {};
   return listen<DesktopPlayerSettingChangedEvent>('streamnyaa-player-setting-changed', (event) => {
+    listener(event.payload || {});
+  });
+}
+
+export async function listenDesktopPlayerReady(listener: (event: DesktopPlayerReadyEvent) => void) {
+  if (typeof window === 'undefined') return () => {};
+  const listen = window.__TAURI__?.event?.listen;
+  if (!listen) return () => {};
+  return listen<DesktopPlayerReadyEvent>('streamnyaa-player-ready', (event) => {
     listener(event.payload || {});
   });
 }

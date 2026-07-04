@@ -31,6 +31,11 @@ function runtimeEnv(): RuntimeEnv {
   return ((import.meta as unknown as { env?: RuntimeEnv }).env) || {};
 }
 
+function isDesktopRuntime() {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.__STREAMNYAA_DESKTOP__ || window.__TAURI__ || window.__TAURI_INTERNALS__);
+}
+
 function cleanSupabaseUrl(value?: string) {
   return String(value || '').trim().replace(/\/+$/, '').replace(/\/rest\/v1$/i, '');
 }
@@ -145,7 +150,25 @@ function normalizeSession(data: any): AuthSession {
   };
 }
 
+function safeAuthRedirectPath(path = '/login') {
+  const normalized = String(path || '/login').trim();
+  if (!normalized.startsWith('/') || normalized.startsWith('//')) return '/login';
+  return normalized;
+}
+
+function currentRuntimeOrigin() {
+  return typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin.replace(/\/+$/, '')
+    : '';
+}
+
 function siteRedirectUrl(path = '/login') {
+  const safePath = safeAuthRedirectPath(path);
+  if (isDesktopRuntime()) {
+    const desktopOrigin = currentRuntimeOrigin();
+    if (desktopOrigin) return `${desktopOrigin}${safePath}`;
+  }
+
   const env = runtimeEnv();
   const configuredOrigin = String(
     env.VITE_AUTH_REDIRECT_ORIGIN
@@ -153,10 +176,8 @@ function siteRedirectUrl(path = '/login') {
       || env.VITE_PUBLIC_APP_URL
       || '',
   ).trim().replace(/\/+$/, '');
-  const origin = configuredOrigin || (typeof window !== 'undefined' && window.location?.origin
-    ? window.location.origin
-    : 'https://www.streamnyaa.xyz');
-  return `${origin}${path}`;
+  const origin = configuredOrigin || currentRuntimeOrigin() || 'https://www.streamnyaa.xyz';
+  return `${origin}${safePath}`;
 }
 
 export function normalizeOAuthSessionFromHash(hash: string): AuthSession | null {

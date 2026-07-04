@@ -65,10 +65,10 @@ export default function DesktopLibrary() {
   };
 
   return (
-    <div className="px-6 py-6">
+    <div className="sn-page py-6">
       <Seo title="Library | StreamNyaa Desktop" description="Desktop anime library." canonicalPath="/my-list" robots="noindex, nofollow" />
 
-      <section className="desktop-premium-surface rounded-2xl p-6">
+      <section className="sn-hero-panel p-6">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Library</p>
@@ -78,15 +78,15 @@ export default function DesktopLibrary() {
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-xs font-black">
-            <span className="rounded-xl border border-white/10 bg-white/[0.045] px-3 py-2 text-white/58">
+            <span className="sn-glass-card rounded-xl px-3 py-2 text-white/58">
               <span className="block text-base text-white">{stats.all}</span>
               All
             </span>
-            <span className="rounded-xl border border-white/10 bg-white/[0.045] px-3 py-2 text-white/58">
+            <span className="sn-glass-card rounded-xl px-3 py-2 text-white/58">
               <span className="block text-base text-white">{stats.bookmarks}</span>
               Saved
             </span>
-            <span className="rounded-xl border border-white/10 bg-white/[0.045] px-3 py-2 text-white/58">
+            <span className="sn-glass-card rounded-xl px-3 py-2 text-white/58">
               <span className="block text-base text-white">{stats.favorites}</span>
               Loved
             </span>
@@ -100,11 +100,11 @@ export default function DesktopLibrary() {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search your library..."
-              className="h-12 w-full rounded-xl border border-white/10 bg-black/32 pl-12 pr-4 text-sm text-white outline-none placeholder:text-white/36 focus:border-white/24"
+              className="sn-input h-12 w-full pl-12 pr-4"
             />
           </label>
 
-          <div className="flex rounded-xl border border-white/10 bg-black/24 p-1">
+          <div className="sn-glass-card flex rounded-xl p-1">
             {([
               ['all', 'All', Bookmark],
               ['bookmarks', 'Saved', Bookmark],
@@ -126,7 +126,7 @@ export default function DesktopLibrary() {
             ))}
           </div>
 
-          <label className="inline-flex h-12 items-center gap-2 rounded-xl border border-white/10 bg-black/32 px-3">
+          <label className="sn-glass-card inline-flex h-12 items-center gap-2 rounded-xl px-3">
             <SlidersHorizontal className="h-4 w-4 text-white/42" />
             <select
               value={sortBy}
@@ -146,7 +146,7 @@ export default function DesktopLibrary() {
             type="button"
             onClick={() => setConfirmClear(true)}
             disabled={!combinedList.length}
-            className="inline-flex h-12 items-center gap-2 rounded-xl border border-primary/25 bg-primary/10 px-4 text-sm font-black text-primary transition-colors hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+            className="sn-primary-action h-12 px-4 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <Trash2 className="h-4 w-4" />
             Clear
@@ -156,7 +156,7 @@ export default function DesktopLibrary() {
 
       {confirmClear ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/72 p-4 backdrop-blur-md">
-          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#111217] p-5 shadow-2xl shadow-black/40">
+          <div className="sn-glass-panel w-full max-w-md p-5 shadow-2xl shadow-black/40">
             <div className="flex items-center gap-3 text-primary">
               <AlertTriangle className="h-6 w-6" />
               <h2 className="text-lg font-black text-white">Clear library?</h2>
@@ -168,7 +168,7 @@ export default function DesktopLibrary() {
               <button
                 type="button"
                 onClick={() => setConfirmClear(false)}
-                className="h-10 rounded-xl border border-white/10 bg-white/[0.045] px-4 text-sm font-black text-white/66 transition-colors hover:border-white/18 hover:text-white"
+                className="sn-secondary-action h-10 px-4 text-sm"
               >
                 Cancel
               </button>
@@ -178,7 +178,7 @@ export default function DesktopLibrary() {
                   clearMyList();
                   setConfirmClear(false);
                 }}
-                className="h-10 rounded-xl bg-primary px-4 text-sm font-black text-white shadow-lg shadow-primary/18 transition-colors hover:bg-primary/90"
+                className="sn-primary-action h-10 px-4 text-sm"
               >
                 Clear library
               </button>
@@ -189,11 +189,11 @@ export default function DesktopLibrary() {
 
       <section className="mt-6">
         {combinedList.length === 0 ? (
-          <div className="rounded-2xl border border-white/[0.06] bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_52%,rgba(244,63,94,0.045))] px-6 py-16 text-center shadow-xl shadow-black/18">
+          <div className="sn-empty-state px-6 py-16 text-center">
             <Bookmark className="mx-auto h-10 w-10 text-primary" />
             <p className="mt-4 text-lg font-black text-white">Your library is empty.</p>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Save or favorite anime from Explore to build a desktop library.</p>
-            <Link to="/search" className="mt-5 inline-flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-black text-white shadow-lg shadow-primary/18">
+            <Link to="/search" className="sn-primary-action mt-5 h-11 px-5">
               Explore anime
             </Link>
           </div>
@@ -204,7 +204,7 @@ export default function DesktopLibrary() {
             ))}
           </div>
         ) : (
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.04] px-6 py-16 text-center">
+          <div className="sn-empty-state px-6 py-16 text-center">
             <p className="text-lg font-black text-white">No matching library items.</p>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Clear search or switch the saved/loved filter.</p>
           </div>

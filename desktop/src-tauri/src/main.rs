@@ -243,6 +243,12 @@ struct PlayerSettingChangedPayload {
     value: String,
 }
 
+#[derive(Clone, Serialize)]
+struct PlayerReadyPayload {
+    ready: bool,
+    at: u128,
+}
+
 #[derive(Clone)]
 struct ActiveSession {
     torrent_id: String,
@@ -3324,6 +3330,23 @@ fn emit_player_setting_changed(key: &str, value: &str) {
     }
 }
 
+fn emit_player_ready() {
+    let payload = PlayerReadyPayload {
+        ready: true,
+        at: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default(),
+    };
+    if let Some(app) = APP_HANDLE.get() {
+        if let Err(error) = app.emit("streamnyaa-player-ready", payload) {
+            log_info(format!("Could not emit player ready event: {}", error));
+        }
+    } else {
+        log_info("Could not emit player ready event: app handle is unavailable");
+    }
+}
+
 fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
     let event = value.get("event").and_then(|item| item.as_str());
     if event != Some("client-message") {
@@ -3344,18 +3367,28 @@ fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
         }
     }
     if message == Some("streamnyaa-lua-ready") {
+        log_info("[StreamNyaa Rust] MPV Lua ready; emitting streamnyaa-player-ready");
+        emit_player_ready();
         return;
     }
     if message == Some("streamnyaa-next-episode-request") {
         if !player_ipc_is_active(ipc) {
             return;
         }
-        let reason = args
+        let raw_reason = args
             .get(1)
             .and_then(|item| item.as_str())
             .unwrap_or("manual");
-        log_info(format!("MPV requested next episode: {}", reason));
+        let reason = if raw_reason == "ended" { "ended" } else { "manual" };
+        log_info(format!(
+            "[StreamNyaa Rust] Received MPV next episode request reason={}",
+            reason
+        ));
         emit_player_next_episode_request(reason);
+        log_info(format!(
+            "[StreamNyaa Rust] Emitting streamnyaa-player-next-episode reason={}",
+            reason
+        ));
         return;
     }
     if message == Some("streamnyaa-auto-next-changed") {
@@ -3382,7 +3415,10 @@ fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
         }
         let key = args.get(1).and_then(|item| item.as_str()).unwrap_or_default();
         let value = args.get(2).and_then(|item| item.as_str()).unwrap_or_default();
-        log_info(format!("MPV changed player setting: {}={}", key, value));
+        log_info(format!(
+            "[StreamNyaa Rust] Received player setting changed key={} value={}",
+            key, value
+        ));
         emit_player_setting_changed(key, value);
         return;
     }
@@ -3714,6 +3750,7 @@ fn launch_or_reuse_player(
         .arg("--osd-align-y=bottom")
         .arg("--osd-margin-y=86")
         .arg("--cursor-autohide=900")
+        .arg("--no-window-dragging")
         .arg("--input-default-bindings=yes")
         .arg("--background-color=#050508")
         .arg("--hwdec=auto-safe")

@@ -77,9 +77,9 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
       to={cardPath}
       onMouseEnter={prefetchAnime}
       onFocus={prefetchAnime}
-      className="group relative block w-full rounded-xl transition-transform duration-200 hover:-translate-y-1 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+      className="sn-card-hover group relative block w-full rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
     >
-      <div className="relative aspect-[2/3] overflow-hidden rounded-xl border border-white/[0.06] bg-[#111217] shadow-lg shadow-black/24 transition-colors group-hover:border-white/14">
+      <div className="sn-poster-card relative aspect-[2/3]">
         {currentImage && !imageFailed ? (
           <img
             key={currentImage}
@@ -109,13 +109,13 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
         <div className="absolute top-2 left-2 z-30 flex gap-1 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100">
           <button
             onClick={handleLikeToggle}
-            className="rounded-lg border border-white/[0.08] bg-black/42 p-1.5 text-white/82 backdrop-blur-sm transition-colors hover:bg-white/[0.12] hover:text-white"
+            className="sn-icon-action h-8 min-h-0 w-8 min-w-0 rounded-lg p-0 text-white/82"
           >
             <Heart className={`h-3.5 w-3.5 ${liked ? 'fill-primary text-primary' : ''}`} />
           </button>
           <button
             onClick={handleListToggle}
-            className="rounded-lg border border-white/[0.08] bg-black/42 p-1.5 text-white/82 backdrop-blur-sm transition-colors hover:bg-white/[0.12] hover:text-white"
+            className="sn-icon-action h-8 min-h-0 w-8 min-w-0 rounded-lg p-0 text-white/82"
           >
             {inList ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Plus className="h-3.5 w-3.5" />}
           </button>
