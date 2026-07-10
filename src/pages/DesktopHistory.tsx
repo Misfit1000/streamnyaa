@@ -151,6 +151,7 @@ export default function DesktopHistory() {
   const [filter, setFilter] = useState<HistoryFilter>('all');
   const [sort, setSort] = useState<HistorySort>('recent');
   const [view, setView] = useState<HistoryView>('compact');
+  const [pendingClear, setPendingClear] = useState<'all' | 'completed' | null>(null);
 
   useEffect(() => subscribeLocalPlaybackHistory(() => {
     setHistory(loadLocalPlaybackHistory());
@@ -195,12 +196,14 @@ export default function DesktopHistory() {
   const clearAll = () => {
     clearLocalPlaybackHistory();
     setHistory([]);
+    setPendingClear(null);
     setStatus('Watch history cleared.');
   };
 
   const clearCompleted = () => {
     history.filter(isComplete).forEach(removeLocalPlaybackHistoryItem);
     setHistory(loadLocalPlaybackHistory());
+    setPendingClear(null);
     setStatus('Completed watch history cleared.');
   };
 
@@ -230,9 +233,10 @@ export default function DesktopHistory() {
             </Link>
             <button
               type="button"
-              onClick={clearAll}
+              onClick={() => setPendingClear('all')}
               disabled={!history.length}
               className="sn-primary-action h-11 px-4 disabled:cursor-not-allowed disabled:opacity-45"
+              aria-haspopup="dialog"
             >
               <Trash2 className="h-4 w-4" />
               Clear all
@@ -257,6 +261,29 @@ export default function DesktopHistory() {
 
       {status ? (
         <div className="sn-glass-card mt-4 px-4 py-3 text-sm font-bold text-white/70">{status}</div>
+      ) : null}
+
+      {pendingClear ? (
+        <section role="alertdialog" aria-modal="true" aria-labelledby="history-clear-title" className="sn-glass-panel mt-4 flex flex-wrap items-center justify-between gap-4 p-4">
+          <div>
+            <p id="history-clear-title" className="font-black text-white">
+              {pendingClear === 'all' ? 'Clear all watch history?' : 'Clear completed history?'}
+            </p>
+            <p className="mt-1 text-sm text-white/52">
+              {pendingClear === 'all'
+                ? 'This removes local history and Continue Watching progress from this device. Favorites are not affected.'
+                : `This removes ${completedCount} completed ${completedCount === 1 ? 'entry' : 'entries'}. In-progress history and favorites stay intact.`}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setPendingClear(null)} className="sn-secondary-action h-10 px-4 text-sm">
+              Cancel
+            </button>
+            <button type="button" onClick={pendingClear === 'all' ? clearAll : clearCompleted} className="sn-primary-action h-10 px-4 text-sm">
+              {pendingClear === 'all' ? 'Clear all' : 'Clear completed'}
+            </button>
+          </div>
+        </section>
       ) : null}
 
       <section className="mt-6">
@@ -316,9 +343,10 @@ export default function DesktopHistory() {
                 </div>
                 <button
                   type="button"
-                  onClick={clearCompleted}
+                  onClick={() => setPendingClear('completed')}
                   disabled={!completedCount}
                   className="sn-secondary-action h-11 px-4 text-xs disabled:cursor-not-allowed disabled:opacity-45"
+                  aria-haspopup="dialog"
                 >
                   Clear completed
                 </button>

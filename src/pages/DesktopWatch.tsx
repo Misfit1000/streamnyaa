@@ -268,21 +268,36 @@ function compactAnimeType(value: unknown) {
   return formatCompactLabel(value);
 }
 
+function youtubeVideoIdFor(value = '') {
+  try {
+    const url = new URL(String(value || '').trim());
+    if (url.protocol !== 'https:') return '';
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    let candidate = '';
+    if (host === 'youtu.be') candidate = url.pathname.split('/').filter(Boolean)[0] || '';
+    if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
+      candidate = url.searchParams.get('v') || url.pathname.match(/^\/(?:embed|shorts)\/([^/?#]+)/)?.[1] || '';
+    }
+    return /^[a-zA-Z0-9_-]{6,20}$/.test(candidate) ? candidate : '';
+  } catch {
+    return '';
+  }
+}
+
 function trailerUrlFor(anime: any) {
   const trailer = anime?.trailer || {};
-  const direct = String(trailer.url || '').trim();
-  if (/^https?:\/\//i.test(direct)) return direct;
+  const directId = youtubeVideoIdFor(trailer.url);
+  if (directId) return `https://www.youtube.com/watch?v=${encodeURIComponent(directId)}`;
   const youtubeId = String(trailer.youtube_id || trailer.id || '').trim();
-  if (youtubeId && (!trailer.site || String(trailer.site).toLowerCase() === 'youtube')) {
+  if (/^[a-zA-Z0-9_-]{6,20}$/.test(youtubeId) && (!trailer.site || String(trailer.site).toLowerCase() === 'youtube')) {
     return `https://www.youtube.com/watch?v=${encodeURIComponent(youtubeId)}`;
   }
   return '';
 }
 
 function youtubeEmbedUrlFor(url = '') {
-  const trimmed = String(url || '').trim();
-  const match = trimmed.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{6,})/);
-  return match?.[1] ? `https://www.youtube-nocookie.com/embed/${match[1]}?autoplay=1&rel=0&modestbranding=1` : '';
+  const youtubeId = youtubeVideoIdFor(url);
+  return youtubeId ? `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0&modestbranding=1` : '';
 }
 
 function animeStudiosFor(anime: any) {

@@ -40,6 +40,7 @@ $desktopLibrary = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopLibrary.ts
 $desktopSources = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSources.tsx')
 $desktopSettings = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSettings.tsx')
 $desktopSchedule = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSchedule.tsx')
+$desktopHistory = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopHistory.tsx')
 $loginPage = Get-Content -Raw (Join-Path $repo 'src\pages\Login.tsx')
 $supabaseAuth = Get-Content -Raw (Join-Path $repo 'src\lib\supabaseAuth.ts')
 $nyaaApi = Get-Content -Raw (Join-Path $repo 'src\api\nyaa.ts')
@@ -51,6 +52,7 @@ $packageJson = Get-Content -Raw (Join-Path $repo 'package.json')
 $desktopHtmlWriter = Get-Content -Raw (Join-Path $repo 'scripts\write-desktop-html.mjs')
 $desktopFallbackBuilder = Get-Content -Raw (Join-Path $repo 'scripts\build-desktop-fallback.ps1')
 $playerSkin = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\bin\streamnyaa-player.lua')
+$tauriConfig = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\tauri.conf.json')
 
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
@@ -217,6 +219,17 @@ Assert-Match $playerSkin 'function is_cover_loading_media' 'StreamNyaa MPV skin 
 Assert-Match $playerSkin 'loading%-cover%.jpg' 'StreamNyaa MPV skin should not treat loading-cover.jpg as normal playable media.'
 Assert-Match $watchPage 'banner:\s*wideImageFor\(anime\)' 'Desktop watch playback payload should send wide artwork for player loading backgrounds.'
 Assert-Match $watchPage 'coverImage\?\.extraLarge' 'Desktop watch poster candidates should include AniList cover art for player loading fallback.'
+Assert-Match $watchPage 'function youtubeVideoIdFor' 'Desktop trailers should validate and canonicalize YouTube URLs before opening them.'
+Assert-Match $watchPage "url\.protocol !== 'https:'" 'Desktop trailer links must require HTTPS.'
+Assert-Match $tauriMain 'validated_command_candidate' 'Desktop command overrides must pass the executable-name allowlist before launch.'
+Assert-Match $tauriMain 'allowed_command\(value, allowed_names\)' 'Desktop command validation must reject arbitrary executable names.'
+Assert-NotMatch $tauriConfig 'ws://localhost' 'Packaged desktop CSP must not permit unused WebSocket connections.'
+Assert-Match $desktopHistory 'role="alertdialog"' 'Desktop History must confirm destructive cleanup inside the app.'
+Assert-Match $desktopHistory "setPendingClear\('all'\)" 'Desktop History Clear all must arm confirmation instead of deleting immediately.'
+Assert-Match $desktopBridge 'LOCAL_PLAYBACK_HISTORY_LIMIT\s*=\s*18' 'Desktop playback history must remain bounded.'
+Assert-Match $desktopExplore 'EXPLORE_INITIAL_RESULTS' 'Desktop Explore must progressively render large result sets.'
+Assert-Match $desktopExplore 'window\.clearTimeout\(handle\)' 'Desktop Explore must cancel stale debounced search updates.'
+Assert-Match $desktopSchedule 'REMINDER_POLL_MS\s*=\s*45_000' 'Desktop reminder polling must remain bounded and non-aggressive.'
 Assert-Match $tauriMain '"tmdb"' 'Desktop metadata bridge should support TMDB enrichment requests.'
 Assert-Match $tauriMain '"animeschedule"' 'Desktop metadata bridge should support AnimeSchedule enrichment requests.'
 Assert-Match $tauriMain '"anidb"' 'Desktop metadata bridge should support AniDB enrichment requests.'

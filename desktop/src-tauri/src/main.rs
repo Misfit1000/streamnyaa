@@ -557,24 +557,20 @@ fn configured_command(
     allowed_names: &[&str],
 ) -> Option<String> {
     if let Some(value) = clean_value(settings_value) {
-        if looks_like_path(&value) {
-            if Path::new(&value).exists() {
-                return Some(value);
-            }
-        } else if allowed_command(&value, allowed_names) {
-            if let Some(path) = command_from_path(&value) {
-                return Some(path);
-            }
+        if let Some(command) = validated_command_candidate(&value, allowed_names) {
+            return Some(command);
         }
     }
 
     if let Some(value) = clean_value(env::var(env_key).ok()) {
-        return Some(value);
+        if let Some(command) = validated_command_candidate(&value, allowed_names) {
+            return Some(command);
+        }
     }
 
     for path in candidate_paths(fallback) {
-        if Path::new(&path).exists() {
-            return Some(path);
+        if let Some(command) = validated_command_candidate(&path, allowed_names) {
+            return Some(command);
         }
     }
 
@@ -584,6 +580,18 @@ fn configured_command(
 fn allowed_command(value: &str, allowed_names: &[&str]) -> bool {
     let name = command_name(value);
     allowed_names.iter().any(|allowed| name == *allowed)
+}
+
+fn validated_command_candidate(value: &str, allowed_names: &[&str]) -> Option<String> {
+    if !allowed_command(value, allowed_names) {
+        return None;
+    }
+    if looks_like_path(value) {
+        return Path::new(value)
+            .is_file()
+            .then(|| value.to_string());
+    }
+    command_from_path(value)
 }
 
 fn command_version(path_value: &Option<String>, allowed_names: &[&str]) -> Option<String> {
@@ -5347,6 +5355,27 @@ mod tests {
         assert_eq!(clamp_player_seek_delta(900.0), 600.0);
         assert_eq!(clamp_player_seek_delta(f64::NAN), 0.0);
         assert_eq!(clamp_player_seek_absolute(-8.0), 0.0);
+    }
+
+    #[test]
+    fn command_overrides_require_the_expected_executable_name() {
+        let root = env::temp_dir().join(format!("streamnyaa-command-test-{}", now_millis()));
+        let _ = fs::create_dir_all(&root);
+        let expected = root.join("mpv.exe");
+        let unexpected = root.join("unexpected.exe");
+        fs::write(&expected, b"test").expect("expected command fixture");
+        fs::write(&unexpected, b"test").expect("unexpected command fixture");
+
+        assert_eq!(
+            validated_command_candidate(&expected.to_string_lossy(), &["mpv", "mpv.exe"]),
+            Some(expected.to_string_lossy().to_string())
+        );
+        assert_eq!(
+            validated_command_candidate(&unexpected.to_string_lossy(), &["mpv", "mpv.exe"]),
+            None
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
