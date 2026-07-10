@@ -5,27 +5,18 @@ import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
 import { fetchSchedule } from '../api/jikan';
 import { animeIdentity } from '../lib/animeIdentity';
+import {
+  DESKTOP_REMINDER_OFFSET_MINUTES as DEFAULT_REMINDER_OFFSET_MINUTES,
+  type DesktopNotificationPermission as ScheduleNotificationPermission,
+  type DesktopScheduleReminder as ScheduleReminder,
+  getDesktopNotificationPermission as getScheduleNotificationPermission,
+  readDesktopScheduleReminders as readScheduleReminders,
+  requestDesktopNotificationPermission as requestReminderPermission,
+  sendDesktopReminderTest as showTestSystemNotification,
+  subscribeDesktopScheduleReminders,
+  writeDesktopScheduleReminders as writeScheduleReminders,
+} from '../lib/desktopReminders';
 import { useStore } from '../store/useStore';
-
-const SCHEDULE_REMINDERS_KEY = 'streamnyaa.desktop.scheduleReminders.v1';
-const DEFAULT_REMINDER_OFFSET_MINUTES = 10;
-const REMINDER_POLL_MS = 45_000;
-const REMINDER_FIRE_GRACE_MS = 10 * 60 * 1000;
-
-type ScheduleNotificationPermission = 'granted' | 'default' | 'denied' | 'unsupported';
-type ScheduleReminderDelivery = 'system' | 'in-app';
-
-type ScheduleReminder = {
-  id: string;
-  animeId?: string | number;
-  title: string;
-  episode?: number | string;
-  airingAt: number;
-  reminderOffsetMinutes: number;
-  createdAt: number;
-  firedAt?: number;
-  delivery: ScheduleReminderDelivery;
-};
 
 type ScheduleNotice = {
   tone: 'success' | 'error' | 'info';
@@ -207,7 +198,7 @@ function reminderIdForAnime(anime: any) {
   return `${animeId}:episode-${episode}:${airingAt || 'unknown'}`;
 }
 
-function reminderFromAnime(anime: any, delivery: ScheduleReminderDelivery = 'in-app'): ScheduleReminder | null {
+function reminderFromAnime(anime: any): ScheduleReminder | null {
   const airingAt = airingAtMs(anime);
   if (!airingAt) return null;
   return {
@@ -218,123 +209,15 @@ function reminderFromAnime(anime: any, delivery: ScheduleReminderDelivery = 'in-
     airingAt,
     reminderOffsetMinutes: DEFAULT_REMINDER_OFFSET_MINUTES,
     createdAt: Date.now(),
-    delivery,
+    delivery: 'system',
   };
 }
 
-function normalizeReminderDelivery(value: any): ScheduleReminderDelivery {
-  if (value === 'system' || value === 'in-app') return value;
-  return getScheduleNotificationPermission() === 'granted' ? 'system' : 'in-app';
-}
-
-function normalizeReminder(value: any): ScheduleReminder | null {
-  if (!value || typeof value !== 'object') return null;
-  const airingAt = Number(value.airingAt || 0);
-  if (!Number.isFinite(airingAt) || airingAt <= 0) return null;
-  const id = String(value.id || '').trim();
-  const title = String(value.title || '').trim();
-  if (!id || !title) return null;
-  return {
-    id,
-    animeId: value.animeId,
-    title,
-    episode: value.episode,
-    airingAt,
-    reminderOffsetMinutes: Number.isFinite(Number(value.reminderOffsetMinutes))
-      ? Number(value.reminderOffsetMinutes)
-      : DEFAULT_REMINDER_OFFSET_MINUTES,
-    createdAt: Number.isFinite(Number(value.createdAt)) ? Number(value.createdAt) : Date.now(),
-    firedAt: Number.isFinite(Number(value.firedAt)) ? Number(value.firedAt) : undefined,
-    delivery: normalizeReminderDelivery(value.delivery),
-  };
-}
-
-function readScheduleReminders(): ScheduleReminder[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(SCHEDULE_REMINDERS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map(normalizeReminder).filter(Boolean) as ScheduleReminder[];
-  } catch {
-    return [];
-  }
-}
-
-function writeScheduleReminders(reminders: ScheduleReminder[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(SCHEDULE_REMINDERS_KEY, JSON.stringify(reminders));
-  } catch {
-    // A failed write should not break the schedule page.
-  }
-}
-
-function getScheduleNotificationPermission(): ScheduleNotificationPermission {
-  if (typeof window === 'undefined' || !('Notification' in window) || typeof Notification === 'undefined') return 'unsupported';
-  if (Notification.permission === 'granted') return 'granted';
-  if (Notification.permission === 'denied') return 'denied';
-  return 'default';
-}
-
-async function requestReminderPermission(): Promise<ScheduleNotificationPermission> {
-  const current = getScheduleNotificationPermission();
-  if (current !== 'default') return current;
-  try {
-    const result = await Notification.requestPermission();
-    if (result === 'granted') return 'granted';
-    if (result === 'denied') return 'denied';
-    return 'default';
-  } catch {
-    return getScheduleNotificationPermission();
-  }
-}
-
-function shouldFireReminder(reminder: ScheduleReminder, now: number) {
-  if (reminder.firedAt) return false;
-  const triggerAt = reminder.airingAt - reminder.reminderOffsetMinutes * 60 * 1000;
-  return now >= triggerAt && now < reminder.airingAt + REMINDER_FIRE_GRACE_MS;
-}
-
-function showSystemReminder(reminder: ScheduleReminder) {
-  if (reminder.delivery !== 'system' || getScheduleNotificationPermission() !== 'granted') return false;
-  try {
-    const episodeText = reminder.episode ? `Episode ${reminder.episode}` : 'New episode';
-    new Notification(`${reminder.title} is airing soon`, {
-      body: `${episodeText} starts in about ${reminder.reminderOffsetMinutes} minutes.`,
-      tag: reminder.id,
-      silent: false,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function showTestSystemNotification() {
-  if (getScheduleNotificationPermission() !== 'granted') return false;
-  try {
-    new Notification('StreamNyaa reminders are working.', {
-      body: 'System notifications can appear for saved airing reminders.',
-      tag: 'streamnyaa-schedule-test-notification',
-      silent: false,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function scheduleNotificationStatusMessage(permission: ScheduleNotificationPermission, hasInAppReminder: boolean) {
-  if (permission === 'granted') return 'System notifications enabled';
-  if (permission === 'denied') {
-    return hasInAppReminder
-      ? 'In-app reminders only while StreamNyaa is open'
-      : 'Notifications blocked in Windows/browser settings';
-  }
-  if (permission === 'unsupported') return 'Notifications unsupported; using in-app reminders';
-  return 'Reminders work while StreamNyaa is open. System notifications require Windows/browser permission.';
+function scheduleNotificationStatusMessage(permission: ScheduleNotificationPermission) {
+  if (permission === 'granted') return 'Windows notifications enabled';
+  if (permission === 'denied') return 'Notifications blocked in Windows settings';
+  if (permission === 'unsupported') return 'Native notifications unavailable';
+  return 'Enable a bell to allow Windows notifications';
 }
 
 function formatAiringTime(ms: number) {
@@ -356,10 +239,7 @@ export default function DesktopSchedule() {
   const [reminders, setReminders] = useState<ScheduleReminder[]>(() => readScheduleReminders());
   const [pendingReminderId, setPendingReminderId] = useState<string | null>(null);
   const [notice, setNotice] = useState<ScheduleNotice | null>(null);
-  const [fallbackReminder, setFallbackReminder] = useState<ScheduleReminder | null>(null);
-  const [notificationPermission, setNotificationPermission] = useState<ScheduleNotificationPermission>(() =>
-    getScheduleNotificationPermission(),
-  );
+  const [notificationPermission, setNotificationPermission] = useState<ScheduleNotificationPermission>('default');
   const { isInMyList, addToMyList, removeFromMyList } = useStore();
   const days = useMemo(scheduleDays, []);
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time', []);
@@ -396,62 +276,36 @@ export default function DesktopSchedule() {
   );
   const firedReminderCount = useMemo(() => reminders.filter((reminder) => reminder.firedAt).length, [reminders]);
   const nextReminder = activeReminders[0];
-  const hasInAppReminder = useMemo(() => activeReminders.some((reminder) => reminder.delivery === 'in-app'), [activeReminders]);
   const notificationStatusMessage = useMemo(
-    () => scheduleNotificationStatusMessage(notificationPermission, hasInAppReminder),
-    [hasInAppReminder, notificationPermission],
+    () => scheduleNotificationStatusMessage(notificationPermission),
+    [notificationPermission],
   );
 
   useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === SCHEDULE_REMINDERS_KEY) setReminders(readScheduleReminders());
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    return subscribeDesktopScheduleReminders(() => setReminders(readScheduleReminders()));
   }, []);
 
   useEffect(() => {
-    const refreshPermission = () => setNotificationPermission(getScheduleNotificationPermission());
+    const refreshPermission = () => {
+      void getScheduleNotificationPermission().then(setNotificationPermission);
+    };
+    refreshPermission();
     window.addEventListener('focus', refreshPermission);
-    document.addEventListener('visibilitychange', refreshPermission);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refreshPermission();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       window.removeEventListener('focus', refreshPermission);
-      document.removeEventListener('visibilitychange', refreshPermission);
+      document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
 
   useEffect(() => {
     if (!notice) return undefined;
-    if (fallbackReminder) return undefined;
     const timer = window.setTimeout(() => setNotice(null), 4200);
     return () => window.clearTimeout(timer);
-  }, [fallbackReminder, notice]);
-
-  useEffect(() => {
-    const checkReminders = () => {
-      const now = Date.now();
-      setReminders((current) => {
-        let changed = false;
-        const next = current.map((reminder) => {
-          if (!shouldFireReminder(reminder, now)) return reminder;
-          const systemShown = showSystemReminder(reminder);
-          if (!systemShown) {
-            setNotice({
-              tone: 'info',
-              message: `${reminder.title}${reminder.episode ? ` episode ${reminder.episode}` : ''} is airing soon.`,
-            });
-          }
-          changed = true;
-          return { ...reminder, firedAt: now };
-        });
-        if (changed) writeScheduleReminders(next);
-        return changed ? next : current;
-      });
-    };
-    checkReminders();
-    const interval = window.setInterval(checkReminders, REMINDER_POLL_MS);
-    return () => window.clearInterval(interval);
-  }, []);
+  }, [notice]);
 
   const toggleScheduleList = (anime: any) => {
     const id = animeIdentity(anime);
@@ -460,7 +314,6 @@ export default function DesktopSchedule() {
   };
 
   const saveScheduleReminder = (reminder: ScheduleReminder, message: string, tone: ScheduleNotice['tone'] = 'success') => {
-    setFallbackReminder(null);
     setReminders((current) => {
       const next = [...current.filter((item) => item.id !== reminder.id), reminder].sort((a, b) => a.airingAt - b.airingAt);
       writeScheduleReminders(next);
@@ -469,42 +322,33 @@ export default function DesktopSchedule() {
     setNotice({ tone, message });
   };
 
-  const saveFallbackReminder = () => {
-    if (!fallbackReminder) return;
-    saveScheduleReminder(
-      fallbackReminder,
-      `In-app reminder saved for ${fallbackReminder.title}. It will show while StreamNyaa is open.`,
-      'info',
-    );
-  };
-
   const testNotification = async () => {
     const permission = await requestReminderPermission();
     setNotificationPermission(permission);
     if (permission === 'granted') {
-      const shown = showTestSystemNotification();
+      const shown = await showTestSystemNotification();
       setNotice({
-        tone: shown ? 'success' : 'info',
+        tone: shown ? 'success' : 'error',
         message: shown
-          ? 'Test notification sent.'
-          : 'System notifications are enabled, but this test could not be shown. In-app reminders will still work.',
+          ? 'Test notification sent to Windows.'
+          : 'Windows could not show the test notification. Check system notification settings.',
       });
       return;
     }
     if (permission === 'denied') {
-      setNotice({ tone: 'error', message: 'Notifications are blocked. Enable them in Windows/browser settings.' });
+      setNotice({ tone: 'error', message: 'Notifications are blocked. Enable StreamNyaa in Windows notification settings.' });
       return;
     }
     if (permission === 'unsupported') {
       setNotice({
         tone: 'info',
-        message: 'System notifications are unavailable. In-app reminders will show while StreamNyaa is open.',
+        message: 'Native notifications are unavailable in this runtime. Install and open the desktop app.',
       });
       return;
     }
     setNotice({
       tone: 'info',
-      message: 'Notification permission was not enabled. In-app reminders can still show while StreamNyaa is open.',
+      message: 'Notification permission was not enabled, so no reminder was saved.',
     });
   };
 
@@ -527,7 +371,6 @@ export default function DesktopSchedule() {
       const next = reminders.filter((item) => item.id !== reminder.id);
       setReminders(next);
       writeScheduleReminders(next);
-      if (fallbackReminder?.id === reminder.id) setFallbackReminder(null);
       setNotice({ tone: 'success', message: `Reminder removed for ${reminder.title}.` });
       return;
     }
@@ -539,28 +382,19 @@ export default function DesktopSchedule() {
     try {
       const permission = await requestReminderPermission();
       setNotificationPermission(permission);
-      if (permission === 'denied') {
-        setFallbackReminder({ ...reminder, delivery: 'in-app' });
-        setNotice({
-          tone: 'info',
-          message: 'Notifications are blocked. You can still use in-app reminders while StreamNyaa is open.',
-        });
-        return;
-      }
       if (permission === 'granted') {
         saveScheduleReminder(
           { ...reminder, delivery: 'system' },
-          `System reminder set for ${reminder.title} ${reminderOffsetLabel(reminder)}.`,
+          `Windows reminder set for ${reminder.title} ${reminderOffsetLabel(reminder)}.`,
         );
         return;
       }
-      saveScheduleReminder(
-        { ...reminder, delivery: 'in-app' },
-        permission === 'unsupported'
-          ? `In-app reminder saved for ${reminder.title}; system notifications are unavailable.`
-          : `In-app reminder saved for ${reminder.title}; system notifications were not enabled.`,
-        'info',
-      );
+      setNotice({
+        tone: 'error',
+        message: permission === 'unsupported'
+          ? 'Native notifications are unavailable in this runtime. No reminder was saved.'
+          : 'Notifications are blocked. Enable StreamNyaa in Windows settings, then try again.',
+      });
     } finally {
       setPendingReminderId(null);
     }
@@ -640,7 +474,7 @@ export default function DesktopSchedule() {
               Test notification
             </button>
             <span className="basis-full text-right text-[11px] font-bold normal-case tracking-normal text-white/40">
-              Reminders work while StreamNyaa is open. System notifications require Windows/browser permission.
+              Saved bells use native Windows notifications outside the app window while StreamNyaa is running.
             </span>
           </div>
         </div>
@@ -658,18 +492,7 @@ export default function DesktopSchedule() {
           role="status"
           aria-live="polite"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span>{notice.message}</span>
-            {fallbackReminder ? (
-              <button
-                type="button"
-                onClick={saveFallbackReminder}
-                className="rounded-xl bg-white px-3 py-1.5 text-xs font-black uppercase tracking-[0.12em] text-black transition-transform hover:-translate-y-0.5"
-              >
-                Save in-app reminder
-              </button>
-            ) : null}
-          </div>
+          <span>{notice.message}</span>
         </div>
       ) : null}
 
@@ -724,7 +547,6 @@ export default function DesktopSchedule() {
                     const reminderId = reminder?.id || reminderIdForAnime(anime);
                     const activeReminder = reminders.find((item) => item.id === reminderId);
                     const notified = Boolean(activeReminder);
-                    const reminderDelivery = activeReminder?.delivery;
                     const canAddReminder = Boolean(reminder && reminder.airingAt > Date.now() && !broadcastState.blocksReminder);
                     const reminderPending = pendingReminderId === reminderId;
                     const reminderUnavailableTitle = broadcastState.blocksReminder
@@ -761,17 +583,13 @@ export default function DesktopSchedule() {
                             }}
                             disabled={reminderPending || (!notified && !canAddReminder)}
                             className={`grid h-8 w-8 place-items-center rounded-lg border backdrop-blur transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:cursor-not-allowed disabled:opacity-45 ${
-                              reminderDelivery === 'system'
+                              notified
                                 ? 'border-primary/45 bg-primary/22 text-primary shadow-lg shadow-primary/20'
-                                : reminderDelivery === 'in-app'
-                                  ? 'border-amber-300/35 bg-amber-400/18 text-amber-100 shadow-lg shadow-amber-950/20'
                                 : 'border-white/10 bg-black/60 text-white/70 hover:border-primary/30 hover:bg-primary/14 hover:text-white'
                             }`}
                             aria-label={
                               notified
-                                ? reminderDelivery === 'system'
-                                  ? `System reminder enabled for ${safeReminderTitle(anime)}`
-                                  : `In-app reminder enabled for ${safeReminderTitle(anime)}`
+                                ? `Windows reminder enabled for ${safeReminderTitle(anime)}`
                                 : canAddReminder
                                   ? `Remind me before ${safeReminderTitle(anime)} airs`
                                   : `Reminder unavailable for ${safeReminderTitle(anime)}`
@@ -779,9 +597,7 @@ export default function DesktopSchedule() {
                             aria-pressed={notified}
                             title={
                               notified
-                                ? reminderDelivery === 'system'
-                                  ? 'System reminder enabled'
-                                  : 'In-app reminder will show while StreamNyaa is open'
+                                ? 'Windows reminder enabled'
                                 : canAddReminder
                                   ? `Remind ${DEFAULT_REMINDER_OFFSET_MINUTES} minutes before airing`
                                   : reminderUnavailableTitle

@@ -8,8 +8,8 @@ local options = require "mp.options"
 -- MPV launches with --osc=no, so this file is the only player overlay.
 
 local C = {
-  accent = "2D1FFF",      -- #ff1f2d
-  hover = "4533FF",       -- #ff3345
+  accent = "2D12B3",      -- #b3122d
+  hover = "3C1DDC",       -- #dc1d3c
   white = "F7F5F5",       -- #f5f5f7
   secondary = "C2B8B8",   -- #b8b8c2
   muted = "7A7070",       -- #70707a
@@ -1924,12 +1924,12 @@ function icon_play(ass, cx, cy, size, color)
 end
 
 function icon_pause(ass, cx, cy, size, color)
-  local x1, y1 = icon_point(cx, cy, size, 7.3, 5.8)
-  local x2, y2 = icon_point(cx, cy, size, 10.1, 18.2)
-  rounded_rect(ass, x1, y1, x2, y2, size * 0.06, color, 0)
-  x1, y1 = icon_point(cx, cy, size, 13.9, 5.8)
-  x2, y2 = icon_point(cx, cy, size, 16.7, 18.2)
-  rounded_rect(ass, x1, y1, x2, y2, size * 0.06, color, 0)
+  local x1, y1 = icon_point(cx, cy, size, 6.8, 5.1)
+  local x2, y2 = icon_point(cx, cy, size, 10.8, 18.9)
+  rounded_rect(ass, x1, y1, x2, y2, size * 0.075, color, 0)
+  x1, y1 = icon_point(cx, cy, size, 13.2, 5.1)
+  x2, y2 = icon_point(cx, cy, size, 17.2, 18.9)
+  rounded_rect(ass, x1, y1, x2, y2, size * 0.075, color, 0)
 end
 
 function icon_skip(ass, cx, cy, size, color, forward)
@@ -2126,16 +2126,14 @@ function draw_title_area(ass, width, height, s)
 end
 
 function draw_center_play(ass, width, height, mouse, s)
-  if not state.paused or is_loading() then return end
+  if is_loading() or ui.end_overlay or ui.settings_open then return end
   local cx, cy = width / 2, height / 2
-  local r = 43 * s
-  local hot = inside(mouse, cx - r, cy - r, cx + r, cy + r)
-  circle(ass, cx, cy, r + 10 * s, C.accent, hot and 226 or 242)
-  circle(ass, cx, cy, r, C.black, hot and 64 or 88)
-  circle(ass, cx, cy, r + 1.5 * s, hot and C.accent or C.white, hot and 82 or 202)
-  icon_play(ass, cx + 2 * s, cy, 32 * s, C.white)
-  local hit = math.max(r + 10 * s, 48)
-  add_region("center_play", cx - hit, cy - hit, cx + hit, cy + hit)
+  local hit = math.max(116 * s, 92)
+  local hot = inside(mouse, cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
+  add_region("center_toggle", cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
+  if not state.paused then return end
+  icon_play(ass, cx + 4 * s, cy + 2 * s, 48 * s, C.black)
+  icon_play(ass, cx + 2 * s, cy, 46 * s, hot and C.hover or C.white)
 end
 
 function timeline_ratio(mouse, width, height, s)
@@ -2344,21 +2342,20 @@ end
 function draw_manual_skip_button(ass, mouse, range, index, width, height, s)
   if not range then return end
   local label = range.kind == "outro" and "SKIP OUTRO" or "SKIP INTRO"
-  local button_w = 158 * s
-  local button_h = 42 * s
+  local button_w = 150 * s
+  local button_h = 40 * s
   local x2 = width - 60 * s
   local y2 = height - (152 + (index or 0) * 50) * s
   local x1 = x2 - button_w
   local y1 = y2 - button_h
   local hot = inside(mouse, x1, y1, x2, y2)
 
-  rounded_rect(ass, x1 - 6 * s, y1 - 6 * s, x2 + 6 * s, y2 + 6 * s, 20 * s, C.accent, hot and 222 or 240)
-  rounded_rect(ass, x1, y1, x2, y2, 17 * s, C.panel, hot and 4 or 12)
-  rounded_rect(ass, x1 + 2 * s, y1 + 2 * s, x2 - 2 * s, y2 - 2 * s, 15 * s, C.accent, hot and 10 or 22)
-  rounded_outline(ass, x1, y1, x2, y2, 17 * s, 1.2 * s, C.accent, hot and 12 or 42)
-  rounded_rect(ass, x1 + 10 * s, y1 + 8 * s, x1 + 42 * s, y2 - 8 * s, 12 * s, C.accent, hot and 0 or 8)
-  icon_skip_compact(ass, x1 + 26 * s, (y1 + y2) / 2, 16 * s, C.white)
-  draw_text(ass, x1 + 52 * s, y1 + 23 * s, 4, font_px(s, 14, 13, 15), C.white, 0, label, true, "Segoe UI Semibold")
+  rounded_rect(ass, x1 - 3 * s, y1 - 3 * s, x2 + 3 * s, y2 + 3 * s, 10 * s, C.accent, hot and 218 or 242)
+  rounded_rect(ass, x1, y1, x2, y2, 8 * s, C.panel, hot and 0 or 12)
+  rounded_outline(ass, x1, y1, x2, y2, 8 * s, 1.0 * s, hot and C.hover or C.white, hot and 92 or 210)
+  rounded_rect(ass, x1, y1 + 5 * s, x1 + 3 * s, y2 - 5 * s, 1.5 * s, C.accent, 0)
+  icon_skip_compact(ass, x1 + 22 * s, (y1 + y2) / 2, 17 * s, hot and C.hover or C.white)
+  draw_text(ass, x1 + 40 * s, y1 + 22 * s, 4, font_px(s, 14, 13, 15), C.white, 0, label, true, "Segoe UI Semibold")
   add_region("manual_skip_" .. tostring(range.kind), x1, y1, x2, y2, {
     key = range.key,
     kind = range.kind,
@@ -3354,7 +3351,7 @@ function activate_region(region, mouse)
   elseif id == "end_close" then
     hide_end_overlay()
     settings_notice("Episode finished")
-  elseif id == "play" or id == "center_play" then
+  elseif id == "play" or id == "center_play" or id == "center_toggle" then
     if ui.end_overlay then hide_end_overlay() end
     mp.commandv("cycle", "pause")
   elseif id == "back" then

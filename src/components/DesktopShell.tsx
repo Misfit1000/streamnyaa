@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Bell, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
 import { useAuth } from '../context/AuthContext';
+import { DESKTOP_REMINDER_POLL_MS, deliverDueDesktopReminders } from '../lib/desktopReminders';
 
 const desktopNav = [
   { to: '/', label: 'Home', icon: Home },
@@ -148,9 +149,32 @@ export default function DesktopShell() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    let running = false;
+    let cancelled = false;
+    const checkReminders = async () => {
+      if (running || cancelled) return;
+      running = true;
+      try {
+        await deliverDueDesktopReminders();
+      } finally {
+        running = false;
+      }
+    };
+    const handleFocus = () => void checkReminders();
+    void checkReminders();
+    const interval = window.setInterval(() => void checkReminders(), DESKTOP_REMINDER_POLL_MS);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
+
   if (isWatch) {
     return (
-      <div className="custom-scrollbar h-screen overflow-y-auto overflow-x-hidden bg-[#0A0A0C] text-white">
+      <div className="desktop-app-shell custom-scrollbar h-screen overflow-y-auto overflow-x-hidden text-white">
         <Outlet />
         {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
       </div>
@@ -159,7 +183,7 @@ export default function DesktopShell() {
 
   return (
     <div className="desktop-app-shell min-h-screen overflow-hidden text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_62%_10%,rgba(244,63,94,0.14),transparent_28%),radial-gradient(circle_at_18%_0%,rgba(99,102,241,0.10),transparent_26%)]" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_66%_6%,rgba(139,8,30,0.16),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.018),transparent_36%)]" />
       <div className={`relative grid min-h-screen w-screen overflow-hidden bg-black/20 shadow-2xl shadow-black/40 transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? 'grid-cols-[86px_minmax(0,1fr)]' : 'grid-cols-[258px_minmax(0,1fr)]'}`}>
         <aside className={`sn-sidebar-panel flex h-screen flex-col py-6 transition-[padding] duration-300 ${sidebarCollapsed ? 'px-3' : 'px-5'}`}>
           <Link to="/" className={`flex h-[58px] items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-1'}`}>
@@ -221,10 +245,10 @@ export default function DesktopShell() {
               <kbd className="ml-auto rounded-md bg-white/8 px-2 py-1 text-[11px] font-bold text-white/42">Ctrl K</kbd>
             </Link>
             <div className="ml-auto flex items-center gap-3">
-              <button type="button" className="sn-icon-action relative h-10 w-10 rounded-full">
+              <Link to="/schedule" title="Airing reminders" className="sn-icon-action relative h-10 w-10 rounded-full">
                 <Bell className="h-5 w-5" />
                 <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary shadow-[0_0_0_4px_rgba(244,63,94,0.14)]" />
-              </button>
+              </Link>
               <Link
                 to={user ? '/profile' : '/login?next=/profile'}
                 title={user ? 'Profile' : 'Sign in'}

@@ -5267,6 +5267,7 @@ fn startup_maintenance() {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             log_info("StreamNyaa desktop app starting");
             let _ = APP_HANDLE.set(app.handle().clone());

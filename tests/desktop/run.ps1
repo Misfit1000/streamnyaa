@@ -41,6 +41,9 @@ $desktopSources = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSources.ts
 $desktopSettings = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSettings.tsx')
 $desktopSchedule = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSchedule.tsx')
 $desktopHistory = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopHistory.tsx')
+$desktopReminders = Get-Content -Raw (Join-Path $repo 'src\lib\desktopReminders.ts')
+$desktopShell = Get-Content -Raw (Join-Path $repo 'src\components\DesktopShell.tsx')
+$desktopCss = Get-Content -Raw (Join-Path $repo 'src\index.css')
 $loginPage = Get-Content -Raw (Join-Path $repo 'src\pages\Login.tsx')
 $supabaseAuth = Get-Content -Raw (Join-Path $repo 'src\lib\supabaseAuth.ts')
 $nyaaApi = Get-Content -Raw (Join-Path $repo 'src\api\nyaa.ts')
@@ -169,14 +172,13 @@ Assert-Match $desktopSettings 'Export desktop settings' 'Desktop Settings should
 Assert-Match $desktopSettings 'Import desktop settings' 'Desktop Settings should expose safe settings import.'
 Assert-NotMatch $desktopSettings 'getSession\(\)|supabase\.auth|localStorage\.clear\(\)' 'Desktop Settings backup UI must not export session data or clear all storage.'
 Assert-Match $desktopSchedule 'fetchSchedule' 'Desktop Schedule should load live airing data.'
-Assert-Match $desktopSchedule 'streamnyaa\.desktop\.scheduleReminders\.v1' 'Desktop Schedule should persist airing reminders with the expected storage key.'
+Assert-Match $desktopReminders 'streamnyaa\.desktop\.scheduleReminders\.v1' 'Desktop Schedule should persist airing reminders with the expected storage key.'
 Assert-Match $desktopSchedule 'getScheduleNotificationPermission' 'Desktop Schedule should use an explicit notification permission helper.'
-Assert-Match $desktopSchedule "delivery:\s*ScheduleReminderDelivery" 'Desktop Schedule reminders should store a system/in-app delivery mode.'
+Assert-Match $desktopReminders "delivery:\s*'system'" 'Desktop Schedule reminders should store native system delivery.'
 Assert-Match $desktopSchedule 'Test notification' 'Desktop Schedule should expose a test notification action.'
-Assert-Match $desktopSchedule 'Notifications are blocked\. You can still use in-app reminders while StreamNyaa is open\.' 'Desktop Schedule should explain blocked notifications and offer in-app fallback.'
-Assert-Match $desktopSchedule 'Save in-app reminder' 'Desktop Schedule should offer an in-app reminder fallback when system notifications are blocked.'
-Assert-Match $desktopSchedule 'System notifications enabled' 'Desktop Schedule should show system notification status.'
-Assert-Match $desktopSchedule 'Notifications unsupported; using in-app reminders' 'Desktop Schedule should show unsupported notification status.'
+Assert-Match $desktopSchedule 'Enable StreamNyaa in Windows notification settings' 'Desktop Schedule should explain how to unblock native notifications.'
+Assert-Match $desktopSchedule 'Windows notifications enabled' 'Desktop Schedule should show native notification status.'
+Assert-Match $desktopSchedule 'Native notifications unavailable' 'Desktop Schedule should report unsupported native notification delivery.'
 Assert-Match $nyaaApi 'inMemorySearchCache' 'Desktop source fetch cache is missing.'
 Assert-Match $metadataApi 'inFlightMetadataRequests' 'Desktop metadata requests should be coalesced to prevent provider rate-limit bursts.'
 Assert-Match $metadataApi 'providerCooldowns' 'Desktop metadata layer should cool down providers after rate-limit/server errors.'
@@ -229,7 +231,15 @@ Assert-Match $desktopHistory "setPendingClear\('all'\)" 'Desktop History Clear a
 Assert-Match $desktopBridge 'LOCAL_PLAYBACK_HISTORY_LIMIT\s*=\s*18' 'Desktop playback history must remain bounded.'
 Assert-Match $desktopExplore 'EXPLORE_INITIAL_RESULTS' 'Desktop Explore must progressively render large result sets.'
 Assert-Match $desktopExplore 'window\.clearTimeout\(handle\)' 'Desktop Explore must cancel stale debounced search updates.'
-Assert-Match $desktopSchedule 'REMINDER_POLL_MS\s*=\s*45_000' 'Desktop reminder polling must remain bounded and non-aggressive.'
+Assert-Match $desktopReminders 'DESKTOP_REMINDER_POLL_MS\s*=\s*45_000' 'Desktop reminder polling must remain bounded and non-aggressive.'
+Assert-Match $desktopReminders 'sendNotification\(' 'Desktop reminders must use native Tauri notifications.'
+Assert-Match $desktopShell 'deliverDueDesktopReminders' 'Desktop reminders must remain active outside the Calendar route.'
+Assert-NotMatch $desktopSchedule 'new Notification\(' 'Calendar reminders must not fall back to the browser notification API.'
+Assert-NotMatch $desktopSchedule 'Save in-app reminder' 'Calendar bells must not silently downgrade to in-app reminders.'
+Assert-Match $tauriMain 'tauri_plugin_notification::init\(\)' 'The desktop runtime must initialize the native notification plugin.'
+Assert-Match $playerSkin 'add_region\("center_toggle"' 'The middle of the MPV viewport must be a play/pause target.'
+Assert-Match $playerSkin 'id == "center_toggle"' 'The MPV center target must toggle pause through the existing control path.'
+Assert-Match $desktopCss '--sn-accent:\s*#a50f28' 'Desktop pages must use the shared blood-red accent token.'
 Assert-Match $tauriMain '"tmdb"' 'Desktop metadata bridge should support TMDB enrichment requests.'
 Assert-Match $tauriMain '"animeschedule"' 'Desktop metadata bridge should support AnimeSchedule enrichment requests.'
 Assert-Match $tauriMain '"anidb"' 'Desktop metadata bridge should support AniDB enrichment requests.'
