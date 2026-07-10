@@ -605,11 +605,12 @@ export const fetchTopAiring = async () => {
   return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.mal_id === anime.mal_id)) };
 };
 
-export const fetchRecentEpisodes = async () => {
+export const fetchRecentEpisodesWithLimit = async (limit = 12) => {
   const nsfwMode = useStore.getState().nsfwMode;
+  const perPage = Math.max(12, Math.min(50, Math.ceil(limit)));
   const query = `
     query {
-      Page(page: 1, perPage: 30) {
+      Page(page: 1, perPage: ${perPage}) {
         airingSchedules(airingAt_lesser: ${Math.floor(Date.now() / 1000)}, sort: TIME_DESC) {
           episode
           media {
@@ -647,7 +648,7 @@ export const fetchRecentEpisodes = async () => {
   });
   
   return { 
-    data: schedules.slice(0, 12).map((schedule: any) => ({
+    data: schedules.slice(0, limit).map((schedule: any) => ({
       ...mapAnilistToJikan(schedule.media),
       latestEpisode: schedule.episode
     }))
@@ -957,6 +958,8 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
     },
   };
 };
+
+export const fetchRecentEpisodes = async () => fetchRecentEpisodesWithLimit(12);
 
 export const fetchMangaDetails = async (id: string) => {
   const query = `

@@ -20,6 +20,17 @@ export type LocalPlaybackSource = {
   durationSeconds?: number;
 };
 
+export type DesktopWatchProgressRecord = {
+  animeId: string | number;
+  title: string;
+  poster?: string;
+  episode: string | number;
+  positionSeconds: number;
+  durationSeconds?: number;
+  progressPercent?: number;
+  updatedAt: number;
+};
+
 export type DesktopRuntimeStatus = {
   ready: boolean;
   torrent_engine_configured: boolean;
@@ -170,12 +181,15 @@ const DESKTOP_AUDIO_PREFERENCE_KEY = 'streamnyaa.desktopAudioPreference';
 const DESKTOP_AUTO_OPEN_BEST_SOURCE_KEY = 'streamnyaa.desktopAutoOpenBestSource';
 const DESKTOP_AUTO_PLAY_NEXT_EPISODE_KEY = 'streamnyaa.desktopAutoPlayNextEpisode';
 const DESKTOP_PLAYER_PREFERENCES_KEY = 'streamnyaa.desktopPlayerPreferences';
+export const DESKTOP_WATCH_PROGRESS_KEY = 'streamnyaa.desktop.watchProgress.v1';
 const DESKTOP_AUDIO_PREFERENCE_EVENT = 'streamnyaa:desktop-audio-preference';
 const DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT = 'streamnyaa:desktop-auto-open-best-source';
 const DESKTOP_AUTO_PLAY_NEXT_EPISODE_EVENT = 'streamnyaa:desktop-auto-play-next-episode';
 const DESKTOP_PLAYER_PREFERENCES_EVENT = 'streamnyaa:desktop-player-preferences';
+const DESKTOP_WATCH_PROGRESS_EVENT = 'streamnyaa:desktop-watch-progress';
 const LOCAL_PLAYBACK_HISTORY_EVENT = 'streamnyaa:local-playback-history';
 const LOCAL_PLAYBACK_HISTORY_LIMIT = 18;
+const DESKTOP_WATCH_PROGRESS_LIMIT = 150;
 const COMPLETION_PERCENT_THRESHOLD = 92;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
@@ -244,6 +258,13 @@ export function subscribeLocalPlaybackHistory(listener: () => void) {
   const wrapped = () => listener();
   window.addEventListener(LOCAL_PLAYBACK_HISTORY_EVENT, wrapped);
   return () => window.removeEventListener(LOCAL_PLAYBACK_HISTORY_EVENT, wrapped);
+}
+
+export function subscribeDesktopWatchProgress(listener: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const wrapped = () => listener();
+  window.addEventListener(DESKTOP_WATCH_PROGRESS_EVENT, wrapped);
+  return () => window.removeEventListener(DESKTOP_WATCH_PROGRESS_EVENT, wrapped);
 }
 
 export type DesktopPlayerNextEpisodeEvent = {
@@ -339,6 +360,86 @@ function isPlaybackEntryComplete(source: Partial<LocalPlaybackSource>) {
   return percent >= COMPLETION_PERCENT_THRESHOLD || (duration > 0 && remainingSeconds <= 90);
 }
 
+function watchProgressKey(record: Partial<DesktopWatchProgressRecord>) {
+  const animeKey = String(record.animeId || record.title || '').trim().toLowerCase();
+  const episodeKey = String(record.episode || '').trim();
+  return `${animeKey}::${episodeKey}`;
+}
+
+function watchProgressFromSource(source: Partial<LocalPlaybackSource>): DesktopWatchProgressRecord | null {
+  const title = String(source.animeTitle || source.title || '').trim();
+  if (!title) return null;
+
+  const durationSeconds = Math.max(0, Number(source.durationSeconds || 0));
+  const positionSeconds = Math.max(0, Number(source.resumeSeconds || 0));
+  return {
+    animeId: source.animeId || title,
+    title,
+    poster: source.poster || source.image || source.banner,
+    episode: source.episode || 1,
+    positionSeconds,
+    durationSeconds: durationSeconds || undefined,
+    progressPercent: playbackProgressPercent(source),
+    updatedAt: Number(source.progressUpdatedAt || source.savedAt || Date.now()),
+  };
+}
+
+function rebuildWatchProgressFromHistory(history = loadLocalPlaybackHistory()) {
+  const records = history
+    .map(watchProgressFromSource)
+    .filter((item): item is DesktopWatchProgressRecord => Boolean(item))
+    .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
+    .slice(0, DESKTOP_WATCH_PROGRESS_LIMIT);
+  localStorage.setItem(DESKTOP_WATCH_PROGRESS_KEY, JSON.stringify(records));
+  emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
+}
+
+export function loadDesktopWatchProgress(): DesktopWatchProgressRecord[] {
+  try {
+    const raw = localStorage.getItem(DESKTOP_WATCH_PROGRESS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is DesktopWatchProgressRecord => Boolean(item?.title && item?.episode))
+      .slice(0, DESKTOP_WATCH_PROGRESS_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
+  try {
+    const normalized: DesktopWatchProgressRecord = {
+      ...record,
+      positionSeconds: Math.max(0, Number(record.positionSeconds || 0)),
+      durationSeconds: record.durationSeconds ? Math.max(0, Number(record.durationSeconds)) : undefined,
+      progressPercent: record.progressPercent === undefined
+        ? undefined
+        : Math.max(0, Math.min(100, Number(record.progressPercent || 0))),
+      updatedAt: record.updatedAt || Date.now(),
+    };
+    const key = watchProgressKey(normalized);
+    const current = loadDesktopWatchProgress();
+    const existing = current.find((item) => watchProgressKey(item) === key);
+    if (
+      existing
+      && Math.abs(Number(existing.positionSeconds || 0) - normalized.positionSeconds) < 5
+      && Math.abs(Number(existing.progressPercent || 0) - Number(normalized.progressPercent || 0)) < 1
+    ) {
+      return;
+    }
+    const next = [
+      normalized,
+      ...current.filter((item) => watchProgressKey(item) !== key),
+    ].slice(0, DESKTOP_WATCH_PROGRESS_LIMIT);
+    localStorage.setItem(DESKTOP_WATCH_PROGRESS_KEY, JSON.stringify(next));
+    emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
+  } catch {
+    // Progress is convenience data. Playback must never depend on it.
+  }
+}
+
 function playbackHistoryMatchesAnime(source: Partial<LocalPlaybackSource>, anime: any) {
   const sourceAnimeId = String(source.animeId || '').trim();
   const sourceAnimeTitle = animeTitleKey(source.animeTitle || source.title || '');
@@ -371,7 +472,9 @@ export function loadLocalPlaybackHistory(): LocalPlaybackSource[] {
 export function clearLocalPlaybackHistory() {
   try {
     localStorage.removeItem(LOCAL_PLAYBACK_HISTORY_KEY);
+    localStorage.removeItem(DESKTOP_WATCH_PROGRESS_KEY);
     emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
+    emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
   } catch {
     // Playback history is optional and should never block app use.
   }
@@ -383,6 +486,7 @@ export function replaceLocalPlaybackHistory(history: LocalPlaybackSource[]) {
       .filter((item): item is LocalPlaybackSource => Boolean(item?.magnet && item?.title))
       .slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
     localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
+    rebuildWatchProgressFromHistory(next);
     emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
   } catch {
     // Playback history sync is optional and should never block app use.
@@ -394,6 +498,7 @@ export function removeLocalPlaybackHistoryItem(source: Partial<LocalPlaybackSour
     const key = playbackHistoryKey(source);
     const next = loadLocalPlaybackHistory().filter((item) => playbackHistoryKey(item) !== key);
     localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
+    rebuildWatchProgressFromHistory(next);
     emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
   } catch {
     // Playback history is optional and should never block app use.
@@ -409,6 +514,8 @@ export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
       ...loadLocalPlaybackHistory().filter((item) => playbackHistoryKey(item) !== key),
     ].slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
     localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
+    const progress = watchProgressFromSource(normalized);
+    if (progress) saveDesktopWatchProgress(progress);
     emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
   } catch {
     // Playback history is a convenience feature. Failing to persist it should not block playback.
@@ -481,6 +588,59 @@ export function formatPlaybackTime(seconds?: number | null) {
     return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
   return `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+const SAFE_DESKTOP_BACKUP_KEYS = [
+  DESKTOP_SETTINGS_KEY,
+  DESKTOP_AUDIO_PREFERENCE_KEY,
+  DESKTOP_AUTO_OPEN_BEST_SOURCE_KEY,
+  DESKTOP_AUTO_PLAY_NEXT_EPISODE_KEY,
+  DESKTOP_PLAYER_PREFERENCES_KEY,
+  LOCAL_PLAYBACK_HISTORY_KEY,
+  DESKTOP_WATCH_PROGRESS_KEY,
+  'streamnyaa.desktop.scheduleReminders.v1',
+] as const;
+
+export function exportDesktopSettingsBackup() {
+  const entries: Record<string, string> = {};
+  if (typeof window !== 'undefined') {
+    SAFE_DESKTOP_BACKUP_KEYS.forEach((key) => {
+      const value = localStorage.getItem(key);
+      if (typeof value === 'string') entries[key] = value;
+    });
+  }
+
+  return JSON.stringify({
+    app: 'StreamNyaa Desktop',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    keys: entries,
+  }, null, 2);
+}
+
+export function importDesktopSettingsBackup(payload: string) {
+  const parsed = JSON.parse(payload);
+  const keys = parsed?.keys;
+  if (!keys || typeof keys !== 'object' || Array.isArray(keys)) {
+    throw new Error('This backup file is not a valid StreamNyaa desktop backup.');
+  }
+
+  let imported = 0;
+  SAFE_DESKTOP_BACKUP_KEYS.forEach((key) => {
+    const value = keys[key];
+    if (typeof value === 'string') {
+      localStorage.setItem(key, value);
+      imported += 1;
+    }
+  });
+
+  emitDesktopEvent(DESKTOP_AUDIO_PREFERENCE_EVENT);
+  emitDesktopEvent(DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT);
+  emitDesktopEvent(DESKTOP_AUTO_PLAY_NEXT_EPISODE_EVENT);
+  emitDesktopEvent(DESKTOP_PLAYER_PREFERENCES_EVENT);
+  emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
+  emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
+  return imported;
 }
 
 export function loadDesktopAudioPreference(): DesktopAudioPreference {

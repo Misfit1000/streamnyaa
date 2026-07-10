@@ -1,6 +1,6 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Bell, CalendarDays, Compass, Download, Heart, History, Home, Library, Menu, Search, Settings, UserCircle } from 'lucide-react';
+import { Bell, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
 import { useAuth } from '../context/AuthContext';
 
@@ -19,6 +19,57 @@ const desktopLibrary = [
 ];
 
 const SIDEBAR_STORAGE_KEY = 'streamnyaa.desktop.sidebarCollapsed';
+
+const desktopShortcuts = [
+  ['Ctrl K', 'Open search'],
+  ['?', 'Show this shortcut guide'],
+  ['Esc', 'Close panels or overlays'],
+  ['Space', 'Play or pause in the player'],
+  ['[ / ]', 'Previous or next episode in the player'],
+  ['← / →', 'Seek backward or forward in the player'],
+  ['↑ / ↓', 'Adjust player volume'],
+  ['F', 'Toggle fullscreen in the player'],
+  ['C', 'Toggle subtitles in the player'],
+];
+
+export function isTypingTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  if (element.isContentEditable) return true;
+  const tag = element.tagName?.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select';
+}
+
+function ShortcutHelpOverlay({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/68 p-5 backdrop-blur-md" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+      <div className="sn-glass-panel w-full max-w-2xl overflow-hidden rounded-[2rem] shadow-2xl shadow-black/50">
+        <div className="flex items-center justify-between gap-4 border-b border-white/[0.08] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-primary/16 text-primary">
+              <Keyboard className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Shortcuts</p>
+              <h2 className="text-xl font-black tracking-[-0.03em] text-white">Desktop controls</h2>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="sn-icon-action h-10 w-10 rounded-full" aria-label="Close shortcuts">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="grid gap-2 p-5 sm:grid-cols-2">
+          {desktopShortcuts.map(([keys, label]) => (
+            <div key={keys} className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.045] px-4 py-3">
+              <span className="text-sm font-bold text-white/70">{label}</span>
+              <kbd className="shrink-0 rounded-lg bg-black/42 px-2.5 py-1 text-xs font-black text-white/72 shadow-inner shadow-white/[0.04]">{keys}</kbd>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const DesktopNavItem = memo(function DesktopNavItem({
   to,
@@ -71,6 +122,7 @@ export default function DesktopShell() {
   const { user } = useAuth();
   const isWatch = location.pathname.startsWith('/watch/');
   const [logoFailed, setLogoFailed] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -80,10 +132,27 @@ export default function DesktopShell() {
     }
   });
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+      if (event.key === '?' || (event.shiftKey && event.key === '/')) {
+        event.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      if (event.key === 'Escape') {
+        setShortcutsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   if (isWatch) {
     return (
       <div className="custom-scrollbar h-screen overflow-y-auto overflow-x-hidden bg-[#0A0A0C] text-white">
         <Outlet />
+        {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
       </div>
     );
   }
@@ -178,6 +247,7 @@ export default function DesktopShell() {
           </main>
         </div>
       </div>
+      {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
     </div>
   );
 }

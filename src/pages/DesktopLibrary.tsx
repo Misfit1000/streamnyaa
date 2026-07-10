@@ -1,13 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Bookmark, Heart, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { AlertTriangle, Bookmark, Clock3, Heart, History, Play, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
 import { animeIdentity } from '../lib/animeIdentity';
+import {
+  formatPlaybackTime,
+  loadLocalPlaybackHistory,
+  openLocalSourceNow,
+  subscribeLocalPlaybackHistory,
+  type LocalPlaybackSource,
+} from '../lib/desktop';
+import { desktopWatchPath } from '../lib/desktopAnimeRoute';
 import { useStore } from '../store/useStore';
 
 type LibraryFilter = 'all' | 'bookmarks' | 'favorites';
 type LibrarySort = 'date-desc' | 'date-asc' | 'title-asc' | 'title-desc' | 'score-desc' | 'score-asc';
+type LibraryCategory = 'watching' | 'completed' | 'plan' | 'favorites' | 'history';
 
 function titleFor(anime: any) {
   return String(anime?.title || anime?.title_english || anime?.title_romaji || '').trim();
@@ -21,9 +30,15 @@ function scoreFor(anime: any) {
 export default function DesktopLibrary() {
   const { myList, likedAnimes, clearMyList, isLiked, isInMyList } = useStore();
   const [query, setQuery] = useState('');
+  const [category, setCategory] = useState<LibraryCategory>('watching');
   const [filter, setFilter] = useState<LibraryFilter>('all');
   const [sortBy, setSortBy] = useState<LibrarySort>('date-desc');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [historyItems, setHistoryItems] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
+
+  useEffect(() => subscribeLocalPlaybackHistory(() => {
+    setHistoryItems(loadLocalPlaybackHistory());
+  }), []);
 
   const combinedList = useMemo(() => {
     const combined = new Map<string, any>();
@@ -64,6 +79,29 @@ export default function DesktopLibrary() {
     favorites: combinedList.filter((anime) => isLiked(animeIdentity(anime))).length,
   };
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleHistory = historyItems
+    .filter((item) => {
+      const progress = Number(item.progressPercent || 0);
+      if (category === 'completed' && progress < 92) return false;
+      if (category === 'watching' && progress >= 92) return false;
+      if (!normalizedQuery) return true;
+      return String(item.animeTitle || item.title || '').toLowerCase().includes(normalizedQuery)
+        || String(item.title || '').toLowerCase().includes(normalizedQuery)
+        || String(item.episode || '').toLowerCase().includes(normalizedQuery);
+    })
+    .slice(0, 16);
+
+  const libraryCategories = [
+    { id: 'watching' as const, label: 'Watching', count: historyItems.filter((item) => Number(item.progressPercent || 0) < 92).length, icon: Play },
+    { id: 'completed' as const, label: 'Completed', count: historyItems.filter((item) => Number(item.progressPercent || 0) >= 92).length, icon: Clock3 },
+    { id: 'plan' as const, label: 'Plan to Watch', count: stats.bookmarks, icon: Bookmark },
+    { id: 'favorites' as const, label: 'Favorites', count: stats.favorites, icon: Heart },
+    { id: 'history' as const, label: 'History', count: historyItems.length, icon: History },
+  ];
+
+  const showsHistoryRows = category === 'watching' || category === 'completed' || category === 'history';
+
   return (
     <div className="sn-page py-6">
       <Seo title="Library | StreamNyaa Desktop" description="Desktop anime library." canonicalPath="/my-list" robots="noindex, nofollow" />
@@ -93,7 +131,35 @@ export default function DesktopLibrary() {
           </div>
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {libraryCategories.map(({ id, label, count, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => {
+                setCategory(id);
+                if (id === 'plan') setFilter('bookmarks');
+                else if (id === 'favorites') setFilter('favorites');
+                else setFilter('all');
+              }}
+              className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-left transition-all ${
+                category === id
+                  ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                  : 'bg-white/[0.055] text-white/62 hover:bg-white/[0.08] hover:text-white'
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="truncate text-sm font-black">{label}</span>
+              </span>
+              <span className={`rounded-full px-2 py-0.5 text-xs font-black ${category === id ? 'bg-white/18 text-white' : 'bg-black/22 text-white/54'}`}>
+                {count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <label className="relative min-w-[320px] flex-1">
             <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/36" />
             <input
@@ -113,7 +179,11 @@ export default function DesktopLibrary() {
               <button
                 key={value}
                 type="button"
-                onClick={() => setFilter(value)}
+                onClick={() => {
+                  setFilter(value);
+                  if (value === 'bookmarks') setCategory('plan');
+                  if (value === 'favorites') setCategory('favorites');
+                }}
                 className={`inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-black transition-colors ${
                   filter === value
                     ? 'bg-primary text-white shadow-lg shadow-primary/12'
@@ -188,7 +258,64 @@ export default function DesktopLibrary() {
       ) : null}
 
       <section className="mt-6">
-        {combinedList.length === 0 ? (
+        {showsHistoryRows ? (
+          visibleHistory.length ? (
+            <div className="space-y-3">
+              {visibleHistory.map((source) => {
+                const progress = Math.max(0, Math.min(100, Number(source.progressPercent || 0)));
+                const title = source.animeTitle || source.title;
+                const watchPath = desktopWatchPath({ mal_id: source.animeId, id: source.animeId, title }, source.episode ? { ep: String(source.episode) } : undefined);
+                return (
+                  <article key={`${source.magnet}-${source.episode || 'recent'}`} className="sn-card-hover sn-glass-card grid gap-4 rounded-2xl p-3 sm:grid-cols-[140px_minmax(0,1fr)_auto]">
+                    <div className="relative aspect-video overflow-hidden rounded-xl bg-white/[0.055]">
+                      {source.image || source.poster || source.banner ? (
+                        <img src={source.image || source.poster || source.banner} alt={title} className="h-full w-full object-cover" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="grid h-full place-items-center bg-[radial-gradient(circle_at_30%_20%,rgba(244,63,94,0.32),transparent_34%),linear-gradient(145deg,#171017,#07070a)] text-xs font-black uppercase tracking-[0.16em] text-white/52">
+                          StreamNyaa
+                        </div>
+                      )}
+                      <span className="absolute left-2 top-2 rounded-full bg-black/58 px-2 py-0.5 text-[10px] font-black uppercase text-white/78 backdrop-blur">
+                        EP {source.episode || '?'}
+                      </span>
+                    </div>
+                    <div className="min-w-0 py-1">
+                      <h2 className="line-clamp-1 text-base font-black text-white">{title}</h2>
+                      <p className="mt-1 line-clamp-1 text-xs font-bold text-white/48">{source.title}</p>
+                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
+                      </div>
+                      <p className="mt-2 text-xs font-bold text-white/54">
+                        Resume {formatPlaybackTime(source.resumeSeconds)}{source.durationSeconds ? ` / ${formatPlaybackTime(source.durationSeconds)}` : ''} - {Math.round(progress)}%
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 sm:flex-col sm:items-stretch sm:justify-center">
+                      <button
+                        type="button"
+                        onClick={() => void openLocalSourceNow(source)}
+                        className="sn-primary-action h-10 px-4 text-xs"
+                      >
+                        Resume
+                      </button>
+                      <Link to={watchPath} className="sn-secondary-action h-10 px-4 text-xs">
+                        Open page
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="sn-empty-state px-6 py-16 text-center">
+              <History className="mx-auto h-10 w-10 text-primary" />
+              <p className="mt-4 text-lg font-black text-white">No {category === 'completed' ? 'completed' : category === 'watching' ? 'in-progress' : 'history'} entries yet.</p>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Open an episode source and local resume entries will appear here.</p>
+              <Link to="/search" className="sn-primary-action mt-5 h-11 px-5">
+                Explore anime
+              </Link>
+            </div>
+          )
+        ) : combinedList.length === 0 ? (
           <div className="sn-empty-state px-6 py-16 text-center">
             <Bookmark className="mx-auto h-10 w-10 text-primary" />
             <p className="mt-4 text-lg font-black text-white">Your library is empty.</p>

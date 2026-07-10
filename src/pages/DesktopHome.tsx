@@ -1,7 +1,7 @@
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Play, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, Play, Star } from 'lucide-react';
 import Seo from '../components/Seo';
 import { fetchPopularAnime, fetchRecentEpisodes, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
 import {
@@ -353,6 +353,18 @@ function sourceProgressPercent(source: LocalPlaybackSource) {
   return Number.isFinite(explicit) ? Math.min(100, Math.max(0, explicit)) : 0;
 }
 
+function sourceUpdatedLabel(source: LocalPlaybackSource) {
+  const timestamp = Number(source.progressUpdatedAt || source.savedAt || 0);
+  if (!timestamp) return 'Recently watched';
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
 function fallbackInitials(value: string) {
   const words = String(value || 'SN')
     .replace(/[^a-zA-Z0-9\s]/g, ' ')
@@ -636,6 +648,15 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
     ? `Resume ${formatPlaybackTime(source.resumeSeconds)}${source.durationSeconds ? ` / ${formatPlaybackTime(source.durationSeconds)}` : ''}`
     : source.episode ? `Episode ${source.episode}` : source.size || 'Recent source';
   const episodeLabel = source.episode ? `Episode ${source.episode}` : 'Recent source';
+  const lastWatchedText = sourceUpdatedLabel(source);
+  const detailsPath = desktopWatchPath(
+    {
+      mal_id: source.animeId,
+      id: source.animeId,
+      title: source.animeTitle || source.title,
+    },
+    source.episode ? { ep: String(source.episode) } : undefined,
+  );
   const restart = () => {
     void openLocalSourceNow({
       ...source,
@@ -673,6 +694,7 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
           <span className="absolute inset-x-0 bottom-0 block p-3.5">
             <span className="block line-clamp-1 text-[13px] font-black text-white drop-shadow">{source.animeTitle || source.title}</span>
             <span className="mt-1 block line-clamp-1 text-[11px] font-semibold text-white/64">{episodeLabel} - {resumeText}</span>
+            <span className="mt-0.5 block line-clamp-1 text-[10px] font-bold uppercase tracking-[0.08em] text-white/42">{lastWatchedText}</span>
             <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-white/14">
               <span className="block h-full rounded-full bg-gradient-to-r from-primary to-[#ff647d]" style={{ width: `${progressWidth}%` }} />
             </span>
@@ -690,6 +712,15 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
           >
             Restart
           </button>
+          <Link
+            to={detailsPath}
+            onClick={(event) => event.stopPropagation()}
+            className="sn-ghost-action inline-flex min-h-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em]"
+            aria-label={`Open details for ${source.animeTitle || source.title}`}
+          >
+            <Info className="h-3 w-3" />
+            Details
+          </Link>
           <button
             type="button"
             onClick={(event) => {
@@ -1003,7 +1034,7 @@ export default function DesktopHome() {
       ) : null}
 
       <section className="mt-7 desktop-section-enter">
-        <RailHeader title="New Episodes" subtitle="Freshly updated episode entries" to="/schedule" count={latestEpisodes.length} />
+        <RailHeader title="New Episodes" subtitle="Freshly updated episode entries" to="/search?mode=new" count={latestEpisodes.length} />
         <MediaRail>
           {latestEpisodes.map((anime: any, index: number) => (
             <PosterAnimeCard
@@ -1019,7 +1050,7 @@ export default function DesktopHome() {
       </section>
 
       <section className="mt-7 desktop-section-enter">
-        <RailHeader title="Trending Now" subtitle="Airing titles with the strongest current activity" to="/search?sort=trending&status=airing" count={trending.length} />
+        <RailHeader title="Trending Now" subtitle="Airing titles with the strongest current activity" to="/search?mode=trending" count={trending.length} />
         <MediaRail>
           {trending.map((anime: any, index: number) => (
             <PosterAnimeCard
@@ -1033,7 +1064,7 @@ export default function DesktopHome() {
       </section>
 
       <section className="mt-7 desktop-section-enter">
-        <RailHeader title="Top Airing Anime" subtitle="Highest rated shows still in rotation" to="/search?sort=score&status=airing" count={topAiring.length} />
+        <RailHeader title="Top Airing Anime" subtitle="Highest rated shows still in rotation" to="/search?mode=airing" count={topAiring.length} />
         <MediaRail>
           {topAiring.map((anime: any, index: number) => (
             <PosterAnimeCard
@@ -1046,7 +1077,7 @@ export default function DesktopHome() {
       </section>
 
       <section className="mt-7 desktop-section-enter">
-        <RailHeader title="Seasonal Anime" subtitle={`${currentSeason.label} picks`} to="/search?status=airing" count={seasonalPicks.length} />
+        <RailHeader title="Seasonal Anime" subtitle={`${currentSeason.label} picks`} to="/search?mode=seasonal" count={seasonalPicks.length} />
         <MediaRail>
           {seasonalPicks.map((anime: any, index: number) => (
             <PosterAnimeCard
@@ -1070,7 +1101,7 @@ export default function DesktopHome() {
       ) : null}
 
       <section className="mt-7 desktop-section-enter">
-        <RailHeader title="Popular Picks" subtitle="Reliable discovery staples" to="/search?sort=popular" count={popular.length} />
+        <RailHeader title="Popular Picks" subtitle="Reliable discovery staples" to="/search?mode=popular" count={popular.length} />
         <MediaRail>
           {popular.map((anime: any, index: number) => (
             <PosterAnimeCard
@@ -1084,7 +1115,7 @@ export default function DesktopHome() {
       </section>
 
       <section className="mt-7 desktop-section-enter">
-        <RailHeader title={`Top Anime From ${topYear}`} subtitle="High score titles from the selected year" to={`/search?sort=score`} count={yearlyTop.length} />
+        <RailHeader title={`Top Anime From ${topYear}`} subtitle="High score titles from the selected year" to={`/search?mode=year&year=${topYear}&order=score`} count={yearlyTop.length} />
         <MediaRail>
           {yearlyTop.map((anime: any, index: number) => (
             <PosterAnimeCard

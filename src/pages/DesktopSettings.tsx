@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { CheckCircle2, Copy, HardDrive, History, PlayCircle, RefreshCw, ServerCog, ShieldCheck, Square, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { CheckCircle2, Copy, Download, HardDrive, History, PlayCircle, RefreshCw, ServerCog, ShieldCheck, Square, Trash2, Upload } from 'lucide-react';
 import Seo from '../components/Seo';
 import {
   buildDesktopDiagnosticsReport,
@@ -10,8 +10,10 @@ import {
   DEFAULT_DESKTOP_AUDIO_PREFERENCE,
   DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE,
   DEFAULT_DESKTOP_AUTO_PLAY_NEXT_EPISODE,
+  exportDesktopSettingsBackup,
   getDesktopDiagnostics,
   getDesktopRuntimeStatus,
+  importDesktopSettingsBackup,
   loadDesktopAutoPlayNextEpisode,
   loadDesktopAutoOpenBestSource,
   loadCachedDesktopRuntimeStatus,
@@ -128,6 +130,7 @@ export default function DesktopSettings() {
   const [historyCount, setHistoryCount] = useState(() => loadLocalPlaybackHistory().length);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [message, setMessage] = useState<{ tone: 'neutral' | 'success' | 'error'; text: string } | null>(null);
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = async (includeDiagnostics = false, activeSettings = settings) => {
     try {
@@ -192,6 +195,42 @@ export default function DesktopSettings() {
     clearLocalPlaybackHistory();
     setHistoryCount(0);
     setMessage({ tone: 'success', text: 'Watch history and Continue Watching were cleared.' });
+  };
+
+  const exportSettings = () => {
+    try {
+      const payload = exportDesktopSettingsBackup();
+      const blob = new Blob([payload], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `streamnyaa-desktop-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setMessage({ tone: 'success', text: 'Desktop settings backup saved.' });
+    } catch (error) {
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Desktop settings could not be exported.' });
+    }
+  };
+
+  const importSettings = async (file?: File) => {
+    if (!file) return;
+    try {
+      const imported = importDesktopSettingsBackup(await file.text());
+      setSettings(loadDesktopPlaybackSettings());
+      setAudioPreference(loadDesktopAudioPreference());
+      setAutoOpenBestSource(loadDesktopAutoOpenBestSource());
+      setAutoPlayNextEpisode(loadDesktopAutoPlayNextEpisode());
+      setHistoryCount(loadLocalPlaybackHistory().length);
+      setMessage({ tone: 'success', text: `Imported ${imported} desktop setting group${imported === 1 ? '' : 's'}.` });
+      await refresh(true, loadDesktopPlaybackSettings());
+    } catch (error) {
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Desktop settings backup could not be imported.' });
+    } finally {
+      if (backupInputRef.current) backupInputRef.current.value = '';
+    }
   };
 
   const stopPlayback = async () => {
@@ -400,6 +439,34 @@ export default function DesktopSettings() {
                 <Trash2 className="h-4 w-4" />
                 Clear history
               </button>
+            </div>
+
+            <div className="mt-4 rounded-[1.35rem] bg-white/[0.045] p-4">
+              <input
+                ref={backupInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(event) => void importSettings(event.target.files?.[0])}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p className="text-base font-black text-white">Backup local desktop data</p>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-white/50">
+                    Export or restore playback preferences, local history, Continue Watching, and reminders for this desktop app.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={exportSettings} className="sn-secondary-action h-11 px-4 text-sm">
+                    <Download className="h-4 w-4" />
+                    Export desktop settings
+                  </button>
+                  <button type="button" onClick={() => backupInputRef.current?.click()} className="sn-primary-action h-11 px-4 text-sm">
+                    <Upload className="h-4 w-4" />
+                    Import desktop settings
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 

@@ -22,6 +22,7 @@ import {
   loadDesktopAudioPreference,
   openLocalSourceNow,
   saveDesktopPlayerSetting,
+  saveDesktopWatchProgress,
   subscribeDesktopAutoPlayNextEpisode,
   subscribeDesktopPlayerPreferences,
   saveDesktopAutoPlayNextEpisode,
@@ -120,7 +121,13 @@ type SourceFailureRecord = {
 function posterFor(anime: any) {
   const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
   const fallbackCover = fallbackId > 0 ? `https://img.anili.st/media/${fallbackId}` : '';
-  return anime?.images?.webp?.large_image_url
+  return anime?.coverImage?.extraLarge
+    || anime?.coverImage?.large
+    || anime?.coverImage?.medium
+    || anime?.cover_image
+    || anime?.poster
+    || anime?.image
+    || anime?.images?.webp?.large_image_url
     || anime?.images?.jpg?.large_image_url
     || anime?.images?.jpg?.image_url
     || fallbackCover
@@ -128,8 +135,12 @@ function posterFor(anime: any) {
 }
 
 function wideImageFor(anime: any) {
-  return anime?.banner_image
+  return anime?.bannerImage
+    || anime?.banner_image
+    || anime?.backdrop
+    || anime?.background
     || anime?.trailer?.images?.maximum_image_url
+    || anime?.trailer?.images?.large_image_url
     || posterFor(anime);
 }
 
@@ -1663,7 +1674,7 @@ export default function DesktopWatch() {
   const routeMalId = searchParams.get('mid') || '';
   const seasonRailRef = useRef<HTMLDivElement | null>(null);
   const episodesRailRef = useRef<HTMLDivElement | null>(null);
-  const episodeDragRef = useRef({ dragging: false, moved: false, pointerId: 0, startX: 0, scrollLeft: 0 });
+  const episodeDragRef = useRef({ dragging: false, moved: false, pointerId: 0, startX: 0, startY: 0, scrollLeft: 0 });
   const suppressEpisodeClickRef = useRef(false);
   const sourceSectionRef = useRef<HTMLElement | null>(null);
   const selectedSeasonRef = useRef<HTMLButtonElement | null>(null);
@@ -2496,6 +2507,16 @@ export default function DesktopWatch() {
       durationSeconds: playbackProgress.duration_seconds,
       progressPercent: playbackProgress.progress,
     });
+    saveDesktopWatchProgress({
+      animeId: playback.source.animeId || playback.source.animeTitle || playback.source.title,
+      title: playback.source.animeTitle || playback.source.title,
+      poster: playback.source.poster || playback.source.image || playback.source.banner,
+      episode: playback.source.episode || selectedEpisode || 1,
+      positionSeconds: Number(playbackProgress.current_seconds || 0),
+      durationSeconds: playbackProgress.duration_seconds || undefined,
+      progressPercent: playbackProgress.progress || undefined,
+      updatedAt: Date.now(),
+    });
   }, [
     playback,
     playbackProgress?.current_seconds,
@@ -2503,6 +2524,7 @@ export default function DesktopWatch() {
     playbackProgress?.ok,
     playbackProgress?.progress,
     playbackProgress?.state,
+    selectedEpisode,
   ]);
 
   useEffect(() => {
@@ -2807,13 +2829,10 @@ export default function DesktopWatch() {
     };
   }, []);
 
-  const chooseEpisode = useCallback((episodeNumber: number) => {
-    if (autoOpenBestSource) {
-      playEpisodeNumber(episodeNumber);
-      return;
-    }
-    selectEpisode(episodeNumber);
-  }, [autoOpenBestSource, playEpisodeNumber, selectEpisode]);
+  const watchEpisodeFromCard = useCallback((episodeNumber: number) => {
+    if (suppressEpisodeClickRef.current) return;
+    playEpisodeNumber(episodeNumber);
+  }, [playEpisodeNumber]);
 
   const startEpisodeRailDrag = useCallback((event: any) => {
     if (event.button !== 0) return;
@@ -2824,6 +2843,7 @@ export default function DesktopWatch() {
       moved: false,
       pointerId: event.pointerId,
       startX: event.clientX,
+      startY: event.clientY,
       scrollLeft: rail.scrollLeft,
     };
     setEpisodeRailDragging(true);
@@ -2838,14 +2858,15 @@ export default function DesktopWatch() {
     const rail = episodesRailRef.current;
     const drag = episodeDragRef.current;
     if (!rail || !drag.dragging || drag.pointerId !== event.pointerId) return;
-    const delta = event.clientX - drag.startX;
-    if (!drag.moved && Math.abs(delta) <= EPISODE_RAIL_DRAG_THRESHOLD) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) <= EPISODE_RAIL_DRAG_THRESHOLD) return;
     if (!drag.moved) {
       drag.moved = true;
       suppressEpisodeClickRef.current = true;
     }
     event.preventDefault();
-    rail.scrollLeft = drag.scrollLeft - delta;
+    rail.scrollLeft = drag.scrollLeft - deltaX;
   }, []);
 
   const stopEpisodeRailDrag = useCallback((event: any) => {
@@ -2867,6 +2888,7 @@ export default function DesktopWatch() {
       moved: false,
       pointerId: 0,
       startX: 0,
+      startY: 0,
       scrollLeft: rail?.scrollLeft ?? drag.scrollLeft,
     };
     setEpisodeRailDragging(false);
@@ -2881,9 +2903,8 @@ export default function DesktopWatch() {
   }, []);
 
   const chooseEpisodeFromRail = useCallback((episodeNumber: number) => {
-    if (suppressEpisodeClickRef.current) return;
-    chooseEpisode(episodeNumber);
-  }, [chooseEpisode]);
+    watchEpisodeFromCard(episodeNumber);
+  }, [watchEpisodeFromCard]);
 
   useEffect(() => {
     const rail = episodesRailRef.current;
@@ -3374,17 +3395,19 @@ export default function DesktopWatch() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (suppressEpisodeClickRef.current) return;
-                        chooseEpisode(episode.number);
+                        watchEpisodeFromCard(episode.number);
                       }}
                       onDoubleClick={(event) => {
                         event.preventDefault();
-                        if (!suppressEpisodeClickRef.current && !autoOpenBestSource) {
-                          void playEpisodeNumber(episode.number);
-                        }
+                        watchEpisodeFromCard(episode.number);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        watchEpisodeFromCard(episode.number);
                       }}
                       className="min-h-[72px] w-full cursor-pointer rounded-lg text-left outline-none transition-transform focus-visible:ring-1 focus-visible:ring-primary/45 active:scale-[0.99]"
-                      aria-label={`Select episode ${episode.number}`}
+                      aria-label={`Watch episode ${episode.number}`}
                     >
                       <p className={`text-base font-black ${episode.number === selectedEpisode ? 'text-white' : 'text-white/86'}`}>Ep {episode.number}</p>
                       <p className="mt-1 line-clamp-2 text-[11px] font-bold leading-5 text-white/48">{episode.title}</p>
@@ -3396,7 +3419,7 @@ export default function DesktopWatch() {
                       onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        void playEpisodeNumber(episode.number);
+                        playEpisodeNumber(episode.number);
                       }}
                       className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition-all hover:bg-primary hover:text-white active:scale-[0.98] group-focus-within:bg-primary/90"
                       aria-label={`Play episode ${episode.number}`}
@@ -3435,12 +3458,15 @@ export default function DesktopWatch() {
                       }}
                       onDoubleClick={(event) => {
                         event.preventDefault();
-                        if (!suppressEpisodeClickRef.current && !autoOpenBestSource) {
-                          void playEpisodeNumber(episode.number);
-                        }
+                        chooseEpisodeFromRail(episode.number);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        chooseEpisodeFromRail(episode.number);
                       }}
                       className="absolute inset-0 cursor-pointer text-left outline-none focus-visible:ring-1 focus-visible:ring-primary/45"
-                      aria-label={`Select episode ${episode.number}`}
+                      aria-label={`Watch episode ${episode.number}`}
                     >
                       <SafeImage candidates={uniqueImageCandidates([episode.image, wideImageFor(anime), posterFor(anime)])} alt={episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
                       <div className={`absolute inset-0 ${episode.number === selectedEpisode ? 'bg-[linear-gradient(0deg,rgba(48,8,16,0.90),rgba(0,0,0,0.06)_62%)]' : 'bg-[linear-gradient(0deg,rgba(0,0,0,0.80),rgba(0,0,0,0.08)_62%)]'}`} />
@@ -3454,7 +3480,7 @@ export default function DesktopWatch() {
                       onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
-                        void playEpisodeNumber(episode.number);
+                        playEpisodeNumber(episode.number);
                       }}
                       onDoubleClick={(event) => {
                         event.preventDefault();

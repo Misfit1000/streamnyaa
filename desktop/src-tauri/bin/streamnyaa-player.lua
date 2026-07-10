@@ -625,6 +625,7 @@ function media_title()
   title = title:gsub("^.*[\\/]", "")
   title = title:gsub("%.[%w%d]+$", "")
   title = title:gsub("streamnyaa%-loading", "Loading")
+  title = title:gsub("loading%-cover", "Loading")
   if title == "" then title = "StreamNyaa" end
   return ellipsize(title, 86)
 end
@@ -1326,8 +1327,20 @@ function apply_player_preference(key, value)
   return true
 end
 
+function normalized_player_path()
+  return tostring(state.path or ""):gsub("\\", "/"):lower()
+end
+
+function is_generic_loading_media()
+  return normalized_player_path():find("streamnyaa%-loading%.bmp") ~= nil
+end
+
+function is_cover_loading_media()
+  return normalized_player_path():find("loading%-cover%.jpg") ~= nil
+end
+
 function is_placeholder_media()
-  return tostring(state.path or ""):find("streamnyaa%-loading%.bmp") ~= nil
+  return is_generic_loading_media() or is_cover_loading_media()
 end
 
 function has_playable_media()
@@ -1667,7 +1680,7 @@ function position_inside_skip_range(range, pos)
 end
 
 function manual_strict_skip_range(kind, pos)
-  local range = skip_range_for_position(kind, pos, true)
+  local range = skip_range_for_position(kind, pos, false)
   if not position_inside_skip_range(range, pos) then return nil end
   return range
 end
@@ -1681,6 +1694,7 @@ function can_auto_skip_now(range)
   local pos = tonumber(state.pos)
   local duration = tonumber(state.duration)
   if not pos or not duration or duration <= 0 then return false end
+  if not position_inside_skip_range(range, pos) then return false end
   if range.end_time <= pos + 0.2 then return false end
   if range.end_time > duration + 1 then return false end
   if range.kind == "outro" and range.source ~= "chapter" then return false end
@@ -2471,21 +2485,22 @@ function draw_loading(ass, width, height, s, cover_info)
   local cx = width / 2
   local status = loading_status_text()
   local buffering_only = is_midplayback_buffering()
+  local cover_media = is_cover_loading_media()
   local before_len = #ass.text
 
   local ok, err = pcall(function()
     if buffering_only then
       rect(ass, 0, 0, width, height, C.black, 214)
-    elseif not cover_info then
-      rect(ass, 0, 0, width, height, C.black, 0)
-      circle(ass, width * 0.36, height * 0.48, height * 0.56, C.accent, 242)
-      circle(ass, width * 0.70, height * 0.30, height * 0.40, "7C2DFF", 248)
-    else
+    elseif cover_info or cover_media then
       rect(ass, 0, 0, width, height, C.black, 126)
+    else
+      rect(ass, 0, 0, width, height, C.black, 0)
+      rect(ass, 0, 0, width, height, "150006", 108)
     end
     rect(ass, 0, 0, width, height, C.accent, 246)
     if not buffering_only then
-      circle(ass, cx, height * 0.43 + 48 * s, height * 0.36, C.black, 210)
+      local center_alpha = (cover_info or cover_media) and 214 or 226
+      circle(ass, cx, height * 0.43 + 48 * s, height * 0.32, C.black, center_alpha)
     end
     draw_loading_required_content(ass, width, height, s, status)
   end)
@@ -2501,7 +2516,7 @@ function draw_loading(ass, width, height, s, cover_info)
       "drawn title=%s status=%s cover=%s ass_added=%d",
       tostring(loading_media_title()),
       tostring(status),
-      cover_info and tostring(cover_info.kind or "cover") or "fallback",
+      cover_info and tostring(cover_info.kind or "cover") or (cover_media and "loading-cover-media" or "fallback"),
       #ass.text - before_len
     )
   )

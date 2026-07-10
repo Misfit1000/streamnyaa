@@ -7,6 +7,7 @@ import Seo from '../components/Seo';
 import {
   fetchAnimeSeason,
   fetchPopularAnime,
+  fetchRecentEpisodesWithLimit,
   fetchTopAiring,
   fetchTopAnimeByYear,
   fetchUpcomingAnime,
@@ -16,7 +17,7 @@ import { getCurrentAnimeSeason } from '../lib/currentSeason';
 import { saveDesktopAudioPreference, type DesktopAudioPreference } from '../lib/desktop';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 
-type ExploreMode = 'trending' | 'popular' | 'top' | 'airing' | 'upcoming' | 'year';
+type ExploreMode = 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year';
 type VisualFilterKey = 'genre' | 'season' | 'status' | 'format' | 'source' | 'yearRange' | 'audio' | 'rating' | 'episodes' | 'popularity';
 type LocalSortKey = 'best' | 'title' | 'score' | 'popularity' | 'newest' | 'episodes';
 type ExploreDensity = 'poster' | 'compact' | 'list';
@@ -49,19 +50,23 @@ const visualFilterGroups: Array<{ key: VisualFilterKey; label: string; options: 
 ];
 
 const sortModes: Array<{ label: string; mode: ExploreMode }> = [
+  { label: 'New Episodes', mode: 'new' },
   { label: 'Trending', mode: 'trending' },
   { label: 'Popular', mode: 'popular' },
   { label: 'Top Rated', mode: 'top' },
   { label: 'Airing', mode: 'airing' },
+  { label: 'Seasonal', mode: 'seasonal' },
   { label: 'Upcoming', mode: 'upcoming' },
   { label: 'Top This Year', mode: 'year' },
 ];
 
 const modeIcons: Record<ExploreMode, typeof Sparkles> = {
+  new: CalendarDays,
   trending: Sparkles,
   popular: Star,
   top: TrendingUp,
   airing: Tv,
+  seasonal: CalendarDays,
   upcoming: CalendarDays,
   year: CalendarDays,
 };
@@ -151,6 +156,12 @@ const filterSections: Array<{ title: string; description: string; keys: VisualFi
 ];
 
 const modeConfig: Record<ExploreMode, { label: string; sort: string; status: string; description: string }> = {
+  new: {
+    label: 'New Episodes',
+    sort: '',
+    status: 'airing',
+    description: 'Freshly aired episode entries from current schedules.',
+  },
   trending: {
     label: 'Trending',
     sort: '',
@@ -174,6 +185,12 @@ const modeConfig: Record<ExploreMode, { label: string; sort: string; status: str
     sort: 'score',
     status: 'airing',
     description: 'Currently airing anime ranked by score.',
+  },
+  seasonal: {
+    label: 'Seasonal',
+    sort: '',
+    status: 'airing',
+    description: 'Current-season anime picks from the active anime cour.',
   },
   upcoming: {
     label: 'Upcoming',
@@ -282,6 +299,14 @@ async function fetchExploreSearchPages(
 }
 
 const fallbackByMode: Record<ExploreMode, any[]> = {
+  new: [
+    fallbackAnime(147105, 51553, 'Witch Hat Atelier', 8.6, 13, 2026, ['Adventure', 'Fantasy']),
+    fallbackAnime(189046, 61316, 'Re:ZERO Season 4', 8.7, 19, 2026, ['Drama', 'Fantasy']),
+    fallbackAnime(182300, 59983, 'Wistoria: Wand and Sword Season 2', 8.1, 12, 2026, ['Action', 'Fantasy']),
+    fallbackAnime(174576, undefined, 'SAKAMOTO DAYS', 7.8, 11, 2025, ['Action', 'Comedy']),
+    fallbackAnime(153288, 52588, 'Kaiju No. 8', 8.1, 12, 2024, ['Action', 'Sci-Fi']),
+    fallbackAnime(171018, 57334, 'DAN DA DAN', 8.5, 12, 2024, ['Action', 'Comedy']),
+  ],
   trending: [
     fallbackAnime(151807, 52299, 'Solo Leveling', 8.3, 12, 2024, ['Action', 'Fantasy']),
     fallbackAnime(171018, 57334, 'DAN DA DAN', 8.5, 12, 2024, ['Action', 'Comedy']),
@@ -329,6 +354,14 @@ const fallbackByMode: Record<ExploreMode, any[]> = {
     fallbackAnime(189046, 61316, 'Re:ZERO Season 4', 8.7, 19, 2026, ['Drama', 'Fantasy']),
     fallbackAnime(182300, 59983, 'Wistoria: Wand and Sword Season 2', 8.1, 12, 2026, ['Action', 'Fantasy']),
     fallbackAnime(174576, undefined, 'SAKAMOTO DAYS', 7.8, 11, 2025, ['Action', 'Comedy']),
+  ],
+  seasonal: [
+    fallbackAnime(147105, 51553, 'Witch Hat Atelier', 8.6, 13, 2026, ['Adventure', 'Fantasy']),
+    fallbackAnime(189046, 61316, 'Re:ZERO Season 4', 8.7, 19, 2026, ['Drama', 'Fantasy']),
+    fallbackAnime(182300, 59983, 'Wistoria: Wand and Sword Season 2', 8.1, 12, 2026, ['Action', 'Fantasy']),
+    fallbackAnime(171018, 57334, 'DAN DA DAN', 8.5, 12, 2024, ['Action', 'Comedy']),
+    fallbackAnime(153288, 52588, 'Kaiju No. 8', 8.1, 12, 2024, ['Action', 'Sci-Fi']),
+    fallbackAnime(153518, 52701, 'Delicious in Dungeon', 8.6, 24, 2024, ['Adventure', 'Fantasy']),
   ],
   upcoming: [
     fallbackAnime(180516, undefined, 'Chainsaw Man - The Movie: Reze Arc', 0, null, 2025, ['Action', 'Supernatural']),
@@ -976,8 +1009,15 @@ function modeFromSearchParams(searchParams: URLSearchParams): ExploreMode {
   if (mode && mode in modeConfig) {
     return mode as ExploreMode;
   }
+  const category = String(searchParams.get('category') || '').toLowerCase();
+  if (['new', 'new-episodes', 'latest', 'recent'].includes(category)) return 'new';
+  if (['seasonal', 'season'].includes(category)) return 'seasonal';
+  if (['trending', 'popular', 'airing', 'upcoming'].includes(category)) return category as ExploreMode;
+  if (['top', 'top-rated'].includes(category)) return 'top';
+  if (['year', 'top-this-year', 'top-year'].includes(category)) return 'year';
   const sort = searchParams.get('sort');
   const status = searchParams.get('status');
+  if (sort === 'recent' || sort === 'latest') return 'new';
   if (sort === 'upcoming') return 'upcoming';
   if (sort === 'popular') return 'popular';
   if (sort === 'score' && status === 'airing') return 'airing';
@@ -1162,6 +1202,7 @@ export default function DesktopExplore() {
   const updateMode = (item: ExploreMode) => {
     const next = new URLSearchParams(searchParams);
     next.set('mode', item);
+    next.delete('category');
     if (item === 'year') next.set('year', String(year));
     else next.delete('year');
     setSearchParams(next, { replace: true });
@@ -1178,6 +1219,8 @@ export default function DesktopExplore() {
     queryKey: ['desktop-explore-results', query, mode, year, providerFormat, providerGenre, providerStatus, providerSort],
     queryFn: async () => {
       if (query.trim()) return fetchExploreSearchPages(query, providerFormat, providerGenre, providerSort, providerStatus, EXPLORE_SEARCH_PAGE_LIMIT);
+      if (mode === 'new') return fetchRecentEpisodesWithLimit(48);
+      if (mode === 'seasonal') return fetchSeasonalSpotlightCatalog(currentSeason.season, currentSeason.year);
       if (mode === 'year') return fetchTopAnimeByYear(year, EXPLORE_SEARCH_PAGE_LIMIT);
       if (mode === 'trending') return fetchExploreSearchPages('', providerFormat, providerGenre, providerSort, providerStatus || 'airing');
       return fetchExploreSearchPages('', providerFormat, providerGenre, providerSort, providerStatus);
