@@ -1960,6 +1960,14 @@ function icon_pause(ass, cx, cy, size, color)
   rounded_rect(ass, x1, y1, x2, y2, size * 0.075, color, 0)
 end
 
+function icon_play_pause(ass, cx, cy, size, color)
+  if state.paused or is_loading() then
+    icon_play(ass, cx + size * 0.035, cy, size, color)
+  else
+    icon_pause(ass, cx, cy, size * 1.12, color)
+  end
+end
+
 function icon_skip(ass, cx, cy, size, color, forward)
   local t = icon_stroke(size, 0.075)
   draw_text(ass, cx, cy + size * 0.12, 5, size * 0.30, color, 0, "10", true, "Segoe UI Semibold")
@@ -2274,11 +2282,9 @@ function draw_controls(ass, width, height, mouse, s)
   local hit = 48 * s
   local icon = 30 * s
   local skip_icon = 31 * s
-  local play_icon = 35 * s
+  local play_icon = 37 * s
 
-  button(ass, mouse, "play", left, y, 56 * s, play_icon, function(a, x, yy, size, color)
-    if state.paused or is_loading() then icon_play(a, x + 2 * s, yy, size, color) else icon_pause(a, x, yy, size, color) end
-  end)
+  button(ass, mouse, "play", left, y, 56 * s, play_icon, icon_play_pause)
   button(ass, mouse, "back", left + 82 * s, y, hit, skip_icon, function(a, x, yy, size, color) icon_skip(a, x, yy, size, color, false) end)
   button(ass, mouse, "forward", left + 158 * s, y, hit, skip_icon, function(a, x, yy, size, color) icon_skip(a, x, yy, size, color, true) end)
   button(ass, mouse, "next_episode", left + 226 * s, y, hit, icon, icon_next_episode)
