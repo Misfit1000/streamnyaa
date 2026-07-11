@@ -1,5 +1,4 @@
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
-import { isDesktopApp } from './desktop';
 
 export const DESKTOP_SCHEDULE_REMINDERS_KEY = 'streamnyaa.desktop.scheduleReminders.v1';
 export const DESKTOP_REMINDER_OFFSET_MINUTES = 10;
@@ -7,7 +6,7 @@ export const DESKTOP_REMINDER_POLL_MS = 45_000;
 const DESKTOP_REMINDER_FIRE_GRACE_MS = 10 * 60 * 1000;
 const DESKTOP_REMINDERS_EVENT = 'streamnyaa.desktop.scheduleReminders.changed';
 
-export type DesktopNotificationPermission = 'granted' | 'default' | 'denied' | 'unsupported';
+export type DesktopNotificationPermission = 'granted' | 'default' | 'denied' | 'unsupported' | 'error';
 
 export type DesktopScheduleReminder = {
   id: string;
@@ -77,12 +76,17 @@ export function subscribeDesktopScheduleReminders(listener: () => void) {
   };
 }
 
+function hasNativeNotificationRuntime() {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.__TAURI_INTERNALS__ || window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke);
+}
+
 export async function getDesktopNotificationPermission(): Promise<DesktopNotificationPermission> {
-  if (!isDesktopApp()) return 'unsupported';
+  if (!hasNativeNotificationRuntime()) return 'unsupported';
   try {
     return (await isPermissionGranted()) ? 'granted' : 'default';
   } catch {
-    return 'unsupported';
+    return 'error';
   }
 }
 
@@ -93,14 +97,14 @@ export async function requestDesktopNotificationPermission(): Promise<DesktopNot
     const result = await requestPermission();
     return result === 'granted' || result === 'denied' ? result : 'default';
   } catch {
-    return 'unsupported';
+    return 'error';
   }
 }
 
 export async function sendDesktopNotification(title: string, body: string) {
   if (await getDesktopNotificationPermission() !== 'granted') return false;
   try {
-    sendNotification({ title, body });
+    await sendNotification({ title, body });
     return true;
   } catch {
     return false;
@@ -136,8 +140,10 @@ export async function deliverDueDesktopReminders(now = Date.now()) {
       `${episodeText} starts in about ${reminder.reminderOffsetMinutes} minutes.`,
     );
     (shown ? delivered : failed).push(reminder.title);
-    next[index] = { ...reminder, firedAt: now };
-    changed = true;
+    if (shown) {
+      next[index] = { ...reminder, firedAt: now };
+      changed = true;
+    }
   }
 
   if (changed) writeDesktopScheduleReminders(next);

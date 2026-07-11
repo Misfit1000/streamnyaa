@@ -56,6 +56,7 @@ $desktopHtmlWriter = Get-Content -Raw (Join-Path $repo 'scripts\write-desktop-ht
 $desktopFallbackBuilder = Get-Content -Raw (Join-Path $repo 'scripts\build-desktop-fallback.ps1')
 $playerSkin = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\bin\streamnyaa-player.lua')
 $tauriConfig = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\tauri.conf.json')
+$tauriCapability = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\capabilities\main.json')
 
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
@@ -237,6 +238,15 @@ Assert-Match $desktopShell 'deliverDueDesktopReminders' 'Desktop reminders must 
 Assert-NotMatch $desktopSchedule 'new Notification\(' 'Calendar reminders must not fall back to the browser notification API.'
 Assert-NotMatch $desktopSchedule 'Save in-app reminder' 'Calendar bells must not silently downgrade to in-app reminders.'
 Assert-Match $tauriMain 'tauri_plugin_notification::init\(\)' 'The desktop runtime must initialize the native notification plugin.'
+Assert-Match $tauriCapability 'notification:default' 'The main desktop window must be granted native notification permission.'
+Assert-Match $desktopShell 'listenDesktopPlayerSettingChanged' 'Player preferences must be persisted by the always-mounted desktop shell.'
+Assert-Match $tauriMain 'spawn_next_episode_request_watcher' 'Next-episode requests need a non-blocking file bridge in addition to MPV client messages.'
+Assert-Match $playerSkin 'next_episode_request_file' 'The MPV skin must write reliable next-episode requests to the desktop bridge.'
+Assert-Match $tauriMain 'spawn_player_setting_request_watcher' 'Player settings need a non-blocking persistence bridge in addition to MPV client messages.'
+Assert-Match $playerSkin 'settings_request_file' 'The MPV skin must persist setting changes through the desktop bridge.'
+Assert-Match $playerSkin 'return explicit_skip_range' 'Skip buttons and automatic skips must require explicit OP/ED chapter markers.'
+Assert-NotMatch $playerSkin 'settings:theater' 'Theater Mode must not remain in the MPV settings menu.'
+Assert-NotMatch $playerSkin 'button\(ass, mouse, "theater"' 'Theater Mode must not remain in the MPV control bar.'
 Assert-Match $playerSkin 'add_region\("center_toggle"' 'The middle of the MPV viewport must be a play/pause target.'
 Assert-Match $playerSkin 'id == "center_toggle"' 'The MPV center target must toggle pause through the existing control path.'
 Assert-Match $desktopCss '--sn-accent:\s*#a50f28' 'Desktop pages must use the shared blood-red accent token.'

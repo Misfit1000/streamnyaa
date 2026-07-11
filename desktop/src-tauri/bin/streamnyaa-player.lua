@@ -25,6 +25,8 @@ local C = {
 local script_options = {
   meta_file = "",
   subtitle_request_file = "",
+  next_episode_request_file = "",
+  settings_request_file = "",
 }
 
 options.read_options(script_options)
@@ -34,6 +36,10 @@ msg.info(
     .. tostring(script_options.meta_file or "")
     .. " subtitle_request_file="
     .. tostring(script_options.subtitle_request_file or "")
+    .. " next_episode_request_file="
+    .. tostring(script_options.next_episode_request_file or "")
+    .. " settings_request_file="
+    .. tostring(script_options.settings_request_file or "")
 )
 
 local DEBUG_INPUT = false
@@ -84,7 +90,6 @@ local state = {
   skip_intro = false,
   skip_outro = false,
   mini_player = false,
-  theater_mode = false,
   subtitle_style = {
     font_size = "medium",
     position = "normal",
@@ -139,6 +144,7 @@ local ui = {
   end_overlay = false,
   end_overlay_key = "",
   eof_handled_key = "",
+  eof_candidate_key = "",
   last_buffering_active = false,
   last_buffering_percent = nil,
   skip_range_state = {},
@@ -216,7 +222,6 @@ local OUTRO_FALLBACK_START_FROM_END_SECONDS = 115
 local OUTRO_FALLBACK_END_FROM_END_SECONDS = 35
 local MANUAL_SKIP_BUTTON_SECONDS = 7.0
 local MINI_GEOMETRY = "520x292-36-78"
-local THEATER_GEOMETRY = "1280x720"
 local NORMAL_GEOMETRY = "1120x630"
 local SUBTITLE_STYLE_DEFAULT = {
   font_size = "medium",
@@ -1231,7 +1236,19 @@ function player_setting_bool(value)
 end
 
 function emit_player_setting_changed(key, value)
-  safe_commandv("script-message", "streamnyaa-player-setting-changed", tostring(key or ""), tostring(value or ""))
+  local setting_key = tostring(key or "")
+  local setting_value = tostring(value or "")
+  local request_file = tostring(script_options.settings_request_file or "")
+  if request_file ~= "" and setting_key ~= "" then
+    local file, error_message = io.open(request_file, "w")
+    if file then
+      file:write(setting_key .. "|" .. setting_value .. "|" .. tostring(mp.get_time()) .. "\n")
+      file:close()
+    else
+      msg.warn("Could not write player setting request file: " .. tostring(error_message))
+    end
+  end
+  safe_commandv("script-message", "streamnyaa-player-setting-changed", setting_key, setting_value)
 end
 
 function subtitle_style_preference_key(kind)
@@ -1662,9 +1679,9 @@ function fallback_skip_range(kind, pos, allow_nearby)
 end
 
 function skip_range_for_position(kind, pos, allow_nearby)
-  local range = explicit_skip_range(kind, pos, allow_nearby)
-  if range then return range end
-  return fallback_skip_range(kind, pos, allow_nearby)
+  -- False positives are worse than a missing skip. Only release-provided OP/ED
+  -- chapters can drive buttons or automatic seeking.
+  return explicit_skip_range(kind, pos, allow_nearby)
 end
 
 function position_inside_skip_range(range, pos)
@@ -1822,6 +1839,17 @@ function request_next_episode(reason)
   else
     ui.last_next_episode_request_key = ""
   end
+  local request_file = tostring(script_options.next_episode_request_file or "")
+  if request_file ~= "" then
+    local file, error_message = io.open(request_file, "w")
+    if file then
+      file:write(next_reason .. "|" .. tostring(mp.get_time()) .. "|" .. tostring(key) .. "\n")
+      file:close()
+      msg.info("[StreamNyaa Lua] Wrote next-episode request file reason=" .. next_reason)
+    else
+      msg.warn("Could not write next-episode request file: " .. tostring(error_message))
+    end
+  end
   msg.info("[StreamNyaa Lua] Sending next episode request reason=" .. next_reason .. " key=" .. tostring(key))
   safe_commandv("script-message", "streamnyaa-next-episode-request", next_reason)
   if next_reason ~= "ended" or state.autoplay then
@@ -1830,10 +1858,10 @@ function request_next_episode(reason)
 end
 
 function handle_episode_eof()
-  if not state.has_started_playback or is_placeholder_media() or not has_playable_media() then return end
-  local key = current_media_key()
+  local key = tostring(ui.eof_candidate_key or "")
   if key == "" or ui.eof_handled_key == key then return end
   ui.eof_handled_key = key
+  ui.eof_candidate_key = ""
   show_overlay()
   msg.info("[StreamNyaa Lua] EOF normal; sending next request reason=ended key=" .. tostring(key))
   msg.info("[StreamNyaa Lua] EOF reached; showing fail-safe end overlay")
@@ -2268,11 +2296,10 @@ function draw_controls(ass, width, height, mouse, s)
     add_region("volume", vx1 - 10 * s, vy - volume_hit_y, vx2 + 10 * s, vy + volume_hit_y)
   end
 
-  button(ass, mouse, "subs", right - 426 * s, y, hit, icon, icon_cc, state.sub_visible and state.sid ~= "no")
-  button(ass, mouse, "settings", right - 356 * s, y, hit, icon, icon_gear, ui.settings_open)
-  pill_button(ass, mouse, "speed", right - 266 * s, y, 92 * s, 40 * s, speed_label(), ui.settings_open and ui.submenu == "speed", s)
-  button(ass, mouse, "mini", right - 166 * s, y, hit, icon, icon_mini, state.mini_player)
-  button(ass, mouse, "theater", right - 94 * s, y, hit, icon, icon_theater, state.theater_mode)
+  button(ass, mouse, "subs", right - 356 * s, y, hit, icon, icon_cc, state.sub_visible and state.sid ~= "no")
+  button(ass, mouse, "settings", right - 286 * s, y, hit, icon, icon_gear, ui.settings_open)
+  pill_button(ass, mouse, "speed", right - 196 * s, y, 92 * s, 40 * s, speed_label(), ui.settings_open and ui.submenu == "speed", s)
+  button(ass, mouse, "mini", right - 94 * s, y, hit, icon, icon_mini, state.mini_player)
   button(ass, mouse, "fullscreen", right - 24 * s, y, hit, icon, icon_fullscreen, state.fullscreen)
 end
 
@@ -2416,7 +2443,7 @@ function loading_status_text()
   if is_midplayback_buffering() then
     return buffering_status_label()
   elseif is_placeholder_media() then
-    return "OPENING PLAYER..."
+    return "OPENING PLAYER"
   elseif state.idle or state.core_idle then
     return "STARTING TORRENT ENGINE..."
   end
@@ -2446,15 +2473,14 @@ function draw_loading_required_content(ass, width, height, s, status)
   end
 
   local layout = loading_title_layout(loading_media_title(), width, height, s)
-  local title_size = clamp(layout.size * 0.74, 30 * s, 62 * s)
+  local title_size = clamp(layout.size * 0.88, 36 * s, 78 * s)
   local line_gap = title_size * 1.13
-  local title_center_y = height * 0.43
+  local title_center_y = height * 0.48
   local first_line_y = title_center_y - ((#layout.lines - 1) * line_gap / 2)
-  local last_line_y = first_line_y + (#layout.lines - 1) * line_gap
-  local spinner_y = last_line_y + title_size * 0.78 + 24 * s
+  local spinner_y = height - 154 * s
   local status_y = spinner_y + 48 * s
   local t = (mp.get_time() - ui.anim_started)
-  local spinner_r = 18 * s
+  local spinner_r = 19 * s
 
   for index, line_value in ipairs(layout.lines) do
     draw_text(
@@ -2471,10 +2497,11 @@ function draw_loading_required_content(ass, width, height, s, status)
     )
   end
 
-  local start_angle = (t * 240) % 360
-  draw_arc(ass, cx, spinner_y, spinner_r, 0, 360, 2.0 * s, C.white, 232)
-  draw_arc(ass, cx, spinner_y, spinner_r, start_angle, 284, 3.4 * s, C.accent, 0)
-  draw_text(ass, cx, status_y, 5, font_px(s, 18, 16, 21), C.white, 4, status, true, "Segoe UI Semibold")
+  local start_angle = (t * 250) % 360
+  draw_arc(ass, cx, spinner_y, spinner_r, start_angle, 218, 3.2 * s, C.accent, 0)
+  draw_arc(ass, cx, spinner_y, spinner_r * 0.62, 360 - start_angle, 142, 2.2 * s, C.white, 76)
+  circle(ass, cx, spinner_y, 3.2 * s, C.accent, 0)
+  draw_spaced_text(ass, cx, status_y, 5, font_px(s, 14, 13, 17), C.white, 8, status, 4.2 * s, true, "Segoe UI Semibold")
 end
 
 function draw_loading(ass, width, height, s, cover_info)
@@ -2489,15 +2516,17 @@ function draw_loading(ass, width, height, s, cover_info)
     if buffering_only then
       rect(ass, 0, 0, width, height, C.black, 214)
     elseif cover_info or cover_media then
-      rect(ass, 0, 0, width, height, C.black, 126)
+      rect(ass, 0, 0, width, height, C.black, 150)
     else
       rect(ass, 0, 0, width, height, C.black, 0)
       rect(ass, 0, 0, width, height, "150006", 108)
     end
-    rect(ass, 0, 0, width, height, C.accent, 246)
+    rect(ass, 0, 0, width, height, C.accent, 248)
     if not buffering_only then
-      local center_alpha = (cover_info or cover_media) and 214 or 226
-      circle(ass, cx, height * 0.43 + 48 * s, height * 0.32, C.black, center_alpha)
+      for index = 0, 8 do
+        local y1 = height * (0.66 + index * 0.043)
+        rect(ass, 0, y1, width, height, C.black, 238 - index * 12)
+      end
     end
     draw_loading_required_content(ass, width, height, s, status)
   end)
@@ -2621,7 +2650,6 @@ function menu_cache_key(menu)
       tostring(state.skip_intro),
       tostring(state.skip_outro),
       tostring(state.mini_player),
-      tostring(state.theater_mode),
       tostring(state.fullscreen),
       subtitle_style_cache_key(),
       tostring(track_cache_generation),
@@ -2692,7 +2720,6 @@ function build_main_settings_rows()
     { id = "settings:skip", icon = "skip", label = "Auto Skip Marked Intro", value = "", type = "toggle", active = state.skip_intro },
     { id = "settings:skip_outro", icon = "skip", label = "Auto Skip Marked Outro", value = "", type = "toggle", active = state.skip_outro },
     { id = "settings:mini", icon = "mini", label = "Mini Player", value = "", type = "toggle", active = state.mini_player },
-    { id = "settings:theater", icon = "theater", label = "Theater Mode", value = "", type = "toggle", active = state.theater_mode },
     { id = "settings:fullscreen", icon = "full", label = "Full Screen", value = state.fullscreen and "On" or "Off", type = "action", active = state.fullscreen },
   }
 end
@@ -3241,19 +3268,11 @@ end
 function set_window_mode(mode)
   if mode == "mini" then
     state.mini_player = true
-    state.theater_mode = false
     safe_set_property("fullscreen", "no")
     safe_set_property("ontop", "yes")
     safe_set_property("geometry", MINI_GEOMETRY)
-  elseif mode == "theater" then
-    state.mini_player = false
-    state.theater_mode = true
-    safe_set_property("fullscreen", "no")
-    safe_set_property("ontop", "yes")
-    safe_set_property("geometry", THEATER_GEOMETRY)
   else
     state.mini_player = false
-    state.theater_mode = false
     safe_set_property("ontop", "no")
     safe_set_property("geometry", NORMAL_GEOMETRY)
   end
@@ -3265,14 +3284,6 @@ function toggle_mini_player()
     set_window_mode("normal")
   else
     set_window_mode("mini")
-  end
-end
-
-function toggle_theater_mode()
-  if state.theater_mode then
-    set_window_mode("normal")
-  else
-    set_window_mode("theater")
   end
 end
 
@@ -3392,8 +3403,6 @@ function activate_region(region, mouse)
     ui.submenu = "speed"
   elseif id == "mini" then
     toggle_mini_player()
-  elseif id == "theater" then
-    toggle_theater_mode()
   elseif id == "fullscreen" or id == "settings:fullscreen" then
     mp.commandv("cycle", "fullscreen")
   elseif id == "settings:back" then
@@ -3436,8 +3445,6 @@ function activate_region(region, mouse)
     settings_notice(state.skip_outro and "Auto skip outro on" or "Auto skip outro off")
   elseif id == "settings:mini" then
     toggle_mini_player()
-  elseif id == "settings:theater" then
-    toggle_theater_mode()
   elseif starts_with(id, "speed:") then
     local selected_speed = tonumber(region.data and region.data.value) or 1
     safe_set_property_number("speed", selected_speed)
@@ -3677,6 +3684,9 @@ function handle_wheel(delta)
     return
   end
   safe_commandv("add", "volume", delta < 0 and "5" or "-5")
+  mp.add_timeout(0.06, function()
+    emit_player_setting_changed("volume", tostring(mp.get_property_number("volume") or state.volume or 100))
+  end)
   draw(true, delta < 0 and "wheel-volume-up" or "wheel-volume-down")
 end
 
@@ -3728,6 +3738,7 @@ mp.observe_property("duration", "number", function(_, value)
   state.duration = value or 0
   if has_playable_media() then
     state.has_started_playback = true
+    ui.eof_candidate_key = current_media_key()
     ui.loading_override_until = 0
   end
   show_overlay()
@@ -3737,6 +3748,7 @@ mp.observe_property("time-pos", "number", function(_, value)
   state.pos = value or 0
   if has_playable_media() and state.pos >= 0 then
     state.has_started_playback = true
+    ui.eof_candidate_key = current_media_key()
     ui.loading_override_until = 0
   end
   maybe_auto_skip_intro()
@@ -3762,7 +3774,6 @@ end)
 mp.observe_property("fullscreen", "bool", function(_, value)
   if value then
     state.mini_player = false
-    state.theater_mode = false
   end
   mark_menu_dirty("main")
   update_property("fullscreen", value or false, false)
@@ -3912,7 +3923,6 @@ bind_key("a", "streamnyaa-audio", function() show_overlay(); safe_commandv("cycl
 bind_key("S", "streamnyaa-settings", function() show_overlay(); ui.dragging = nil; clear_drag_preview(); ui.settings_open = not ui.settings_open; ui.submenu = "main"; draw(true, "key-settings") end)
 bind_key("i", "streamnyaa-skip-intro", function() show_overlay(); skip_intro(); draw(true, "key-skip-intro") end)
 bind_key("p", "streamnyaa-pip", function() show_overlay(); toggle_mini_player(); draw(true, "key-mini") end)
-bind_key("t", "streamnyaa-theater", function() show_overlay(); toggle_theater_mode(); draw(true, "key-theater") end)
 bind_key("f", "streamnyaa-fullscreen", function() show_overlay(); safe_commandv("cycle", "fullscreen"); draw(true, "key-fullscreen") end)
 bind_key("[", "streamnyaa-speed-down", function()
   show_overlay()
@@ -3992,6 +4002,7 @@ mp.register_event("file-loaded", function()
   reset_skip_range_state()
   ui.marker_log_key = ""
   ui.chapter_state_key = ""
+  ui.eof_candidate_key = ""
   if not state.remember_speed then
     safe_set_property_number("speed", 1)
   end
@@ -4008,6 +4019,7 @@ mp.register_event("end-file", function(event)
   if event and event.reason == "eof" then
     handle_episode_eof()
   else
+    ui.eof_candidate_key = ""
     hide_end_overlay()
   end
   draw(true, "end-file")

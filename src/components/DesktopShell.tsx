@@ -3,6 +3,15 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Bell, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
 import { useAuth } from '../context/AuthContext';
+import {
+  listenDesktopPlayerAutoNextChanged,
+  listenDesktopPlayerReady,
+  listenDesktopPlayerSettingChanged,
+  loadDesktopPlayerPreferences,
+  saveDesktopAutoPlayNextEpisode,
+  saveDesktopPlayerSetting,
+  syncDesktopPlayerPreferencesToPlayer,
+} from '../lib/desktop';
 import { DESKTOP_REMINDER_POLL_MS, deliverDueDesktopReminders } from '../lib/desktopReminders';
 
 const desktopNav = [
@@ -147,6 +156,37 @@ export default function DesktopShell() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cleanups: Array<() => void> = [];
+
+    const register = async () => {
+      const settingCleanup = await listenDesktopPlayerSettingChanged((event) => {
+        if (cancelled || !event.key) return;
+        saveDesktopPlayerSetting(event.key, event.value ?? '');
+      });
+      if (cancelled) settingCleanup(); else cleanups.push(settingCleanup);
+
+      const autoNextCleanup = await listenDesktopPlayerAutoNextChanged((event) => {
+        if (cancelled) return;
+        saveDesktopAutoPlayNextEpisode(Boolean(event.enabled));
+      });
+      if (cancelled) autoNextCleanup(); else cleanups.push(autoNextCleanup);
+
+      const readyCleanup = await listenDesktopPlayerReady(() => {
+        if (cancelled) return;
+        void syncDesktopPlayerPreferencesToPlayer(loadDesktopPlayerPreferences());
+      });
+      if (cancelled) readyCleanup(); else cleanups.push(readyCleanup);
+    };
+
+    void register();
+    return () => {
+      cancelled = true;
+      cleanups.forEach((cleanup) => cleanup());
+    };
   }, []);
 
   useEffect(() => {

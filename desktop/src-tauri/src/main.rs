@@ -40,7 +40,7 @@ const PLAYER_COVER_MAX_WIDTH: u32 = 320;
 const PLAYER_COVER_MAX_HEIGHT: u32 = 440;
 const PLAYER_COVER_BACKGROUND_WIDTH: u32 = 1920;
 const PLAYER_COVER_BACKGROUND_HEIGHT: u32 = 1080;
-const PLAYER_COVER_PRELOAD_TIMEOUT_MS: u64 = 950;
+const PLAYER_COVER_PRELOAD_TIMEOUT_MS: u64 = 1_600;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -297,6 +297,7 @@ struct SourceCacheEntry {
 static MANAGER: OnceLock<Mutex<PlaybackManager>> = OnceLock::new();
 static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 static PLAYBACK_OPERATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static LAST_NEXT_EPISODE_EVENT: OnceLock<Mutex<Option<(String, u128)>>> = OnceLock::new();
 static PLAYBACK_SWITCH_GENERATION: AtomicU64 = AtomicU64::new(0);
 static SOURCE_CACHE: OnceLock<Mutex<HashMap<String, SourceCacheEntry>>> = OnceLock::new();
 static METADATA_CACHE: OnceLock<Mutex<HashMap<String, SourceCacheEntry>>> = OnceLock::new();
@@ -1182,11 +1183,39 @@ fn player_subtitle_import_request_path(cache_dir: &Path) -> PathBuf {
     player_metadata_dir(cache_dir).join("subtitle-import.request")
 }
 
+fn player_next_episode_request_path(cache_dir: &Path) -> PathBuf {
+    player_metadata_dir(cache_dir).join("next-episode.request")
+}
+
+fn player_setting_request_path(cache_dir: &Path) -> PathBuf {
+    player_metadata_dir(cache_dir).join("player-setting.request")
+}
+
 fn prepare_player_subtitle_import_request(cache_dir: &Path) -> Result<PathBuf, String> {
     let request_file = player_subtitle_import_request_path(cache_dir);
     if let Some(parent) = request_file.parent() {
         fs::create_dir_all(parent)
             .map_err(|error| format!("Could not prepare subtitle import bridge: {}", error))?;
+    }
+    let _ = fs::remove_file(&request_file);
+    Ok(request_file)
+}
+
+fn prepare_player_next_episode_request(cache_dir: &Path) -> Result<PathBuf, String> {
+    let request_file = player_next_episode_request_path(cache_dir);
+    if let Some(parent) = request_file.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not prepare next-episode bridge: {}", error))?;
+    }
+    let _ = fs::remove_file(&request_file);
+    Ok(request_file)
+}
+
+fn prepare_player_setting_request(cache_dir: &Path) -> Result<PathBuf, String> {
+    let request_file = player_setting_request_path(cache_dir);
+    if let Some(parent) = request_file.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not prepare player-setting bridge: {}", error))?;
     }
     let _ = fs::remove_file(&request_file);
     Ok(request_file)
@@ -3297,9 +3326,86 @@ fn spawn_subtitle_import_request_watcher(ipc: String, request_file: PathBuf) {
     });
 }
 
+fn spawn_next_episode_request_watcher(ipc: String, request_file: PathBuf) {
+    thread::spawn(move || {
+        let mut last_token = fs::read_to_string(&request_file).unwrap_or_default();
+        loop {
+            thread::sleep(Duration::from_millis(180));
+            if !player_ipc_is_active(&ipc) {
+                break;
+            }
+            let token = fs::read_to_string(&request_file).unwrap_or_default();
+            if token.trim().is_empty() || token == last_token {
+                continue;
+            }
+            last_token = token.clone();
+            let reason = token
+                .split('|')
+                .next()
+                .map(str::trim)
+                .filter(|value| *value == "ended")
+                .unwrap_or("manual");
+            log_info(format!(
+                "MPV requested next episode through request file reason={}",
+                reason
+            ));
+            emit_player_next_episode_request(reason);
+        }
+    });
+}
+
+fn spawn_player_setting_request_watcher(ipc: String, request_file: PathBuf) {
+    thread::spawn(move || {
+        let mut last_token = fs::read_to_string(&request_file).unwrap_or_default();
+        loop {
+            thread::sleep(Duration::from_millis(180));
+            if !player_ipc_is_active(&ipc) {
+                break;
+            }
+            let token = fs::read_to_string(&request_file).unwrap_or_default();
+            if token.trim().is_empty() || token == last_token {
+                continue;
+            }
+            last_token = token.clone();
+            let mut parts = token.trim().splitn(3, '|');
+            let key = parts.next().unwrap_or_default().trim();
+            let value = parts.next().unwrap_or_default().trim();
+            if key.is_empty() {
+                continue;
+            }
+            log_info(format!(
+                "MPV persisted player setting through request file key={} value={}",
+                key, value
+            ));
+            emit_player_setting_changed(key, value);
+        }
+    });
+}
+
 fn emit_player_next_episode_request(reason: &str) {
+    let reason = if reason.trim() == "ended" { "ended" } else { "manual" };
+    let now = now_millis();
+    if let Ok(mut last) = LAST_NEXT_EPISODE_EVENT
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+    {
+        if last
+            .as_ref()
+            .map(|(previous_reason, previous_at)| {
+                previous_reason == reason && now.saturating_sub(*previous_at) < 750
+            })
+            .unwrap_or(false)
+        {
+            log_info(format!(
+                "Duplicate next-episode bridge event ignored reason={}",
+                reason
+            ));
+            return;
+        }
+        *last = Some((reason.to_string(), now));
+    }
     let payload = PlayerNextEpisodePayload {
-        reason: reason.trim().to_string(),
+        reason: reason.to_string(),
     };
     if let Some(app) = APP_HANDLE.get() {
         if let Err(error) = app.emit("streamnyaa-player-next-episode", payload) {
@@ -3675,6 +3781,20 @@ fn launch_or_reuse_player(
             None
         }
     };
+    let next_episode_request_file = match prepare_player_next_episode_request(cache_dir) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            log_info(format!("Next-episode bridge fallback: {}", error));
+            None
+        }
+    };
+    let player_setting_request_file = match prepare_player_setting_request(cache_dir) {
+        Ok(path) => Some(path),
+        Err(error) => {
+            log_info(format!("Player-setting bridge fallback: {}", error));
+            None
+        }
+    };
 
     let stale_player = {
         let mut guard = manager()
@@ -3684,6 +3804,14 @@ fn launch_or_reuse_player(
         let existing_ipc = guard.player_ipc.clone();
         if let (Some(child), Some(ipc)) = (guard.player.as_mut(), existing_ipc) {
             if child.try_wait().ok().flatten().is_none() && player_ipc_ready(&ipc, 2, 60) {
+                if let Ok(loading) = loading_frame_for_player(
+                    cache_dir,
+                    request,
+                    title,
+                    metadata_launch.loading_image_path.as_ref(),
+                ) {
+                    let _ = load_player_file(&ipc, &path_for_player_option(&loading));
+                }
                 set_player_title(&ipc, title);
                 if let Some(metadata_file) = metadata_file.as_ref() {
                     send_player_script_message_arg(
@@ -3811,6 +3939,18 @@ fn launch_or_reuse_player(
             path_for_player_option(subtitle_request_file)
         ));
     }
+    if let Some(next_episode_request_file) = next_episode_request_file.as_ref() {
+        script_opts.push(format!(
+            "streamnyaa_player-next_episode_request_file={}",
+            path_for_player_option(next_episode_request_file)
+        ));
+    }
+    if let Some(player_setting_request_file) = player_setting_request_file.as_ref() {
+        script_opts.push(format!(
+            "streamnyaa_player-settings_request_file={}",
+            path_for_player_option(player_setting_request_file)
+        ));
+    }
     if !script_opts.is_empty() {
         command.arg(format!("--script-opts={}", script_opts.join(",")));
     }
@@ -3852,6 +3992,12 @@ fn launch_or_reuse_player(
         }
         if let Some(subtitle_request_file) = subtitle_request_file {
             spawn_subtitle_import_request_watcher(ipc.clone(), subtitle_request_file);
+        }
+        if let Some(next_episode_request_file) = next_episode_request_file {
+            spawn_next_episode_request_watcher(ipc.clone(), next_episode_request_file);
+        }
+        if let Some(player_setting_request_file) = player_setting_request_file {
+            spawn_player_setting_request_watcher(ipc.clone(), player_setting_request_file);
         }
         send_player_script_message(&ipc, "streamnyaa-playback-ready");
         log_info("MPV playback-ready message sent after IPC listener attach");

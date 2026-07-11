@@ -12,20 +12,15 @@ import {
   formatPlaybackTime,
   controlLocalPlayer,
   getLocalPlaybackProgress,
-  listenDesktopPlayerAutoNextChanged,
   listenDesktopPlayerNextEpisode,
-  listenDesktopPlayerReady,
-  listenDesktopPlayerSettingChanged,
   loadDesktopPlayerPreferences,
   loadDesktopAutoPlayNextEpisode,
   loadDesktopAutoOpenBestSource,
   loadDesktopAudioPreference,
   openLocalSourceNow,
-  saveDesktopPlayerSetting,
   saveDesktopWatchProgress,
   subscribeDesktopAutoPlayNextEpisode,
   subscribeDesktopPlayerPreferences,
-  saveDesktopAutoPlayNextEpisode,
   saveDesktopAutoOpenBestSource,
   saveDesktopAudioPreference,
   syncDesktopPlayerPreferencesToPlayer,
@@ -1777,76 +1772,9 @@ export default function DesktopWatch() {
   }, []);
 
   useEffect(() => {
-    let mounted = true;
-    let unlisten: (() => void) | undefined;
-    void listenDesktopPlayerAutoNextChanged((event) => {
-      if (!mounted) return;
-      const enabled = Boolean(event.enabled);
-      autoPlayNextEpisodeRef.current = enabled;
-      const preferences = saveDesktopAutoPlayNextEpisode(enabled);
-      console.info(`[StreamNyaa Watch] Saved desktop player setting key=autoNextEpisode value=${enabled}`);
-      setAutoPlayNextEpisode(enabled);
-      void controlLocalPlayer('auto_next_episode', enabled ? 1 : 0).catch(() => {
-        // The player can close while the preference event is in flight.
-      });
-    }).then((cleanup) => {
-      if (!mounted) {
-        cleanup();
-        return;
-      }
-      unlisten = cleanup;
-    });
-    return () => {
-      mounted = false;
-      unlisten?.();
-    };
-  }, []);
-
-  useEffect(() => {
     if (!playback?.torrentId) return;
     syncPlayerPreferences('playback-state');
   }, [playback?.torrentId, syncPlayerPreferences]);
-
-  useEffect(() => {
-    let mounted = true;
-    let unlisten: (() => void) | undefined;
-    void listenDesktopPlayerReady(() => {
-      if (!mounted) return;
-      syncPlayerPreferences('lua-ready');
-    }).then((cleanup) => {
-      if (!mounted) {
-        cleanup();
-        return;
-      }
-      unlisten = cleanup;
-    });
-    return () => {
-      mounted = false;
-      unlisten?.();
-    };
-  }, [syncPlayerPreferences]);
-
-  useEffect(() => {
-    let mounted = true;
-    let unlisten: (() => void) | undefined;
-    void listenDesktopPlayerSettingChanged((event) => {
-      if (!mounted || !event.key) return;
-      const preferences = saveDesktopPlayerSetting(event.key, event.value ?? '');
-      console.info(`[StreamNyaa Watch] Saved desktop player setting key=${event.key} value=${event.value ?? ''}`);
-      setAutoPlayNextEpisode(preferences.autoNextEpisode);
-      autoPlayNextEpisodeRef.current = preferences.autoNextEpisode;
-    }).then((cleanup) => {
-      if (!mounted) {
-        cleanup();
-        return;
-      }
-      unlisten = cleanup;
-    });
-    return () => {
-      mounted = false;
-      unlisten?.();
-    };
-  }, []);
 
   useEffect(() => {
     setSynopsisExpanded(false);

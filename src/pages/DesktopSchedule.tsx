@@ -216,6 +216,7 @@ function reminderFromAnime(anime: any): ScheduleReminder | null {
 function scheduleNotificationStatusMessage(permission: ScheduleNotificationPermission) {
   if (permission === 'granted') return 'Windows notifications enabled';
   if (permission === 'denied') return 'Notifications blocked in Windows settings';
+  if (permission === 'error') return 'Notification service needs attention';
   if (permission === 'unsupported') return 'Native notifications unavailable';
   return 'Enable a bell to allow Windows notifications';
 }
@@ -346,6 +347,13 @@ export default function DesktopSchedule() {
       });
       return;
     }
+    if (permission === 'error') {
+      setNotice({
+        tone: 'error',
+        message: 'Windows notification access could not be initialized. Restart the installed app and try again.',
+      });
+      return;
+    }
     setNotice({
       tone: 'info',
       message: 'Notification permission was not enabled, so no reminder was saved.',
@@ -392,8 +400,10 @@ export default function DesktopSchedule() {
       setNotice({
         tone: 'error',
         message: permission === 'unsupported'
-          ? 'Native notifications are unavailable in this runtime. No reminder was saved.'
-          : 'Notifications are blocked. Enable StreamNyaa in Windows settings, then try again.',
+          ? 'Native notifications are available only in the installed desktop app. No reminder was saved.'
+          : permission === 'error'
+            ? 'Windows notification access could not be initialized. Restart the installed app and try again.'
+            : 'Notifications are blocked. Enable StreamNyaa in Windows settings, then try again.',
       });
     } finally {
       setPendingReminderId(null);
