@@ -588,9 +588,7 @@ fn validated_command_candidate(value: &str, allowed_names: &[&str]) -> Option<St
         return None;
     }
     if looks_like_path(value) {
-        return Path::new(value)
-            .is_file()
-            .then(|| value.to_string());
+        return Path::new(value).is_file().then(|| value.to_string());
     }
     command_from_path(value)
 }
@@ -1321,16 +1319,16 @@ fn prepare_cover_background(decoded: &image::RgbaImage) -> image::RgbaImage {
     let resized_width = ((source_width as f64 * scale).round() as u32).max(target_width);
     let resized_height = ((source_height as f64 * scale).round() as u32).max(target_height);
     let resized =
-        image::imageops::resize(decoded, resized_width, resized_height, FilterType::Triangle);
+        image::imageops::resize(decoded, resized_width, resized_height, FilterType::Lanczos3);
     let crop_x = resized_width.saturating_sub(target_width) / 2;
     let crop_y = resized_height.saturating_sub(target_height) / 2;
     let cropped =
         image::imageops::crop_imm(&resized, crop_x, crop_y, target_width, target_height).to_image();
-    let mut background = image::imageops::blur(&cropped, 18.0);
+    let mut background = image::imageops::blur(&cropped, 7.0);
     for pixel in background.pixels_mut() {
-        pixel[0] = ((pixel[0] as f32 * 0.46) + 16.0).clamp(0.0, 255.0) as u8;
-        pixel[1] = (pixel[1] as f32 * 0.34).clamp(0.0, 255.0) as u8;
-        pixel[2] = ((pixel[2] as f32 * 0.36) + 10.0).clamp(0.0, 255.0) as u8;
+        pixel[0] = ((pixel[0] as f32 * 0.62) + 12.0).clamp(0.0, 255.0) as u8;
+        pixel[1] = (pixel[1] as f32 * 0.50).clamp(0.0, 255.0) as u8;
+        pixel[2] = ((pixel[2] as f32 * 0.52) + 8.0).clamp(0.0, 255.0) as u8;
         pixel[3] = 255;
     }
     background
@@ -1375,8 +1373,10 @@ fn prepare_player_cover(
         .map_err(|error| format!("Could not prepare player metadata folder: {}", error))?;
     let loading_image_path = metadata_dir.join("loading-cover.jpg");
     let loading_image_rgb = image::DynamicImage::ImageRgba8(background.clone()).to_rgb8();
-    image::DynamicImage::ImageRgb8(loading_image_rgb)
-        .save_with_format(&loading_image_path, image::ImageFormat::Jpeg)
+    let loading_image_file = fs::File::create(&loading_image_path)
+        .map_err(|error| format!("Could not create cover loading image: {}", error))?;
+    image::codecs::jpeg::JpegEncoder::new_with_quality(loading_image_file, 90)
+        .encode_image(&image::DynamicImage::ImageRgb8(loading_image_rgb))
         .map_err(|error| format!("Could not write cover loading image: {}", error))?;
     let loading_image_size = fs::metadata(&loading_image_path)
         .map_err(|error| format!("Could not verify cover loading image: {}", error))?
@@ -3021,10 +3021,12 @@ fn control_player(request: PlayerControlRequest) -> Result<PlayerControlStatus, 
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "Missing player preference key.".to_string())?;
-            let value = request
-                .text
-                .clone()
-                .unwrap_or_else(|| request.value.map(|item| item.to_string()).unwrap_or_default());
+            let value = request.text.clone().unwrap_or_else(|| {
+                request
+                    .value
+                    .map(|item| item.to_string())
+                    .unwrap_or_default()
+            });
             format!(
                 r#"{{"command":["script-message","streamnyaa-set-player-preference",{},{}],"request_id":75}}"#,
                 json_string(key),
@@ -3383,7 +3385,11 @@ fn spawn_player_setting_request_watcher(ipc: String, request_file: PathBuf) {
 }
 
 fn emit_player_next_episode_request(reason: &str) {
-    let reason = if reason.trim() == "ended" { "ended" } else { "manual" };
+    let reason = if reason.trim() == "ended" {
+        "ended"
+    } else {
+        "manual"
+    };
     let now = now_millis();
     if let Ok(mut last) = LAST_NEXT_EPISODE_EVENT
         .get_or_init(|| Mutex::new(None))
@@ -3493,7 +3499,11 @@ fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
             .get(1)
             .and_then(|item| item.as_str())
             .unwrap_or("manual");
-        let reason = if raw_reason == "ended" { "ended" } else { "manual" };
+        let reason = if raw_reason == "ended" {
+            "ended"
+        } else {
+            "manual"
+        };
         log_info(format!(
             "[StreamNyaa Rust] Received MPV next episode request reason={}",
             reason
@@ -3527,8 +3537,14 @@ fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
         if !player_ipc_is_active(ipc) {
             return;
         }
-        let key = args.get(1).and_then(|item| item.as_str()).unwrap_or_default();
-        let value = args.get(2).and_then(|item| item.as_str()).unwrap_or_default();
+        let key = args
+            .get(1)
+            .and_then(|item| item.as_str())
+            .unwrap_or_default();
+        let value = args
+            .get(2)
+            .and_then(|item| item.as_str())
+            .unwrap_or_default();
         log_info(format!(
             "[StreamNyaa Rust] Received player setting changed key={} value={}",
             key, value

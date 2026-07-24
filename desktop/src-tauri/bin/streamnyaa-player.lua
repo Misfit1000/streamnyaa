@@ -689,7 +689,7 @@ function loading_title_layout(raw_title, width, height, s)
   local size = clamp(86 * s, 46 * s, 108 * s)
   local spacing = clamp(size * 0.055, 1.6 * s, 5.8 * s)
 
-  while size > 42 * s and estimated_spaced_text_width(title, size, spacing) > max_width do
+  while size > 58 * s and estimated_spaced_text_width(title, size, spacing) > max_width do
     size = size - 2 * s
     spacing = clamp(size * 0.052, 1.4 * s, 5.2 * s)
   end
@@ -716,7 +716,7 @@ function loading_title_layout(raw_title, width, height, s)
         end
       end
       lines = { best_left or title, best_right or "" }
-      while size > 36 * s do
+      while size > 46 * s do
         spacing = clamp(size * 0.047, 1.2 * s, 4.8 * s)
         local fits = true
         for _, line_value in ipairs(lines) do
@@ -1870,6 +1870,19 @@ function handle_episode_eof()
   request_next_episode("ended")
 end
 
+function maybe_handle_episode_end()
+  if ui.end_overlay or ui.dragging == "seek" then return end
+  if is_loading() or is_buffering() or state.paused then return end
+  if not state.has_started_playback or not has_playable_media() then return end
+  local duration = tonumber(state.duration) or 0
+  local pos = tonumber(state.pos) or 0
+  if duration < 60 or pos < 0 or pos / duration < 0.98 then return end
+  if duration - pos > 0.45 then return end
+  ui.eof_candidate_key = current_media_key()
+  msg.info("[StreamNyaa Lua] Near-EOF fallback reached; preparing next-episode flow")
+  handle_episode_eof()
+end
+
 function draw_gradient_bottom(ass, width, height, s)
   local h = 164 * s
   local start = height - h
@@ -2375,20 +2388,22 @@ end
 function draw_manual_skip_button(ass, mouse, range, index, width, height, s)
   if not range then return end
   local label = range.kind == "outro" and "SKIP OUTRO" or "SKIP INTRO"
-  local button_w = 150 * s
-  local button_h = 40 * s
-  local x2 = width - 60 * s
-  local y2 = height - (152 + (index or 0) * 50) * s
+  local button_w = 174 * s
+  local button_h = 46 * s
+  local x2 = width - 48 * s
+  local y2 = height - (150 + (index or 0) * 56) * s
   local x1 = x2 - button_w
   local y1 = y2 - button_h
+  local center_x = (x1 + x2) / 2
+  local center_y = (y1 + y2) / 2
   local hot = inside(mouse, x1, y1, x2, y2)
 
-  rounded_rect(ass, x1 - 3 * s, y1 - 3 * s, x2 + 3 * s, y2 + 3 * s, 10 * s, C.accent, hot and 218 or 242)
-  rounded_rect(ass, x1, y1, x2, y2, 8 * s, C.panel, hot and 0 or 12)
-  rounded_outline(ass, x1, y1, x2, y2, 8 * s, 1.0 * s, hot and C.hover or C.white, hot and 92 or 210)
-  rounded_rect(ass, x1, y1 + 5 * s, x1 + 3 * s, y2 - 5 * s, 1.5 * s, C.accent, 0)
-  icon_skip_compact(ass, x1 + 22 * s, (y1 + y2) / 2, 17 * s, hot and C.hover or C.white)
-  draw_text(ass, x1 + 40 * s, y1 + 22 * s, 4, font_px(s, 14, 13, 15), C.white, 0, label, true, "Segoe UI Semibold")
+  rounded_rect(ass, x1 - 4 * s, y1 - 4 * s, x2 + 4 * s, y2 + 4 * s, 11 * s, C.accent, hot and 220 or 244)
+  rounded_rect(ass, x1, y1, x2, y2, 9 * s, C.panel, hot and 0 or 10)
+  rounded_outline(ass, x1, y1, x2, y2, 9 * s, 1.0 * s, hot and C.hover or C.white, hot and 82 or 206)
+  rounded_rect(ass, x1, y1 + 6 * s, x1 + 4 * s, y2 - 6 * s, 2 * s, C.accent, 0)
+  icon_skip_compact(ass, center_x - 55 * s, center_y, 18 * s, hot and C.hover or C.white)
+  draw_text(ass, center_x + 12 * s, center_y + 1 * s, 5, font_px(s, 14, 13, 16), C.white, 0, label, true, "Segoe UI Semibold")
   add_region("manual_skip_" .. tostring(range.kind), x1, y1, x2, y2, {
     key = range.key,
     kind = range.kind,
@@ -2426,19 +2441,23 @@ function draw_end_overlay(ass, width, height, mouse, s)
   rounded_rect(ass, x1 - 14 * s, y1 - 14 * s, x2 + 14 * s, y2 + 14 * s, 30 * s, C.accent, 238)
   rounded_rect(ass, x1, y1, x2, y2, 24 * s, C.panel, 12)
   rounded_outline(ass, x1, y1, x2, y2, 24 * s, 1.3 * s, C.white, 214)
+  local prompt = state.autoplay and "Opening the next episode..." or "Play the next episode?"
+  local detail = state.autoplay
+    and "Auto Next is on. StreamNyaa is finding the best matching source."
+    or "Continue with the next aired episode, or replay this one."
   draw_spaced_text(ass, (x1 + x2) / 2, y1 + 48 * s, 5, font_px(s, 13, 12, 15), C.accent, 0, "EPISODE FINISHED", 3 * s, true, "Segoe UI Semibold")
-  draw_text(ass, (x1 + x2) / 2, y1 + 91 * s, 5, font_px(s, 25, 22, 28), C.white, 0, "Continue watching?", true, "Segoe UI Semibold")
-  draw_text(ass, (x1 + x2) / 2, y1 + 122 * s, 5, font_px(s, 15, 14, 17), C.secondary, 20, "Play the next aired episode or replay this one.", false, "Segoe UI")
+  draw_text(ass, (x1 + x2) / 2, y1 + 91 * s, 5, font_px(s, 25, 22, 28), C.white, 0, prompt, true, "Segoe UI Semibold")
+  draw_text(ass, (x1 + x2) / 2, y1 + 122 * s, 5, font_px(s, 15, 14, 17), C.secondary, 20, detail, false, "Segoe UI")
 
   local gap = 14 * s
   local button_h = 44 * s
-  local next_w = 158 * s
+  local next_w = 198 * s
   local replay_w = 118 * s
   local close_w = 98 * s
   local total_w = next_w + replay_w + close_w + gap * 2
   local bx = (width - total_w) / 2
   local by = y2 - 66 * s
-  draw_end_button(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, "NEXT EPISODE", true, s)
+  draw_end_button(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, "PLAY NEXT EPISODE", true, s)
   bx = bx + next_w + gap
   draw_end_button(ass, mouse, "end_replay", bx, by, bx + replay_w, by + button_h, "REPLAY", false, s)
   bx = bx + replay_w + gap
@@ -2479,7 +2498,7 @@ function draw_loading_required_content(ass, width, height, s, status)
   end
 
   local layout = loading_title_layout(loading_media_title(), width, height, s)
-  local title_size = clamp(layout.size * 0.88, 36 * s, 78 * s)
+  local title_size = clamp(layout.size, 46 * s, 104 * s)
   local line_gap = title_size * 1.13
   local title_center_y = height * 0.48
   local first_line_y = title_center_y - ((#layout.lines - 1) * line_gap / 2)
@@ -2489,7 +2508,7 @@ function draw_loading_required_content(ass, width, height, s, status)
   local spinner_r = 19 * s
 
   for index, line_value in ipairs(layout.lines) do
-    draw_text(
+    draw_spaced_text(
       ass,
       cx,
       first_line_y + (index - 1) * line_gap,
@@ -2498,6 +2517,7 @@ function draw_loading_required_content(ass, width, height, s, status)
       C.white,
       0,
       line_value,
+      layout.spacing,
       true,
       "Segoe UI Semibold"
     )
@@ -2528,12 +2548,6 @@ function draw_loading(ass, width, height, s, cover_info)
       rect(ass, 0, 0, width, height, "150006", 108)
     end
     rect(ass, 0, 0, width, height, C.accent, 248)
-    if not buffering_only then
-      for index = 0, 8 do
-        local y1 = height * (0.66 + index * 0.043)
-        rect(ass, 0, y1, width, height, C.black, 238 - index * 12)
-      end
-    end
     draw_loading_required_content(ass, width, height, s, status)
   end)
 
@@ -3760,6 +3774,7 @@ mp.observe_property("time-pos", "number", function(_, value)
   maybe_auto_skip_intro()
   maybe_auto_skip_outro()
   wake_manual_skip_buttons()
+  maybe_handle_episode_end()
   if not ui.settings_open then
     draw(false, "time-pos")
   end

@@ -1701,6 +1701,7 @@ export default function DesktopWatch() {
   const activeSourceIdValueRef = useRef<string | null>(null);
   const sourcesBusyRef = useRef(false);
   const playableSourcesRef = useRef<RankedNyaaItem[]>([]);
+  const playableSourcesEpisodeRef = useRef(0);
   const playSourceRef = useRef<(source: RankedNyaaItem) => void | Promise<void>>(() => {});
   const playNextEpisodeRef = useRef<(reason?: 'manual' | 'ended' | string) => void>(() => {});
   const pendingAutoPlayEpisodeRef = useRef<number | null>(null);
@@ -2398,7 +2399,7 @@ export default function DesktopWatch() {
     : sourceMode === 'broad'
       ? 'Try another episode, audio preference, or refresh the source list.'
       : 'Try Broad mode to include less certain matches.';
-  const sourcesBusy = sourcesLoading || (sourcesFetching && !sources?.length);
+  const sourcesBusy = sourcesLoading || sourcesFetching;
   const nextPlayableSource = useMemo(
     () => playableSources.find((source) => !sourceFailureFor(source, failedSourceRecords)) || playableSources[0] || null,
     [failedSourceRecords, playableSources],
@@ -2418,8 +2419,10 @@ export default function DesktopWatch() {
   }, [sourcesBusy]);
 
   useEffect(() => {
+    if (sourcesBusy) return;
     playableSourcesRef.current = playableSources;
-  }, [playableSources]);
+    playableSourcesEpisodeRef.current = selectedEpisode;
+  }, [playableSources, selectedEpisode, sourcesBusy]);
 
   useEffect(() => {
     pendingAutoPlayEpisodeRef.current = pendingAutoPlayEpisode;
@@ -2682,6 +2685,8 @@ export default function DesktopWatch() {
       return;
     }
     if (targetEpisode !== currentEpisode) {
+      playableSourcesRef.current = [];
+      playableSourcesEpisodeRef.current = 0;
       setPendingAutoPlayEpisode(targetEpisode);
       console.info(`[StreamNyaa Watch] Waiting for next episode sources episode=${targetEpisode}`);
       selectEpisode(targetEpisode);
@@ -2699,7 +2704,9 @@ export default function DesktopWatch() {
       setPlaybackNotice({ tone: 'loading', text: `Finding a verified source for episode ${targetEpisode}...` });
       return;
     }
-    const bestSource = playableSourcesRef.current[0];
+    const bestSource = playableSourcesEpisodeRef.current === targetEpisode
+      ? playableSourcesRef.current[0]
+      : undefined;
     if (bestSource) {
       void playSourceRef.current(bestSource);
       return;
@@ -2868,6 +2875,7 @@ export default function DesktopWatch() {
     if (pendingAutoPlayEpisode !== selectedEpisode) return;
     if (activeSourceId || playActionLockRef.current) return;
     if (sourcesBusy) return;
+    if (playableSourcesEpisodeRef.current !== selectedEpisode) return;
     if (playableSources[0]) {
       const bestSource = playableSources[0];
       setPendingAutoPlayEpisode(null);
