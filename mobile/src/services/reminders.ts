@@ -1,0 +1,32 @@
+import * as Notifications from 'expo-notifications';
+import type { ScheduleEntry } from '../types';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
+
+export async function ensureReminderPermission() {
+  const current = await Notifications.getPermissionsAsync();
+  if (current.granted) return true;
+  const requested = await Notifications.requestPermissionsAsync();
+  return requested.granted;
+}
+
+export async function scheduleAiringReminder(entry: ScheduleEntry, minutesBefore = 10) {
+  if (!(await ensureReminderPermission())) throw new Error('Notification permission is required for reminders.');
+  const triggerDate = new Date((entry.airingAt - minutesBefore * 60) * 1000);
+  if (triggerDate.getTime() <= Date.now()) throw new Error('This airing time is too close for a reminder.');
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: `${entry.anime.title} airs soon`,
+      body: `Episode ${entry.episode} starts in about ${minutesBefore} minutes.`,
+      data: { animeId: entry.anime.id, episode: entry.episode },
+    },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
+  });
+}

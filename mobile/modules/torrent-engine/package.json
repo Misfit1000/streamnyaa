@@ -1,0 +1,7 @@
+{
+  "name": "streamnyaa-torrent-engine",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "expo": { "autolinking": { "platforms": ["android"] } }
+}

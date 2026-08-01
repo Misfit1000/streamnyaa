@@ -14,3 +14,6 @@ desktop/releases/
 .env*
 !.env.example
 StreamNyaa/
+mobile/.expo/
+mobile/android/
+mobile/modules/torrent-engine/android/build/

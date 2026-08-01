@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "StreamNyaa",
+    "slug": "streamnyaa-android",
+    "version": "0.1.0",
+    "icon": "../src/assets/desktop-logo.png",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "scheme": "streamnyaa",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.misfit1000.streamnyaa",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "../src/assets/desktop-logo.png",
+        "backgroundColor": "#151217"
+      },
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "POST_NOTIFICATIONS",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_DATA_SYNC",
+        "WAKE_LOCK"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "data": [{ "scheme": "streamnyaa" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      ["expo-notifications", { "defaultChannel": "airing-reminders" }],
+      ["expo-video", { "supportsPictureInPicture": true }],
+      "./modules/torrent-engine/app.plugin.js"
+    ],
+    "extra": {
+      "apiOrigin": "https://www.streamnyaa.xyz"
+    }
+  }
+}
