@@ -19,6 +19,10 @@ use std::{
 };
 use tauri::{Emitter, Manager};
 
+const DESKTOP_OAUTH_WINDOW_LABEL: &str = "streamnyaa-oauth";
+const DESKTOP_OAUTH_EVENT: &str = "streamnyaa-desktop-oauth-callback";
+const DESKTOP_OAUTH_SUPABASE_HOST: &str = "opteiijnvuwstpdjxwlk.supabase.co";
+
 const RQBIT_URL: &str = "http://127.0.0.1:3030";
 const PER_SESSION_CACHE_MAX_BYTES: u64 = 3 * 1024 * 1024 * 1024;
 const MAX_SESSION_CACHE_BYTES: u64 = 12 * 1024 * 1024 * 1024;
@@ -43,6 +47,112 @@ const PLAYER_COVER_BACKGROUND_HEIGHT: u32 = 1080;
 const PLAYER_COVER_PRELOAD_TIMEOUT_MS: u64 = 1_600;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopOAuthCallback {
+    url: String,
+}
+
+fn is_streamnyaa_auth_callback(url: &tauri::Url) -> bool {
+    matches!(url.host_str(), Some("www.streamnyaa.xyz") | Some("streamnyaa.xyz"))
+        && url.path().trim_end_matches('/') == "/login"
+        && url
+            .query_pairs()
+            .any(|(key, value)| key == "desktop_oauth" && value == "1")
+}
+
+fn is_allowed_oauth_navigation(url: &tauri::Url) -> bool {
+    if url.scheme() == "about" {
+        return true;
+    }
+    if url.scheme() != "https" {
+        return false;
+    }
+
+    let host = url.host_str().unwrap_or_default();
+    host == DESKTOP_OAUTH_SUPABASE_HOST
+        || host == "accounts.google.com"
+        || host.ends_with(".google.com")
+        || host.ends_with(".googleusercontent.com")
+}
+
+fn validate_google_oauth_authorize_url(url: &tauri::Url) -> Result<(), String> {
+    if url.scheme() != "https"
+        || url.host_str() != Some(DESKTOP_OAUTH_SUPABASE_HOST)
+        || url.path().trim_end_matches('/') != "/auth/v1/authorize"
+    {
+        return Err("The desktop sign-in URL was rejected.".to_string());
+    }
+
+    let provider_is_google = url
+        .query_pairs()
+        .any(|(key, value)| key == "provider" && value == "google");
+    let redirect_is_desktop_callback = url.query_pairs().any(|(key, value)| {
+        if key != "redirect_to" {
+            return false;
+        }
+        tauri::Url::parse(&value)
+            .map(|redirect| is_streamnyaa_auth_callback(&redirect))
+            .unwrap_or(false)
+    });
+
+    if !provider_is_google || !redirect_is_desktop_callback {
+        return Err("The desktop sign-in callback was rejected.".to_string());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn begin_desktop_google_oauth(
+    app: tauri::AppHandle,
+    authorize_url: String,
+) -> Result<(), String> {
+    let authorize_url = tauri::Url::parse(&authorize_url)
+        .map_err(|_| "The desktop sign-in URL is invalid.".to_string())?;
+    validate_google_oauth_authorize_url(&authorize_url)?;
+
+    if let Some(window) = app.get_webview_window(DESKTOP_OAUTH_WINDOW_LABEL) {
+        window
+            .navigate(authorize_url)
+            .map_err(|error| format!("Google sign-in could not reopen: {error}"))?;
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    let navigation_app = app.clone();
+    tauri::webview::WebviewWindowBuilder::new(
+        &app,
+        DESKTOP_OAUTH_WINDOW_LABEL,
+        tauri::WebviewUrl::External(authorize_url),
+    )
+    .title("Sign in to StreamNyaa")
+    .inner_size(520.0, 720.0)
+    .min_inner_size(420.0, 560.0)
+    .resizable(true)
+    .center()
+    .focused(true)
+    .on_navigation(move |url| {
+        if is_streamnyaa_auth_callback(url) {
+            log_info("Desktop Google OAuth callback received");
+            let _ = navigation_app.emit(
+                DESKTOP_OAUTH_EVENT,
+                DesktopOAuthCallback {
+                    url: url.to_string(),
+                },
+            );
+            if let Some(window) = navigation_app.get_webview_window(DESKTOP_OAUTH_WINDOW_LABEL) {
+                let _ = window.close();
+            }
+            return false;
+        }
+        is_allowed_oauth_navigation(url)
+    })
+    .build()
+    .map_err(|error| format!("Google sign-in window could not open: {error}"))?;
+
+    Ok(())
+}
 
 #[derive(Serialize)]
 struct PlaybackStatus {
@@ -5540,8 +5650,10 @@ fn main() {
             thread::spawn(startup_maintenance);
             Ok(())
         })
-        .on_window_event(|_, event| {
-            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+        .on_window_event(|window, event| {
+            if window.label() == "main"
+                && matches!(event, tauri::WindowEvent::CloseRequested { .. })
+            {
                 if let Ok(_operation_guard) = playback_operation_lock().try_lock() {
                     let status = runtime_status(None);
                     close_player_if_needed();
@@ -5560,6 +5672,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            begin_desktop_google_oauth,
             fetch_desktop_metadata_api,
             fetch_desktop_source_api,
             clear_playback_cache,
@@ -5578,6 +5691,34 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_google_oauth_accepts_only_the_streamnyaa_callback() {
+        let valid = tauri::Url::parse(
+            "https://opteiijnvuwstpdjxwlk.supabase.co/auth/v1/authorize?provider=google&redirect_to=https%3A%2F%2Fwww.streamnyaa.xyz%2Flogin%3Fdesktop_oauth%3D1",
+        )
+        .expect("valid OAuth URL");
+        assert!(validate_google_oauth_authorize_url(&valid).is_ok());
+
+        let foreign_callback = tauri::Url::parse(
+            "https://opteiijnvuwstpdjxwlk.supabase.co/auth/v1/authorize?provider=google&redirect_to=https%3A%2F%2Fexample.com%2Flogin%3Fdesktop_oauth%3D1",
+        )
+        .expect("valid URL with foreign callback");
+        assert!(validate_google_oauth_authorize_url(&foreign_callback).is_err());
+    }
+
+    #[test]
+    fn desktop_oauth_callback_requires_the_desktop_marker() {
+        let callback = tauri::Url::parse(
+            "https://www.streamnyaa.xyz/login?desktop_oauth=1#access_token=test",
+        )
+        .expect("valid callback URL");
+        assert!(is_streamnyaa_auth_callback(&callback));
+
+        let normal_web_login = tauri::Url::parse("https://www.streamnyaa.xyz/login")
+            .expect("valid normal login URL");
+        assert!(!is_streamnyaa_auth_callback(&normal_web_login));
+    }
 
     #[test]
     fn temp_cache_is_used_by_default() {

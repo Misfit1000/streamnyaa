@@ -121,6 +121,10 @@ export default function Login({ adminOnly = false }: LoginProps) {
         ? '/login'
         : `/login?next=${encodeURIComponent(redirectTarget)}`;
       await signInGoogle(loginRedirect);
+      if (isDesktopRuntime()) {
+        setSubmitting(false);
+        setMessage('Complete sign-in in the secure Google window. StreamNyaa will return here automatically.');
+      }
     } catch (authError) {
       setSubmitting(false);
       setError(authError instanceof Error ? authError.message : 'Google sign-in failed.');

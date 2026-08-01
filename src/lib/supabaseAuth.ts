@@ -3,6 +3,7 @@ import { accountApiFetch, accountApiUrl } from './accountApi';
 const STORAGE_KEY = 'streamnyaa.auth.session';
 const FALLBACK_SUPABASE_URL = 'https://opteiijnvuwstpdjxwlk.supabase.co';
 const FALLBACK_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_oHAwXtg1wXcPybVYfLBUuQ_GiYz3Fxv';
+const DESKTOP_AUTH_CALLBACK_ORIGIN = 'https://www.streamnyaa.xyz';
 
 export interface AuthUser {
   id: string;
@@ -180,6 +181,13 @@ function siteRedirectUrl(path = '/login') {
   return `${origin}${safePath}`;
 }
 
+function desktopAuthRedirectUrl(path = '/login') {
+  const safePath = safeAuthRedirectPath(path);
+  const callbackUrl = new URL(safePath, DESKTOP_AUTH_CALLBACK_ORIGIN);
+  callbackUrl.searchParams.set('desktop_oauth', '1');
+  return callbackUrl.toString();
+}
+
 export function normalizeOAuthSessionFromHash(hash: string): AuthSession | null {
   const params = new URLSearchParams(hash.replace(/^#/, ''));
   const accessToken = params.get('access_token');
@@ -196,6 +204,18 @@ export function normalizeOAuthSessionFromHash(hash: string): AuthSession | null 
   };
 }
 
+export async function createGoogleOAuthUrl(redirectPath = '/login', desktopCallback = false) {
+  const config = await authConfig();
+  const redirectTo = desktopCallback
+    ? desktopAuthRedirectUrl(redirectPath)
+    : siteRedirectUrl(redirectPath);
+  const params = new URLSearchParams({
+    provider: 'google',
+    redirect_to: redirectTo,
+  });
+  return `${config.supabaseUrl}/auth/v1/authorize?${params.toString()}`;
+}
+
 export async function signInWithPassword(email: string, password: string) {
   const data = await authFetch('token?grant_type=password', {
     method: 'POST',
@@ -207,13 +227,7 @@ export async function signInWithPassword(email: string, password: string) {
 }
 
 export async function signInWithGoogle(redirectPath = '/login') {
-  const config = await authConfig();
-  const redirectTo = siteRedirectUrl(redirectPath);
-  const params = new URLSearchParams({
-    provider: 'google',
-    redirect_to: redirectTo,
-  });
-  window.location.href = `${config.supabaseUrl}/auth/v1/authorize?${params.toString()}`;
+  window.location.href = await createGoogleOAuthUrl(redirectPath);
 }
 
 export async function signUpWithPassword(email: string, password: string) {

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import {
   AuthSession,
   AuthUser,
+  createGoogleOAuthUrl,
   fetchAccount,
   fetchSessionUser,
   loadStoredSession,
@@ -15,6 +16,11 @@ import {
   storeSession,
   updatePassword,
 } from '../lib/supabaseAuth';
+import {
+  beginDesktopGoogleOAuth,
+  isDesktopApp,
+  listenDesktopOAuthCallback,
+} from '../lib/desktop';
 
 type AuthContextValue = {
   session: AuthSession | null;
@@ -117,6 +123,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isDesktopApp()) return undefined;
+
+    let active = true;
+    let dispose = () => {};
+
+    listenDesktopOAuthCallback(async (payload) => {
+      if (!active) return;
+      try {
+        if (payload.error) throw new Error(payload.error);
+        const callbackUrl = new URL(String(payload.url || ''));
+        const hashParams = new URLSearchParams(callbackUrl.hash.replace(/^#/, ''));
+        const queryParams = callbackUrl.searchParams;
+        const oauthError = hashParams.get('error_description')
+          || queryParams.get('error_description')
+          || hashParams.get('error')
+          || queryParams.get('error');
+        if (oauthError) throw new Error(oauthError);
+
+        const nextSession = normalizeOAuthSessionFromHash(callbackUrl.hash);
+        if (!nextSession?.access_token) {
+          throw new Error('Google sign-in did not return a valid desktop session.');
+        }
+
+        setError('');
+        setLoading(true);
+        storeSession(nextSession);
+        await applySession(nextSession);
+      } catch (authError) {
+        if (!active) return;
+        storeSession(null);
+        setSession(null);
+        setUser(null);
+        setIsAdmin(false);
+        setError(authError instanceof Error ? authError.message : 'Google sign-in failed.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    }).then((unlisten) => {
+      if (active) dispose = unlisten;
+      else unlisten();
+    }).catch((listenError) => {
+      if (active) setError(listenError instanceof Error ? listenError.message : 'Desktop sign-in could not start.');
+    });
+
+    return () => {
+      active = false;
+      dispose();
+    };
+  }, []);
+
   const value = useMemo<AuthContextValue>(() => ({
     session,
     user,
@@ -130,6 +187,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     signInGoogle: async (redirectPath) => {
       setError('');
+      if (isDesktopApp()) {
+        const authorizeUrl = await createGoogleOAuthUrl(redirectPath, true);
+        await beginDesktopGoogleOAuth(authorizeUrl);
+        return;
+      }
       await signInWithGoogle(redirectPath);
     },
     signUp: async (email, password) => {

@@ -291,6 +291,11 @@ export type DesktopPlayerRecoveryRequestEvent = {
   position_seconds?: number;
 };
 
+export type DesktopOAuthCallbackEvent = {
+  url?: string;
+  error?: string;
+};
+
 type TauriListenEvent<T> = {
   payload: T;
 };
@@ -1090,6 +1095,24 @@ export async function listenDesktopPlayerNextEpisode(listener: (event: DesktopPl
   const listen = window.__TAURI__?.event?.listen;
   if (!listen) return () => {};
   return listen<DesktopPlayerNextEpisodeEvent>('streamnyaa-player-next-episode', (event) => {
+    listener(event.payload || {});
+  });
+}
+
+export async function beginDesktopGoogleOAuth(authorizeUrl: string) {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) {
+    throw new Error('Desktop Google sign-in is unavailable in this runtime.');
+  }
+
+  return invoke<void>('begin_desktop_google_oauth', { authorizeUrl });
+}
+
+export async function listenDesktopOAuthCallback(listener: (event: DesktopOAuthCallbackEvent) => void) {
+  if (typeof window === 'undefined') return () => {};
+  const listen = window.__TAURI__?.event?.listen;
+  if (!listen) return () => {};
+  return listen<DesktopOAuthCallbackEvent>('streamnyaa-desktop-oauth-callback', (event) => {
     listener(event.payload || {});
   });
 }
