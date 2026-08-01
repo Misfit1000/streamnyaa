@@ -51,6 +51,12 @@ local ENABLE_COVER_BITMAP_OVERLAY = false
 local DEBUG_COVER_LOADING = false
 local DEBUG_LOADING_DRAW = false
 local DEBUG_COVER_TEST = false
+local BUFFER_TARGET_SECONDS = 18
+local STALL_SAMPLE_SECONDS = 0.5
+local STALL_DETECT_SECONDS = 2.5
+local STALL_RECOVERY_SECONDS = 8
+local STALL_ACTION_SECONDS = 5
+local STALL_LOW_BUFFER_SECONDS = 2.5
 
 msg.info("[StreamNyaa Lua] streamnyaa-player.lua loaded")
 
@@ -147,6 +153,15 @@ local ui = {
   eof_candidate_key = "",
   last_buffering_active = false,
   last_buffering_percent = nil,
+  inferred_buffering = false,
+  playback_stalled = false,
+  stall_actions_visible = false,
+  stall_last_pos = nil,
+  stall_last_progress_at = 0,
+  stall_started_at = 0,
+  stall_recovery_attempted = false,
+  stall_recovery_at = 0,
+  stall_ignore_restart_until = 0,
   skip_range_state = {},
 }
 
@@ -170,6 +185,7 @@ local cover_overlay = nil
 local cover_overlay_key = ""
 local cover_overlay_supported = true
 local debug_cover_test_data = nil
+local stall_watchdog_timer = nil
 
 local menu_row_cache = {}
 local menu_cache_dirty = {
@@ -1377,7 +1393,8 @@ function is_midplayback_buffering()
   if state.paused and not state.paused_for_cache then return false end
   if state.paused_for_cache then return true end
   if state.cache_buffering_active then return true end
-  return state.demuxer_underrun == true
+  if state.demuxer_underrun == true then return true end
+  return ui.inferred_buffering == true or ui.playback_stalled == true
 end
 
 function is_buffering()
@@ -1412,7 +1429,12 @@ end
 function buffering_display_percent()
   local cache_percent = state.cache_buffering_active and clean_buffering_percent(state.cache_buffering_percent) or nil
   if cache_percent then return cache_percent end
-  if state.demuxer_underrun then return clean_buffering_percent(state.demuxer_buffering_percent) end
+  local demuxer_percent = state.demuxer_underrun and clean_buffering_percent(state.demuxer_buffering_percent) or nil
+  if demuxer_percent then return demuxer_percent end
+  local cached = buffered_seconds()
+  if cached ~= nil then
+    return math.floor(clamp((cached / BUFFER_TARGET_SECONDS) * 100, 0, 100) + 0.5)
+  end
   return nil
 end
 
@@ -1426,6 +1448,9 @@ function buffered_seconds()
 end
 
 function buffering_status_label()
+  if ui.playback_stalled then
+    return "PLAYBACK STALLED"
+  end
   local percent = buffering_display_percent()
   local cached = buffered_seconds()
   local label = percent and string.format("BUFFERING %d%%", percent) or "BUFFERING..."
@@ -1461,6 +1486,118 @@ function reset_buffering_state()
   state.cache_end = 0
   ui.last_buffering_active = false
   ui.last_buffering_percent = nil
+end
+
+function reset_stall_watchdog(keep_position)
+  ui.inferred_buffering = false
+  ui.playback_stalled = false
+  ui.stall_actions_visible = false
+  ui.stall_started_at = 0
+  ui.stall_recovery_attempted = false
+  ui.stall_recovery_at = 0
+  ui.stall_ignore_restart_until = 0
+  ui.stall_last_progress_at = mp.get_time()
+  ui.stall_last_pos = keep_position and (tonumber(state.pos) or 0) or nil
+end
+
+function native_buffering_active()
+  return state.paused_for_cache == true or state.cache_buffering_active == true or state.demuxer_underrun == true
+end
+
+function stall_watchdog_allowed()
+  if state.paused or state.idle or state.core_idle or ui.end_overlay or ui.settings_open then return false end
+  if ui.dragging or is_placeholder_media() or native_buffering_active() then return false end
+  if not state.has_started_playback or not has_playable_media() or not has_valid_playhead() then return false end
+  local duration = tonumber(state.duration) or 0
+  local pos = tonumber(state.pos) or 0
+  if duration <= 0 or pos < 0 or duration - pos <= 1.0 then return false end
+  return true
+end
+
+function request_same_source_recovery(origin)
+  local pos = tonumber(state.pos) or 0
+  if pos < 0 or not has_playable_media() then return false end
+  ui.stall_recovery_attempted = true
+  ui.stall_recovery_at = mp.get_time()
+  ui.stall_actions_visible = false
+  ui.stall_ignore_restart_until = ui.stall_recovery_at + 3
+  msg.info(string.format("[StreamNyaa Lua] Same-source recovery seek origin=%s position=%.2f", tostring(origin or "watchdog"), pos))
+  return safe_commandv("seek", tostring(pos), "absolute+exact")
+end
+
+function request_backup_source_recovery()
+  local pos = tonumber(state.pos) or 0
+  local key = current_media_key()
+  msg.info(string.format("[StreamNyaa Lua] Backup recovery requested key=%s position=%.2f", tostring(key), pos))
+  safe_commandv("script-message", "streamnyaa-player-recovery-request", "backup", tostring(key), tostring(pos))
+end
+
+function check_playback_stall()
+  local now = mp.get_time()
+  local pos = tonumber(state.pos) or 0
+  if not stall_watchdog_allowed() then
+    if stall_watchdog_timer then stall_watchdog_timer:stop() end
+    if not native_buffering_active() then
+      reset_stall_watchdog(true)
+    end
+    return
+  end
+
+  if ui.stall_last_pos == nil then
+    ui.stall_last_pos = pos
+    ui.stall_last_progress_at = now
+    return
+  end
+
+  if math.abs(pos - ui.stall_last_pos) >= 0.15 then
+    if ui.inferred_buffering or ui.playback_stalled then
+      msg.info("[StreamNyaa Lua] Playback resumed after inferred stall")
+    end
+    reset_stall_watchdog(true)
+    ui.stall_last_pos = pos
+    return
+  end
+
+  local frozen_for = now - (ui.stall_last_progress_at or now)
+  if frozen_for < STALL_DETECT_SECONDS then return end
+  if ui.stall_started_at <= 0 then
+    ui.stall_started_at = now - frozen_for
+    ui.anim_started = now
+    local cached = buffered_seconds()
+    if cached == nil or cached < STALL_LOW_BUFFER_SECONDS then
+      ui.inferred_buffering = true
+      ui.playback_stalled = false
+      msg.info(string.format("[StreamNyaa Lua] Undeclared low-buffer stall detected cached=%s", cached and string.format("%.1f", cached) or "unknown"))
+    else
+      ui.inferred_buffering = false
+      ui.playback_stalled = true
+      msg.info(string.format("[StreamNyaa Lua] Playback stalled with healthy buffer cached=%.1f", cached))
+    end
+    show_overlay()
+  end
+
+  local stalled_for = now - ui.stall_started_at
+  if stalled_for >= STALL_RECOVERY_SECONDS and not ui.stall_recovery_attempted then
+    request_same_source_recovery("watchdog")
+  elseif ui.stall_recovery_attempted and now - ui.stall_recovery_at >= STALL_ACTION_SECONDS then
+    if not ui.stall_actions_visible then
+      msg.info("[StreamNyaa Lua] Recovery seek did not restore playback; showing recovery actions")
+    end
+    ui.stall_actions_visible = true
+  end
+  draw(false, "stall-watchdog")
+end
+
+function update_stall_watchdog_timer()
+  if not stall_watchdog_timer then return end
+  if stall_watchdog_allowed() then
+    stall_watchdog_timer:resume()
+  else
+    stall_watchdog_timer:stop()
+    if not native_buffering_active() then
+      reset_stall_watchdog(true)
+    end
+  end
 end
 
 function stream_status_label()
@@ -2483,7 +2620,7 @@ function draw_loading_required_content(ass, width, height, s, status)
     local spinner_r = 20 * s
     local start_angle = (t * 260) % 360
     local card_w = math.min(width * 0.36, 430 * s)
-    local card_h = 108 * s
+    local card_h = (ui.stall_actions_visible and 166 or 108) * s
     local x1 = cx - card_w / 2
     local y1 = spinner_y - card_h / 2
     rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 22 * s, C.black, 120)
@@ -2492,8 +2629,23 @@ function draw_loading_required_content(ass, width, height, s, status)
     draw_arc(ass, cx - 98 * s, spinner_y, spinner_r, start_angle, 284, 3.4 * s, C.accent, 0)
     draw_text(ass, cx - 54 * s, spinner_y - 2 * s, 4, font_px(s, 19, 16, 23), C.white, 0, status, false, "Segoe UI Semibold")
     local cached = buffered_seconds()
-    local secondary = cached and cached >= 1 and "Keeping playback smooth" or "Waiting for local buffer"
+    local secondary
+    if ui.playback_stalled then
+      secondary = ui.stall_recovery_attempted and "Automatic recovery did not restore playback" or "The local buffer is ready, but playback is not advancing"
+    else
+      secondary = cached and cached >= 1 and "Keeping playback smooth" or "Waiting for local buffer"
+    end
     draw_text(ass, cx - 54 * s, spinner_y + 24 * s, 4, font_px(s, 13, 12, 15), C.secondary, 12, secondary, false, "Segoe UI")
+    if ui.stall_actions_visible then
+      local gap = 12 * s
+      local button_w = 150 * s
+      local button_h = 38 * s
+      local button_y = y1 + card_h - 50 * s
+      local button_x = cx - button_w - gap / 2
+      draw_end_button(ass, mouse_pos(), "recovery_retry", button_x, button_y, button_x + button_w, button_y + button_h, "RETRY STREAM", false, s)
+      button_x = cx + gap / 2
+      draw_end_button(ass, mouse_pos(), "recovery_backup", button_x, button_y, button_x + button_w, button_y + button_h, "TRY BACKUP SOURCE", true, s)
+    end
     return
   end
 
@@ -3078,7 +3230,7 @@ function draw(immediate, reason)
   local cover_info = update_cover_overlay(is_loading(), width, height, s)
   if loading then
     draw_loading(ass, width, height, s, cover_info)
-    ui.regions_ready = false
+    ui.regions_ready = #regions > 0
     ui.render_has_run = true
     mp.set_osd_ass(width, height, ass.text)
     if DEBUG_PERF and now - (ui.last_perf_log or 0) > 1 then
@@ -3337,6 +3489,7 @@ function update_demuxer_cache(value)
     state.demuxer_buffering_percent = nil
   end
   log_buffering_transition()
+  update_stall_watchdog_timer()
   if not ui.settings_open or is_loading() or is_buffering() then
     draw(false, "demuxer-cache")
   end
@@ -3350,6 +3503,7 @@ function activate_region(region, mouse)
     ui.mouse_down_region = nil
     ui.settings_open = false
     ui.submenu = "main"
+    update_stall_watchdog_timer()
     return
   end
 
@@ -3382,6 +3536,13 @@ function activate_region(region, mouse)
   elseif id == "end_close" then
     hide_end_overlay()
     settings_notice("Episode finished")
+  elseif id == "recovery_retry" then
+    request_same_source_recovery("manual")
+    show_overlay()
+  elseif id == "recovery_backup" then
+    request_backup_source_recovery()
+    ui.stall_actions_visible = false
+    settings_notice("Requesting a same-episode backup source...")
   elseif id == "play" or id == "center_play" or id == "center_toggle" then
     if ui.end_overlay then hide_end_overlay() end
     mp.commandv("cycle", "pause")
@@ -3585,6 +3746,7 @@ function activate_region(region, mouse)
     end
     ui.submenu = "playback"
   end
+  update_stall_watchdog_timer()
 end
 
 function handle_mouse_move()
@@ -3778,19 +3940,24 @@ mp.observe_property("time-pos", "number", function(_, value)
   if not ui.settings_open then
     draw(false, "time-pos")
   end
+  update_stall_watchdog_timer()
 end)
-mp.observe_property("pause", "bool", function(_, value) update_property("paused", value or false, true) end)
+mp.observe_property("pause", "bool", function(_, value)
+  update_property("paused", value or false, true)
+  update_stall_watchdog_timer()
+end)
 mp.observe_property("volume", "number", function(_, value) update_property("volume", value or 100, false) end)
 mp.observe_property("mute", "bool", function(_, value) update_property("muted", value or false, false) end)
 mp.observe_property("speed", "number", function(_, value)
   mark_menus_dirty("main", "speed", "playback")
   update_property("speed", value or 1, false)
 end)
-mp.observe_property("idle-active", "bool", function(_, value) update_property("idle", value or false, true) end)
-mp.observe_property("core-idle", "bool", function(_, value) update_property("core_idle", value or false, true) end)
+mp.observe_property("idle-active", "bool", function(_, value) update_property("idle", value or false, true); update_stall_watchdog_timer() end)
+mp.observe_property("core-idle", "bool", function(_, value) update_property("core_idle", value or false, true); update_stall_watchdog_timer() end)
 mp.observe_property("paused-for-cache", "bool", function(_, value)
   update_property("paused_for_cache", value or false, true)
   log_buffering_transition()
+  update_stall_watchdog_timer()
 end)
 mp.observe_property("fullscreen", "bool", function(_, value)
   if value then
@@ -3805,6 +3972,7 @@ mp.observe_property("path", "string", function(_, value)
     reset_skip_range_state()
     reset_end_overlay_state()
     reset_buffering_state()
+    reset_stall_watchdog(false)
     ui.marker_log_key = ""
     ui.chapter_state_key = ""
     ui.anim_started = mp.get_time()
@@ -3812,6 +3980,7 @@ mp.observe_property("path", "string", function(_, value)
     ui.loading_override_until = mp.get_time() + 2.5
   end
   update_property("path", next_path, true)
+  update_stall_watchdog_timer()
 end)
 mp.observe_property("filename", "string", function(_, value) update_property("filename", value or "", false) end)
 mp.observe_property("media-title", "string", function(_, value) update_property("title", value or "", true) end)
@@ -3826,6 +3995,7 @@ mp.observe_property("cache-buffering-state", "number", function(_, value)
     state.cache_buffering_percent = nil
   end
   log_buffering_transition()
+  update_stall_watchdog_timer()
   if not ui.settings_open or is_loading() or is_buffering() then
     draw(false, "cache-buffering")
   end
@@ -3941,7 +4111,7 @@ end)
 bind_key("c", "streamnyaa-cc", function() show_overlay(); toggle_subtitles(); draw(true, "key-cc") end)
 bind_key("C", "streamnyaa-cc-shift", function() show_overlay(); toggle_subtitles(); draw(true, "key-cc-shift") end)
 bind_key("a", "streamnyaa-audio", function() show_overlay(); safe_commandv("cycle", "audio"); draw(true, "key-audio") end)
-bind_key("S", "streamnyaa-settings", function() show_overlay(); ui.dragging = nil; clear_drag_preview(); ui.settings_open = not ui.settings_open; ui.submenu = "main"; draw(true, "key-settings") end)
+bind_key("S", "streamnyaa-settings", function() show_overlay(); ui.dragging = nil; clear_drag_preview(); ui.settings_open = not ui.settings_open; ui.submenu = "main"; update_stall_watchdog_timer(); draw(true, "key-settings") end)
 bind_key("i", "streamnyaa-skip-intro", function() show_overlay(); skip_intro(); draw(true, "key-skip-intro") end)
 bind_key("p", "streamnyaa-pip", function() show_overlay(); toggle_mini_player(); draw(true, "key-mini") end)
 bind_key("f", "streamnyaa-fullscreen", function() show_overlay(); safe_commandv("cycle", "fullscreen"); draw(true, "key-fullscreen") end)
@@ -4020,6 +4190,7 @@ mp.register_event("file-loaded", function()
   hide_end_overlay()
   ui.eof_handled_key = ""
   reset_buffering_state()
+  reset_stall_watchdog(false)
   reset_skip_range_state()
   ui.marker_log_key = ""
   ui.chapter_state_key = ""
@@ -4035,6 +4206,7 @@ mp.register_event("end-file", function(event)
   ui.submenu = "main"
   reset_skip_range_state()
   reset_buffering_state()
+  reset_stall_watchdog(false)
   ui.marker_log_key = ""
   ui.chapter_state_key = ""
   if event and event.reason == "eof" then
@@ -4051,6 +4223,9 @@ mp.register_event("playback-restart", function()
   ui.eof_handled_key = ""
   ui.last_next_episode_request_key = ""
   reset_buffering_state()
+  if mp.get_time() >= (ui.stall_ignore_restart_until or 0) then
+    reset_stall_watchdog(true)
+  end
   reset_skip_range_state()
   draw(true, "playback-restart")
 end)
@@ -4067,6 +4242,9 @@ mp.add_periodic_timer(0.05, function()
     draw(true, "timer-autohide")
   end
 end)
+
+stall_watchdog_timer = mp.add_periodic_timer(STALL_SAMPLE_SECONDS, check_playback_stall)
+stall_watchdog_timer:stop()
 
 mp.register_script_message("streamnyaa-reload-meta", function(meta_file)
   log_script_message("streamnyaa-reload-meta", meta_file)

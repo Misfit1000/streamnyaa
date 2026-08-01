@@ -771,6 +771,31 @@ export default function DesktopHome() {
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
   const recentSources = useMemo(() => uniqueRecentSources(history).slice(0, 6), [history]);
   const [heroIndex, setHeroIndex] = useState(0);
+  const [secondaryRailsReady, setSecondaryRailsReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const idleApi = window as unknown as {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const reveal = () => {
+      if (!cancelled) setSecondaryRailsReady(true);
+    };
+    if (idleApi.requestIdleCallback) {
+      const handle = idleApi.requestIdleCallback(reveal, { timeout: 900 });
+      return () => {
+        cancelled = true;
+        idleApi.cancelIdleCallback?.(handle);
+      };
+    }
+    const handle = window.setTimeout(reveal, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, []);
+
   // useSeasonalAnimeQuery wraps fetchAnimeSeason so Home always follows the current season/year key.
   const {
     currentSeason,
@@ -804,7 +829,7 @@ export default function DesktopHome() {
   const { data: popularData } = useQuery({
     queryKey: ['desktop-popular'],
     queryFn: fetchPopularAnime,
-    enabled: true,
+    enabled: secondaryRailsReady,
     retry: 1,
     staleTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
@@ -824,7 +849,7 @@ export default function DesktopHome() {
   const { data: upcomingData } = useQuery({
     queryKey: ['desktop-upcoming'],
     queryFn: fetchUpcomingAnime,
-    enabled: true,
+    enabled: secondaryRailsReady,
     retry: 1,
     staleTime: 1000 * 60 * 30,
     refetchOnWindowFocus: false,
@@ -835,7 +860,7 @@ export default function DesktopHome() {
   const { data: yearlyTopData } = useQuery({
     queryKey: ['desktop-top-year', topYear],
     queryFn: () => fetchTopAnimeByYear(topYear),
-    enabled: true,
+    enabled: secondaryRailsReady,
     retry: 1,
     staleTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
@@ -908,10 +933,22 @@ export default function DesktopHome() {
 
   useEffect(() => {
     if (heroCount < 2) return undefined;
-    const timer = window.setInterval(() => {
-      setHeroIndex((index) => (index + 1) % heroCount);
-    }, 7000);
-    return () => window.clearInterval(timer);
+    let timer: number | undefined;
+    const schedule = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      if (document.visibilityState === 'hidden') return;
+      timer = window.setTimeout(() => {
+        setHeroIndex((index) => (index + 1) % heroCount);
+        schedule();
+      }, 7000);
+    };
+    const handleVisibility = () => schedule();
+    schedule();
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [heroCount]);
 
   useEffect(() => {

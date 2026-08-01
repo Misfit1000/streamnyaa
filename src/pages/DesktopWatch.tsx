@@ -13,6 +13,7 @@ import {
   controlLocalPlayer,
   getLocalPlaybackProgress,
   listenDesktopPlayerNextEpisode,
+  listenDesktopPlayerRecoveryRequest,
   loadDesktopPlayerPreferences,
   loadDesktopAutoPlayNextEpisode,
   loadDesktopAutoOpenBestSource,
@@ -1702,8 +1703,9 @@ export default function DesktopWatch() {
   const sourcesBusyRef = useRef(false);
   const playableSourcesRef = useRef<RankedNyaaItem[]>([]);
   const playableSourcesEpisodeRef = useRef(0);
-  const playSourceRef = useRef<(source: RankedNyaaItem) => void | Promise<void>>(() => {});
+  const playSourceRef = useRef<(source: RankedNyaaItem, resumeOverride?: number) => void | Promise<void>>(() => {});
   const playNextEpisodeRef = useRef<(reason?: 'manual' | 'ended' | string) => void>(() => {});
+  const playbackValueRef = useRef(playback);
   const pendingAutoPlayEpisodeRef = useRef<number | null>(null);
   const preferenceSyncRetryRef = useRef<number | null>(null);
 
@@ -2415,6 +2417,10 @@ export default function DesktopWatch() {
   }, [activeSourceId]);
 
   useEffect(() => {
+    playbackValueRef.current = playback;
+  }, [playback]);
+
+  useEffect(() => {
     sourcesBusyRef.current = sourcesBusy;
   }, [sourcesBusy]);
 
@@ -2432,7 +2438,12 @@ export default function DesktopWatch() {
     queryKey: ['desktop-playback-progress', playback?.torrentId],
     queryFn: () => getLocalPlaybackProgress(playback!.torrentId),
     enabled: Boolean(playback?.torrentId),
-    refetchInterval: 1500,
+    refetchInterval: (query) => {
+      const progress = query.state.data;
+      if (progress?.state === 'stopped') return false;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return 5_000;
+      return progress?.state === 'playing' || progress?.state === 'ready' ? 2_500 : 1_200;
+    },
     retry: 1,
   });
   const playbackStage = useMemo(() => playbackStageMeta(playbackProgress), [playbackProgress]);
@@ -2513,7 +2524,7 @@ export default function DesktopWatch() {
     }
   }, [airedCount, episodeSearch, searchedEpisodes, selectEpisode, selectedEpisode]);
 
-  const sourcePayloadFor = useCallback((source: NyaaItem): LocalPlaybackSource => {
+  const sourcePayloadFor = useCallback((source: NyaaItem, resumeOverride?: number): LocalPlaybackSource => {
     const historyEntry = findLocalPlaybackHistoryItem({
       animeTitle: anime.title,
       animeId: anime.mal_id || anime.id,
@@ -2535,20 +2546,20 @@ export default function DesktopWatch() {
       poster: posterFor(anime),
       banner: wideImageFor(anime),
       progressPercent: historyEntry?.progressPercent ?? 0,
-      resumeSeconds: historyEntry?.resumeSeconds ?? 0,
+      resumeSeconds: Number.isFinite(resumeOverride) ? Math.max(0, Number(resumeOverride)) : (historyEntry?.resumeSeconds ?? 0),
       durationSeconds: historyEntry?.durationSeconds ?? 0,
     };
   }, [anime, selectedEpisode]);
 
-  const openOneSource = useCallback(async (source: NyaaItem) => {
-    const playbackSource = sourcePayloadFor(source);
+  const openOneSource = useCallback(async (source: NyaaItem, resumeOverride?: number) => {
+    const playbackSource = sourcePayloadFor(source, resumeOverride);
     const result = await openLocalSourceNow(playbackSource);
     if (!result.ok) throw new Error(result.message || 'Source link could not open.');
     if (!result.torrent_id) throw new Error('The local engine did not return a stream id.');
     return { result, playbackSource };
   }, [sourcePayloadFor]);
 
-  const playSource = useCallback(async (source: RankedNyaaItem) => {
+  const playSource = useCallback(async (source: RankedNyaaItem, resumeOverride?: number) => {
     const initialSourceId = source.infoHash || source.magnet || source.title;
     if (playActionLockRef.current && activeSourceId === initialSourceId) {
       setPlaybackNotice({ tone: 'loading', text: 'This source is already opening.' });
@@ -2594,7 +2605,7 @@ export default function DesktopWatch() {
         }
 
         try {
-          const { result, playbackSource } = await openOneSource(candidate);
+          const { result, playbackSource } = await openOneSource(candidate, resumeOverride);
           if (playbackRequestIdRef.current !== requestId) return;
           rememberSourceSuccess(candidate);
           setFailedSourceVersion((value) => value + 1);
@@ -2766,6 +2777,53 @@ export default function DesktopWatch() {
     void listenDesktopPlayerNextEpisode((event) => {
       if (!mounted) return;
       playNextEpisodeRef.current(event.reason || 'manual');
+    }).then((cleanup) => {
+      if (!mounted) {
+        cleanup();
+        return;
+      }
+      unlisten = cleanup;
+    });
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    let unlisten: (() => void) | undefined;
+    void listenDesktopPlayerRecoveryRequest((event) => {
+      if (!mounted || event.action !== 'backup') return;
+      const episode = selectedEpisodeNumberRef.current;
+      if (playableSourcesEpisodeRef.current !== episode) {
+        setPlaybackNotice({ tone: 'error', text: 'Backup sources are still being verified for this episode.' });
+        return;
+      }
+
+      const pool = playableSourcesRef.current;
+      const currentSource = playbackValueRef.current?.source;
+      const currentId = currentSource?.infoHash || currentSource?.magnet || currentSource?.title || '';
+      const currentIndex = pool.findIndex((candidate) => (
+        (candidate.infoHash || candidate.magnet || candidate.title) === currentId
+      ));
+      const candidates = currentIndex >= 0
+        ? [...pool.slice(currentIndex + 1), ...pool.slice(0, currentIndex)]
+        : pool;
+      const backup = candidates.find((candidate) => candidate.playable !== false);
+      if (!backup) {
+        setPlaybackNotice({ tone: 'error', text: 'No other verified source is available for this episode.' });
+        return;
+      }
+
+      const position = Number(event.position_seconds || 0);
+      playbackRequestIdRef.current += 1;
+      playActionLockRef.current = false;
+      activeSourceIdValueRef.current = null;
+      setActiveSourceId(null);
+      console.info(`[StreamNyaa Watch] Player requested backup recovery episode=${episode} position=${position.toFixed(1)}`);
+      setPlaybackNotice({ tone: 'loading', text: 'Current stream stalled. Opening the next verified source...' });
+      void playSourceRef.current(backup, Number.isFinite(position) ? Math.max(0, position) : 0);
     }).then((cleanup) => {
       if (!mounted) {
         cleanup();

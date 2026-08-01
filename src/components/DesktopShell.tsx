@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, Suspense, useEffect, useState, type FocusEvent, type PointerEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Bell, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
@@ -12,7 +12,13 @@ import {
   saveDesktopPlayerSetting,
   syncDesktopPlayerPreferencesToPlayer,
 } from '../lib/desktop';
-import { DESKTOP_REMINDER_POLL_MS, deliverDueDesktopReminders } from '../lib/desktopReminders';
+import {
+  DESKTOP_REMINDER_POLL_MS,
+  deliverDueDesktopReminders,
+  readDesktopScheduleReminders,
+  subscribeDesktopScheduleReminders,
+} from '../lib/desktopReminders';
+import { preloadDesktopRoute, warmCoreDesktopRoutes } from '../lib/desktopRoutePreload';
 
 const desktopNav = [
   { to: '/', label: 'Home', icon: Home },
@@ -41,6 +47,24 @@ const desktopShortcuts = [
   ['F', 'Toggle fullscreen in the player'],
   ['C', 'Toggle subtitles in the player'],
 ];
+
+function DesktopOutletFallback() {
+  return (
+    <div className="px-6 py-5" role="status" aria-label="Opening page">
+      <div className="h-1 w-24 overflow-hidden rounded-full bg-white/[0.06]">
+        <div className="h-full w-1/2 animate-pulse rounded-full bg-primary/80" />
+      </div>
+    </div>
+  );
+}
+
+function preloadLinkedRoute(target: EventTarget | null) {
+  const anchor = (target as HTMLElement | null)?.closest<HTMLAnchorElement>('a[href]');
+  if (!anchor) return;
+  const url = new URL(anchor.href, window.location.href);
+  if (url.origin !== window.location.origin) return;
+  void preloadDesktopRoute(url.pathname);
+}
 
 export function isTypingTarget(target: EventTarget | null) {
   const element = target as HTMLElement | null;
@@ -97,6 +121,9 @@ const DesktopNavItem = memo(function DesktopNavItem({
       to={to}
       end={to === '/'}
       title={collapsed ? label : undefined}
+      onMouseEnter={() => void preloadDesktopRoute(to)}
+      onFocus={() => void preloadDesktopRoute(to)}
+      onPointerDown={() => void preloadDesktopRoute(to)}
       className={({ isActive }) => [
         'group relative flex h-11 items-center overflow-hidden rounded-xl text-[15px] font-semibold transition-all duration-200',
         collapsed ? 'justify-center px-0' : 'gap-3 px-4',
@@ -158,6 +185,8 @@ export default function DesktopShell() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => warmCoreDesktopRoutes(), []);
+
   useEffect(() => {
     let cancelled = false;
     const cleanups: Array<() => void> = [];
@@ -192,6 +221,27 @@ export default function DesktopShell() {
   useEffect(() => {
     let running = false;
     let cancelled = false;
+    let timer: number | undefined;
+
+    const scheduleNextCheck = () => {
+      if (cancelled) return;
+      if (timer !== undefined) window.clearTimeout(timer);
+      const now = Date.now();
+      const pending = readDesktopScheduleReminders().filter((reminder) => !reminder.firedAt);
+      if (!pending.length) {
+        timer = undefined;
+        return;
+      }
+      const nextTrigger = Math.min(...pending.map(
+        (reminder) => reminder.airingAt - reminder.reminderOffsetMinutes * 60 * 1000,
+      ));
+      const delay = Math.min(
+        DESKTOP_REMINDER_POLL_MS,
+        Math.max(15_000, nextTrigger - now),
+      );
+      timer = window.setTimeout(() => void checkReminders(), delay);
+    };
+
     const checkReminders = async () => {
       if (running || cancelled) return;
       running = true;
@@ -199,15 +249,17 @@ export default function DesktopShell() {
         await deliverDueDesktopReminders();
       } finally {
         running = false;
+        scheduleNextCheck();
       }
     };
     const handleFocus = () => void checkReminders();
     void checkReminders();
-    const interval = window.setInterval(() => void checkReminders(), DESKTOP_REMINDER_POLL_MS);
+    const unsubscribe = subscribeDesktopScheduleReminders(() => void checkReminders());
     window.addEventListener('focus', handleFocus);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      if (timer !== undefined) window.clearTimeout(timer);
+      unsubscribe();
       window.removeEventListener('focus', handleFocus);
     };
   }, []);
@@ -215,7 +267,9 @@ export default function DesktopShell() {
   if (isWatch) {
     return (
       <div className="desktop-app-shell custom-scrollbar h-screen overflow-y-auto overflow-x-hidden text-white">
-        <Outlet />
+        <Suspense fallback={<DesktopOutletFallback />}>
+          <Outlet />
+        </Suspense>
         {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
       </div>
     );
@@ -304,9 +358,16 @@ export default function DesktopShell() {
               </Link>
             </div>
           </header>
-          <main className="custom-scrollbar h-[calc(100vh-70px)] overflow-y-auto">
-            <div key={location.pathname} className="desktop-route-transition">
-              <Outlet />
+          <main
+            className="custom-scrollbar h-[calc(100vh-70px)] overflow-y-auto"
+            onPointerOverCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRoute(event.target)}
+            onPointerDownCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRoute(event.target)}
+            onFocusCapture={(event: FocusEvent<HTMLElement>) => preloadLinkedRoute(event.target)}
+          >
+            <div className="desktop-route-transition">
+              <Suspense fallback={<DesktopOutletFallback />}>
+                <Outlet />
+              </Suspense>
             </div>
           </main>
         </div>

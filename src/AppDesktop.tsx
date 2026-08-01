@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from 'react';
+import { Component, lazy, type ErrorInfo, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import ScrollToTop from './components/ScrollToTop';
@@ -6,34 +6,24 @@ import DesktopShell from './components/DesktopShell';
 import { AuthProvider } from './context/AuthContext';
 import { AccountSyncProvider } from './context/AccountSyncContext';
 import { createAppQueryClient } from './lib/queryClient';
+import { desktopPageLoaders } from './lib/desktopRoutePreload';
 
-const DesktopHome = lazy(() => import('./pages/DesktopHome'));
-const DesktopWatch = lazy(() => import('./pages/DesktopWatch'));
-const DesktopExplore = lazy(() => import('./pages/DesktopExplore'));
-const DesktopSchedule = lazy(() => import('./pages/DesktopSchedule'));
-const DesktopSources = lazy(() => import('./pages/DesktopSources'));
-const DesktopLibrary = lazy(() => import('./pages/DesktopLibrary'));
-const AnimeLanding = lazy(() => import('./pages/AnimeLanding'));
-const MangaDetails = lazy(() => import('./pages/MangaDetails'));
-const AnimeDownloads = lazy(() => import('./pages/AnimeDownloads'));
-const AnimeCompare = lazy(() => import('./pages/AnimeCompare'));
-const DesktopSettings = lazy(() => import('./pages/DesktopSettings'));
-const DesktopHistory = lazy(() => import('./pages/DesktopHistory'));
-const DesktopProfile = lazy(() => import('./pages/DesktopProfile'));
-const Login = lazy(() => import('./pages/Login'));
+const DesktopHome = lazy(desktopPageLoaders.home);
+const DesktopWatch = lazy(desktopPageLoaders.watch);
+const DesktopExplore = lazy(desktopPageLoaders.explore);
+const DesktopSchedule = lazy(desktopPageLoaders.schedule);
+const DesktopSources = lazy(desktopPageLoaders.sources);
+const DesktopLibrary = lazy(desktopPageLoaders.library);
+const AnimeLanding = lazy(desktopPageLoaders.animeLanding);
+const MangaDetails = lazy(desktopPageLoaders.mangaDetails);
+const AnimeDownloads = lazy(desktopPageLoaders.downloads);
+const AnimeCompare = lazy(desktopPageLoaders.compare);
+const DesktopSettings = lazy(desktopPageLoaders.settings);
+const DesktopHistory = lazy(desktopPageLoaders.history);
+const DesktopProfile = lazy(desktopPageLoaders.profile);
+const Login = lazy(desktopPageLoaders.login);
 
 const queryClient = createAppQueryClient();
-
-function RouteFallback() {
-  return (
-    <div className="flex min-h-[48vh] items-center justify-center">
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.04] px-6 py-5 shadow-2xl shadow-black/25">
-        <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        <p className="mt-4 text-sm font-semibold text-white/60">Loading desktop view...</p>
-      </div>
-    </div>
-  );
-}
 
 class DesktopRouteBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null };
@@ -83,8 +73,7 @@ export default function AppDesktop() {
           <BrowserRouter>
             <ScrollToTop />
             <DesktopRouteBoundary>
-              <Suspense fallback={<RouteFallback />}>
-                <Routes>
+              <Routes>
                 <Route path="/" element={<DesktopShell />}>
                   <Route index element={<DesktopHome />} />
                   <Route path="search" element={<DesktopExplore />} />
@@ -107,8 +96,7 @@ export default function AppDesktop() {
                   <Route path="profile" element={<DesktopProfile />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
-                </Routes>
-              </Suspense>
+              </Routes>
             </DesktopRouteBoundary>
           </BrowserRouter>
         </AccountSyncProvider>

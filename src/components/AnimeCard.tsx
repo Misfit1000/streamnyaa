@@ -8,6 +8,7 @@ import { fetchAnimeDetails } from '../api/jikan';
 import { isDesktopApp } from '../lib/desktop';
 import { animeIdentity } from '../lib/animeIdentity';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
+import { preloadDesktopRoute } from '../lib/desktopRoutePreload';
 
 interface AnimeCardProps {
   anime: any;
@@ -50,8 +51,25 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   }, [detailPath, imageCandidates.join('|')]);
 
   const prefetchAnime = () => {
-    if (desktop) return;
-    queryClient.prefetchQuery({
+    if (desktop) void preloadDesktopRoute(cardPath);
+    if (desktop) {
+      const [routePath, routeSearch = ''] = cardPath.split('?');
+      const desktopRouteId = routePath.split('/').filter(Boolean).pop() || routeId;
+      const params = new URLSearchParams(routeSearch);
+      const anilistId = params.get('aid') || '';
+      const malId = params.get('mid') || '';
+      void queryClient.prefetchQuery({
+        queryKey: ['anime', desktopRouteId, anilistId, malId],
+        queryFn: () => fetchAnimeDetails(desktopRouteId, {
+          anilistId,
+          malId,
+          routeTitle: anime?.title || anime?.title_english || anime?.title_romaji || desktopRouteId,
+        }),
+        staleTime: 1000 * 60 * 15,
+      });
+      return;
+    }
+    void queryClient.prefetchQuery({
       queryKey: ['anime', routeId],
       queryFn: () => fetchAnimeDetails(routeId),
       staleTime: 1000 * 60 * 30,

@@ -285,6 +285,12 @@ export type DesktopPlayerReadyEvent = {
   at?: number;
 };
 
+export type DesktopPlayerRecoveryRequestEvent = {
+  action?: 'retry' | 'backup' | string;
+  media_key?: string;
+  position_seconds?: number;
+};
+
 type TauriListenEvent<T> = {
   payload: T;
 };
@@ -1084,6 +1090,15 @@ export async function listenDesktopPlayerNextEpisode(listener: (event: DesktopPl
   const listen = window.__TAURI__?.event?.listen;
   if (!listen) return () => {};
   return listen<DesktopPlayerNextEpisodeEvent>('streamnyaa-player-next-episode', (event) => {
+    listener(event.payload || {});
+  });
+}
+
+export async function listenDesktopPlayerRecoveryRequest(listener: (event: DesktopPlayerRecoveryRequestEvent) => void) {
+  if (typeof window === 'undefined') return () => {};
+  const listen = window.__TAURI__?.event?.listen;
+  if (!listen) return () => {};
+  return listen<DesktopPlayerRecoveryRequestEvent>('streamnyaa-player-recovery-request', (event) => {
     listener(event.payload || {});
   });
 }

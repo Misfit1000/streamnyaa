@@ -249,6 +249,13 @@ struct PlayerReadyPayload {
     at: u128,
 }
 
+#[derive(Clone, Serialize)]
+struct PlayerRecoveryRequestPayload {
+    action: String,
+    media_key: String,
+    position_seconds: f64,
+}
+
 #[derive(Clone)]
 struct ActiveSession {
     torrent_id: String,
@@ -3467,6 +3474,21 @@ fn emit_player_ready() {
     }
 }
 
+fn emit_player_recovery_request(action: &str, media_key: &str, position_seconds: f64) {
+    let payload = PlayerRecoveryRequestPayload {
+        action: action.trim().to_string(),
+        media_key: media_key.to_string(),
+        position_seconds: position_seconds.max(0.0),
+    };
+    if let Some(app) = APP_HANDLE.get() {
+        if let Err(error) = app.emit("streamnyaa-player-recovery-request", payload) {
+            log_info(format!("Could not emit player recovery request: {}", error));
+        }
+    } else {
+        log_info("Could not emit player recovery request: app handle is unavailable");
+    }
+}
+
 fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
     let event = value.get("event").and_then(|item| item.as_str());
     if event != Some("client-message") {
@@ -3489,6 +3511,30 @@ fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
     if message == Some("streamnyaa-lua-ready") {
         log_info("[StreamNyaa Rust] MPV Lua ready; emitting streamnyaa-player-ready");
         emit_player_ready();
+        return;
+    }
+    if message == Some("streamnyaa-player-recovery-request") {
+        if !player_ipc_is_active(ipc) {
+            return;
+        }
+        let action = args
+            .get(1)
+            .and_then(|item| item.as_str())
+            .unwrap_or("retry");
+        let media_key = args
+            .get(2)
+            .and_then(|item| item.as_str())
+            .unwrap_or_default();
+        let position_seconds = args
+            .get(3)
+            .and_then(|item| item.as_str())
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or_default();
+        log_info(format!(
+            "[StreamNyaa Rust] Received player recovery request action={} position={:.2}",
+            action, position_seconds
+        ));
+        emit_player_recovery_request(action, media_key, position_seconds);
         return;
     }
     if message == Some("streamnyaa-next-episode-request") {
@@ -4092,7 +4138,10 @@ fn stop_active_session(delete_files: bool) {
 }
 
 fn spawn_player_watchdog() {
-    thread::spawn(|| loop {
+    thread::spawn(|| {
+        const PLAYER_WATCHDOG_INTERVAL: Duration = Duration::from_millis(1200);
+        const STORAGE_GUARD_INTERVAL: Duration = Duration::from_secs(5);
+
         enum WatchdogAction {
             PlayerExited(ActiveSession),
             GuardTrip {
@@ -4102,28 +4151,63 @@ fn spawn_player_watchdog() {
             },
         }
 
-        let next_action = {
-            let mut guard = match manager().lock() {
-                Ok(guard) => guard,
-                Err(_) => {
-                    thread::sleep(Duration::from_millis(1200));
-                    continue;
+        enum WatchdogWork {
+            Action(WatchdogAction),
+            StorageCheck {
+                active: ActiveSession,
+                ipc: Option<String>,
+            },
+            None,
+        }
+
+        let mut last_storage_guard_check = Instant::now() - STORAGE_GUARD_INTERVAL;
+
+        loop {
+            let work = {
+                let mut guard = match manager().lock() {
+                    Ok(guard) => guard,
+                    Err(_) => {
+                        thread::sleep(PLAYER_WATCHDOG_INTERVAL);
+                        continue;
+                    }
+                };
+
+                let mut player_exited = false;
+                if let Some(child) = guard.player.as_mut() {
+                    if child.try_wait().ok().flatten().is_some() {
+                        player_exited = true;
+                    }
+                }
+
+                if player_exited {
+                    guard.player = None;
+                    guard.player_ipc = None;
+                    guard
+                        .active
+                        .take()
+                        .map(WatchdogAction::PlayerExited)
+                        .map(WatchdogWork::Action)
+                        .unwrap_or(WatchdogWork::None)
+                } else if last_storage_guard_check.elapsed() >= STORAGE_GUARD_INTERVAL {
+                    last_storage_guard_check = Instant::now();
+                    guard
+                        .active
+                        .clone()
+                        .map(|active| WatchdogWork::StorageCheck {
+                            active,
+                            ipc: guard.player_ipc.clone(),
+                        })
+                        .unwrap_or(WatchdogWork::None)
+                } else {
+                    WatchdogWork::None
                 }
             };
 
-            let mut player_exited = false;
-            if let Some(child) = guard.player.as_mut() {
-                if child.try_wait().ok().flatten().is_some() {
-                    player_exited = true;
-                }
-            }
-
-            if player_exited {
-                guard.player = None;
-                guard.player_ipc = None;
-                guard.active.take().map(WatchdogAction::PlayerExited)
-            } else {
-                if let Some(active) = guard.active.clone() {
+            let next_action = match work {
+                WatchdogWork::Action(action) => Some(action),
+                WatchdogWork::StorageCheck { active, ipc } => {
+                    // Directory traversal can be expensive for large torrents. Keep it outside
+                    // the player-manager lock so source switches and MPV commands stay responsive.
                     let session_bytes = dir_size(&active.session_dir);
                     let free_bytes = available_disk_bytes(&active.session_dir);
                     let over_session_limit = session_bytes > active.cache_limit_bytes;
@@ -4131,64 +4215,77 @@ fn spawn_player_watchdog() {
                         .map(|value| value < MIN_PLAYBACK_FREE_BYTES)
                         .unwrap_or(false);
                     if over_session_limit || low_disk {
-                        let ipc = guard.player_ipc.clone();
-                        let active = guard.active.take().expect("active session exists");
-                        let reason = if over_session_limit {
-                            "The active stream was stopped because its temporary files exceeded the desktop storage guard.".to_string()
-                        } else {
-                            "The active stream was stopped because the device is too low on free space for safe playback.".to_string()
+                        let mut guard = match manager().lock() {
+                            Ok(guard) => guard,
+                            Err(_) => {
+                                thread::sleep(PLAYER_WATCHDOG_INTERVAL);
+                                continue;
+                            }
                         };
-                        Some(WatchdogAction::GuardTrip {
-                            active,
-                            ipc,
-                            reason,
-                        })
+                        let still_current = guard.active.as_ref().map(|current| {
+                            current.torrent_id == active.torrent_id
+                                && current.session_dir == active.session_dir
+                        }) == Some(true);
+                        if still_current {
+                            let active = guard.active.take().expect("active session exists");
+                            let reason = if over_session_limit {
+                                "The active stream was stopped because its temporary files exceeded the desktop storage guard.".to_string()
+                            } else {
+                                "The active stream was stopped because the device is too low on free space for safe playback.".to_string()
+                            };
+                            Some(WatchdogAction::GuardTrip {
+                                active,
+                                ipc,
+                                reason,
+                            })
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     }
-                } else {
-                    None
                 }
-            }
-        };
+                WatchdogWork::None => None,
+            };
 
-        if let Some(action) = next_action {
-            match action {
-                WatchdogAction::PlayerExited(active) => {
-                    let cache_dir = active
-                        .session_dir
-                        .parent()
-                        .map(Path::to_path_buf)
-                        .unwrap_or_else(cache_root);
-                    cleanup_session(active, true);
-                    cleanup_abandoned_sessions(&cache_dir, None);
-                    prune_cache(&cache_dir, None);
-                    log_info("Cleaned playback session after player exit");
-                }
-                WatchdogAction::GuardTrip {
-                    active,
-                    ipc,
-                    reason,
-                } => {
-                    let cache_dir = active
-                        .session_dir
-                        .parent()
-                        .map(Path::to_path_buf)
-                        .unwrap_or_else(cache_root);
-                    if let Some(ipc) = ipc.as_deref() {
-                        show_player_text(ipc, &reason);
-                        stop_player_stream_only(ipc);
+            if let Some(action) = next_action {
+                match action {
+                    WatchdogAction::PlayerExited(active) => {
+                        let cache_dir = active
+                            .session_dir
+                            .parent()
+                            .map(Path::to_path_buf)
+                            .unwrap_or_else(cache_root);
+                        cleanup_session(active, true);
+                        cleanup_abandoned_sessions(&cache_dir, None);
+                        prune_cache(&cache_dir, None);
+                        log_info("Cleaned playback session after player exit");
                     }
-                    remember_error(reason);
-                    cleanup_session(active, true);
-                    cleanup_abandoned_sessions(&cache_dir, None);
-                    prune_cache(&cache_dir, None);
-                    log_info("Stopped playback session after runtime storage guard trip");
+                    WatchdogAction::GuardTrip {
+                        active,
+                        ipc,
+                        reason,
+                    } => {
+                        let cache_dir = active
+                            .session_dir
+                            .parent()
+                            .map(Path::to_path_buf)
+                            .unwrap_or_else(cache_root);
+                        if let Some(ipc) = ipc.as_deref() {
+                            show_player_text(ipc, &reason);
+                            stop_player_stream_only(ipc);
+                        }
+                        remember_error(reason);
+                        cleanup_session(active, true);
+                        cleanup_abandoned_sessions(&cache_dir, None);
+                        prune_cache(&cache_dir, None);
+                        log_info("Stopped playback session after runtime storage guard trip");
+                    }
                 }
             }
-        }
 
-        thread::sleep(Duration::from_millis(1200));
+            thread::sleep(PLAYER_WATCHDOG_INTERVAL);
+        }
     });
 }
 

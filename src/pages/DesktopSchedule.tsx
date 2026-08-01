@@ -250,6 +250,7 @@ export default function DesktopSchedule() {
     queryFn: () => fetchSchedule(1, active.start, active.end),
     staleTime: 1000 * 60 * 10,
     retry: 1,
+    placeholderData: (previousData) => previousData,
   });
   const items = scheduleQuery.data?.data || [];
   const visibleItems = useMemo(
@@ -469,6 +470,12 @@ export default function DesktopSchedule() {
             ) : null}
             <span className="sn-category-chip px-3 py-1.5">{items.length} titles</span>
             <span className="sn-category-chip px-3 py-1.5">{active.label}</span>
+            {scheduleQuery.isFetching && !scheduleQuery.isLoading ? (
+              <span className="inline-flex items-center gap-1.5 px-2 py-1 text-white/42">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                Refreshing
+              </span>
+            ) : null}
             <span
               className={`sn-category-chip px-3 py-1.5 ${
                 notificationPermission === 'denied'

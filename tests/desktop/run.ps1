@@ -42,6 +42,7 @@ $desktopSettings = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSettings.
 $desktopSchedule = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSchedule.tsx')
 $desktopHistory = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopHistory.tsx')
 $desktopReminders = Get-Content -Raw (Join-Path $repo 'src\lib\desktopReminders.ts')
+$desktopRoutePreload = Get-Content -Raw (Join-Path $repo 'src\lib\desktopRoutePreload.ts')
 $desktopShell = Get-Content -Raw (Join-Path $repo 'src\components\DesktopShell.tsx')
 $desktopCss = Get-Content -Raw (Join-Path $repo 'src\index.css')
 $loginPage = Get-Content -Raw (Join-Path $repo 'src\pages\Login.tsx')
@@ -76,6 +77,16 @@ Assert-Match $appDesktop 'path="watch/:id"' 'Desktop route tree should own the w
 Assert-Match $appDesktop 'path="anime/:id"\s+element=\{<AnimeToDesktopWatch\s*/>\}' 'Desktop anime routes must redirect to the desktop watch page.'
 Assert-Match $desktopShell 'SIDEBAR_STORAGE_KEY' 'Desktop shell should persist sidebar collapse state.'
 Assert-Match $desktopShell 'setSidebarCollapsed' 'Desktop shell menu button should toggle the sidebar.'
+Assert-Match $desktopShell 'warmCoreDesktopRoutes' 'Desktop shell should warm core route chunks after first paint.'
+Assert-Match $desktopShell 'preloadDesktopRoute' 'Desktop navigation should preload routes on user intent.'
+Assert-Match $desktopShell 'readDesktopScheduleReminders' 'Desktop reminder checks should sleep when no reminders are pending.'
+Assert-NotMatch $desktopShell 'setInterval\(\(\) => void checkReminders' 'Desktop reminders must not poll forever when no reminders exist.'
+Assert-Match $desktopHome 'secondaryRailsReady' 'Desktop home should defer non-critical rails until after first paint.'
+Assert-Match $desktopHome 'requestIdleCallback' 'Desktop home should warm secondary rail data during idle time.'
+Assert-NotMatch $desktopShell 'key=\{location\.pathname\}' 'Desktop routes must not force a full remount on every navigation.'
+Assert-Match $desktopRoutePreload 'MAX_CONCURRENT_WARMS\s*=\s*2' 'Desktop route warming must stay limited to two concurrent imports.'
+Assert-Match $desktopRoutePreload 'requestIdleCallback' 'Desktop route warming should wait for an idle browser window.'
+Assert-Match $appDesktop 'desktopPageLoaders' 'Desktop lazy routes should share the preload registry promises.'
 Assert-Match $desktopShell 'ShortcutHelpOverlay' 'Desktop shell shortcut overlay is missing.'
 Assert-Match $desktopShell 'isTypingTarget' 'Desktop shortcut overlay should ignore text entry targets.'
 Assert-Match $desktopShell "event\.key === '\?'" 'Desktop shortcut overlay should open with the ? key.'
@@ -196,7 +207,11 @@ Assert-Match $streamSourcesApi 'fetchAniDb' 'Metadata gateway should support cac
 Assert-Match $streamSourcesApi 'PROVIDER_DISABLED_TTL_SECONDS' 'Metadata gateway should fail closed for unconfigured optional providers.'
 Assert-Match $desktopBridge "'anilist' \| 'jikan' \| 'anidb' \| 'animeschedule' \| 'tmdb'" 'Desktop metadata bridge type should include every supported metadata provider.'
 Assert-Match $desktopBridge 'controlLocalPlayer' 'Desktop bridge should expose player control commands.'
+Assert-Match $desktopBridge 'listenDesktopPlayerRecoveryRequest' 'Desktop bridge should expose stalled-player recovery requests.'
 Assert-Match $watchPage 'runPlayerControl' 'Desktop watch page should wire the player control UI.'
+Assert-Match $watchPage 'listenDesktopPlayerRecoveryRequest' 'Desktop watch page should handle same-episode backup recovery requests.'
+Assert-Match $watchPage 'resumeOverride' 'Desktop backup recovery should preserve the current playback timestamp.'
+Assert-Match $watchPage "document\.visibilityState === 'hidden'\) return 5_000" 'Playback progress polling should slow down while the app is hidden.'
 Assert-Match $watchPage 'Pause' 'Desktop watch page should expose a pause control.'
 Assert-Match $tauriMain 'fn get_desktop_diagnostics' 'Desktop diagnostics command is missing.'
 Assert-Match $tauriMain 'logs_root\(\)' 'Desktop log directory helper is missing.'
@@ -206,11 +221,17 @@ Assert-Match $tauriMain 'PlayerControlRequest' 'Desktop player control request t
 Assert-Match $tauriMain 'control_local_player' 'Desktop player control command is missing.'
 Assert-Match $tauriMain 'get_player_property_bool' 'Desktop player progress should expose boolean player state.'
 Assert-Match $tauriMain 'streamnyaa-player\.lua' 'Desktop player should load the StreamNyaa MPV control skin.'
+Assert-Match $tauriMain 'streamnyaa-player-recovery-request' 'Rust should forward MPV recovery requests to the desktop watch page.'
+Assert-Match $tauriMain 'STORAGE_GUARD_INTERVAL:\s*Duration\s*=\s*Duration::from_secs\(5\)' 'Runtime storage guards should avoid recursive directory scans every watchdog tick.'
+Assert-Match $tauriMain 'Directory traversal can be expensive for large torrents' 'Storage guard scans should run outside the player-manager lock.'
 Assert-Match $tauriMain '--osc=no' 'Desktop player should disable the default MPV OSC when the StreamNyaa skin is used.'
 Assert-Match $playerSkin 'cycle_speed' 'StreamNyaa MPV skin should expose playback speed cycling.'
 Assert-Match $playerSkin 'streamnyaa-mute' 'StreamNyaa MPV skin should expose mute controls.'
 Assert-Match $playerSkin 'MBTN_LEFT_DBL' 'StreamNyaa MPV skin should support double-click fullscreen.'
 Assert-Match $playerSkin 'seek_hot' 'StreamNyaa MPV skin should expose seek preview hover state.'
+Assert-Match $playerSkin 'BUFFER_TARGET_SECONDS\s*=\s*18' 'Buffer percentage fallback should use the configured 18-second playback target.'
+Assert-Match $playerSkin 'function check_playback_stall' 'StreamNyaa MPV skin should detect undeclared playback stalls.'
+Assert-Match $playerSkin 'streamnyaa-player-recovery-request' 'StreamNyaa MPV skin should offer same-episode backup recovery.'
 Assert-Match $playerSkin 'function position_inside_skip_range' 'StreamNyaa MPV skin should gate skip actions to the active OP/ED range.'
 Assert-Match $playerSkin '(?s)function manual_strict_skip_range\(kind, pos\).*skip_range_for_position\(kind, pos, false\)' 'Manual skip buttons must not use nearby/pre-roll skip windows.'
 Assert-Match $playerSkin 'if not position_inside_skip_range\(range, pos\) then return false end' 'Auto skip should only run while the playhead is inside the skip range.'
@@ -262,6 +283,8 @@ Assert-Match $packageJson 'build-desktop-fallback\.ps1' 'Desktop build should us
 Assert-Match $desktopHtmlWriter 'inlineStyles' 'Desktop packaged HTML should inline CSS to avoid unstyled installed builds.'
 Assert-Match $desktopHtmlWriter 'src="/assets/\$\{entry\.name\}"' 'Desktop packaged HTML should load the JS bundle from an absolute assets path.'
 Assert-Match $desktopFallbackBuilder '--public-path=/assets' 'Desktop fallback assets should resolve from /assets on every route depth.'
+Assert-Match $desktopFallbackBuilder "'--minify'" 'Desktop production JavaScript should be minified.'
+Assert-Match $desktopFallbackBuilder "'--tree-shaking=true'" 'Desktop production JavaScript should tree-shake unused code.'
 Assert-Match $tauriMain '\.clamp\(1, 3\)' 'Desktop direct source fallback should allow a wider page search window.'
 Assert-Match $workflow 'STREAMNYAA_REQUIRE_BUNDLED_BINARIES' 'Release workflow must require bundled binaries.'
 

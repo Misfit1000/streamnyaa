@@ -32,7 +32,7 @@ const isBatch = (title: string) => (
 const hasEpisodeNumber = (title: string) => {
   if (/\bs\d{1,2}e\d{1,4}\b/i.test(title)) return true;
   if (/\b(?:ep|episode)\.?\s*\d{1,4}\b/i.test(title)) return true;
-  const matches = title.match(/(?:^|[\s._\-[({])(\d{1,4})(?:v\d+)?(?:[\s._\]))}-]|$)(?!\s*(?:bit|kb|mb|gb|p))/gi) || [];
+  const matches: string[] = title.match(/(?:^|[\s._\-[({])(\d{1,4})(?:v\d+)?(?:[\s._\]))}-]|$)(?!\s*(?:bit|kb|mb|gb|p))/gi) || [];
   return matches.some((match) => {
     const number = Number((match.match(/\d{1,4}/) || [])[0]);
     return number > 0 && number < 3000 && ![480, 720, 1080, 2160].includes(number) && !(number >= 1900 && number <= 2099);

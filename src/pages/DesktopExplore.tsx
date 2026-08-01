@@ -1256,18 +1256,21 @@ export default function DesktopExplore() {
     queryFn: fetchPopularAnime,
     staleTime: 1000 * 60 * 60,
     retry: 1,
+    placeholderData: (previousData) => previousData,
   });
   const topAiringQuery = useQuery({
     queryKey: ['desktop-explore-top-airing'],
     queryFn: fetchTopAiring,
     staleTime: 1000 * 60 * 60,
     retry: 1,
+    placeholderData: (previousData) => previousData,
   });
   const upcomingQuery = useQuery({
     queryKey: ['desktop-explore-upcoming'],
     queryFn: fetchUpcomingAnime,
     staleTime: 1000 * 60 * 60,
     retry: 1,
+    placeholderData: (previousData) => previousData,
   });
 
   const rawResults = useMemo(() => {
