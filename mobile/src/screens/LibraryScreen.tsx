@@ -18,14 +18,22 @@ export function LibraryScreen({ navigation }: Props) {
   const library = useAppStore((state) => state.library);
   const [section, setSection] = useState<'saved' | 'liked'>('saved');
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<'newest' | 'title' | 'score'>('newest');
   const columns = width >= 720 ? 5 : width >= 520 ? 4 : 3;
   const cardWidth = Math.floor((width - 32 - (columns - 1) * 12) / columns);
-  const items = useMemo(() => library.filter((item) => (section === 'saved' ? item.bookmarked : item.liked) && item.animeTitle.toLowerCase().includes(query.trim().toLowerCase())), [library, query, section]);
+  const items = useMemo(() => library
+    .filter((item) => (section === 'saved' ? item.bookmarked : item.liked) && item.animeTitle.toLowerCase().includes(query.trim().toLowerCase()))
+    .sort((left, right) => sort === 'title'
+      ? left.animeTitle.localeCompare(right.animeTitle)
+      : sort === 'score'
+        ? Number(right.anime.score || 0) - Number(left.anime.score || 0)
+        : Date.parse(right.updatedAt) - Date.parse(left.updatedAt)), [library, query, section, sort]);
 
   return (
     <Screen title="Library" subtitle="Saved anime sync with your StreamNyaa account" scroll={false}>
       <SegmentedButtons value={section} onValueChange={(value) => setSection(value as typeof section)} buttons={[{ value: 'saved', label: `Saved (${library.filter((item) => item.bookmarked).length})` }, { value: 'liked', label: `Liked (${library.filter((item) => item.liked).length})` }]} />
       {library.length ? <Searchbar value={query} onChangeText={setQuery} placeholder="Search library" style={styles.search} /> : null}
+      {library.length ? <SegmentedButtons value={sort} onValueChange={(value) => setSort(value as typeof sort)} buttons={[{ value: 'newest', label: 'Newest' }, { value: 'title', label: 'Title' }, { value: 'score', label: 'Score' }]} density="small" /> : null}
       {items.length ? <FlatList data={items} numColumns={columns} key={columns} keyExtractor={(item) => item.animeId} renderItem={({ item }) => <AnimeCard anime={item.anime} width={cardWidth} onPress={() => navigation.navigate('Anime', { animeId: item.anime.id, title: item.anime.title })} />} columnWrapperStyle={styles.row} contentContainerStyle={styles.list} /> : <StateView title={query ? 'No matching anime' : 'Your library is empty'} message={query ? 'Try another title.' : 'Save or like an anime and it will appear here on every signed-in device.'} />}
     </Screen>
   );

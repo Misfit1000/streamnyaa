@@ -2,6 +2,8 @@
 
 StreamNyaa is a React anime discovery and torrent streaming app. It combines anime metadata from AniList/Jikan-style APIs with Nyaa torrent search, magnet generation, watch/download pages, a local list, theme switching, and browser-based torrent player options.
 
+This repository also contains the desktop client and a separate Android client. Android is a native mobile port of the desktop product rather than a WebView of the website. Both clients use the same StreamNyaa Supabase identity, library, watch history, profile, and synced preference data.
+
 ## Features
 
 - Browse trending, popular, upcoming, recently updated, and scheduled anime.
@@ -38,6 +40,10 @@ src/api/             AniList/Jikan and Nyaa client functions
 src/components/      Shared layout and UI components
 src/pages/           Route-level pages
 src/store/           Zustand persistent app state
+desktop/src-tauri/   Tauri desktop shell and native streaming commands
+mobile/              Android-only React Native/Expo client and Kotlin torrent engine
+shared/              Cross-platform feature, account, preference, and source contracts
+tests/shared/        Desktop/Android parity and merge tests
 server.ts            Express server and Vite dev middleware
 vite.config.ts       Vite, React, Tailwind, and path alias config
 ```
@@ -122,6 +128,9 @@ The production server serves the built frontend from `dist` and keeps the `/api/
 | `npm start` | Runs the bundled production server |
 | `npm run preview` | Runs Vite preview |
 | `npm run lint` | Runs TypeScript checking without emitting files |
+| `npm run test:shared` | Tests cross-platform account, preference, source, and feature parity contracts |
+| `npm run verify:shared` | Runs TypeScript checking and all shared parity tests |
+| `npm run verify:mobile` | Type-checks, diagnoses, and exports the Android client |
 | `npm run clean` | Removes the `dist` folder |
 
 ## Data Sources
@@ -136,3 +145,5 @@ The production server serves the built frontend from `dist` and keeps the `/api/
 - Torrent streaming depends on torrent health, seeders, browser support, and third-party player availability.
 - Some embedded providers may block playback, load slowly, or require trying a fallback player.
 - Local list, likes, theme, and SFW/NSFW preference are persisted in browser storage.
+- Deploy `supabase/account-sync.sql` to the existing Supabase project to enable cross-device preference sync in the existing `user_profiles` row. Library and watch history continue to use their existing shared rows.
+- Android development and release instructions are in `mobile/README.md`.

@@ -7,6 +7,7 @@ import { AuthProvider } from './context/AuthContext';
 import { AccountSyncProvider } from './context/AccountSyncContext';
 import { createAppQueryClient } from './lib/queryClient';
 import { desktopPageLoaders } from './lib/desktopRoutePreload';
+import { productFeature, type ProductFeatureId } from '../shared/features';
 
 const DesktopHome = lazy(desktopPageLoaders.home);
 const DesktopWatch = lazy(desktopPageLoaders.watch);
@@ -24,6 +25,10 @@ const DesktopProfile = lazy(desktopPageLoaders.profile);
 const Login = lazy(desktopPageLoaders.login);
 
 const queryClient = createAppQueryClient();
+
+function desktopPath(id: ProductFeatureId, index = 0) {
+  return productFeature(id)?.desktopPaths[index]?.replace(/^\//, '') || '';
+}
 
 class DesktopRouteBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null };
@@ -76,24 +81,24 @@ export default function AppDesktop() {
               <Routes>
                 <Route path="/" element={<DesktopShell />}>
                   <Route index element={<DesktopHome />} />
-                  <Route path="search" element={<DesktopExplore />} />
-                  <Route path="schedule" element={<DesktopSchedule />} />
-                  <Route path="anime/popular" element={<AnimeLanding />} />
-                  <Route path="anime/genre/:genre" element={<AnimeLanding />} />
-                  <Route path="anime/season/:seasonSlug" element={<AnimeLanding />} />
-                  <Route path="season/:seasonSlug" element={<AnimeLanding />} />
-                  <Route path="anime/:id" element={<AnimeToDesktopWatch />} />
-                  <Route path="manga/:id" element={<MangaDetails />} />
-                  <Route path="anime/:id/downloads" element={<AnimeDownloads />} />
-                  <Route path="watch/:id" element={<DesktopWatch />} />
-                  <Route path="my-list" element={<DesktopLibrary />} />
-                  <Route path="nyaa" element={<DesktopSources />} />
-                  <Route path="desktop-settings" element={<DesktopSettings />} />
-                  <Route path="compare" element={<AnimeCompare />} />
-                  <Route path="login" element={<Login />} />
-                  <Route path="reset-password" element={<Login />} />
-                  <Route path="dashboard" element={<DesktopHistory />} />
-                  <Route path="profile" element={<DesktopProfile />} />
+                  <Route path={desktopPath('explore')} element={<DesktopExplore />} />
+                  <Route path={desktopPath('schedule')} element={<DesktopSchedule />} />
+                  <Route path={desktopPath('catalog', 0)} element={<AnimeLanding />} />
+                  <Route path={desktopPath('catalog', 1)} element={<AnimeLanding />} />
+                  <Route path={desktopPath('catalog', 2)} element={<AnimeLanding />} />
+                  <Route path={desktopPath('catalog', 3)} element={<AnimeLanding />} />
+                  <Route path={desktopPath('anime')} element={<AnimeToDesktopWatch />} />
+                  <Route path={desktopPath('manga')} element={<MangaDetails />} />
+                  <Route path={desktopPath('downloads')} element={<AnimeDownloads />} />
+                  <Route path={desktopPath('watch')} element={<DesktopWatch />} />
+                  <Route path={desktopPath('library')} element={<DesktopLibrary />} />
+                  <Route path={desktopPath('sources')} element={<DesktopSources />} />
+                  <Route path={desktopPath('settings')} element={<DesktopSettings />} />
+                  <Route path={desktopPath('compare')} element={<AnimeCompare />} />
+                  <Route path={desktopPath('auth', 0)} element={<Login />} />
+                  <Route path={desktopPath('auth', 1)} element={<Login />} />
+                  <Route path={desktopPath('history')} element={<DesktopHistory />} />
+                  <Route path={desktopPath('profile')} element={<DesktopProfile />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Route>
               </Routes>

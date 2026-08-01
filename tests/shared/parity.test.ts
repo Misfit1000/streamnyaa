@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { PRODUCT_FEATURES } from '../../shared/features';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const desktopNavigator = readFileSync(path.join(repoRoot, 'src/AppDesktop.tsx'), 'utf8');
+const mobileNavigator = readFileSync(path.join(repoRoot, 'mobile/src/navigation/RootNavigator.tsx'), 'utf8');
+
+test('feature contract has a unique Android route and at least one desktop path', () => {
+  const mobileRoutes = PRODUCT_FEATURES.map((feature) => feature.mobileRoute);
+  assert.equal(new Set(mobileRoutes).size, mobileRoutes.length);
+  PRODUCT_FEATURES.forEach((feature) => assert.ok(feature.desktopPaths.length > 0, `${feature.id} needs a desktop path`));
+});
+
+test('every feature contract is represented in both navigators', () => {
+  PRODUCT_FEATURES.forEach((feature) => {
+    if (feature.id !== 'home') {
+      assert.match(desktopNavigator, new RegExp(`desktopPath\\('${feature.id}'`), `Desktop is missing ${feature.id}`);
+    }
+    assert.ok(
+      mobileNavigator.includes(`name=\"${feature.mobileRoute}\"`) || mobileNavigator.includes(`${feature.mobileRoute}:`),
+      `Android is missing ${feature.mobileRoute}`,
+    );
+  });
+});

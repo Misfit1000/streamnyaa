@@ -95,6 +95,10 @@ async function authConfig() {
   return cachedConfig!;
 }
 
+export async function getSupabaseAuthConfig() {
+  return authConfig();
+}
+
 async function authFetch(path: string, options: RequestInit = {}) {
   const config = await authConfig();
   let response: Response;

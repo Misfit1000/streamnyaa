@@ -25,12 +25,13 @@ function encode(value: string) {
   return encodeURIComponent(value);
 }
 
-async function upsertProfile(user: any) {
+async function upsertProfile(user: any, preferences?: unknown) {
   const row = {
     user_id: user.id,
     email: user.email || null,
     display_name: user.user_metadata?.full_name || user.user_metadata?.name || null,
     avatar_url: user.user_metadata?.avatar_url || user.user_metadata?.picture || null,
+    ...(preferences && typeof preferences === 'object' ? { preferences } : {}),
     updated_at: new Date().toISOString(),
   };
 
@@ -135,7 +136,7 @@ export default async function handler(req: any, res: any) {
       const userId = user.id;
       const encodedUserId = encode(userId);
 
-      await upsertProfile(user);
+      await upsertProfile(user, body.preferences);
 
       if (Array.isArray(body.library)) {
         await supabaseRest(`user_library?user_id=eq.${encodedUserId}`, {

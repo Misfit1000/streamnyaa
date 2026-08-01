@@ -3,9 +3,13 @@ create table if not exists public.user_profiles (
   email text,
   display_name text,
   avatar_url text,
+  preferences jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.user_profiles
+  add column if not exists preferences jsonb not null default '{}'::jsonb;
 
 create table if not exists public.user_library (
   user_id uuid not null references auth.users(id) on delete cascade,

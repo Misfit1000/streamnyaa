@@ -13,7 +13,8 @@ desktop/releases/
 *.log
 .env*
 !.env.example
-StreamNyaa/
+/StreamNyaa/
 mobile/.expo/
 mobile/android/
 mobile/modules/torrent-engine/android/build/
+.tooling/

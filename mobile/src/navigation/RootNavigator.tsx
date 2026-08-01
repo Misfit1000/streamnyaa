@@ -15,6 +15,10 @@ import { HistoryScreen } from '../screens/HistoryScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { CompareScreen } from '../screens/CompareScreen';
 import { SignInScreen } from '../screens/SignInScreen';
+import { CatalogScreen } from '../screens/CatalogScreen';
+import { MangaScreen } from '../screens/MangaScreen';
+import { DownloadsScreen } from '../screens/DownloadsScreen';
+import { productFeature } from '../../../shared/features';
 
 const Root = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
@@ -22,6 +26,8 @@ const Tabs = createBottomTabNavigator<MainTabParamList>();
 const tabIcons: Record<keyof MainTabParamList, string> = {
   Home: 'home-variant-outline', Explore: 'compass-outline', Schedule: 'calendar-month-outline', Library: 'bookmark-multiple-outline', Profile: 'account-circle-outline',
 };
+
+const featureLabel = (id: Parameters<typeof productFeature>[0], fallback: string) => productFeature(id)?.label || fallback;
 
 function MainTabs() {
   const theme = useTheme();
@@ -49,7 +55,10 @@ export function RootNavigator() {
     <Root.Navigator screenOptions={{ headerStyle: { backgroundColor: theme.colors.surface }, headerTintColor: theme.colors.onSurface, headerTitleStyle: { fontWeight: '600' }, headerShadowVisible: false, contentStyle: { backgroundColor: theme.colors.background } }}>
       <Root.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
       <Root.Screen name="Anime" component={AnimeScreen} options={({ route }) => ({ title: route.params.title || 'Anime' })} />
+      <Root.Screen name="Manga" component={MangaScreen} options={({ route }) => ({ title: route.params.title || featureLabel('manga', 'Manga') })} />
+      <Root.Screen name="Catalog" component={CatalogScreen} options={({ route }) => ({ title: route.params.title || featureLabel('catalog', 'Catalog') })} />
       <Root.Screen name="Watch" component={WatchScreen} options={{ title: 'Watch' }} />
+      <Root.Screen name="Downloads" component={DownloadsScreen} options={{ title: featureLabel('downloads', 'Downloads') }} />
       <Root.Screen name="Sources" component={SourcesScreen} options={{ title: 'Sources' }} />
       <Root.Screen name="History" component={HistoryScreen} options={{ title: 'History' }} />
       <Root.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />

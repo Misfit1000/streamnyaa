@@ -9,11 +9,18 @@ import {
 import { syncLocalDownloadHistoryToAccount } from '../lib/activity';
 import {
   loadLocalPlaybackHistory,
+  loadDesktopSyncedPreferences,
+  applyDesktopSyncedPreferences,
   replaceLocalPlaybackHistory,
+  subscribeDesktopAudioPreference,
+  subscribeDesktopAutoOpenBestSource,
+  subscribeDesktopPlayerPreferences,
   subscribeLocalPlaybackHistory,
   type LocalPlaybackSource,
 } from '../lib/desktop';
 import { useStore } from '../store/useStore';
+import { mergeSharedHistory, mergeSharedLibrary } from '../../shared/account';
+import { mergeSyncedPreferences } from '../../shared/preferences';
 
 type AccountSyncState = 'idle' | 'syncing' | 'synced' | 'unavailable';
 
@@ -84,19 +91,7 @@ function libraryFromStore(): AccountLibraryItem[] {
 }
 
 function mergeLibrary(local: AccountLibraryItem[], remote: AccountLibraryItem[]) {
-  const rows = new Map<string, AccountLibraryItem>();
-  [...remote, ...local].forEach((item) => {
-    const existing = rows.get(item.animeId);
-    rows.set(item.animeId, {
-      animeId: item.animeId,
-      animeTitle: item.animeTitle || existing?.animeTitle || storeAnimeTitle(item.anime),
-      anime: item.anime || existing?.anime,
-      bookmarked: Boolean(item.bookmarked || existing?.bookmarked),
-      liked: Boolean(item.liked || existing?.liked),
-      updatedAt: item.updatedAt || existing?.updatedAt || new Date().toISOString(),
-    });
-  });
-  return Array.from(rows.values()).filter((item) => item.bookmarked || item.liked);
+  return mergeSharedLibrary(local, remote);
 }
 
 function applyLibraryToStore(library: AccountLibraryItem[]) {
@@ -128,20 +123,15 @@ function watchHistoryFromLocal(): AccountWatchHistoryItem[] {
 }
 
 function mergeWatchHistory(local: LocalPlaybackSource[], remote: AccountWatchHistoryItem[]) {
-  const rows = new Map<string, LocalPlaybackSource>();
-  remote.forEach((item) => {
-    if (item.source) rows.set(item.key, item.source as LocalPlaybackSource);
-  });
-  local.forEach((source) => {
-    const key = historyKey(source);
-    const existing = rows.get(key);
-    if (!existing || historyUpdatedAt(source) >= historyUpdatedAt(existing)) {
-      rows.set(key, source);
-    }
-  });
-  return Array.from(rows.values())
-    .sort((left, right) => historyUpdatedAt(right) - historyUpdatedAt(left))
-    .slice(0, 18);
+  const localRows = local.map((source) => ({
+    key: historyKey(source),
+    source,
+    updatedAt: new Date(historyUpdatedAt(source) || 0).toISOString(),
+  }));
+  const remoteRows = remote
+    .filter((item) => item.source)
+    .map((item) => ({ key: item.key, source: item.source as LocalPlaybackSource, updatedAt: item.updatedAt }));
+  return mergeSharedHistory(localRows, remoteRows, 18).map((item) => item.source);
 }
 
 export function AccountSyncProvider({ children }: { children: React.ReactNode }) {
@@ -157,6 +147,7 @@ export function AccountSyncProvider({ children }: { children: React.ReactNode })
     await replaceAccountSyncData(session, {
       library: libraryFromStore(),
       watchHistory: watchHistoryFromLocal(),
+      preferences: loadDesktopSyncedPreferences(),
     });
     setLastSyncedAt(Date.now());
   }, [session]);
@@ -186,9 +177,13 @@ export function AccountSyncProvider({ children }: { children: React.ReactNode })
       const mergedWatchHistory = mergeWatchHistory(loadLocalPlaybackHistory(), remote.watchHistory);
       replaceLocalPlaybackHistory(mergedWatchHistory);
 
+      const mergedPreferences = mergeSyncedPreferences(loadDesktopSyncedPreferences(), remote.profile?.preferences);
+      applyDesktopSyncedPreferences(mergedPreferences);
+
       await replaceAccountSyncData(session, {
         library: mergedLibrary,
         watchHistory: watchHistoryFromLocal(),
+        preferences: mergedPreferences,
       });
       await syncLocalDownloadHistoryToAccount(session);
 
@@ -218,9 +213,15 @@ export function AccountSyncProvider({ children }: { children: React.ReactNode })
     if (!session?.access_token) return undefined;
     const unsubscribeStore = useStore.subscribe(() => schedulePush());
     const unsubscribeHistory = subscribeLocalPlaybackHistory(() => schedulePush());
+    const unsubscribeAudio = subscribeDesktopAudioPreference(schedulePush);
+    const unsubscribeAutoOpen = subscribeDesktopAutoOpenBestSource(schedulePush);
+    const unsubscribePlayer = subscribeDesktopPlayerPreferences(schedulePush);
     return () => {
       unsubscribeStore();
       unsubscribeHistory();
+      unsubscribeAudio();
+      unsubscribeAutoOpen();
+      unsubscribePlayer();
       if (pushTimerRef.current) window.clearTimeout(pushTimerRef.current);
     };
   }, [schedulePush, session?.access_token]);

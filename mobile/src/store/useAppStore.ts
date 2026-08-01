@@ -2,9 +2,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Anime, LibraryItem, PlaybackHistoryItem } from '../types';
+import { isPlaybackComplete } from '../../../shared/account';
+import {
+  DEFAULT_AUDIO_PREFERENCE,
+  DEFAULT_MOBILE_RESOURCE_POLICY,
+  DEFAULT_PLAYER_PREFERENCES,
+  normalizeMobileResourcePolicy,
+  normalizePlayerPreferences,
+  normalizeSyncedPreferences,
+  type AudioPreference,
+  type MobileResourcePolicy,
+  type PlayerPreferences,
+  type PlayerPreferencesPatch,
+  type SyncedPreferences,
+} from '../../../shared/preferences';
 
 type ThemeMode = 'dark' | 'light' | 'system';
-type AudioPreference = 'sub-preferred' | 'dual-preferred' | 'dub-only';
 
 type AppState = {
   hydrated: boolean;
@@ -13,6 +26,10 @@ type AppState = {
   audioPreference: AudioPreference;
   autoPlayNext: boolean;
   autoOpenBestSource: boolean;
+  playerPreferences: PlayerPreferences;
+  resourcePolicy: MobileResourcePolicy;
+  preferencesUpdatedAt: string;
+  recentSourceSearches: string[];
   library: LibraryItem[];
   history: PlaybackHistoryItem[];
   setHydrated: (value: boolean) => void;
@@ -21,6 +38,10 @@ type AppState = {
   setAudioPreference: (value: AudioPreference) => void;
   setAutoPlayNext: (value: boolean) => void;
   setAutoOpenBestSource: (value: boolean) => void;
+  setPlayerPreferences: (value: PlayerPreferencesPatch) => void;
+  setResourcePolicy: (value: Partial<MobileResourcePolicy>) => void;
+  replaceSyncedPreferences: (value: SyncedPreferences) => void;
+  addRecentSourceSearch: (value: string) => void;
   toggleBookmark: (anime: Anime) => void;
   toggleLike: (anime: Anime) => void;
   replaceLibrary: (items: LibraryItem[]) => void;
@@ -28,6 +49,7 @@ type AppState = {
   replaceHistory: (items: PlaybackHistoryItem[]) => void;
   removeHistory: (key: string) => void;
   clearHistory: () => void;
+  clearCompletedHistory: () => void;
 };
 
 function updateLibrary(items: LibraryItem[], anime: Anime, field: 'bookmarked' | 'liked') {
@@ -53,17 +75,47 @@ export const useAppStore = create<AppState>()(
       hydrated: false,
       themeMode: 'dark',
       nsfwMode: false,
-      audioPreference: 'sub-preferred',
-      autoPlayNext: true,
+      audioPreference: DEFAULT_AUDIO_PREFERENCE,
+      autoPlayNext: DEFAULT_PLAYER_PREFERENCES.autoNextEpisode,
       autoOpenBestSource: false,
+      playerPreferences: DEFAULT_PLAYER_PREFERENCES,
+      resourcePolicy: DEFAULT_MOBILE_RESOURCE_POLICY,
+      preferencesUpdatedAt: new Date(0).toISOString(),
+      recentSourceSearches: [],
       library: [],
       history: [],
       setHydrated: (hydrated) => set({ hydrated }),
       setThemeMode: (themeMode) => set({ themeMode }),
       setNsfwMode: (nsfwMode) => set({ nsfwMode }),
-      setAudioPreference: (audioPreference) => set({ audioPreference }),
-      setAutoPlayNext: (autoPlayNext) => set({ autoPlayNext }),
-      setAutoOpenBestSource: (autoOpenBestSource) => set({ autoOpenBestSource }),
+      setAudioPreference: (audioPreference) => set({ audioPreference, preferencesUpdatedAt: new Date().toISOString() }),
+      setAutoPlayNext: (autoPlayNext) => set((state) => ({
+        autoPlayNext,
+        playerPreferences: normalizePlayerPreferences({ ...state.playerPreferences, autoNextEpisode: autoPlayNext }),
+        preferencesUpdatedAt: new Date().toISOString(),
+      })),
+      setAutoOpenBestSource: (autoOpenBestSource) => set({ autoOpenBestSource, preferencesUpdatedAt: new Date().toISOString() }),
+      setPlayerPreferences: (value) => set((state) => {
+        const playerPreferences = normalizePlayerPreferences({
+          ...state.playerPreferences,
+          ...value,
+          subtitleStyle: { ...state.playerPreferences.subtitleStyle, ...(value.subtitleStyle || {}) },
+        });
+        return { playerPreferences, autoPlayNext: playerPreferences.autoNextEpisode, preferencesUpdatedAt: new Date().toISOString() };
+      }),
+      setResourcePolicy: (value) => set((state) => ({ resourcePolicy: normalizeMobileResourcePolicy({ ...state.resourcePolicy, ...value }) })),
+      replaceSyncedPreferences: (value) => set(() => {
+        const preferences = normalizeSyncedPreferences(value);
+        return {
+          audioPreference: preferences.audioPreference,
+          autoOpenBestSource: preferences.autoOpenBestSource,
+          autoPlayNext: preferences.playerPreferences.autoNextEpisode,
+          playerPreferences: preferences.playerPreferences,
+          preferencesUpdatedAt: preferences.updatedAt,
+        };
+      }),
+      addRecentSourceSearch: (value) => set((state) => ({
+        recentSourceSearches: [value.trim(), ...state.recentSourceSearches.filter((item) => item.toLowerCase() !== value.trim().toLowerCase())].filter(Boolean).slice(0, 6),
+      })),
       toggleBookmark: (anime) => set((state) => ({ library: updateLibrary(state.library, anime, 'bookmarked') })),
       toggleLike: (anime) => set((state) => ({ library: updateLibrary(state.library, anime, 'liked') })),
       replaceLibrary: (library) => set({ library: library.slice(0, 500) }),
@@ -75,10 +127,31 @@ export const useAppStore = create<AppState>()(
       replaceHistory: (history) => set({ history: history.slice(0, 100) }),
       removeHistory: (key) => set((state) => ({ history: state.history.filter((item) => item.key !== key) })),
       clearHistory: () => set({ history: [] }),
+      clearCompletedHistory: () => set((state) => ({
+        history: state.history.filter((item) => !isPlaybackComplete(item.progressPercent, item.resumeSeconds, item.durationSeconds)),
+      })),
     }),
     {
       name: 'streamnyaa.mobile.v1',
+      version: 2,
       storage: createJSONStorage(() => AsyncStorage),
+      migrate: (persisted: unknown) => {
+        const state = (persisted || {}) as Partial<AppState>;
+        const playerPreferences = normalizePlayerPreferences({
+          ...(state.playerPreferences || {}),
+          autoNextEpisode: state.autoPlayNext ?? state.playerPreferences?.autoNextEpisode,
+        });
+        return {
+          ...state,
+          audioPreference: state.audioPreference || DEFAULT_AUDIO_PREFERENCE,
+          autoPlayNext: playerPreferences.autoNextEpisode,
+          autoOpenBestSource: state.autoOpenBestSource ?? false,
+          playerPreferences,
+          resourcePolicy: normalizeMobileResourcePolicy(state.resourcePolicy),
+          preferencesUpdatedAt: state.preferencesUpdatedAt || new Date(0).toISOString(),
+          recentSourceSearches: state.recentSourceSearches || [],
+        } as AppState;
+      },
       partialize: ({ hydrated: _hydrated, ...state }) => state,
       onRehydrateStorage: () => (state) => state?.setHydrated(true),
     },

@@ -11,6 +11,7 @@ import {
   signUpWithPassword,
 } from '../services/auth';
 import { fetchAccountSync, mergeHistory, mergeLibrary, pushAccountSync } from '../services/accountSync';
+import { mergeSyncedPreferences, normalizeSyncedPreferences } from '../../../shared/preferences';
 
 type SyncState = 'idle' | 'syncing' | 'synced' | 'offline';
 
@@ -29,6 +30,16 @@ type AuthValue = {
 };
 
 const AuthContext = createContext<AuthValue | null>(null);
+
+function preferencesFromStore() {
+  const state = useAppStore.getState();
+  return normalizeSyncedPreferences({
+    updatedAt: state.preferencesUpdatedAt,
+    audioPreference: state.audioPreference,
+    autoOpenBestSource: state.autoOpenBestSource,
+    playerPreferences: state.playerPreferences,
+  });
+}
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -55,9 +66,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const current = useAppStore.getState();
       const library = mergeLibrary(current.library, remote.library);
       const history = mergeHistory(current.history, remote.watchHistory);
+      const preferences = mergeSyncedPreferences(preferencesFromStore(), remote.preferences);
       current.replaceLibrary(library);
       current.replaceHistory(history);
-      await pushAccountSync(session, { library, watchHistory: history });
+      current.replaceSyncedPreferences(preferences);
+      await pushAccountSync(session, { library, watchHistory: history, preferences });
       initialSyncDone.current = true;
       setSyncState('synced');
       setLastSyncedAt(Date.now());
@@ -93,11 +106,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   useEffect(() => useAppStore.subscribe((state, previous) => {
     if (!session?.access_token || !initialSyncDone.current) return;
-    if (state.library === previous.library && state.history === previous.history) return;
+    if (
+      state.library === previous.library
+      && state.history === previous.history
+      && state.preferencesUpdatedAt === previous.preferencesUpdatedAt
+    ) return;
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => {
       const latest = useAppStore.getState();
-      void pushAccountSync(session, { library: latest.library, watchHistory: latest.history })
+      void pushAccountSync(session, { library: latest.library, watchHistory: latest.history, preferences: preferencesFromStore() })
         .then(() => { setSyncState('synced'); setLastSyncedAt(Date.now()); })
         .catch(() => setSyncState('offline'));
     }, 1000);

@@ -1,4 +1,20 @@
 import { animeIdentity, animeTitleKey } from './animeIdentity';
+import { COMPLETION_PERCENT_THRESHOLD } from '../../shared/account';
+import {
+  DEFAULT_AUDIO_PREFERENCE,
+  DEFAULT_AUTO_OPEN_BEST_SOURCE,
+  DEFAULT_PLAYER_PREFERENCES,
+  asBooleanPreference,
+  asNumberPreference,
+  normalizePlayerPreferences,
+  normalizeSyncedPreferences,
+  watchTypeForAudioPreference as sharedWatchTypeForAudioPreference,
+  type AudioPreference,
+  type PlayerPreferences,
+  type PlayerPreferencesPatch,
+  type SubtitleStylePreferences,
+  type SyncedPreferences,
+} from '../../shared/preferences';
 
 export type LocalPlaybackSource = {
   magnet: string;
@@ -88,30 +104,9 @@ export type DesktopPlayerControlAction =
   | 'player_preference'
   | 'show_status';
 
-export type DesktopSubtitleStylePreferences = {
-  fontSize: string;
-  position: string;
-  textColor: string;
-  outline: string;
-  shadow: string;
-  background: string;
-  custom: boolean;
-};
-
-export type DesktopPlayerPreferences = {
-  autoNextEpisode: boolean;
-  autoSkipIntro: boolean;
-  autoSkipOutro: boolean;
-  rememberSpeed: boolean;
-  playbackSpeed: number;
-  volume: number;
-  muted: boolean;
-  subtitleStyle: DesktopSubtitleStylePreferences;
-};
-
-export type DesktopPlayerPreferencesPatch = Partial<Omit<DesktopPlayerPreferences, 'subtitleStyle'>> & {
-  subtitleStyle?: Partial<DesktopSubtitleStylePreferences>;
-};
+export type DesktopSubtitleStylePreferences = SubtitleStylePreferences;
+export type DesktopPlayerPreferences = PlayerPreferences;
+export type DesktopPlayerPreferencesPatch = PlayerPreferencesPatch;
 
 export type DesktopPlayerControlStatus = {
   ok: boolean;
@@ -171,7 +166,7 @@ export type DesktopPlaybackSettings = {
   cache_dir: string;
 };
 
-export type DesktopAudioPreference = 'sub-preferred' | 'dual-preferred' | 'dub-only';
+export type DesktopAudioPreference = AudioPreference;
 
 const LOCAL_PLAYBACK_KEY = 'streamnyaa.localPlayback';
 const LOCAL_PLAYBACK_HISTORY_KEY = 'streamnyaa.localPlaybackHistory';
@@ -181,6 +176,7 @@ const DESKTOP_AUDIO_PREFERENCE_KEY = 'streamnyaa.desktopAudioPreference';
 const DESKTOP_AUTO_OPEN_BEST_SOURCE_KEY = 'streamnyaa.desktopAutoOpenBestSource';
 const DESKTOP_AUTO_PLAY_NEXT_EPISODE_KEY = 'streamnyaa.desktopAutoPlayNextEpisode';
 const DESKTOP_PLAYER_PREFERENCES_KEY = 'streamnyaa.desktopPlayerPreferences';
+const SYNCED_PREFERENCES_UPDATED_AT_KEY = 'streamnyaa.preferences.updatedAt.v1';
 export const DESKTOP_WATCH_PROGRESS_KEY = 'streamnyaa.desktop.watchProgress.v1';
 const DESKTOP_AUDIO_PREFERENCE_EVENT = 'streamnyaa:desktop-audio-preference';
 const DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT = 'streamnyaa:desktop-auto-open-best-source';
@@ -190,7 +186,6 @@ const DESKTOP_WATCH_PROGRESS_EVENT = 'streamnyaa:desktop-watch-progress';
 const LOCAL_PLAYBACK_HISTORY_EVENT = 'streamnyaa:local-playback-history';
 const LOCAL_PLAYBACK_HISTORY_LIMIT = 18;
 const DESKTOP_WATCH_PROGRESS_LIMIT = 150;
-const COMPLETION_PERCENT_THRESHOLD = 92;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
   torrent_engine_path: '',
@@ -198,27 +193,10 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopPlaybackSettings = {
   cache_dir: '',
 };
 
-export const DEFAULT_DESKTOP_AUDIO_PREFERENCE: DesktopAudioPreference = 'sub-preferred';
-export const DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE = false;
-export const DEFAULT_DESKTOP_AUTO_PLAY_NEXT_EPISODE = false;
-export const DEFAULT_DESKTOP_PLAYER_PREFERENCES: DesktopPlayerPreferences = {
-  autoNextEpisode: DEFAULT_DESKTOP_AUTO_PLAY_NEXT_EPISODE,
-  autoSkipIntro: false,
-  autoSkipOutro: false,
-  rememberSpeed: true,
-  playbackSpeed: 1,
-  volume: 100,
-  muted: false,
-  subtitleStyle: {
-    fontSize: 'medium',
-    position: 'normal',
-    textColor: 'white',
-    outline: 'medium',
-    shadow: 'soft',
-    background: 'off',
-    custom: false,
-  },
-};
+export const DEFAULT_DESKTOP_AUDIO_PREFERENCE: DesktopAudioPreference = DEFAULT_AUDIO_PREFERENCE;
+export const DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE = DEFAULT_AUTO_OPEN_BEST_SOURCE;
+export const DEFAULT_DESKTOP_AUTO_PLAY_NEXT_EPISODE = DEFAULT_PLAYER_PREFERENCES.autoNextEpisode;
+export const DEFAULT_DESKTOP_PLAYER_PREFERENCES: DesktopPlayerPreferences = DEFAULT_PLAYER_PREFERENCES;
 
 function emitDesktopEvent(eventName: string) {
   if (typeof window === 'undefined') return;
@@ -663,6 +641,7 @@ export function loadDesktopAudioPreference(): DesktopAudioPreference {
 
 export function saveDesktopAudioPreference(preference: DesktopAudioPreference) {
   localStorage.setItem(DESKTOP_AUDIO_PREFERENCE_KEY, preference);
+  markSyncedPreferencesChanged();
   emitDesktopEvent(DESKTOP_AUDIO_PREFERENCE_EVENT);
 }
 
@@ -676,46 +655,12 @@ export function loadDesktopAutoOpenBestSource() {
 
 export function saveDesktopAutoOpenBestSource(enabled: boolean) {
   localStorage.setItem(DESKTOP_AUTO_OPEN_BEST_SOURCE_KEY, enabled ? 'true' : 'false');
+  markSyncedPreferencesChanged();
   emitDesktopEvent(DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT);
 }
 
-function asBooleanPreference(value: unknown, fallback = false) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value >= 0.5;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
-    if (['false', '0', 'no', 'off'].includes(normalized)) return false;
-  }
-  return fallback;
-}
-
-function asNumberPreference(value: unknown, fallback: number, min: number, max: number) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return fallback;
-  return Math.min(max, Math.max(min, numeric));
-}
-
 function normalizeDesktopPlayerPreferences(value: DesktopPlayerPreferencesPatch = {}): DesktopPlayerPreferences {
-  const subtitleStyle = value.subtitleStyle || {};
-  return {
-    autoNextEpisode: asBooleanPreference(value.autoNextEpisode, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoNextEpisode),
-    autoSkipIntro: asBooleanPreference(value.autoSkipIntro, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoSkipIntro),
-    autoSkipOutro: asBooleanPreference(value.autoSkipOutro, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoSkipOutro),
-    rememberSpeed: asBooleanPreference(value.rememberSpeed, DEFAULT_DESKTOP_PLAYER_PREFERENCES.rememberSpeed),
-    playbackSpeed: asNumberPreference(value.playbackSpeed, DEFAULT_DESKTOP_PLAYER_PREFERENCES.playbackSpeed, 0.25, 4),
-    volume: asNumberPreference(value.volume, DEFAULT_DESKTOP_PLAYER_PREFERENCES.volume, 0, 130),
-    muted: asBooleanPreference(value.muted, DEFAULT_DESKTOP_PLAYER_PREFERENCES.muted),
-    subtitleStyle: {
-      fontSize: typeof subtitleStyle.fontSize === 'string' ? subtitleStyle.fontSize : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.fontSize,
-      position: typeof subtitleStyle.position === 'string' ? subtitleStyle.position : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.position,
-      textColor: typeof subtitleStyle.textColor === 'string' ? subtitleStyle.textColor : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.textColor,
-      outline: typeof subtitleStyle.outline === 'string' ? subtitleStyle.outline : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.outline,
-      shadow: typeof subtitleStyle.shadow === 'string' ? subtitleStyle.shadow : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.shadow,
-      background: typeof subtitleStyle.background === 'string' ? subtitleStyle.background : DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.background,
-      custom: asBooleanPreference(subtitleStyle.custom, DEFAULT_DESKTOP_PLAYER_PREFERENCES.subtitleStyle.custom),
-    },
-  };
+  return normalizePlayerPreferences(value);
 }
 
 export function loadDesktopPlayerPreferences(): DesktopPlayerPreferences {
@@ -749,10 +694,34 @@ export function saveDesktopPlayerPreferences(next: DesktopPlayerPreferencesPatch
   });
   localStorage.setItem(DESKTOP_PLAYER_PREFERENCES_KEY, JSON.stringify(preferences));
   localStorage.setItem(DESKTOP_AUTO_PLAY_NEXT_EPISODE_KEY, preferences.autoNextEpisode ? 'true' : 'false');
+  markSyncedPreferencesChanged();
   emitDesktopEvent(DESKTOP_PLAYER_PREFERENCES_EVENT);
   if (typeof next.autoNextEpisode !== 'undefined') {
     emitDesktopEvent(DESKTOP_AUTO_PLAY_NEXT_EPISODE_EVENT);
   }
+  return preferences;
+}
+
+export function loadDesktopSyncedPreferences(): SyncedPreferences {
+  return normalizeSyncedPreferences({
+    updatedAt: localStorage.getItem(SYNCED_PREFERENCES_UPDATED_AT_KEY) || undefined,
+    audioPreference: loadDesktopAudioPreference(),
+    autoOpenBestSource: loadDesktopAutoOpenBestSource(),
+    playerPreferences: loadDesktopPlayerPreferences(),
+  });
+}
+
+export function applyDesktopSyncedPreferences(value: SyncedPreferences) {
+  const preferences = normalizeSyncedPreferences(value);
+  localStorage.setItem(DESKTOP_AUDIO_PREFERENCE_KEY, preferences.audioPreference);
+  localStorage.setItem(DESKTOP_AUTO_OPEN_BEST_SOURCE_KEY, preferences.autoOpenBestSource ? 'true' : 'false');
+  localStorage.setItem(DESKTOP_PLAYER_PREFERENCES_KEY, JSON.stringify(preferences.playerPreferences));
+  localStorage.setItem(DESKTOP_AUTO_PLAY_NEXT_EPISODE_KEY, preferences.playerPreferences.autoNextEpisode ? 'true' : 'false');
+  localStorage.setItem(SYNCED_PREFERENCES_UPDATED_AT_KEY, preferences.updatedAt);
+  emitDesktopEvent(DESKTOP_AUDIO_PREFERENCE_EVENT);
+  emitDesktopEvent(DESKTOP_AUTO_OPEN_BEST_SOURCE_EVENT);
+  emitDesktopEvent(DESKTOP_PLAYER_PREFERENCES_EVENT);
+  emitDesktopEvent(DESKTOP_AUTO_PLAY_NEXT_EPISODE_EVENT);
   return preferences;
 }
 
@@ -806,7 +775,11 @@ export function saveDesktopAutoPlayNextEpisode(enabled: boolean) {
 }
 
 export function watchTypeForAudioPreference(preference: DesktopAudioPreference) {
-  return preference === 'sub-preferred' ? 'sub' : 'dub';
+  return sharedWatchTypeForAudioPreference(preference);
+}
+
+function markSyncedPreferencesChanged() {
+  localStorage.setItem(SYNCED_PREFERENCES_UPDATED_AT_KEY, new Date().toISOString());
 }
 
 export function playbackHistoryForAnime(anime: any, history = loadLocalPlaybackHistory()) {

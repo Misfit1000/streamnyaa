@@ -6,6 +6,7 @@ export type AnimeTitle = {
 
 export type Anime = {
   id: number;
+  mediaType?: 'ANIME' | 'MANGA';
   malId?: number | null;
   title: string;
   titles?: AnimeTitle;
@@ -16,11 +17,15 @@ export type Anime = {
   score?: number;
   popularity?: number;
   episodes?: number | null;
+  chapters?: number | null;
+  volumes?: number | null;
   duration?: number | null;
   format?: string;
   status?: string;
   season?: string;
   year?: number;
+  source?: string;
+  countryOfOrigin?: string;
   genres?: string[];
   studios?: string[];
   isAdult?: boolean;
@@ -102,10 +107,25 @@ export type TorrentStreamStatus = {
   error?: string;
 };
 
+export type TorrentStartOptions = {
+  wifiOnly: boolean;
+  maxCacheMiB: number;
+  batterySaver: boolean;
+};
+
+export type TorrentCacheStats = {
+  bytes: number;
+  freeBytes: number;
+  maxBytes: number;
+};
+
 export type RootStackParamList = {
   Tabs: undefined;
   Anime: { animeId: number; title?: string };
-  Watch: { anime: Anime; episode?: number; source?: TorrentSource };
+  Manga: { mangaId: number; title?: string };
+  Catalog: { title: string; genre?: string; season?: string; year?: number; sort?: 'TRENDING_DESC' | 'POPULARITY_DESC' | 'SCORE_DESC' };
+  Watch: { anime: Anime; episode?: number; source?: TorrentSource; resumeSeconds?: number };
+  Downloads: { anime: Anime; episode?: number };
   Sources: { anime?: Anime; query?: string; episode?: number };
   History: undefined;
   Settings: undefined;

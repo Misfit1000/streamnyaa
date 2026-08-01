@@ -1,5 +1,6 @@
 import { API_ORIGIN, SOURCE_CATEGORY, SOURCE_TRACKERS } from '../config';
 import type { TorrentSource } from '../types';
+import { buildSourceQuery, sourceQualityScore } from '../../../shared/sources';
 
 function magnetFor(item: any) {
   if (String(item.link || '').startsWith('magnet:')) return item.link;
@@ -9,12 +10,15 @@ function magnetFor(item: any) {
   return magnet;
 }
 
-export async function searchSources(query: string, options: { category?: string; filter?: string; page?: number } = {}) {
+export async function searchSources(query: string, options: { category?: string; filter?: string; page?: number; deep?: boolean; pages?: number; wide?: boolean } = {}) {
   const params = new URLSearchParams({
     q: query,
     c: options.category || SOURCE_CATEGORY,
     f: options.filter || '0',
     p: String(options.page || 1),
+    deep: options.deep === false ? '0' : '1',
+    pages: String(options.pages || 2),
+    wide: options.wide === false ? '0' : '1',
   });
   const response = await fetch(`${API_ORIGIN}/api/nyaa?${params.toString()}`);
   const data = await response.json();
@@ -31,7 +35,12 @@ export async function searchSources(query: string, options: { category?: string;
     size: item.size,
     trusted: String(item.trusted).toLowerCase() === 'yes',
     remake: String(item.remake).toLowerCase() === 'yes',
-    sourceScore: Number(item.sourceScore || 0),
+    sourceScore: Number(item.sourceScore || sourceQualityScore({
+      title: item.title,
+      seeders: Number(item.seeders || 0),
+      leechers: Number(item.leechers || 0),
+      sizeBytes: Number(item.rawSize || 0),
+    })),
     matchScore: Number(item.matchScore || 0),
     magnet: magnetFor(item),
   })).sort((a: TorrentSource, b: TorrentSource) =>
@@ -42,7 +51,5 @@ export async function searchSources(query: string, options: { category?: string;
 }
 
 export function sourceQuery(title: string, episode?: number, audio = 'sub-preferred') {
-  const episodePart = episode ? ` ${String(episode).padStart(2, '0')}` : '';
-  const audioPart = audio === 'dub-only' ? ' dub' : audio === 'dual-preferred' ? ' dual audio' : '';
-  return `${title}${episodePart}${audioPart}`.trim();
+  return buildSourceQuery(title, episode, audio as import('../../../shared/preferences').AudioPreference);
 }

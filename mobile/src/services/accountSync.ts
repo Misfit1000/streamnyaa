@@ -1,8 +1,10 @@
 import { API_ORIGIN } from '../config';
 import type { AuthSession, LibraryItem, PlaybackHistoryItem } from '../types';
 import { authConfig } from './auth';
+import { mergeSharedHistory, mergeSharedLibrary } from '../../../shared/account';
+import { normalizeSyncedPreferences, type SyncedPreferences } from '../../../shared/preferences';
 
-export type AccountSyncPayload = { library: LibraryItem[]; watchHistory: PlaybackHistoryItem[] };
+export type AccountSyncPayload = { library: LibraryItem[]; watchHistory: PlaybackHistoryItem[]; preferences: SyncedPreferences };
 
 function normalizeRemote(data: any): AccountSyncPayload {
   return {
@@ -30,32 +32,20 @@ function normalizeRemote(data: any): AccountSyncPayload {
         updatedAt: item.updated_at || item.updatedAt || source.updatedAt || new Date(0).toISOString(),
       } as PlaybackHistoryItem;
     }),
+    preferences: normalizeSyncedPreferences(data.preferences || data.profile?.preferences || {}),
   };
 }
 
 export function mergeLibrary(local: LibraryItem[], remote: LibraryItem[]) {
-  const merged = new Map<string, LibraryItem>();
-  [...remote, ...local].forEach((item) => {
-    const existing = merged.get(item.animeId);
-    if (!existing) { merged.set(item.animeId, item); return; }
-    const latest = Date.parse(item.updatedAt) >= Date.parse(existing.updatedAt) ? item : existing;
-    merged.set(item.animeId, {
-      ...latest,
-      anime: latest.anime || existing.anime,
-      bookmarked: item.bookmarked || existing.bookmarked,
-      liked: item.liked || existing.liked,
-    });
-  });
-  return [...merged.values()].filter((item) => item.bookmarked || item.liked).slice(0, 500);
+  return mergeSharedLibrary(local, remote);
 }
 
 export function mergeHistory(local: PlaybackHistoryItem[], remote: PlaybackHistoryItem[]) {
-  const merged = new Map<string, PlaybackHistoryItem>();
-  [...remote, ...local].forEach((item) => {
-    const existing = merged.get(item.key);
-    if (!existing || Date.parse(item.updatedAt) >= Date.parse(existing.updatedAt)) merged.set(item.key, item);
-  });
-  return [...merged.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 100);
+  return mergeSharedHistory(
+    local.map((source) => ({ key: source.key, source, updatedAt: source.updatedAt })),
+    remote.map((source) => ({ key: source.key, source, updatedAt: source.updatedAt })),
+    100,
+  ).map((item) => item.source);
 }
 
 export async function fetchAccountSync(session: AuthSession) {
@@ -101,11 +91,12 @@ async function fetchDirectAccountSync(session: AuthSession) {
   const context = await directContext(session);
   const base = `${context.supabaseUrl}/rest/v1`;
   const headers = { ...context.headers, Accept: 'application/json' };
-  const [library, watchHistory] = await Promise.all([
+  const [library, watchHistory, profiles] = await Promise.all([
     supabaseJson(`${base}/user_library?select=*&order=updated_at.desc&limit=500`, { headers }),
     supabaseJson(`${base}/user_watch_history?select=*&order=updated_at.desc&limit=100`, { headers }),
+    supabaseJson(`${base}/user_profiles?select=*&limit=1`, { headers }).catch(() => []),
   ]);
-  return normalizeRemote({ library, watchHistory });
+  return normalizeRemote({ library, watchHistory, profile: profiles?.[0] });
 }
 
 async function pushDirectAccountSync(session: AuthSession, payload: AccountSyncPayload) {
@@ -128,5 +119,14 @@ async function pushDirectAccountSync(session: AuthSession, payload: AccountSyncP
   }));
   if (libraryRows.length) await supabaseJson(`${base}/user_library`, { method: 'POST', headers: commonHeaders, body: JSON.stringify(libraryRows) });
   if (historyRows.length) await supabaseJson(`${base}/user_watch_history`, { method: 'POST', headers: commonHeaders, body: JSON.stringify(historyRows) });
+  try {
+    await supabaseJson(`${base}/user_profiles?on_conflict=user_id`, {
+      method: 'POST',
+      headers: { ...commonHeaders, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify([{ user_id: context.userId, preferences: payload.preferences, updated_at: new Date().toISOString() }]),
+    });
+  } catch (error) {
+    if (!/preferences|column/i.test(error instanceof Error ? error.message : '')) throw error;
+  }
   return { ok: true, transport: 'supabase-rls' };
 }

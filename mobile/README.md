@@ -2,6 +2,8 @@
 
 Native Android client for StreamNyaa. It uses a React Native/Expo Material 3 interface and a local Kotlin torrent engine; it does not embed the StreamNyaa website.
 
+The Android client follows the desktop product contract for home, discovery, schedule, catalog, anime and manga details, source search, downloads, watch, library, comparison, history, settings, profile, and authentication. Shared feature metadata, source ranking, account merging, playback preferences, and resource limits live in the repository-level `shared/` directory so desktop and Android behavior cannot silently drift.
+
 ## Shared account and data
 
 The app authenticates against the same Supabase project as `www.streamnyaa.xyz` and uses the existing API routes:
@@ -12,6 +14,8 @@ The app authenticates against the same Supabase project as `www.streamnyaa.xyz` 
 
 Local changes are merged by anime/history key before the unified account payload is saved. A mobile login never creates a separate mobile profile or database namespace.
 
+Playback and resource preferences are also synced through the same `user_profiles` row. Apply `supabase/account-sync.sql` to the existing Supabase project before deploying the updated account endpoint; older deployments continue syncing library and history while the client gracefully ignores the not-yet-added preferences column.
+
 ## Development
 
 Requirements:
@@ -19,6 +23,8 @@ Requirements:
 - Node.js and npm
 - JDK 21
 - Android Studio with the Android SDK and an emulator or USB device
+
+On Windows, keep the Android SDK/NDK path free of spaces. Native CMake dependencies can fail at link time when an SDK path containing spaces is passed through Ninja.
 
 Install and generate Android sources:
 
@@ -43,10 +49,18 @@ For Google sign-in, add `streamnyaa://auth` to the Supabase authentication redir
 
 Playback depends on seeders, tracker availability, codec support, free storage, and Android background limits. The user can clear all torrent cache data in Settings.
 
+Battery saver pauses torrent activity when the app leaves the foreground unless background playback or picture-in-picture is explicitly enabled. It also reduces progress polling and write frequency. Wi-Fi-only mode, a bounded torrent cache, automatic stale-cache cleanup, source retry limits, and free-space checks protect battery, storage, and app stability.
+
 ## Checks
 
 ```powershell
 npm run typecheck
 npm run doctor
 npm run export
+```
+
+Repository-level parity checks are run from the repository root:
+
+```powershell
+npm run verify:shared
 ```

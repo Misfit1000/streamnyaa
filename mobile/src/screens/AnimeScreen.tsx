@@ -24,7 +24,9 @@ export function AnimeScreen({ route, navigation }: Props) {
   if (query.isError || !query.data) return <Screen><StateView title="Anime unavailable" message={query.error?.message} onRetry={() => void query.refetch()} /></Screen>;
   const anime = query.data;
   const saved = library.find((item) => item.animeId === String(anime.malId || anime.id));
-  const openAnime = (item: typeof anime) => navigation.push('Anime', { animeId: item.id, title: item.title });
+  const openAnime = (item: typeof anime) => item.mediaType === 'MANGA'
+    ? navigation.push('Manga', { mangaId: item.id, title: item.title })
+    : navigation.push('Anime', { animeId: item.id, title: item.title });
 
   return (
     <Screen>
@@ -44,10 +46,10 @@ export function AnimeScreen({ route, navigation }: Props) {
       </View>
       <View style={styles.primaryActions}>
         <Button style={styles.flex} mode="contained" icon="play" onPress={() => navigation.navigate('Watch', { anime, episode: 1 })}>Watch</Button>
-        <Button style={styles.flex} mode="contained-tonal" icon="download" onPress={() => navigation.navigate('Sources', { anime })}>Sources</Button>
+        <Button style={styles.flex} mode="contained-tonal" icon="download" onPress={() => navigation.navigate('Downloads', { anime })}>Releases</Button>
       </View>
       {anime.trailerId ? <Button mode="outlined" icon="youtube" onPress={() => void Linking.openURL(`https://www.youtube.com/watch?v=${anime.trailerId}`)}>Watch trailer</Button> : null}
-      <View style={styles.chips}>{anime.genres?.map((genre) => <Chip key={genre} compact>{genre}</Chip>)}</View>
+      <View style={styles.chips}>{anime.genres?.map((genre) => <Chip key={genre} compact onPress={() => navigation.navigate('Catalog', { title: `${genre} anime`, genre })}>{genre}</Chip>)}</View>
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.semibold}>Synopsis</Text>
         <Text style={[styles.description, { color: theme.colors.onSurfaceVariant }]}>{anime.description || 'No synopsis is available.'}</Text>
