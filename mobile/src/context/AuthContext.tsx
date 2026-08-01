@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
+import { AppState } from 'react-native';
 import type { AccountUser, AuthSession } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -12,6 +13,7 @@ import {
 } from '../services/auth';
 import { fetchAccountSync, mergeHistory, mergeLibrary, pushAccountSync } from '../services/accountSync';
 import { mergeSyncedPreferences, normalizeSyncedPreferences } from '../../../shared/preferences';
+import { accountPayloadFingerprint, accountSyncDelayMs } from '../lib/accountSyncPolicy';
 
 type SyncState = 'idle' | 'syncing' | 'synced' | 'offline';
 
@@ -41,6 +43,11 @@ function preferencesFromStore() {
   });
 }
 
+function payloadFromStore() {
+  const state = useAppStore.getState();
+  return { library: state.library, watchHistory: state.history, preferences: preferencesFromStore() };
+}
+
 export function AuthProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [user, setUser] = useState<AccountUser | null>(null);
@@ -49,6 +56,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [syncState, setSyncState] = useState<SyncState>('idle');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pushInFlight = useRef<Promise<void> | null>(null);
+  const pushQueued = useRef(false);
+  const syncInFlight = useRef<Promise<void> | null>(null);
+  const lastPushedFingerprint = useRef('');
   const initialSyncDone = useRef(false);
 
   const applySession = useCallback(async (next: AuthSession | null) => {
@@ -58,26 +69,74 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setUser(account);
   }, []);
 
+  const pushLatest = useCallback(async () => {
+    if (!session?.access_token || !initialSyncDone.current) return;
+    if (pushInFlight.current) {
+      pushQueued.current = true;
+      return pushInFlight.current;
+    }
+    const task = (async () => {
+      do {
+        pushQueued.current = false;
+        const payload = payloadFromStore();
+        const fingerprint = accountPayloadFingerprint(payload);
+        if (fingerprint === lastPushedFingerprint.current) continue;
+        await pushAccountSync(session, payload);
+        lastPushedFingerprint.current = fingerprint;
+        setSyncState('synced');
+        setLastSyncedAt(Date.now());
+      } while (pushQueued.current);
+    })()
+      .catch((syncError) => {
+        setSyncState('offline');
+        throw syncError;
+      })
+      .finally(() => { pushInFlight.current = null; });
+    pushInFlight.current = task;
+    return task;
+  }, [session]);
+
+  const schedulePush = useCallback((delayMs: number, urgent: boolean) => {
+    if (!session?.access_token || !initialSyncDone.current) return;
+    if (pushTimer.current) {
+      if (!urgent) return;
+      clearTimeout(pushTimer.current);
+    }
+    pushTimer.current = setTimeout(() => {
+      pushTimer.current = null;
+      void pushLatest().catch(() => undefined);
+    }, delayMs);
+  }, [pushLatest, session?.access_token]);
+
   const syncNow = useCallback(async () => {
     if (!session?.access_token) return;
-    setSyncState('syncing');
-    try {
-      const remote = await fetchAccountSync(session);
-      const current = useAppStore.getState();
-      const library = mergeLibrary(current.library, remote.library);
-      const history = mergeHistory(current.history, remote.watchHistory);
-      const preferences = mergeSyncedPreferences(preferencesFromStore(), remote.preferences);
-      current.replaceLibrary(library);
-      current.replaceHistory(history);
-      current.replaceSyncedPreferences(preferences);
-      await pushAccountSync(session, { library, watchHistory: history, preferences });
-      initialSyncDone.current = true;
-      setSyncState('synced');
-      setLastSyncedAt(Date.now());
-    } catch (syncError) {
-      setSyncState('offline');
-      setError(syncError instanceof Error ? syncError.message : 'Account sync is unavailable.');
-    }
+    if (syncInFlight.current) return syncInFlight.current;
+    const task = (async () => {
+      if (pushTimer.current) { clearTimeout(pushTimer.current); pushTimer.current = null; }
+      setSyncState('syncing');
+      try {
+        const remote = await fetchAccountSync(session);
+        const current = useAppStore.getState();
+        const library = mergeLibrary(current.library, remote.library);
+        const history = mergeHistory(current.history, remote.watchHistory);
+        const preferences = mergeSyncedPreferences(preferencesFromStore(), remote.preferences);
+        current.replaceLibrary(library);
+        current.replaceHistory(history);
+        current.replaceSyncedPreferences(preferences);
+        const payload = { library, watchHistory: history, preferences };
+        await pushAccountSync(session, payload);
+        lastPushedFingerprint.current = accountPayloadFingerprint(payload);
+        initialSyncDone.current = true;
+        setSyncState('synced');
+        setError('');
+        setLastSyncedAt(Date.now());
+      } catch (syncError) {
+        setSyncState('offline');
+        setError(syncError instanceof Error ? syncError.message : 'Account sync is unavailable.');
+      }
+    })().finally(() => { syncInFlight.current = null; });
+    syncInFlight.current = task;
+    return task;
   }, [session]);
 
   useEffect(() => {
@@ -100,25 +159,36 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     initialSyncDone.current = false;
+    lastPushedFingerprint.current = '';
     if (session?.access_token) void syncNow();
     else setSyncState('idle');
   }, [session?.access_token, syncNow]);
 
-  useEffect(() => useAppStore.subscribe((state, previous) => {
-    if (!session?.access_token || !initialSyncDone.current) return;
-    if (
-      state.library === previous.library
-      && state.history === previous.history
-      && state.preferencesUpdatedAt === previous.preferencesUpdatedAt
-    ) return;
-    if (pushTimer.current) clearTimeout(pushTimer.current);
-    pushTimer.current = setTimeout(() => {
-      const latest = useAppStore.getState();
-      void pushAccountSync(session, { library: latest.library, watchHistory: latest.history, preferences: preferencesFromStore() })
-        .then(() => { setSyncState('synced'); setLastSyncedAt(Date.now()); })
-        .catch(() => setSyncState('offline'));
-    }, 1000);
-  }), [session]);
+  useEffect(() => {
+    const unsubscribe = useAppStore.subscribe((state, previous) => {
+      if (!session?.access_token || !initialSyncDone.current) return;
+      const libraryChanged = state.library !== previous.library;
+      const historyChanged = state.history !== previous.history;
+      const preferencesChanged = state.preferencesUpdatedAt !== previous.preferencesUpdatedAt;
+      if (!libraryChanged && !historyChanged && !preferencesChanged) return;
+      const urgent = libraryChanged || preferencesChanged;
+      schedulePush(accountSyncDelayMs({ libraryChanged, preferencesChanged, batterySaver: state.resourcePolicy.batterySaver }), urgent);
+    });
+    return () => {
+      unsubscribe();
+      if (pushTimer.current) { clearTimeout(pushTimer.current); pushTimer.current = null; }
+    };
+  }, [schedulePush, session?.access_token]);
+
+  useEffect(() => {
+    if (!session?.access_token) return undefined;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active' || !initialSyncDone.current) return;
+      if (pushTimer.current) { clearTimeout(pushTimer.current); pushTimer.current = null; }
+      void pushLatest().catch(() => undefined);
+    });
+    return () => subscription.remove();
+  }, [pushLatest, session?.access_token]);
 
   const value = useMemo<AuthValue>(() => ({
     session, user, loading, error, syncState, lastSyncedAt,
@@ -129,9 +199,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (next.access_token) await applySession(next);
     },
     signInGoogle: async () => { setError(''); await applySession(await signInWithGoogle()); },
-    signOut: async () => { await signOutService(session); initialSyncDone.current = false; await applySession(null); },
+    signOut: async () => {
+      await pushLatest().catch(() => undefined);
+      await signOutService(session);
+      initialSyncDone.current = false;
+      await applySession(null);
+    },
     syncNow,
-  }), [applySession, error, lastSyncedAt, loading, session, syncNow, syncState, user]);
+  }), [applySession, error, lastSyncedAt, loading, pushLatest, session, syncNow, syncState, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Button, Text, useTheme } from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { tokens } from '../theme';
 
 export function StateView({ loading, title, message, onRetry }: { loading?: boolean; title?: string; message?: string; onRetry?: () => void }) {

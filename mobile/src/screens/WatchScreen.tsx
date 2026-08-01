@@ -17,6 +17,7 @@ import { selectBackupSource, sourceQualityBucket } from '../../../shared/sources
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Watch'>;
 const idleStatus: TorrentStreamStatus = { state: 'idle', message: 'Choose a source to begin.', progress: 0, bufferedPercent: 0, peers: 0, downloadRate: 0 };
+const sourceId = (source: TorrentSource) => source.infoHash || source.magnet;
 
 export function WatchScreen({ route }: Props) {
   const theme = useTheme();
@@ -30,6 +31,8 @@ export function WatchScreen({ route }: Props) {
   const automaticRetries = useRef(0);
   const starting = useRef(false);
   const lastProgressSave = useRef(0);
+  const routeSourceStarted = useRef('');
+  const playbackSnapshot = useRef({ selected: route.params.source, episode: route.params.episode || 1, currentTime: 0, duration: 0 });
   const pipActive = useRef(false);
   const pausedForBackground = useRef(false);
   const audio = useAppStore((state) => state.audioPreference);
@@ -40,11 +43,30 @@ export function WatchScreen({ route }: Props) {
   const resourcePolicy = useAppStore((state) => state.resourcePolicy);
   const saveProgress = useAppStore((state) => state.saveProgress);
   const queryText = useMemo(() => sourceQuery(anime.title, episode, audio), [anime.title, audio, episode]);
-  const sources = useQuery({ queryKey: ['watch-sources', queryText], queryFn: () => searchSources(queryText) });
+  const sources = useQuery({
+    queryKey: ['watch-sources', queryText, resourcePolicy.batterySaver],
+    queryFn: ({ signal }) => searchSources(queryText, {
+      signal,
+      pages: resourcePolicy.batterySaver ? 1 : 2,
+      wide: !resourcePolicy.batterySaver,
+    }),
+  });
   const visibleSources = useMemo(() => (sources.data || []).filter((source) => quality === 'auto' || sourceQualityBucket(source.title) === quality), [quality, sources.data]);
   const player = useVideoPlayer(null, (instance) => { instance.timeUpdateEventInterval = 5; });
 
-  const sourceId = (source: TorrentSource) => source.infoHash || source.magnet;
+  const persistProgress = useCallback(() => {
+    const snapshot = playbackSnapshot.current;
+    if (!snapshot.selected || snapshot.currentTime <= 0) return;
+    saveProgress({
+      key: `${anime.id}::${snapshot.episode}`,
+      animeId: String(anime.id), animeTitle: anime.title, episode: snapshot.episode,
+      sourceTitle: snapshot.selected.title, magnet: snapshot.selected.magnet, image: anime.cover,
+      progressPercent: snapshot.duration ? Math.min(100, (snapshot.currentTime / snapshot.duration) * 100) : 0,
+      resumeSeconds: snapshot.currentTime, durationSeconds: snapshot.duration, updatedAt: new Date().toISOString(),
+    });
+    lastProgressSave.current = Date.now();
+  }, [anime.cover, anime.id, anime.title, saveProgress]);
+
   const start = useCallback(async (source: TorrentSource, automatic = false) => {
     if (starting.current) return;
     starting.current = true;
@@ -72,12 +94,25 @@ export function WatchScreen({ route }: Props) {
 
   useEffect(() => {
     const subscription = TorrentEngine.addStatusListener(setStatus);
-    return () => { subscription?.remove(); void TorrentEngine.stop(false); };
-  }, []);
+    return () => { persistProgress(); subscription?.remove(); void TorrentEngine.stop(false); };
+  }, [persistProgress]);
 
   useEffect(() => {
-    if (route.params.source) void start(route.params.source);
+    if (!route.params.source) return;
+    const id = sourceId(route.params.source);
+    if (routeSourceStarted.current === id) return;
+    routeSourceStarted.current = id;
+    void start(route.params.source);
   }, [route.params.source, start]);
+
+  useEffect(() => {
+    failedSources.current.clear();
+    automaticRetries.current = 0;
+  }, [queryText]);
+
+  useEffect(() => {
+    playbackSnapshot.current = { ...playbackSnapshot.current, selected, episode };
+  }, [episode, selected]);
 
   useEffect(() => {
     if (!selected && (autoOpen || pendingAutoNext) && visibleSources[0]) {
@@ -113,17 +148,10 @@ export function WatchScreen({ route }: Props) {
 
   useEventListener(player, 'timeUpdate', ({ currentTime }) => {
     if (!selected || currentTime <= 0) return;
+    playbackSnapshot.current = { selected, episode, currentTime, duration: Number(player.duration || 0) };
     const interval = resourcePolicy.batterySaver ? 15000 : 10000;
     if (Date.now() - lastProgressSave.current < interval) return;
-    lastProgressSave.current = Date.now();
-    const duration = Number(player.duration || 0);
-    saveProgress({
-      key: `${anime.id}::${episode}`,
-      animeId: String(anime.id), animeTitle: anime.title, episode,
-      sourceTitle: selected.title, magnet: selected.magnet, image: anime.cover,
-      progressPercent: duration ? Math.min(100, (currentTime / duration) * 100) : 0,
-      resumeSeconds: currentTime, durationSeconds: duration, updatedAt: new Date().toISOString(),
-    });
+    persistProgress();
   });
 
   useEventListener(player, 'sourceLoad', () => {
@@ -164,6 +192,7 @@ export function WatchScreen({ route }: Props) {
   }, [player, resourcePolicy.allowBackgroundPlayback, status.streamUrl]);
 
   useEventListener(player, 'playToEnd', () => {
+    persistProgress();
     if (!autoNext) return;
     void TorrentEngine.stop(false);
     setSelected(undefined);
@@ -173,6 +202,7 @@ export function WatchScreen({ route }: Props) {
   });
 
   const nextEpisode = () => {
+    persistProgress();
     player.pause();
     void TorrentEngine.stop(false);
     setPendingAutoNext(false); setSelected(undefined); setStatus(idleStatus); setEpisode((value) => value + 1);
@@ -191,7 +221,7 @@ export function WatchScreen({ route }: Props) {
         </View>
       ) : null}
       <View style={styles.episodeControls}>
-        <Button mode="outlined" disabled={episode <= 1} onPress={() => { setEpisode((value) => Math.max(1, value - 1)); setSelected(undefined); void TorrentEngine.stop(false); }}>Previous</Button>
+        <Button mode="outlined" disabled={episode <= 1} onPress={() => { persistProgress(); setEpisode((value) => Math.max(1, value - 1)); setSelected(undefined); void TorrentEngine.stop(false); }}>Previous</Button>
         <Text variant="titleMedium" style={styles.semibold}>Episode {episode}</Text>
         <Button mode="outlined" onPress={nextEpisode}>Next</Button>
       </View>

@@ -14,7 +14,9 @@ export function SettingsScreen(_props: Props) {
   const [message, setMessage] = useState('');
   const [cacheBytes, setCacheBytes] = useState(0);
   const clearHistory = useAppStore((state) => state.clearHistory);
-  const refreshCache = () => void TorrentEngine.getCacheStats().then((stats) => setCacheBytes(stats.bytes));
+  const refreshCache = () => void TorrentEngine.getCacheStats()
+    .then((stats) => setCacheBytes(stats.bytes))
+    .catch(() => setCacheBytes(0));
   useEffect(refreshCache, []);
   return (
     <Screen title="Settings" subtitle="Android playback and app preferences">

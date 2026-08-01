@@ -18,7 +18,7 @@ export function CompareScreen({ navigation }: Props) {
   const [query, setQuery] = useState('');
   const [left, setLeft] = useState<Anime | null>(null);
   const [right, setRight] = useState<Anime | null>(null);
-  const results = useQuery({ queryKey: ['compare-search', query], queryFn: () => searchCompare(query), enabled: query.length > 1 });
+  const results = useQuery({ queryKey: ['compare-search', query], queryFn: ({ signal }) => searchCompare(query, signal), enabled: query.length > 1 });
   const choose = (anime: Anime) => { if (slot === 'left') { setLeft(anime); setSlot('right'); } else setRight(anime); setText(''); setQuery(''); };
 
   return (
@@ -42,7 +42,7 @@ export function CompareScreen({ navigation }: Props) {
 }
 
 function Pick({ anime, label, onPress }: { anime: Anime | null; label: string; onPress: () => void }) {
-  return <View style={styles.pick}>{anime?.cover ? <Image source={anime.cover} style={styles.poster} contentFit="cover" /> : <View style={[styles.poster, styles.placeholder]} />}<Text variant="labelMedium">{label}</Text><Text variant="titleSmall" style={styles.semibold} numberOfLines={2} onPress={onPress}>{anime?.title || 'Not selected'}</Text></View>;
+  return <View style={styles.pick}>{anime?.cover ? <Image source={anime.cover} style={styles.poster} contentFit="cover" cachePolicy="memory-disk" recyclingKey={`${anime.id}-${anime.cover}`} /> : <View style={[styles.poster, styles.placeholder]} />}<Text variant="labelMedium">{label}</Text><Text variant="titleSmall" style={styles.semibold} numberOfLines={2} onPress={onPress} accessibilityRole="button">{anime?.title || 'Not selected'}</Text></View>;
 }
 
 function Metric({ label, left, right }: { label: string; left: string; right: string }) {

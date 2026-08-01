@@ -1,6 +1,7 @@
 import { API_ORIGIN, SOURCE_CATEGORY, SOURCE_TRACKERS } from '../config';
 import type { TorrentSource } from '../types';
 import { buildSourceQuery, sourceQualityScore } from '../../../shared/sources';
+import { requestJson } from '../lib/network';
 
 function magnetFor(item: any) {
   if (String(item.link || '').startsWith('magnet:')) return item.link;
@@ -10,7 +11,7 @@ function magnetFor(item: any) {
   return magnet;
 }
 
-export async function searchSources(query: string, options: { category?: string; filter?: string; page?: number; deep?: boolean; pages?: number; wide?: boolean } = {}) {
+export async function searchSources(query: string, options: { category?: string; filter?: string; page?: number; deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal } = {}) {
   const params = new URLSearchParams({
     q: query,
     c: options.category || SOURCE_CATEGORY,
@@ -20,9 +21,10 @@ export async function searchSources(query: string, options: { category?: string;
     pages: String(options.pages || 2),
     wide: options.wide === false ? '0' : '1',
   });
-  const response = await fetch(`${API_ORIGIN}/api/nyaa?${params.toString()}`);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Sources could not be loaded.');
+  const data = await requestJson<any>(`${API_ORIGIN}/api/nyaa?${params.toString()}`, {
+    signal: options.signal,
+    timeoutMs: 20_000,
+  });
   return (Array.isArray(data) ? data : []).map((item: any): TorrentSource => ({
     title: String(item.title || ''),
     link: item.link,

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
 import { Button, Snackbar, Text, useTheme } from 'react-native-paper';
@@ -28,22 +28,22 @@ export function ScheduleScreen({ navigation }: Props) {
   const [selected, setSelected] = useState(0);
   const [message, setMessage] = useState('');
   const start = Math.floor(days[selected]!.date.getTime() / 1000);
-  const query = useQuery({ queryKey: ['schedule', start], queryFn: () => fetchSchedule(start, start + 86400) });
+  const query = useQuery({ queryKey: ['schedule', start], queryFn: ({ signal }) => fetchSchedule(start, start + 86400, signal) });
 
   return (
     <Screen title="Schedule" subtitle="Airing times use your device timezone" scroll={false}>
-      <View style={styles.days}>{days.map((day, index) => <Button key={day.date.toISOString()} compact mode={selected === index ? 'contained' : 'text'} onPress={() => setSelected(index)}>{day.label}</Button>)}</View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.days}>{days.map((day, index) => <Button key={day.date.toISOString()} compact mode={selected === index ? 'contained' : 'text'} onPress={() => setSelected(index)} accessibilityState={{ selected: selected === index }}>{day.label}</Button>)}</ScrollView>
       {query.isLoading ? <StateView loading message="Loading the airing calendar…" /> : query.isError ? <StateView title="Schedule unavailable" message={query.error.message} onRetry={() => void query.refetch()} /> : query.data?.length ? (
         <FlatList data={query.data} keyExtractor={(item) => `${item.anime.id}-${item.episode}`} contentContainerStyle={styles.list} ItemSeparatorComponent={() => <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />} renderItem={({ item }) => (
           <Pressable style={styles.row} onPress={() => navigation.navigate('Anime', { animeId: item.anime.id, title: item.anime.title })}>
-            <Image source={item.anime.cover} style={styles.poster} contentFit="cover" />
+            <Image source={item.anime.cover} style={styles.poster} contentFit="cover" cachePolicy="memory-disk" recyclingKey={`${item.anime.id}-${item.anime.cover}`} />
             <View style={styles.copy}>
               <Text variant="titleSmall" numberOfLines={2} style={styles.semibold}>{item.anime.title}</Text>
               <Text style={{ color: theme.colors.onSurfaceVariant }}>Episode {item.episode} · {new Date(item.airingAt * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
             </View>
-            <Button compact icon="bell-outline" onPress={() => void scheduleAiringReminder(item).then(() => setMessage('Reminder scheduled.')).catch((error) => setMessage(error.message))}>Remind</Button>
+            <Button compact icon="bell-outline" onPress={(event) => { event.stopPropagation(); void scheduleAiringReminder(item).then(() => setMessage('Reminder scheduled.')).catch((error) => setMessage(error.message)); }}>Remind</Button>
           </Pressable>
-        )} />
+        )} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} removeClippedSubviews />
       ) : <StateView title="No scheduled episodes" message="No indexed episodes are airing on this day." />}
       <Snackbar visible={Boolean(message)} onDismiss={() => setMessage('')} duration={3000}>{message}</Snackbar>
     </Screen>
@@ -51,7 +51,7 @@ export function ScheduleScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  days: { flexDirection: 'row', justifyContent: 'space-between' },
+  days: { gap: tokens.spacing.xs, paddingRight: tokens.spacing.lg },
   list: { paddingBottom: tokens.spacing.xxl },
   row: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, paddingVertical: tokens.spacing.md },
   poster: { width: 52, height: 72, borderRadius: tokens.radius.control },

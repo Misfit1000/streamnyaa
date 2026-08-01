@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 import { Button, Chip, Text, useTheme } from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { TorrentSource } from '../types';
 import { tokens } from '../theme';
 

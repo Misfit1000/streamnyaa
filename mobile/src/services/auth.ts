@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { API_ORIGIN } from '../config';
 import type { AccountUser, AuthSession } from '../types';
+import { requestJson } from '../lib/network';
 
 const SESSION_KEY = 'streamnyaa.auth.session.v1';
 export type SupabasePublicConfig = { supabaseUrl: string; supabaseAnonKey: string };
@@ -10,19 +11,18 @@ let configPromise: Promise<SupabasePublicConfig> | null = null;
 
 export async function authConfig() {
   if (!configPromise) {
-    configPromise = fetch(`${API_ORIGIN}/api/auth/config`).then(async (response) => {
-      const data = await response.json();
+    configPromise = requestJson<any>(`${API_ORIGIN}/api/auth/config`).then((data) => {
       const supabaseAnonKey = data.supabaseAnonKey || data.publishableKey;
-      if (!response.ok || !data.supabaseUrl || !supabaseAnonKey) throw new Error(data.error || 'Login service is unavailable.');
+      if (!data.supabaseUrl || !supabaseAnonKey) throw new Error(data.error || 'Login service is unavailable.');
       return { supabaseUrl: data.supabaseUrl, supabaseAnonKey };
-    });
+    }).catch((error) => { configPromise = null; throw error; });
   }
   return configPromise;
 }
 
 async function authFetch(path: string, init: RequestInit = {}) {
   const config = await authConfig();
-  const response = await fetch(`${config.supabaseUrl}/auth/v1/${path}`, {
+  const data = await requestJson<any>(`${config.supabaseUrl}/auth/v1/${path}`, {
     ...init,
     headers: {
       apikey: config.supabaseAnonKey,
@@ -30,8 +30,6 @@ async function authFetch(path: string, init: RequestInit = {}) {
       ...(init.headers || {}),
     },
   });
-  const data = response.status === 204 ? {} : await response.json();
-  if (!response.ok) throw new Error(data.error_description || data.msg || data.message || 'Authentication failed.');
   return data;
 }
 
@@ -99,11 +97,9 @@ export async function refreshAuthSession(session: AuthSession) {
 }
 
 export async function fetchAccountUser(session: AuthSession): Promise<AccountUser> {
-  const response = await fetch(`${API_ORIGIN}/api/auth/me`, {
+  const data = await requestJson<any>(`${API_ORIGIN}/api/auth/me`, {
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Account could not be loaded.');
   return data.user || data;
 }
 

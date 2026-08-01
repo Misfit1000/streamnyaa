@@ -40,6 +40,8 @@ class TorrentStreamEngine(
   private var preferredFile: String? = null
   private var maxCacheBytes = 2L * 1024 * 1024 * 1024
   private var batterySaver = true
+  private var wifiOnly = false
+  private var pausedForNetwork = false
 
   @Synchronized
   fun start(magnet: String, preferredFile: String?, options: Map<String, Any?>) {
@@ -48,7 +50,9 @@ class TorrentStreamEngine(
     cacheRoot.mkdirs()
     maxCacheBytes = ((options["maxCacheMiB"] as? Number)?.toLong() ?: 2048L).coerceIn(512L, 8192L) * 1024 * 1024
     batterySaver = options["batterySaver"] as? Boolean ?: true
-    if (options["wifiOnly"] == true && !isUnmeteredNetwork()) {
+    wifiOnly = options["wifiOnly"] as? Boolean ?: false
+    pausedForNetwork = false
+    if (wifiOnly && !isUnmeteredNetwork()) {
       return fail("Wi-Fi-only streaming is enabled. Connect to Wi-Fi or change the setting.")
     }
     if (StatFs(cacheRoot.absolutePath).availableBytes < MINIMUM_FREE_BYTES) {
@@ -155,7 +159,36 @@ class TorrentStreamEngine(
   }
 
   @Synchronized
-  private fun emit() { onStatus(status()) }
+  private fun emit() {
+    enforceRuntimePolicies()
+    onStatus(status())
+  }
+
+  private fun enforceRuntimePolicies() {
+    val current = handle ?: return
+    if (wifiOnly) {
+      val unmetered = isUnmeteredNetwork()
+      if (!unmetered && !pausedForNetwork) {
+        current.pause()
+        pausedForNetwork = true
+        state = "paused"
+        message = "Wi-Fi connection lost. Streaming will resume automatically on Wi-Fi."
+      } else if (unmetered && pausedForNetwork) {
+        current.resume()
+        pausedForNetwork = false
+        state = if (availableBytes() >= minimumBufferBytes()) "ready" else "buffering"
+        message = "Wi-Fi restored. Download resumed."
+      }
+    }
+    if (selectedFileSize > availableBytes() && StatFs(cacheRoot.absolutePath).availableBytes < CRITICAL_FREE_BYTES) {
+      current.pause()
+      poller?.cancel(false); poller = null
+      server?.stop(); server = null
+      state = "error"
+      message = "Streaming stopped because device storage is critically low."
+      error = message
+    }
+  }
 
   private fun availableBytes(): Long {
     val current = handle ?: return 0
@@ -168,12 +201,18 @@ class TorrentStreamEngine(
   @Synchronized
   fun pause() {
     if (handle == null) return
+    pausedForNetwork = false
     handle?.pause(); state = "paused"; message = "Download paused."; emit()
   }
 
   @Synchronized
   fun resume() {
     if (handle == null) return
+    if (wifiOnly && !isUnmeteredNetwork()) {
+      pausedForNetwork = true
+      state = "paused"; message = "Waiting for Wi-Fi before resuming."; emit(); return
+    }
+    pausedForNetwork = false
     handle?.resume(); state = if (availableBytes() >= minimumBufferBytes()) "ready" else "buffering"; message = "Download resumed."; emit()
   }
 
@@ -183,6 +222,7 @@ class TorrentStreamEngine(
     server?.stop(); server = null
     runCatching { session?.stop() }; session = null; handle = null
     selectedFileIndex = -1; selectedFile = null; selectedFileSize = 0
+    pausedForNetwork = false
     state = "idle"; message = "Choose a source to begin."; error = null
     sessionDir.setLastModified(System.currentTimeMillis())
     if (removeFiles) clearCache()
@@ -257,5 +297,6 @@ class TorrentStreamEngine(
   companion object {
     private const val MINIMUM_FREE_BYTES = 256L * 1024 * 1024
     private const val STORAGE_HEADROOM_BYTES = 128L * 1024 * 1024
+    private const val CRITICAL_FREE_BYTES = 64L * 1024 * 1024
   }
 }

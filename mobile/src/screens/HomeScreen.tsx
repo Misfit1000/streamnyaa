@@ -1,11 +1,11 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { ImageBackground } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button, IconButton, Text, useTheme } from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { AnimeShelf } from '../components/AnimeShelf';
@@ -18,9 +18,10 @@ type Props = CompositeScreenProps<BottomTabScreenProps<MainTabParamList, 'Home'>
 
 export function HomeScreen({ navigation }: Props) {
   const theme = useTheme();
+  const { height, width } = useWindowDimensions();
   const nsfwMode = useAppStore((state) => state.nsfwMode);
   const history = useAppStore((state) => state.history);
-  const query = useQuery({ queryKey: ['home', nsfwMode], queryFn: () => fetchHomeFeed(nsfwMode) });
+  const query = useQuery({ queryKey: ['home', nsfwMode], queryFn: ({ signal }) => fetchHomeFeed(nsfwMode, signal) });
   const hero = query.data?.trending[0];
 
   if (query.isLoading) return <Screen><StateView loading message="Loading this season’s anime…" /></Screen>;
@@ -30,8 +31,8 @@ export function HomeScreen({ navigation }: Props) {
   return (
     <Screen title="StreamNyaa" subtitle="Anime, sources, and progress in one place" action={<IconButton icon="magnify" onPress={() => navigation.navigate('Explore')} />}>
       {hero ? (
-        <Pressable onPress={() => openAnime(hero)}>
-          <ImageBackground source={hero.banner || hero.cover} style={styles.hero} imageStyle={styles.heroImage} contentFit="cover">
+        <Pressable onPress={() => openAnime(hero)} accessibilityRole="button" accessibilityLabel={`${hero.title}. Featured anime`} accessibilityHint="Opens anime details">
+          <ImageBackground source={hero.banner || hero.cover} style={[styles.hero, { height: Math.max(210, Math.min(300, width * 0.62, height * 0.36)) }]} imageStyle={styles.heroImage} contentFit="cover" cachePolicy="memory-disk">
             <View style={styles.heroShade}>
               <View style={styles.heroCopy}>
                 <Text variant="headlineSmall" style={styles.heroTitle} numberOfLines={2}>{hero.title}</Text>
@@ -44,7 +45,7 @@ export function HomeScreen({ navigation }: Props) {
       ) : null}
 
       {history[0] ? (
-        <Pressable style={[styles.continue, { backgroundColor: theme.colors.surfaceVariant }]} onPress={() => navigation.navigate('History')}>
+        <Pressable style={[styles.continue, { backgroundColor: theme.colors.surfaceVariant }]} onPress={() => navigation.navigate('History')} accessibilityRole="button" accessibilityLabel={`Continue ${history[0].animeTitle}, episode ${history[0].episode}`} accessibilityHint="Opens watch history">
           <MaterialCommunityIcons name="play-circle-outline" size={34} color={theme.colors.primary} />
           <View style={styles.continueCopy}>
             <Text variant="titleSmall" style={styles.semibold}>Continue watching</Text>
@@ -72,7 +73,7 @@ export function HomeScreen({ navigation }: Props) {
 function QuickAction({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
   const theme = useTheme();
   return (
-    <Pressable onPress={onPress} style={styles.quickAction}>
+    <Pressable onPress={onPress} style={styles.quickAction} accessibilityRole="button" accessibilityLabel={label} hitSlop={6}>
       <View style={[styles.quickIcon, { backgroundColor: theme.colors.surfaceVariant }]}><MaterialCommunityIcons name={icon as any} size={22} color={theme.colors.primary} /></View>
       <Text variant="labelMedium">{label}</Text>
     </Pressable>
@@ -80,7 +81,7 @@ function QuickAction({ icon, label, onPress }: { icon: string; label: string; on
 }
 
 const styles = StyleSheet.create({
-  hero: { height: 260, justifyContent: 'flex-end' },
+  hero: { justifyContent: 'flex-end' },
   heroImage: { borderRadius: tokens.radius.card },
   heroShade: { flex: 1, justifyContent: 'flex-end', borderRadius: tokens.radius.card, backgroundColor: 'rgba(8,6,9,0.36)' },
   heroCopy: { padding: tokens.spacing.lg, gap: tokens.spacing.sm, backgroundColor: 'rgba(14,11,15,0.78)', borderBottomLeftRadius: tokens.radius.card, borderBottomRightRadius: tokens.radius.card },

@@ -45,7 +45,7 @@ export function HistoryScreen({ navigation }: Props) {
         {completedCount ? <Button compact mode="text" onPress={() => Alert.alert('Clear completed history?', `Remove ${completedCount} completed ${completedCount === 1 ? 'episode' : 'episodes'} from every synced device?`, [{ text: 'Cancel' }, { text: 'Clear completed', style: 'destructive', onPress: clearCompleted }])}>Clear completed</Button> : null}
         {visibleHistory.length ? <FlatList data={visibleHistory} keyExtractor={(item) => item.key} contentContainerStyle={styles.list} ItemSeparatorComponent={() => <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />} renderItem={({ item }) => (
         <View style={styles.row}>
-          <Image source={item.image} style={styles.poster} contentFit="cover" />
+          <Image source={item.image} style={styles.poster} contentFit="cover" cachePolicy="memory-disk" recyclingKey={`${item.key}-${item.image}`} />
           <View style={styles.copy}>
             <Text variant="titleSmall" style={styles.semibold} numberOfLines={1}>{item.animeTitle}</Text>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>Episode {item.episode} · {Math.round(item.progressPercent)}%</Text>
@@ -54,7 +54,7 @@ export function HistoryScreen({ navigation }: Props) {
           </View>
           <IconButton icon="close" onPress={() => remove(item.key)} accessibilityLabel="Remove history item" />
         </View>
-      )} /> : <StateView title="No matching history" message="Change the search or progress filter." />}
+      )} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} removeClippedSubviews keyboardShouldPersistTaps="handled" /> : <StateView title="No matching history" message="Change the search or progress filter." />}
       </> : <StateView title="No watch history yet" message="Start a source and your episode progress will appear here." />}
     </Screen>
   );

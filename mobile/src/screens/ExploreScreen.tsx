@@ -29,10 +29,10 @@ export function ExploreScreen({ navigation }: Props) {
   const includeAdult = useAppStore((state) => state.nsfwMode);
   const columns = width >= 720 ? 5 : width >= 520 ? 4 : 3;
   const cardWidth = Math.floor((width - 32 - (columns - 1) * 12) / columns);
-  const genres = useQuery({ queryKey: ['genres'], queryFn: fetchGenres, staleTime: 24 * 60 * 60 * 1000 });
+  const genres = useQuery({ queryKey: ['genres'], queryFn: ({ signal }) => fetchGenres(signal), staleTime: 24 * 60 * 60 * 1000 });
   const results = useQuery({
     queryKey: ['explore', mediaType, queryText, genre, format, status, sort, includeAdult],
-    queryFn: () => searchMedia({ query: queryText, genre, format, status, sort, includeAdult, mediaType }),
+    queryFn: ({ signal }) => searchMedia({ query: queryText, genre, format, status, sort, includeAdult, mediaType }, signal),
   });
   const filters = useMemo(() => (genres.data || []).slice(0, 12), [genres.data]);
 
@@ -54,7 +54,7 @@ export function ExploreScreen({ navigation }: Props) {
       </View>
       <FlatList horizontal data={filters} keyExtractor={(item) => item} renderItem={({ item }) => <Chip selected={genre === item} onPress={() => setGenre(genre === item ? '' : item)} compact>{item}</Chip>} ItemSeparatorComponent={() => <View style={{ width: 8 }} />} showsHorizontalScrollIndicator={false} style={styles.chips} />
       {results.isLoading ? <StateView loading message="Searching AniList…" /> : results.isError ? <StateView title="Search unavailable" message={results.error.message} onRetry={() => void results.refetch()} /> : results.data?.items.length ? (
-        <FlatList data={results.data.items} numColumns={columns} key={`${mediaType}-${columns}`} keyExtractor={(item) => String(item.id)} renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => item.mediaType === 'MANGA' ? navigation.navigate('Manga', { mangaId: item.id, title: item.title }) : navigation.navigate('Anime', { animeId: item.id, title: item.title })} />} columnWrapperStyle={styles.row} contentContainerStyle={styles.results} showsVerticalScrollIndicator={false} />
+        <FlatList data={results.data.items} numColumns={columns} key={`${mediaType}-${columns}`} keyExtractor={(item) => String(item.id)} renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => item.mediaType === 'MANGA' ? navigation.navigate('Manga', { mangaId: item.id, title: item.title }) : navigation.navigate('Anime', { animeId: item.id, title: item.title })} />} columnWrapperStyle={styles.row} contentContainerStyle={styles.results} showsVerticalScrollIndicator={false} initialNumToRender={columns * 3} maxToRenderPerBatch={columns * 2} windowSize={5} removeClippedSubviews keyboardShouldPersistTaps="handled" />
       ) : <StateView title={`No ${mediaType === 'ANIME' ? 'anime' : 'manga'} found`} message="Try another title or remove a filter." />}
     </Screen>
   );

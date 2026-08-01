@@ -3,6 +3,7 @@ import type { AuthSession, LibraryItem, PlaybackHistoryItem } from '../types';
 import { authConfig } from './auth';
 import { mergeSharedHistory, mergeSharedLibrary } from '../../../shared/account';
 import { normalizeSyncedPreferences, type SyncedPreferences } from '../../../shared/preferences';
+import { HttpError, requestJson } from '../lib/network';
 
 export type AccountSyncPayload = { library: LibraryItem[]; watchHistory: PlaybackHistoryItem[]; preferences: SyncedPreferences };
 
@@ -49,42 +50,41 @@ export function mergeHistory(local: PlaybackHistoryItem[], remote: PlaybackHisto
 }
 
 export async function fetchAccountSync(session: AuthSession) {
-  const response = await fetch(`${API_ORIGIN}/api/account-sync`, {
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  });
-  if (response.status === 404) return fetchDirectAccountSync(session);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Account sync is unavailable.');
-  return normalizeRemote(data);
+  try {
+    return normalizeRemote(await requestJson<any>(`${API_ORIGIN}/api/account-sync`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      timeoutMs: 20_000,
+    }));
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 404) return fetchDirectAccountSync(session);
+    throw error;
+  }
 }
 
 export async function pushAccountSync(session: AuthSession, payload: AccountSyncPayload) {
-  const response = await fetch(`${API_ORIGIN}/api/account-sync`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (response.status === 404) return pushDirectAccountSync(session, payload);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'Account sync could not be saved.');
-  return data;
+  try {
+    return await requestJson<any>(`${API_ORIGIN}/api/account-sync`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      timeoutMs: 25_000,
+    });
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 404) return pushDirectAccountSync(session, payload);
+    throw error;
+  }
 }
 
 async function directContext(session: AuthSession) {
   const config = await authConfig();
   const headers = { apikey: config.supabaseAnonKey, Authorization: `Bearer ${session.access_token}` };
-  const response = await fetch(`${config.supabaseUrl}/auth/v1/user`, { headers });
-  const user = await response.json();
-  if (!response.ok || !user.id) throw new Error(user.message || 'The shared account session is invalid.');
+  const user = await requestJson<any>(`${config.supabaseUrl}/auth/v1/user`, { headers });
+  if (!user.id) throw new Error(user.message || 'The shared account session is invalid.');
   return { ...config, headers, userId: String(user.id) };
 }
 
 async function supabaseJson(url: string, init: RequestInit) {
-  const response = await fetch(url, init);
-  const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!response.ok) throw new Error(data?.message || data?.error || 'The shared database request failed.');
-  return data;
+  return requestJson<any>(url, { ...init, timeoutMs: 20_000 });
 }
 
 async function fetchDirectAccountSync(session: AuthSession) {

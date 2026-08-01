@@ -1,4 +1,4 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from 'react-native-paper';
@@ -34,6 +34,8 @@ function MainTabs() {
   return (
     <Tabs.Navigator screenOptions={({ route }) => ({
       headerShown: false,
+      freezeOnBlur: true,
+      lazy: true,
       tabBarActiveTintColor: theme.colors.primary,
       tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
       tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outline, height: 72, paddingBottom: 10, paddingTop: 6 },
@@ -52,7 +54,7 @@ function MainTabs() {
 export function RootNavigator() {
   const theme = useTheme();
   return (
-    <Root.Navigator screenOptions={{ headerStyle: { backgroundColor: theme.colors.surface }, headerTintColor: theme.colors.onSurface, headerTitleStyle: { fontWeight: '600' }, headerShadowVisible: false, contentStyle: { backgroundColor: theme.colors.background } }}>
+    <Root.Navigator screenOptions={{ headerStyle: { backgroundColor: theme.colors.surface }, headerTintColor: theme.colors.onSurface, headerTitleStyle: { fontWeight: '600' }, headerShadowVisible: false, contentStyle: { backgroundColor: theme.colors.background }, freezeOnBlur: true }}>
       <Root.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
       <Root.Screen name="Anime" component={AnimeScreen} options={({ route }) => ({ title: route.params.title || 'Anime' })} />
       <Root.Screen name="Manga" component={MangaScreen} options={({ route }) => ({ title: route.params.title || featureLabel('manga', 'Manga') })} />

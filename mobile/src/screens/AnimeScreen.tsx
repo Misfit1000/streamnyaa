@@ -15,7 +15,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Anime'>;
 
 export function AnimeScreen({ route, navigation }: Props) {
   const theme = useTheme();
-  const query = useQuery({ queryKey: ['anime', route.params.animeId], queryFn: () => fetchAnimeDetails(route.params.animeId) });
+  const query = useQuery({ queryKey: ['anime', route.params.animeId], queryFn: ({ signal }) => fetchAnimeDetails(route.params.animeId, signal) });
   const library = useAppStore((state) => state.library);
   const toggleBookmark = useAppStore((state) => state.toggleBookmark);
   const toggleLike = useAppStore((state) => state.toggleLike);
@@ -30,11 +30,11 @@ export function AnimeScreen({ route, navigation }: Props) {
 
   return (
     <Screen>
-      <ImageBackground source={anime.banner || anime.cover} style={styles.banner} imageStyle={styles.bannerImage} contentFit="cover">
+      <ImageBackground source={anime.banner || anime.cover} style={styles.banner} imageStyle={styles.bannerImage} contentFit="cover" cachePolicy="memory-disk">
         <View style={styles.bannerShade} />
       </ImageBackground>
       <View style={styles.summary}>
-        <Image source={anime.cover} style={styles.poster} contentFit="cover" />
+        <Image source={anime.cover} style={styles.poster} contentFit="cover" cachePolicy="memory-disk" recyclingKey={`${anime.id}-${anime.cover}`} />
         <View style={styles.summaryCopy}>
           <Text variant="headlineSmall" style={styles.bold}>{anime.title}</Text>
           <Text style={{ color: theme.colors.onSurfaceVariant }}>{[anime.format, anime.year, anime.episodes ? `${anime.episodes} episodes` : '', anime.score ? `${anime.score.toFixed(1)} score` : ''].filter(Boolean).join(' · ')}</Text>

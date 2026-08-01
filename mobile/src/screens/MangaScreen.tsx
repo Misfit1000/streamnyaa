@@ -14,7 +14,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Manga'>;
 
 export function MangaScreen({ route, navigation }: Props) {
   const theme = useTheme();
-  const query = useQuery({ queryKey: ['manga', route.params.mangaId], queryFn: () => fetchMangaDetails(route.params.mangaId) });
+  const query = useQuery({ queryKey: ['manga', route.params.mangaId], queryFn: ({ signal }) => fetchMangaDetails(route.params.mangaId, signal) });
   if (query.isLoading) return <Screen><StateView loading message={`Loading ${route.params.title || 'manga'}…`} /></Screen>;
   if (query.isError || !query.data) return <Screen><StateView title="Manga unavailable" message={query.error?.message} onRetry={() => void query.refetch()} /></Screen>;
   const manga = query.data;
@@ -24,9 +24,9 @@ export function MangaScreen({ route, navigation }: Props) {
 
   return (
     <Screen>
-      <ImageBackground source={manga.banner || manga.cover} style={styles.banner} imageStyle={styles.bannerImage} contentFit="cover"><View style={styles.shade} /></ImageBackground>
+      <ImageBackground source={manga.banner || manga.cover} style={styles.banner} imageStyle={styles.bannerImage} contentFit="cover" cachePolicy="memory-disk"><View style={styles.shade} /></ImageBackground>
       <View style={styles.summary}>
-        <Image source={manga.cover} style={styles.poster} contentFit="cover" />
+        <Image source={manga.cover} style={styles.poster} contentFit="cover" cachePolicy="memory-disk" recyclingKey={`${manga.id}-${manga.cover}`} />
         <View style={styles.copy}>
           <Text variant="headlineSmall" style={styles.bold}>{manga.title}</Text>
           <Text style={{ color: theme.colors.onSurfaceVariant }}>{[manga.format, manga.year, manga.chapters ? `${manga.chapters} chapters` : '', manga.volumes ? `${manga.volumes} volumes` : ''].filter(Boolean).join(' · ')}</Text>

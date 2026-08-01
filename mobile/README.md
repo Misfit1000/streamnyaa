@@ -51,6 +51,8 @@ Playback depends on seeders, tracker availability, codec support, free storage, 
 
 Battery saver pauses torrent activity when the app leaves the foreground unless background playback or picture-in-picture is explicitly enabled. It also reduces progress polling and write frequency. Wi-Fi-only mode, a bounded torrent cache, automatic stale-cache cleanup, source retry limits, and free-space checks protect battery, storage, and app stability.
 
+Additional runtime protections include cancellation of stale/background API requests, transient-error-only retries, 15–25 second request timeouts, smaller AniList card payloads, disk-backed image caching, virtualized source and catalog lists, and frozen off-screen navigation routes. Playback progress sync is deduplicated and batched to 30–45 seconds while library and preference changes remain fast; pending progress is flushed when Android backgrounds the app. Wi-Fi-only torrent sessions pause if connectivity changes and resume automatically after Wi-Fi returns, while critically low storage stops the native engine safely.
+
 ## Checks
 
 ```powershell

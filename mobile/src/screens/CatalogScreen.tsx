@@ -21,13 +21,13 @@ export function CatalogScreen({ route, navigation }: Props) {
   const cardWidth = Math.floor((width - 32 - (columns - 1) * 12) / columns);
   const query = useQuery({
     queryKey: ['catalog', route.params.genre, route.params.season, route.params.year, sort, includeAdult],
-    queryFn: () => searchAnime({
+    queryFn: ({ signal }) => searchAnime({
       genre: route.params.genre,
       season: route.params.season,
       year: route.params.year,
       sort,
       includeAdult,
-    }),
+    }, signal),
   });
 
   return (
@@ -52,6 +52,10 @@ export function CatalogScreen({ route, navigation }: Props) {
           columnWrapperStyle={styles.row}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={columns * 3}
+          maxToRenderPerBatch={columns * 2}
+          windowSize={5}
+          removeClippedSubviews
         />
       ) : <StateView title="No titles found" message="Try another catalog or content setting." />}
     </Screen>
