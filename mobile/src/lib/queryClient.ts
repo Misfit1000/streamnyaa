@@ -4,11 +4,13 @@ import { shouldRetryRequest } from './network';
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,
-      gcTime: 15 * 60 * 1000,
+      staleTime: 10 * 60 * 1000,
+      gcTime: 30 * 60 * 1000,
       retry: shouldRetryRequest,
+      retryDelay: (attempt) => Math.min(1_600, 350 * (2 ** attempt)),
+      networkMode: 'offlineFirst',
       refetchOnReconnect: true,
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: false,
     },
   },
 });

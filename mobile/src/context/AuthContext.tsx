@@ -144,10 +144,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
     void (async () => {
       try {
         let stored = await loadSession();
+        if (!active) return;
+        setLoading(false);
+        if (!stored?.access_token) {
+          setSession(null);
+          setUser(null);
+          return;
+        }
         if (stored?.expires_at && stored.expires_at < Math.floor(Date.now() / 1000) + 60) {
           stored = await refreshAuthSession(stored);
         }
-        if (active) await applySession(stored);
+        if (!active) return;
+        setSession(stored);
+        setUser(stored.user || null);
+        void fetchAccountUser(stored)
+          .then((account) => { if (active) setUser(account); })
+          .catch((bootError) => { if (active) setError(bootError instanceof Error ? bootError.message : 'Account details are temporarily unavailable.'); });
       } catch (bootError) {
         if (active) setError(bootError instanceof Error ? bootError.message : 'Sign-in could not be restored.');
       } finally {

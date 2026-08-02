@@ -3,21 +3,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from 'react-native-paper';
 import type { MainTabParamList, RootStackParamList } from '../types';
-import { HomeScreen } from '../screens/HomeScreen';
-import { ExploreScreen } from '../screens/ExploreScreen';
-import { ScheduleScreen } from '../screens/ScheduleScreen';
-import { LibraryScreen } from '../screens/LibraryScreen';
-import { ProfileScreen } from '../screens/ProfileScreen';
-import { AnimeScreen } from '../screens/AnimeScreen';
-import { WatchScreen } from '../screens/WatchScreen';
-import { SourcesScreen } from '../screens/SourcesScreen';
-import { HistoryScreen } from '../screens/HistoryScreen';
-import { SettingsScreen } from '../screens/SettingsScreen';
-import { CompareScreen } from '../screens/CompareScreen';
-import { SignInScreen } from '../screens/SignInScreen';
-import { CatalogScreen } from '../screens/CatalogScreen';
-import { MangaScreen } from '../screens/MangaScreen';
-import { DownloadsScreen } from '../screens/DownloadsScreen';
 import { productFeature } from '../../../shared/features';
 
 const Root = createNativeStackNavigator<RootStackParamList>();
@@ -28,6 +13,24 @@ const tabIcons: Record<keyof MainTabParamList, string> = {
 };
 
 const featureLabel = (id: Parameters<typeof productFeature>[0], fallback: string) => productFeature(id)?.label || fallback;
+
+const screen = {
+  home: () => require('../screens/HomeScreen').HomeScreen,
+  explore: () => require('../screens/ExploreScreen').ExploreScreen,
+  schedule: () => require('../screens/ScheduleScreen').ScheduleScreen,
+  library: () => require('../screens/LibraryScreen').LibraryScreen,
+  profile: () => require('../screens/ProfileScreen').ProfileScreen,
+  anime: () => require('../screens/AnimeScreen').AnimeScreen,
+  manga: () => require('../screens/MangaScreen').MangaScreen,
+  catalog: () => require('../screens/CatalogScreen').CatalogScreen,
+  watch: () => require('../screens/WatchScreen').WatchScreen,
+  downloads: () => require('../screens/DownloadsScreen').DownloadsScreen,
+  sources: () => require('../screens/SourcesScreen').SourcesScreen,
+  history: () => require('../screens/HistoryScreen').HistoryScreen,
+  settings: () => require('../screens/SettingsScreen').SettingsScreen,
+  compare: () => require('../screens/CompareScreen').CompareScreen,
+  signIn: () => require('../screens/SignInScreen').SignInScreen,
+};
 
 function MainTabs() {
   const theme = useTheme();
@@ -42,11 +45,11 @@ function MainTabs() {
       tabBarLabelStyle: { fontWeight: '600', fontSize: 11 },
       tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name={tabIcons[route.name] as any} size={size} color={color} />,
     })}>
-      <Tabs.Screen name="Home" component={HomeScreen} />
-      <Tabs.Screen name="Explore" component={ExploreScreen} />
-      <Tabs.Screen name="Schedule" component={ScheduleScreen} />
-      <Tabs.Screen name="Library" component={LibraryScreen} />
-      <Tabs.Screen name="Profile" component={ProfileScreen} />
+      <Tabs.Screen name="Home" getComponent={screen.home} />
+      <Tabs.Screen name="Explore" getComponent={screen.explore} />
+      <Tabs.Screen name="Schedule" getComponent={screen.schedule} />
+      <Tabs.Screen name="Library" getComponent={screen.library} />
+      <Tabs.Screen name="Profile" getComponent={screen.profile} />
     </Tabs.Navigator>
   );
 }
@@ -56,16 +59,16 @@ export function RootNavigator() {
   return (
     <Root.Navigator screenOptions={{ headerStyle: { backgroundColor: theme.colors.surface }, headerTintColor: theme.colors.onSurface, headerTitleStyle: { fontWeight: '600' }, headerShadowVisible: false, contentStyle: { backgroundColor: theme.colors.background }, freezeOnBlur: true }}>
       <Root.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
-      <Root.Screen name="Anime" component={AnimeScreen} options={({ route }) => ({ title: route.params.title || 'Anime' })} />
-      <Root.Screen name="Manga" component={MangaScreen} options={({ route }) => ({ title: route.params.title || featureLabel('manga', 'Manga') })} />
-      <Root.Screen name="Catalog" component={CatalogScreen} options={({ route }) => ({ title: route.params.title || featureLabel('catalog', 'Catalog') })} />
-      <Root.Screen name="Watch" component={WatchScreen} options={{ title: 'Watch' }} />
-      <Root.Screen name="Downloads" component={DownloadsScreen} options={{ title: featureLabel('downloads', 'Downloads') }} />
-      <Root.Screen name="Sources" component={SourcesScreen} options={{ title: 'Sources' }} />
-      <Root.Screen name="History" component={HistoryScreen} options={{ title: 'History' }} />
-      <Root.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
-      <Root.Screen name="Compare" component={CompareScreen} options={{ title: 'Compare' }} />
-      <Root.Screen name="SignIn" component={SignInScreen} options={{ title: 'Account', presentation: 'modal' }} />
+      <Root.Screen name="Anime" getComponent={screen.anime} options={({ route }) => ({ title: route.params.title || 'Anime' })} />
+      <Root.Screen name="Manga" getComponent={screen.manga} options={({ route }) => ({ title: route.params.title || featureLabel('manga', 'Manga') })} />
+      <Root.Screen name="Catalog" getComponent={screen.catalog} options={({ route }) => ({ title: route.params.title || featureLabel('catalog', 'Catalog') })} />
+      <Root.Screen name="Watch" getComponent={screen.watch} options={{ title: 'Watch' }} />
+      <Root.Screen name="Downloads" getComponent={screen.downloads} options={{ title: featureLabel('downloads', 'Downloads') }} />
+      <Root.Screen name="Sources" getComponent={screen.sources} options={{ title: 'Sources' }} />
+      <Root.Screen name="History" getComponent={screen.history} options={{ title: 'History' }} />
+      <Root.Screen name="Settings" getComponent={screen.settings} options={{ title: 'Settings' }} />
+      <Root.Screen name="Compare" getComponent={screen.compare} options={{ title: 'Compare' }} />
+      <Root.Screen name="SignIn" getComponent={screen.signIn} options={{ title: 'Account', presentation: 'modal' }} />
     </Root.Navigator>
   );
 }

@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { ImageBackground } from 'expo-image';
 import { useQuery } from '@tanstack/react-query';
@@ -21,18 +22,18 @@ export function HomeScreen({ navigation }: Props) {
   const { height, width } = useWindowDimensions();
   const nsfwMode = useAppStore((state) => state.nsfwMode);
   const history = useAppStore((state) => state.history);
-  const query = useQuery({ queryKey: ['home', nsfwMode], queryFn: ({ signal }) => fetchHomeFeed(nsfwMode, signal) });
+  const query = useQuery({ queryKey: ['home', nsfwMode], queryFn: ({ signal }) => fetchHomeFeed(nsfwMode, signal), staleTime: 15 * 60 * 1000 });
   const hero = query.data?.trending[0];
+  const openAnime = useCallback((anime: { id: number; title: string }) => navigation.navigate('Anime', { animeId: anime.id, title: anime.title }), [navigation]);
 
   if (query.isLoading) return <Screen><StateView loading message="Loading this season’s anime…" /></Screen>;
   if (query.isError || !query.data) return <Screen><StateView title="Home feed unavailable" message={query.error?.message} onRetry={() => void query.refetch()} /></Screen>;
 
-  const openAnime = (anime: { id: number; title: string }) => navigation.navigate('Anime', { animeId: anime.id, title: anime.title });
   return (
     <Screen title="StreamNyaa" subtitle="Anime, sources, and progress in one place" action={<IconButton icon="magnify" onPress={() => navigation.navigate('Explore')} />}>
       {hero ? (
         <Pressable onPress={() => openAnime(hero)} accessibilityRole="button" accessibilityLabel={`${hero.title}. Featured anime`} accessibilityHint="Opens anime details">
-          <ImageBackground source={hero.banner || hero.cover} style={[styles.hero, { height: Math.max(210, Math.min(300, width * 0.62, height * 0.36)) }]} imageStyle={styles.heroImage} contentFit="cover" cachePolicy="memory-disk">
+          <ImageBackground source={hero.banner || hero.cover} style={[styles.hero, { height: Math.max(210, Math.min(300, width * 0.62, height * 0.36)) }]} imageStyle={styles.heroImage} contentFit="cover" cachePolicy="memory-disk" priority="high">
             <View style={styles.heroShade}>
               <View style={styles.heroCopy}>
                 <Text variant="headlineSmall" style={styles.heroTitle} numberOfLines={2}>{hero.title}</Text>

@@ -21,7 +21,9 @@ export async function requestJson<T>(url: string, options: RequestJsonOptions = 
   else externalSignal?.addEventListener('abort', abortFromExternal, { once: true });
 
   try {
-    const response = await fetch(url, { ...requestInit, signal: controller.signal });
+    const headers = new Headers(requestInit.headers);
+    if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+    const response = await fetch(url, { ...requestInit, headers, signal: controller.signal });
     const text = await response.text();
     let payload: any = null;
     try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }

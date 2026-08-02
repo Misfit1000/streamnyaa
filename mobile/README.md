@@ -4,6 +4,14 @@ Native Android client for StreamNyaa. It uses a React Native/Expo Material 3 int
 
 The Android client follows the desktop product contract for home, discovery, schedule, catalog, anime and manga details, source search, downloads, watch, library, comparison, history, settings, profile, and authentication. Shared feature metadata, source ranking, account merging, playback preferences, and resource limits live in the repository-level `shared/` directory so desktop and Android behavior cannot silently drift.
 
+## Startup, performance, and permissions
+
+The native Android splash and the short JavaScript boot transition use the same StreamNyaa mark and dark Material surface. Navigation, local preference hydration, account restoration, and the first Home request initialize concurrently behind that transition; a startup fallback prevents damaged local state from leaving the app on the logo indefinitely.
+
+On first launch, StreamNyaa explains access before Android displays a system prompt. Notifications are optional and used only for airing reminders. Streaming uses private app cache storage, so photo, media, external-storage, and overlay permissions are explicitly blocked from the generated Android manifest. Permission status can be reviewed later in Settings.
+
+Secondary screens use inline/lazy module initialization, inactive native screens are frozen, long lists batch rendering, poster transitions are avoided during scrolling, and search-heavy local collections defer filtering to protect frame pacing. Home feed fields are reduced to data actually rendered by each shelf, queries keep useful data longer without refetching on every app focus, and release builds enable R8/resource shrinking while leaving Hermes and native libraries uncompressed for fast loading.
+
 ## Shared account and data
 
 The app authenticates against the same Supabase project as `www.streamnyaa.xyz` and uses the existing API routes:
@@ -48,7 +56,7 @@ $env:NODE_ENV = 'production'
 .\gradlew.bat :app:assembleRelease '-PreactNativeArchitectures=arm64-v8a' --no-daemon --max-workers=1
 ```
 
-The standalone output is `android/app/build/outputs/apk/release/app-release.apk`; it embeds `assets/index.android.bundle` and runs without Metro. Local release builds currently use the Android debug signing key for sideload testing. Configure a private production keystore before Play Store or public distribution. For a cloud APK/AAB build, configure Expo Application Services and run the `preview` or `production` profile from `eas.json`.
+The standalone output is `android/app/build/outputs/apk/release/app-release.apk`; it embeds `assets/index.android.bundle` and runs without Metro. The StreamNyaa config plugin enables release code/resource shrinking and preserves uncompressed bundle/native loading. Local release builds currently use the Android debug signing key for sideload testing. Configure a private production keystore before Play Store or public distribution. For a cloud APK/AAB build, configure Expo Application Services and run the `preview` or `production` profile from `eas.json`.
 
 For Google sign-in, add `streamnyaa://auth` to the Supabase authentication redirect allow list. Email/password sign-in already uses the same StreamNyaa credentials and user ID as the web and desktop clients.
 

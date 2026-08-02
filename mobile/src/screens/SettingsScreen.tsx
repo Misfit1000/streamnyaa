@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Alert, Share, StyleSheet } from 'react-native';
+import { Alert, AppState, Share, StyleSheet } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button, Divider, List, RadioButton, SegmentedButtons, Snackbar, Switch, Text } from 'react-native-paper';
 import { Screen } from '../components/Screen';
 import { TorrentEngine } from '../native/TorrentEngine';
+import { getNotificationPermissionState, openAppPermissionSettings, requestNotificationPermission, type NotificationPermissionState } from '../services/permissions';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
 
@@ -13,11 +14,30 @@ export function SettingsScreen(_props: Props) {
   const store = useAppStore();
   const [message, setMessage] = useState('');
   const [cacheBytes, setCacheBytes] = useState(0);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState | null>(null);
   const clearHistory = useAppStore((state) => state.clearHistory);
   const refreshCache = () => void TorrentEngine.getCacheStats()
     .then((stats) => setCacheBytes(stats.bytes))
     .catch(() => setCacheBytes(0));
-  useEffect(refreshCache, []);
+  const refreshPermission = () => void getNotificationPermissionState()
+    .then(setNotificationPermission)
+    .catch(() => setNotificationPermission(null));
+  useEffect(() => {
+    refreshCache();
+    refreshPermission();
+    const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') refreshPermission(); });
+    return () => subscription.remove();
+  }, []);
+
+  const updateNotificationPermission = async () => {
+    if (notificationPermission && !notificationPermission.granted && !notificationPermission.canAskAgain) {
+      await openAppPermissionSettings();
+      return;
+    }
+    const next = await requestNotificationPermission();
+    setNotificationPermission(next);
+    setMessage(next.granted ? 'Airing reminders are enabled.' : 'Notifications were not enabled. You can change this later.');
+  };
   return (
     <Screen title="Settings" subtitle="Android playback and app preferences">
       <List.Section title="Appearance">
@@ -30,6 +50,16 @@ export function SettingsScreen(_props: Props) {
       <Divider />
       <List.Section title="Content">
         <List.Item title="Include adult titles" description="SFW mode is enabled by default" right={() => <Switch value={store.nsfwMode} onValueChange={store.setNsfwMode} />} />
+      </List.Section>
+      <Divider />
+      <List.Section title="Permissions">
+        <List.Item
+          title="Airing notifications"
+          description={notificationPermission?.granted ? 'Allowed for reminders you schedule' : notificationPermission && !notificationPermission.canAskAgain ? 'Blocked in Android settings' : 'Optional; requested only for airing reminders'}
+          left={(props) => <List.Icon {...props} icon={notificationPermission?.granted ? 'bell-check-outline' : 'bell-outline'} />}
+          right={() => <Button compact disabled={!notificationPermission || notificationPermission.granted} onPress={() => void updateNotificationPermission()}>{notificationPermission?.granted ? 'Allowed' : notificationPermission && !notificationPermission.canAskAgain ? 'Settings' : 'Allow'}</Button>}
+        />
+        <List.Item title="Files and photos" description="Not requested; streaming cache stays in private app storage" left={(props) => <List.Icon {...props} icon="folder-lock-outline" />} />
       </List.Section>
       <Divider />
       <List.Section title="Playback">

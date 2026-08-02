@@ -17,15 +17,18 @@ async function graphQL<T>(query: string, variables: Variables = {}, signal?: Abo
   return payload.data as T;
 }
 
-const MEDIA_CARD_FIELDS = `
+const MEDIA_LIST_FIELDS = `
   id idMal title { romaji english native }
-  coverImage { large color } bannerImage averageScore popularity
-  type episodes chapters volumes duration format status season seasonYear genres isAdult source countryOfOrigin
-  nextAiringEpisode { episode airingAt }
+  coverImage { large color } averageScore
+  type episodes chapters volumes duration format status season seasonYear isAdult
 `;
 
+const MEDIA_TRENDING_FIELDS = `${MEDIA_LIST_FIELDS} bannerImage`;
+
 const MEDIA_FIELDS = `
-  ${MEDIA_CARD_FIELDS}
+  ${MEDIA_LIST_FIELDS}
+  bannerImage popularity genres source countryOfOrigin
+  nextAiringEpisode { episode airingAt }
   description(asHtml: false)
   studios(isMain: true) { nodes { name } }
   trailer { id site }
@@ -66,16 +69,16 @@ export async function fetchHomeFeed(includeAdult = false, signal?: AbortSignal) 
   const data = await graphQL<any>(`
     query Home($adult: Boolean) {
       trending: Page(page: 1, perPage: 16) {
-        media(type: ANIME, sort: TRENDING_DESC, isAdult: $adult) { ${MEDIA_CARD_FIELDS} }
+        media(type: ANIME, sort: TRENDING_DESC, isAdult: $adult) { ${MEDIA_TRENDING_FIELDS} }
       }
       popular: Page(page: 1, perPage: 16) {
-        media(type: ANIME, sort: POPULARITY_DESC, isAdult: $adult) { ${MEDIA_CARD_FIELDS} }
+        media(type: ANIME, sort: POPULARITY_DESC, isAdult: $adult) { ${MEDIA_LIST_FIELDS} }
       }
       airing: Page(page: 1, perPage: 16) {
-        media(type: ANIME, status: RELEASING, sort: SCORE_DESC, isAdult: $adult) { ${MEDIA_CARD_FIELDS} }
+        media(type: ANIME, status: RELEASING, sort: SCORE_DESC, isAdult: $adult) { ${MEDIA_LIST_FIELDS} }
       }
       upcoming: Page(page: 1, perPage: 16) {
-        media(type: ANIME, status: NOT_YET_RELEASED, sort: POPULARITY_DESC, isAdult: $adult) { ${MEDIA_CARD_FIELDS} }
+        media(type: ANIME, status: NOT_YET_RELEASED, sort: POPULARITY_DESC, isAdult: $adult) { ${MEDIA_LIST_FIELDS} }
       }
     }
   `, { adult: includeAdult }, signal);
@@ -106,7 +109,7 @@ export async function searchMedia(filters: AnimeSearchFilters, signal?: AbortSig
       Page(page: $page, perPage: 30) {
         pageInfo { currentPage hasNextPage lastPage }
         media(type: $type, search: $search, format: $format, status: $status, genre: $genre, season: $season, seasonYear: $year, sort: $sort, isAdult: $adult) {
-          ${MEDIA_CARD_FIELDS}
+          ${MEDIA_LIST_FIELDS}
         }
       }
     }
@@ -134,8 +137,8 @@ export async function fetchAnimeDetails(id: number, signal?: AbortSignal) {
     query Details($id: Int!) {
       Media(id: $id, type: ANIME) {
         ${MEDIA_FIELDS}
-        relations { edges { relationType node { ${MEDIA_CARD_FIELDS} } } }
-        recommendations(perPage: 12, sort: RATING_DESC) { nodes { mediaRecommendation { ${MEDIA_CARD_FIELDS} } } }
+        relations { edges { relationType node { ${MEDIA_LIST_FIELDS} } } }
+        recommendations(perPage: 12, sort: RATING_DESC) { nodes { mediaRecommendation { ${MEDIA_LIST_FIELDS} } } }
       }
     }
   `, { id }, signal);
@@ -156,8 +159,8 @@ export async function fetchMangaDetails(id: number, signal?: AbortSignal) {
     query MangaDetails($id: Int!) {
       Media(id: $id, type: MANGA) {
         ${MEDIA_FIELDS}
-        relations { edges { relationType node { ${MEDIA_CARD_FIELDS} } } }
-        recommendations(perPage: 12, sort: RATING_DESC) { nodes { mediaRecommendation { ${MEDIA_CARD_FIELDS} } } }
+        relations { edges { relationType node { ${MEDIA_LIST_FIELDS} } } }
+        recommendations(perPage: 12, sort: RATING_DESC) { nodes { mediaRecommendation { ${MEDIA_LIST_FIELDS} } } }
       }
     }
   `, { id }, signal);
@@ -178,7 +181,7 @@ export async function fetchSchedule(startSeconds: number, endSeconds: number, si
     query Schedule($start: Int!, $end: Int!) {
       Page(page: 1, perPage: 50) {
         airingSchedules(airingAt_greater: $start, airingAt_lesser: $end, sort: TIME) {
-          episode airingAt media { ${MEDIA_CARD_FIELDS} }
+          episode airingAt media { ${MEDIA_LIST_FIELDS} }
         }
       }
     }

@@ -21,6 +21,7 @@ type ThemeMode = 'dark' | 'light' | 'system';
 
 type AppState = {
   hydrated: boolean;
+  permissionsOnboardingCompleted: boolean;
   themeMode: ThemeMode;
   nsfwMode: boolean;
   audioPreference: AudioPreference;
@@ -33,6 +34,7 @@ type AppState = {
   library: LibraryItem[];
   history: PlaybackHistoryItem[];
   setHydrated: (value: boolean) => void;
+  completePermissionsOnboarding: () => void;
   setThemeMode: (value: ThemeMode) => void;
   setNsfwMode: (value: boolean) => void;
   setAudioPreference: (value: AudioPreference) => void;
@@ -73,6 +75,7 @@ export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
       hydrated: false,
+      permissionsOnboardingCompleted: false,
       themeMode: 'dark',
       nsfwMode: false,
       audioPreference: DEFAULT_AUDIO_PREFERENCE,
@@ -85,6 +88,7 @@ export const useAppStore = create<AppState>()(
       library: [],
       history: [],
       setHydrated: (hydrated) => set({ hydrated }),
+      completePermissionsOnboarding: () => set({ permissionsOnboardingCompleted: true }),
       setThemeMode: (themeMode) => set({ themeMode }),
       setNsfwMode: (nsfwMode) => set({ nsfwMode }),
       setAudioPreference: (audioPreference) => set({ audioPreference, preferencesUpdatedAt: new Date().toISOString() }),
@@ -133,7 +137,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'streamnyaa.mobile.v1',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => AsyncStorage),
       migrate: (persisted: unknown) => {
         const state = (persisted || {}) as Partial<AppState>;
@@ -143,6 +147,7 @@ export const useAppStore = create<AppState>()(
         });
         return {
           ...state,
+          permissionsOnboardingCompleted: state.permissionsOnboardingCompleted ?? false,
           audioPreference: state.audioPreference || DEFAULT_AUDIO_PREFERENCE,
           autoPlayNext: playerPreferences.autoNextEpisode,
           autoOpenBestSource: state.autoOpenBestSource ?? false,
@@ -153,6 +158,7 @@ export const useAppStore = create<AppState>()(
         } as AppState;
       },
       partialize: (state) => ({
+        permissionsOnboardingCompleted: state.permissionsOnboardingCompleted,
         themeMode: state.themeMode,
         nsfwMode: state.nsfwMode,
         audioPreference: state.audioPreference,
@@ -165,7 +171,10 @@ export const useAppStore = create<AppState>()(
         library: state.library,
         history: state.history,
       }) as AppState,
-      onRehydrateStorage: () => (state) => state?.setHydrated(true),
+      onRehydrateStorage: () => (state) => {
+        if (state) state.setHydrated(true);
+        else useAppStore.setState({ hydrated: true });
+      },
     },
   ),
 );

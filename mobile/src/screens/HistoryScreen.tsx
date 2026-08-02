@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { Alert, FlatList, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -20,13 +20,14 @@ export function HistoryScreen({ navigation }: Props) {
   const clearCompleted = useAppStore((state) => state.clearCompletedHistory);
   const [filter, setFilter] = useState<'all' | 'watching' | 'completed'>('all');
   const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
   const completedCount = useMemo(() => history.filter((item) => isPlaybackComplete(item.progressPercent, item.resumeSeconds, item.durationSeconds)).length, [history]);
   const visibleHistory = useMemo(() => history.filter((item) => {
     const complete = isPlaybackComplete(item.progressPercent, item.resumeSeconds, item.durationSeconds);
     if (filter === 'watching' && complete) return false;
     if (filter === 'completed' && !complete) return false;
-    return `${item.animeTitle} ${item.sourceTitle} episode ${item.episode}`.toLowerCase().includes(query.trim().toLowerCase());
-  }), [filter, history, query]);
+    return `${item.animeTitle} ${item.sourceTitle} episode ${item.episode}`.toLowerCase().includes(deferredQuery.trim().toLowerCase());
+  }), [deferredQuery, filter, history]);
   const resume = (item: typeof history[number]) => {
     const anime: Anime = { id: Number(item.animeId), title: item.animeTitle, cover: item.image };
     navigation.navigate('Watch', {
@@ -54,7 +55,7 @@ export function HistoryScreen({ navigation }: Props) {
           </View>
           <IconButton icon="close" onPress={() => remove(item.key)} accessibilityLabel="Remove history item" />
         </View>
-      )} initialNumToRender={8} maxToRenderPerBatch={8} windowSize={5} removeClippedSubviews keyboardShouldPersistTaps="handled" /> : <StateView title="No matching history" message="Change the search or progress filter." />}
+      )} initialNumToRender={6} maxToRenderPerBatch={5} updateCellsBatchingPeriod={40} windowSize={5} removeClippedSubviews keyboardShouldPersistTaps="handled" /> : <StateView title="No matching history" message="Change the search or progress filter." />}
       </> : <StateView title="No watch history yet" message="Start a source and your episode progress will appear here." />}
     </Screen>
   );

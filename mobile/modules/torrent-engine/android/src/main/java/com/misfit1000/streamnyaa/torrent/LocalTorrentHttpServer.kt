@@ -26,6 +26,7 @@ class LocalTorrentHttpServer(
     val response = newFixedLengthResponse(if (range == null) Response.Status.OK else Response.Status.PARTIAL_CONTENT, mimeProvider(), input, length)
     response.addHeader("Accept-Ranges", "bytes")
     response.addHeader("Content-Length", length.toString())
+    response.addHeader("Connection", "keep-alive")
     if (range != null) response.addHeader("Content-Range", "bytes $start-$requestedEnd/$total")
     response.addHeader("Cache-Control", "no-store")
     return response
@@ -54,7 +55,7 @@ private class GrowingFileInputStream(
     val waitStarted = System.nanoTime()
     while (open.get() && position >= availableProvider()) {
       if (System.nanoTime() - waitStarted > TimeUnit.SECONDS.toNanos(45)) return -1
-      Thread.sleep(180)
+      Thread.sleep(80)
     }
     if (!open.get()) return -1
     val available = maxOf(0, availableProvider() - position)

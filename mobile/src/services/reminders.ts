@@ -1,20 +1,11 @@
 import * as Notifications from 'expo-notifications';
 import type { ScheduleEntry } from '../types';
-
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: false,
-    shouldSetBadge: false,
-  }),
-});
+import { requestNotificationPermission } from './permissions';
 
 export async function ensureReminderPermission() {
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
-  const requested = await Notifications.requestPermissionsAsync();
-  return requested.granted;
+  return (await requestNotificationPermission()).granted;
 }
 
 export async function scheduleAiringReminder(entry: ScheduleEntry, minutesBefore = 10) {
