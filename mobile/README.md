@@ -24,7 +24,7 @@ Requirements:
 - JDK 21
 - Android Studio with the Android SDK and an emulator or USB device
 
-On Windows, keep the Android SDK/NDK path free of spaces. Native CMake dependencies can fail at link time when an SDK path containing spaces is passed through Ninja.
+On Windows, keep the Android SDK/NDK path free of spaces and build from a short repository path. Native CMake dependencies can fail at link time when SDK or generated object paths exceed Windows/Ninja path limits.
 
 Install and generate Android sources:
 
@@ -39,7 +39,16 @@ Run a development build:
 npm run android
 ```
 
-Expo Go cannot load the local torrent module; use a development build. For a cloud APK/AAB build, configure Expo Application Services and run the `development`, `preview`, or `production` profile from `eas.json`.
+Development and `app-debug.apk` builds require Metro and are not standalone phone installers. Expo Go also cannot load the local torrent module; use a native development build while coding.
+
+Build a standalone ARM64 APK from `mobile/android`:
+
+```powershell
+$env:NODE_ENV = 'production'
+.\gradlew.bat :app:assembleRelease '-PreactNativeArchitectures=arm64-v8a' --no-daemon --max-workers=1
+```
+
+The standalone output is `android/app/build/outputs/apk/release/app-release.apk`; it embeds `assets/index.android.bundle` and runs without Metro. Local release builds currently use the Android debug signing key for sideload testing. Configure a private production keystore before Play Store or public distribution. For a cloud APK/AAB build, configure Expo Application Services and run the `preview` or `production` profile from `eas.json`.
 
 For Google sign-in, add `streamnyaa://auth` to the Supabase authentication redirect allow list. Email/password sign-in already uses the same StreamNyaa credentials and user ID as the web and desktop clients.
 

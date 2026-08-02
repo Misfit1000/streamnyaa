@@ -16,5 +16,6 @@ desktop/releases/
 /StreamNyaa/
 mobile/.expo/
 mobile/android/
+mobile/releases/
 mobile/modules/torrent-engine/android/build/
 .tooling/
