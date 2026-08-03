@@ -4,7 +4,7 @@ import { useEventListener } from 'expo';
 import { useQuery } from '@tanstack/react-query';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Button, Chip, ProgressBar, SegmentedButtons, Text, useTheme } from 'react-native-paper';
+import { Button, Chip, Menu, ProgressBar, SegmentedButtons, Text, TextInput, useTheme } from 'react-native-paper';
 import { Screen } from '../components/Screen';
 import { SourceRow } from '../components/SourceRow';
 import { StateView } from '../components/StateView';
@@ -13,7 +13,7 @@ import { searchSources, sourceQuery } from '../services/sources';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList, TorrentSource, TorrentStreamStatus } from '../types';
 import { tokens } from '../theme';
-import { selectBackupSource, sourceQualityBucket } from '../../../shared/sources';
+import { parseSizeBytes, selectBackupSource, sourceQualityBucket } from '../../../shared/sources';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Watch'>;
 const idleStatus: TorrentStreamStatus = { state: 'idle', message: 'Choose a source to begin.', progress: 0, bufferedPercent: 0, peers: 0, downloadRate: 0 };
@@ -23,10 +23,14 @@ export function WatchScreen({ route }: Props) {
   const theme = useTheme();
   const anime = route.params.anime;
   const [episode, setEpisode] = useState(route.params.episode || 1);
+  const [episodeDraft, setEpisodeDraft] = useState(String(route.params.episode || 1));
   const [selected, setSelected] = useState<TorrentSource | undefined>(route.params.source);
   const [pendingAutoNext, setPendingAutoNext] = useState(false);
   const [status, setStatus] = useState<TorrentStreamStatus>(idleStatus);
   const [quality, setQuality] = useState('auto');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'trusted' | 'no-remakes'>('all');
+  const [sourceSort, setSourceSort] = useState<'best' | 'seeders' | 'size'>('best');
+  const [sortMenu, setSortMenu] = useState(false);
   const failedSources = useRef(new Set<string>());
   const automaticRetries = useRef(0);
   const starting = useRef(false);
@@ -51,7 +55,14 @@ export function WatchScreen({ route }: Props) {
       wide: !resourcePolicy.batterySaver,
     }),
   });
-  const visibleSources = useMemo(() => (sources.data || []).filter((source) => quality === 'auto' || sourceQualityBucket(source.title) === quality), [quality, sources.data]);
+  const visibleSources = useMemo(() => (sources.data || [])
+    .filter((source) => quality === 'auto' || sourceQualityBucket(source.title) === quality)
+    .filter((source) => sourceFilter === 'all' || (sourceFilter === 'trusted' ? source.trusted : !source.remake))
+    .sort((left, right) => sourceSort === 'seeders'
+      ? right.seeders - left.seeders
+      : sourceSort === 'size'
+        ? parseSizeBytes(left.size) - parseSizeBytes(right.size)
+        : Number(right.sourceScore || 0) - Number(left.sourceScore || 0)), [quality, sourceFilter, sourceSort, sources.data]);
   const player = useVideoPlayer(null, (instance) => { instance.timeUpdateEventInterval = 5; });
 
   const persistProgress = useCallback(() => {
@@ -112,6 +123,7 @@ export function WatchScreen({ route }: Props) {
 
   useEffect(() => {
     playbackSnapshot.current = { ...playbackSnapshot.current, selected, episode };
+    setEpisodeDraft(String(episode));
   }, [episode, selected]);
 
   useEffect(() => {
@@ -208,6 +220,24 @@ export function WatchScreen({ route }: Props) {
     setPendingAutoNext(false); setSelected(undefined); setStatus(idleStatus); setEpisode((value) => value + 1);
   };
 
+  const jumpToEpisode = () => {
+    const parsed = Number.parseInt(episodeDraft, 10);
+    const maximum = Number(anime.episodes || Number.MAX_SAFE_INTEGER);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setEpisodeDraft(String(episode));
+      return;
+    }
+    const next = Math.min(parsed, maximum);
+    if (next === episode) return;
+    persistProgress();
+    player.pause();
+    void TorrentEngine.stop(false);
+    setPendingAutoNext(false);
+    setSelected(undefined);
+    setStatus(idleStatus);
+    setEpisode(next);
+  };
+
   return (
     <Screen title={anime.title} subtitle={`Episode ${episode}`} safeTop={false}>
       <View style={[styles.player, { backgroundColor: '#070607' }]}>
@@ -221,14 +251,25 @@ export function WatchScreen({ route }: Props) {
         </View>
       ) : null}
       <View style={styles.episodeControls}>
-        <Button mode="outlined" disabled={episode <= 1} onPress={() => { persistProgress(); setEpisode((value) => Math.max(1, value - 1)); setSelected(undefined); void TorrentEngine.stop(false); }}>Previous</Button>
+        <Button mode="outlined" disabled={episode <= 1} onPress={() => { persistProgress(); player.pause(); setPendingAutoNext(false); setEpisode((value) => Math.max(1, value - 1)); setSelected(undefined); setStatus(idleStatus); void TorrentEngine.stop(false); }}>Previous</Button>
         <Text variant="titleMedium" style={styles.semibold}>Episode {episode}</Text>
         <Button mode="outlined" onPress={nextEpisode}>Next</Button>
+      </View>
+      <View style={styles.episodeJump}>
+        <TextInput value={episodeDraft} onChangeText={setEpisodeDraft} onSubmitEditing={jumpToEpisode} keyboardType="number-pad" mode="outlined" dense label="Episode number" style={styles.episodeInput} />
+        <Button mode="contained-tonal" icon="arrow-right" onPress={jumpToEpisode}>Jump</Button>
       </View>
       {autoNext ? <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>The next ranked source will open when this episode ends.</Text> : null}
       <Text variant="titleMedium" style={styles.semibold}>Available sources</Text>
       <SegmentedButtons value={audio} onValueChange={(value) => setAudio(value as typeof audio)} buttons={[{ value: 'sub-preferred', label: 'Sub' }, { value: 'dual-preferred', label: 'Dual' }, { value: 'dub-only', label: 'Dub' }]} density="small" />
       <SegmentedButtons value={quality} onValueChange={setQuality} buttons={[{ value: 'auto', label: 'Best' }, { value: '1080p', label: '1080p' }, { value: '720p', label: '720p' }, { value: '2160p', label: '4K' }]} density="small" />
+      <View style={styles.sourceTools}>
+        <Chip selected={sourceFilter === 'trusted'} mode="outlined" icon="check-decagram-outline" onPress={() => setSourceFilter(sourceFilter === 'trusted' ? 'all' : 'trusted')}>Trusted</Chip>
+        <Chip selected={sourceFilter === 'no-remakes'} mode="outlined" icon="shield-check-outline" onPress={() => setSourceFilter(sourceFilter === 'no-remakes' ? 'all' : 'no-remakes')}>No remakes</Chip>
+        <Menu visible={sortMenu} onDismiss={() => setSortMenu(false)} anchor={<Button compact mode="text" icon="sort" onPress={() => setSortMenu(true)}>{sourceSort === 'best' ? 'Best match' : sourceSort === 'seeders' ? 'Seeders' : 'Smallest'}</Button>}>
+          {([['best', 'Best match'], ['seeders', 'Most seeders'], ['size', 'Smallest size']] as const).map(([value, label]) => <Menu.Item key={value} title={label} leadingIcon={sourceSort === value ? 'check' : undefined} onPress={() => { setSourceSort(value); setSortMenu(false); }} />)}
+        </Menu>
+      </View>
       {sources.isLoading ? <StateView loading message="Finding the best matching releases…" /> : sources.isError ? <StateView title="Source search failed" message={sources.error.message} onRetry={() => void sources.refetch()} /> : visibleSources.length ? visibleSources.slice(0, 8).map((source) => <SourceRow key={`${source.infoHash}-${source.title}`} source={source} onPlay={() => void start(source)} onShare={() => void Share.share({ message: source.magnet })} />) : <StateView title="No source found" message="Try Best quality, another audio mode, or Source Search." />}
     </Screen>
   );
@@ -239,5 +280,8 @@ const styles = StyleSheet.create({
   streamStatus: { padding: tokens.spacing.md, borderRadius: tokens.radius.card, gap: tokens.spacing.sm },
   statusTitle: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
   episodeControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  episodeJump: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
+  episodeInput: { flex: 1 },
+  sourceTools: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: tokens.spacing.sm },
   semibold: { fontWeight: '600', flexShrink: 1 },
 });

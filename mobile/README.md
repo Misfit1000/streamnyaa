@@ -8,7 +8,9 @@ The Android client follows the desktop product contract for home, discovery, sch
 
 The native Android splash and the short JavaScript boot transition use the same StreamNyaa mark and dark Material surface. Navigation, local preference hydration, account restoration, and the first Home request initialize concurrently behind that transition; a startup fallback prevents damaged local state from leaving the app on the logo indefinitely.
 
-The v0.3 interface follows the desktop brand with a vanta-black base, restrained blood-red emphasis, translucent tonal surfaces, consistent 8/12 px geometry, and media-first layouts sized for narrow Android phones. Home uses a swipeable featured carousel that advances automatically, readable cinematic overlays, and direct Watch/Details actions. Android system navigation starts hidden and can be revealed temporarily with an edge swipe.
+The v0.4 interface follows the desktop brand with a vanta-black base, restrained blood-red emphasis, translucent tonal surfaces, consistent 8/12 px geometry, and media-first layouts sized for narrow Android phones. Home uses a swipeable featured carousel that advances automatically, readable cinematic overlays, and direct Watch/Details actions. Android system navigation starts hidden and can be revealed temporarily with an edge swipe.
+
+Desktop parity is tracked by workflow rather than route names. Android includes paginated discovery with a mobile filter sheet, persisted airing reminders, watching/completed/saved/liked library views, direct episode jump, source trust/health filters and sorting, richer release comparison, and on-demand service diagnostics. See [`FEATURE_PARITY.md`](./FEATURE_PARITY.md) for the complete mapping and intentional platform differences.
 
 On first launch, StreamNyaa explains access before Android displays a system prompt. Notifications are optional and used only for airing reminders. Streaming uses private app cache storage, so photo, media, external-storage, and overlay permissions are explicitly blocked from the generated Android manifest. Permission status can be reviewed later in Settings.
 

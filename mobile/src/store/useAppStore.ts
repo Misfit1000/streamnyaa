@@ -19,6 +19,14 @@ import {
 
 type ThemeMode = 'dark' | 'light' | 'system';
 
+export type AiringReminderRecord = {
+  notificationId: string;
+  animeId: string;
+  animeTitle: string;
+  episode?: number;
+  airingAt: number;
+};
+
 type AppState = {
   hydrated: boolean;
   permissionsOnboardingCompleted: boolean;
@@ -30,7 +38,9 @@ type AppState = {
   playerPreferences: PlayerPreferences;
   resourcePolicy: MobileResourcePolicy;
   preferencesUpdatedAt: string;
+  recentExploreSearches: string[];
   recentSourceSearches: string[];
+  airingReminders: Record<string, AiringReminderRecord>;
   library: LibraryItem[];
   history: PlaybackHistoryItem[];
   setHydrated: (value: boolean) => void;
@@ -43,7 +53,10 @@ type AppState = {
   setPlayerPreferences: (value: PlayerPreferencesPatch) => void;
   setResourcePolicy: (value: Partial<MobileResourcePolicy>) => void;
   replaceSyncedPreferences: (value: SyncedPreferences) => void;
+  addRecentExploreSearch: (value: string) => void;
   addRecentSourceSearch: (value: string) => void;
+  saveAiringReminder: (key: string, value: AiringReminderRecord) => void;
+  removeAiringReminder: (key: string) => void;
   toggleBookmark: (anime: Anime) => void;
   toggleLike: (anime: Anime) => void;
   replaceLibrary: (items: LibraryItem[]) => void;
@@ -84,7 +97,9 @@ export const useAppStore = create<AppState>()(
       playerPreferences: DEFAULT_PLAYER_PREFERENCES,
       resourcePolicy: DEFAULT_MOBILE_RESOURCE_POLICY,
       preferencesUpdatedAt: new Date(0).toISOString(),
+      recentExploreSearches: [],
       recentSourceSearches: [],
+      airingReminders: {},
       library: [],
       history: [],
       setHydrated: (hydrated) => set({ hydrated }),
@@ -117,9 +132,18 @@ export const useAppStore = create<AppState>()(
           preferencesUpdatedAt: preferences.updatedAt,
         };
       }),
+      addRecentExploreSearch: (value) => set((state) => ({
+        recentExploreSearches: [value.trim(), ...state.recentExploreSearches.filter((item) => item.toLowerCase() !== value.trim().toLowerCase())].filter(Boolean).slice(0, 6),
+      })),
       addRecentSourceSearch: (value) => set((state) => ({
         recentSourceSearches: [value.trim(), ...state.recentSourceSearches.filter((item) => item.toLowerCase() !== value.trim().toLowerCase())].filter(Boolean).slice(0, 6),
       })),
+      saveAiringReminder: (key, value) => set((state) => ({ airingReminders: { ...state.airingReminders, [key]: value } })),
+      removeAiringReminder: (key) => set((state) => {
+        const airingReminders = { ...state.airingReminders };
+        delete airingReminders[key];
+        return { airingReminders };
+      }),
       toggleBookmark: (anime) => set((state) => ({ library: updateLibrary(state.library, anime, 'bookmarked') })),
       toggleLike: (anime) => set((state) => ({ library: updateLibrary(state.library, anime, 'liked') })),
       replaceLibrary: (library) => set({ library: library.slice(0, 500) }),
@@ -137,7 +161,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'streamnyaa.mobile.v1',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => AsyncStorage),
       migrate: (persisted: unknown) => {
         const state = (persisted || {}) as Partial<AppState>;
@@ -154,7 +178,9 @@ export const useAppStore = create<AppState>()(
           playerPreferences,
           resourcePolicy: normalizeMobileResourcePolicy(state.resourcePolicy),
           preferencesUpdatedAt: state.preferencesUpdatedAt || new Date(0).toISOString(),
+          recentExploreSearches: state.recentExploreSearches || [],
           recentSourceSearches: state.recentSourceSearches || [],
+          airingReminders: state.airingReminders || {},
         } as AppState;
       },
       partialize: (state) => ({
@@ -167,7 +193,9 @@ export const useAppStore = create<AppState>()(
         playerPreferences: state.playerPreferences,
         resourcePolicy: state.resourcePolicy,
         preferencesUpdatedAt: state.preferencesUpdatedAt,
+        recentExploreSearches: state.recentExploreSearches,
         recentSourceSearches: state.recentSourceSearches,
+        airingReminders: state.airingReminders,
         library: state.library,
         history: state.history,
       }) as AppState,

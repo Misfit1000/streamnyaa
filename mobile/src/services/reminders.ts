@@ -21,3 +21,7 @@ export async function scheduleAiringReminder(entry: ScheduleEntry, minutesBefore
     trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
   });
 }
+
+export async function cancelAiringReminder(notificationId: string) {
+  await Notifications.cancelScheduledNotificationAsync(notificationId);
+}

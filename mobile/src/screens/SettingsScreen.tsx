@@ -5,6 +5,7 @@ import { Button, Divider, List, RadioButton, SegmentedButtons, Snackbar, Switch,
 import { Screen } from '../components/Screen';
 import { TorrentEngine } from '../native/TorrentEngine';
 import { getNotificationPermissionState, openAppPermissionSettings, requestNotificationPermission, type NotificationPermissionState } from '../services/permissions';
+import { runConnectionDiagnostics, type ConnectionDiagnostic } from '../services/diagnostics';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
 
@@ -15,6 +16,8 @@ export function SettingsScreen(_props: Props) {
   const [message, setMessage] = useState('');
   const [cacheBytes, setCacheBytes] = useState(0);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState | null>(null);
+  const [diagnostics, setDiagnostics] = useState<ConnectionDiagnostic[]>([]);
+  const [checkingConnections, setCheckingConnections] = useState(false);
   const clearHistory = useAppStore((state) => state.clearHistory);
   const refreshCache = () => void TorrentEngine.getCacheStats()
     .then((stats) => setCacheBytes(stats.bytes))
@@ -37,6 +40,14 @@ export function SettingsScreen(_props: Props) {
     const next = await requestNotificationPermission();
     setNotificationPermission(next);
     setMessage(next.granted ? 'Airing reminders are enabled.' : 'Notifications were not enabled. You can change this later.');
+  };
+  const checkConnections = async () => {
+    setCheckingConnections(true);
+    const next = await runConnectionDiagnostics();
+    setDiagnostics(next);
+    setCheckingConnections(false);
+    const failed = next.filter((item) => !item.ok).length;
+    setMessage(failed ? `${failed} connection ${failed === 1 ? 'check needs' : 'checks need'} attention.` : 'Metadata, source, and account services are reachable.');
   };
   return (
     <Screen title="Settings" subtitle="Android playback and app preferences" safeTop={false}>
@@ -101,9 +112,14 @@ export function SettingsScreen(_props: Props) {
         <Button mode="outlined" icon="delete-sweep-outline" onPress={() => void TorrentEngine.clearCache().then((bytes) => { setCacheBytes(0); setMessage(`Cleared ${(bytes / 1024 / 1024).toFixed(1)} MB of cached source data.`); }).catch((error) => setMessage(error.message))}>Clear streaming cache</Button>
         <Button mode="text" icon="history" onPress={() => Alert.alert('Clear watch history?', 'This removes progress from all synced clients after the next account sync.', [{ text: 'Cancel' }, { text: 'Clear', style: 'destructive', onPress: clearHistory }])}>Clear watch history</Button>
       </List.Section>
+      <Divider />
+      <List.Section title="App health">
+        <List.Item title="Native streaming engine" description={TorrentEngine.isSupported() ? 'Loaded and available' : 'Use an Android development or release build'} left={(props) => <List.Icon {...props} icon={TorrentEngine.isSupported() ? 'check-circle-outline' : 'alert-circle-outline'} />} />
+        {diagnostics.map((item) => <List.Item key={item.id} title={item.label} description={item.message} left={(props) => <List.Icon {...props} icon={item.ok ? 'check-circle-outline' : 'alert-circle-outline'} color={item.ok ? undefined : '#FF6B82'} />} />)}
+        <Button mode="outlined" icon="lan-check" loading={checkingConnections} disabled={checkingConnections} onPress={() => void checkConnections()}>Run connection check</Button>
+      </List.Section>
       <Text variant="bodySmall">Streaming downloads only the selected media file into private app storage. Old source caches are removed automatically when the limit is reached.</Text>
       <Button mode="text" icon="share-variant" onPress={() => void Share.share({ message: JSON.stringify({ audioPreference: store.audioPreference, autoOpenBestSource: store.autoOpenBestSource, playerPreferences: store.playerPreferences, resourcePolicy: store.resourcePolicy }, null, 2), title: 'StreamNyaa Android settings' })}>Export settings</Button>
-      <Text variant="bodySmall">Native engine: {TorrentEngine.isSupported() ? 'available' : 'not loaded — use an Android development or release build'}</Text>
       <Snackbar visible={Boolean(message)} onDismiss={() => setMessage('')}>{message}</Snackbar>
     </Screen>
   );

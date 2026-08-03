@@ -26,3 +26,20 @@ test('every feature contract is represented in both navigators', () => {
     );
   });
 });
+
+test('Android parity covers the desktop workflows inside each route', () => {
+  const expectations: Record<string, string[]> = {
+    'ExploreScreen.tsx': ['useInfiniteQuery', 'recentExploreSearches', 'Refine results', 'Minimum score', 'Episode count'],
+    'ScheduleScreen.tsx': ['Saved (', 'airingReminders', 'cancelAiringReminder', 'toggleBookmark'],
+    'LibraryScreen.tsx': ["'watching'", "'completed'", "'saved'", "'liked'", 'ProgressBar'],
+    'WatchScreen.tsx': ['episodeDraft', 'sourceFilter', 'sourceSort', 'selectBackupSource', 'allowsPictureInPicture'],
+    'DownloadsScreen.tsx': ['sourceQualityLabel', 'Trusted', 'No remakes', 'Most seeders'],
+    'HistoryScreen.tsx': ["'recent'", "'progress'", "'title'", "'episode'", 'Last 7 days'],
+    'CompareScreen.tsx': ['Popularity', 'Quick read', 'sharedGenres', 'A releases'],
+    'SettingsScreen.tsx': ['runConnectionDiagnostics', 'App health', 'Native streaming engine'],
+  };
+  Object.entries(expectations).forEach(([file, signals]) => {
+    const source = readFileSync(path.join(repoRoot, 'mobile/src/screens', file), 'utf8');
+    signals.forEach((signal) => assert.ok(source.includes(signal), `${file} is missing ${signal}`));
+  });
+});

@@ -16,6 +16,7 @@ export function ProfileScreen({ navigation }: Props) {
   const auth = useAuth();
   const library = useAppStore((state) => state.library);
   const history = useAppStore((state) => state.history);
+  const reminderCount = useAppStore((state) => Object.values(state.airingReminders).filter((item) => item.airingAt * 1000 > Date.now()).length);
   const counts = library.reduce((result, item) => ({ saved: result.saved + Number(item.bookmarked), liked: result.liked + Number(item.liked) }), { saved: 0, liked: 0 });
   const displayName = String(auth.user?.user_metadata?.full_name || auth.user?.user_metadata?.name || auth.user?.email || 'StreamNyaa user');
   const syncLabel = auth.syncState === 'syncing' ? 'Syncing now' : auth.syncState === 'synced' ? `Synced${auth.lastSyncedAt ? ` · ${new Date(auth.lastSyncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}` : auth.syncState === 'offline' ? 'Saved locally · sync will retry' : 'Sign in to sync across devices';
@@ -37,6 +38,8 @@ export function ProfileScreen({ navigation }: Props) {
         <Stat value={counts.liked} label="Liked" />
         <View style={[styles.statDivider, { backgroundColor: theme.colors.outlineVariant }]} />
         <Stat value={history.length} label="Watched" />
+        <View style={[styles.statDivider, { backgroundColor: theme.colors.outlineVariant }]} />
+        <Stat value={reminderCount} label="Alerts" />
       </View>
 
       {auth.user ? <Button mode="contained-tonal" icon="sync" loading={auth.syncState === 'syncing'} onPress={() => void auth.syncNow()} contentStyle={styles.button}>Sync now</Button> : <Button mode="contained" icon="login" onPress={() => navigation.navigate('SignIn')} contentStyle={styles.button}>Sign in or create account</Button>}
@@ -44,6 +47,7 @@ export function ProfileScreen({ navigation }: Props) {
       <List.Section style={styles.list}>
         <List.Item title="Watch history" description="Resume playback and manage progress" left={(props) => <List.Icon {...props} icon="history" color={theme.colors.primary} />} right={(props) => <List.Icon {...props} icon="chevron-right" />} onPress={() => navigation.navigate('History')} />
         <List.Item title="Compare anime" description="Scores, genres, studios, and episodes" left={(props) => <List.Icon {...props} icon="compare-horizontal" color={theme.colors.primary} />} right={(props) => <List.Icon {...props} icon="chevron-right" />} onPress={() => navigation.navigate('Compare')} />
+        <List.Item title="Source search" description="Search releases by title, quality, and torrent health" left={(props) => <List.Icon {...props} icon="database-search-outline" color={theme.colors.primary} />} right={(props) => <List.Icon {...props} icon="chevron-right" />} onPress={() => navigation.navigate('Sources', {})} />
         <List.Item title="Settings" description="Playback, theme, cache, and content" left={(props) => <List.Icon {...props} icon="cog-outline" color={theme.colors.primary} />} right={(props) => <List.Icon {...props} icon="chevron-right" />} onPress={() => navigation.navigate('Settings')} />
       </List.Section>
       {auth.user ? <Button mode="text" textColor={theme.colors.error} onPress={() => void auth.signOut()}>Sign out</Button> : null}

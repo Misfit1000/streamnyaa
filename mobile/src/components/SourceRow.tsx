@@ -3,16 +3,22 @@ import { Button, Chip, Text, useTheme } from 'react-native-paper';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import type { TorrentSource } from '../types';
 import { tokens } from '../theme';
+import { sourceQualityBucket, sourceQualityLabel, sourceQualityScore } from '../../../shared/sources';
 
 export function SourceRow({ source, onPlay, onShare }: { source: TorrentSource; onPlay: () => void; onShare: () => void }) {
   const theme = useTheme();
+  const score = sourceQualityScore(source);
+  const quality = sourceQualityBucket(source.title);
   return (
     <View style={[styles.root, { backgroundColor: theme.colors.surfaceVariant }]}>
       <Text variant="titleSmall" numberOfLines={2} style={styles.title}>{source.title}</Text>
       <View style={styles.meta}>
+        <Chip compact icon="signal">{sourceQualityLabel(score)} {score}</Chip>
+        {quality !== 'other' ? <Chip compact>{quality === '2160p' ? '4K' : quality}</Chip> : null}
         <Chip compact icon="account-multiple">{source.seeders} seeders</Chip>
         {source.size ? <Chip compact icon="harddisk">{source.size}</Chip> : null}
         {source.trusted ? <Chip compact icon="check-decagram">Trusted</Chip> : null}
+        {source.remake ? <Chip compact icon="alert-circle-outline">Remake</Chip> : null}
       </View>
       <View style={styles.actions}>
         <Button style={styles.play} mode="contained" icon="play" onPress={onPlay}>Stream</Button>
