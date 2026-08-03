@@ -7,6 +7,7 @@ import { AnimeCard } from '../components/AnimeCard';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { searchAnime } from '../services/anilist';
+import { animeRouteParams } from '../lib/mediaNavigation';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
 import { tokens } from '../theme';
@@ -17,8 +18,8 @@ export function CatalogScreen({ route, navigation }: Props) {
   const { width } = useWindowDimensions();
   const [sort, setSort] = useState(route.params.sort || 'POPULARITY_DESC');
   const includeAdult = useAppStore((state) => state.nsfwMode);
-  const columns = width >= 720 ? 5 : width >= 520 ? 4 : 3;
-  const cardWidth = Math.floor((width - 32 - (columns - 1) * 12) / columns);
+  const columns = width >= 720 ? 5 : width >= 520 ? 4 : width >= 380 ? 3 : 2;
+  const cardWidth = Math.floor((width - tokens.spacing.lg * 2 - (columns - 1) * tokens.spacing.md) / columns);
   const query = useQuery({
     queryKey: ['catalog', route.params.genre, route.params.season, route.params.year, sort, includeAdult],
     queryFn: ({ signal }) => searchAnime({
@@ -31,7 +32,7 @@ export function CatalogScreen({ route, navigation }: Props) {
   });
 
   return (
-    <Screen title={route.params.title} subtitle="The same AniList catalog used by StreamNyaa Desktop" scroll={false}>
+    <Screen title={route.params.title} subtitle="Live catalog with automatic metadata backup" scroll={false} safeTop={false}>
       <SegmentedButtons
         value={sort}
         onValueChange={(value) => setSort(value as typeof sort)}
@@ -48,7 +49,7 @@ export function CatalogScreen({ route, navigation }: Props) {
           numColumns={columns}
           key={columns}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => navigation.navigate('Anime', { animeId: item.id, title: item.title })} />}
+          renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => navigation.navigate('Anime', animeRouteParams(item))} />}
           columnWrapperStyle={styles.row}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}

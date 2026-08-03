@@ -8,6 +8,7 @@ import { AnimeCard } from '../components/AnimeCard';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { useAppStore } from '../store/useAppStore';
+import { animeRouteParams } from '../lib/mediaNavigation';
 import type { MainTabParamList, RootStackParamList } from '../types';
 import { tokens } from '../theme';
 
@@ -20,7 +21,7 @@ export function LibraryScreen({ navigation }: Props) {
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const [sort, setSort] = useState<'newest' | 'title' | 'score'>('newest');
-  const columns = width >= 720 ? 5 : width >= 520 ? 4 : 3;
+  const columns = width >= 720 ? 5 : width >= 520 ? 4 : width >= 380 ? 3 : 2;
   const cardWidth = Math.floor((width - 32 - (columns - 1) * 12) / columns);
   const counts = useMemo(() => {
     let saved = 0; let liked = 0;
@@ -40,7 +41,7 @@ export function LibraryScreen({ navigation }: Props) {
       <SegmentedButtons value={section} onValueChange={(value) => setSection(value as typeof section)} buttons={[{ value: 'saved', label: `Saved (${counts.saved})` }, { value: 'liked', label: `Liked (${counts.liked})` }]} />
       {library.length ? <Searchbar value={query} onChangeText={setQuery} placeholder="Search library" style={styles.search} /> : null}
       {library.length ? <SegmentedButtons value={sort} onValueChange={(value) => setSort(value as typeof sort)} buttons={[{ value: 'newest', label: 'Newest' }, { value: 'title', label: 'Title' }, { value: 'score', label: 'Score' }]} density="small" /> : null}
-      {items.length ? <FlatList data={items} numColumns={columns} key={columns} keyExtractor={(item) => item.animeId} renderItem={({ item }) => <AnimeCard anime={item.anime} width={cardWidth} onPress={() => navigation.navigate('Anime', { animeId: item.anime.id, title: item.anime.title })} />} columnWrapperStyle={styles.row} contentContainerStyle={styles.list} initialNumToRender={columns * 2} maxToRenderPerBatch={columns * 2} updateCellsBatchingPeriod={40} windowSize={5} removeClippedSubviews keyboardShouldPersistTaps="handled" /> : <StateView title={query ? 'No matching anime' : 'Your library is empty'} message={query ? 'Try another title.' : 'Save or like an anime and it will appear here on every signed-in device.'} />}
+      {items.length ? <FlatList data={items} numColumns={columns} key={columns} keyExtractor={(item) => item.animeId} renderItem={({ item }) => <AnimeCard anime={item.anime} width={cardWidth} onPress={() => navigation.navigate('Anime', animeRouteParams(item.anime))} />} columnWrapperStyle={styles.row} contentContainerStyle={styles.list} initialNumToRender={columns * 2} maxToRenderPerBatch={columns * 2} updateCellsBatchingPeriod={40} windowSize={5} removeClippedSubviews keyboardShouldPersistTaps="handled" /> : <StateView title={query ? 'No matching anime' : 'Your library is empty'} message={query ? 'Try another title.' : 'Save or like an anime and it will appear here on every signed-in device.'} />}
     </Screen>
   );
 }

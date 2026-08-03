@@ -6,6 +6,7 @@ import { focusManager, QueryClientProvider } from '@tanstack/react-query';
 import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { NavigationBar } from 'expo-navigation-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { BootSequence } from './components/BootSequence';
 import { PermissionOnboarding } from './components/PermissionOnboarding';
@@ -54,6 +55,7 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <PaperProvider theme={paperTheme}>
             <View style={styles.root} onLayout={hideNativeSplash}>
+              <NavigationBar hidden style={dark ? 'light' : 'dark'} />
               <AuthProvider>
                 <NavigationContainer theme={navigationTheme} onReady={() => setNavigationReady(true)}>
                   <StatusBar style={dark ? 'light' : 'dark'} />

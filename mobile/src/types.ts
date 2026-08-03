@@ -6,6 +6,9 @@ export type AnimeTitle = {
 
 export type Anime = {
   id: number;
+  anilistId?: number;
+  kitsuId?: string;
+  metadataProvider?: 'AniList' | 'Jikan' | 'Kitsu';
   mediaType?: 'ANIME' | 'MANGA';
   malId?: number | null;
   title: string;
@@ -36,9 +39,10 @@ export type Anime = {
 };
 
 export type ScheduleEntry = {
-  episode: number;
+  episode?: number;
   airingAt: number;
   anime: Anime;
+  provider?: 'AniList' | 'Jikan';
 };
 
 export type TorrentSource = {
@@ -121,8 +125,8 @@ export type TorrentCacheStats = {
 
 export type RootStackParamList = {
   Tabs: undefined;
-  Anime: { animeId: number; title?: string };
-  Manga: { mangaId: number; title?: string };
+  Anime: { animeId: number; anilistId?: number; malId?: number | null; kitsuId?: string; title?: string };
+  Manga: { mangaId: number; anilistId?: number; malId?: number | null; kitsuId?: string; title?: string };
   Catalog: { title: string; genre?: string; season?: string; year?: number; sort?: 'TRENDING_DESC' | 'POPULARITY_DESC' | 'SCORE_DESC' };
   Watch: { anime: Anime; episode?: number; source?: TorrentSource; resumeSeconds?: number };
   Downloads: { anime: Anime; episode?: number };

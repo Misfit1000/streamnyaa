@@ -8,8 +8,12 @@ import { productFeature } from '../../../shared/features';
 const Root = createNativeStackNavigator<RootStackParamList>();
 const Tabs = createBottomTabNavigator<MainTabParamList>();
 
-const tabIcons: Record<keyof MainTabParamList, string> = {
-  Home: 'home-variant-outline', Explore: 'compass-outline', Schedule: 'calendar-month-outline', Library: 'bookmark-multiple-outline', Profile: 'account-circle-outline',
+const tabIcons: Record<keyof MainTabParamList, [string, string]> = {
+  Home: ['home-variant', 'home-variant-outline'],
+  Explore: ['compass', 'compass-outline'],
+  Schedule: ['calendar-month', 'calendar-month-outline'],
+  Library: ['bookmark-multiple', 'bookmark-multiple-outline'],
+  Profile: ['account-circle', 'account-circle-outline'],
 };
 
 const featureLabel = (id: Parameters<typeof productFeature>[0], fallback: string) => productFeature(id)?.label || fallback;
@@ -41,9 +45,11 @@ function MainTabs() {
       lazy: true,
       tabBarActiveTintColor: theme.colors.primary,
       tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
-      tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outline, height: 72, paddingBottom: 10, paddingTop: 6 },
+      tabBarHideOnKeyboard: true,
+      sceneStyle: { backgroundColor: theme.colors.background },
+      tabBarStyle: { backgroundColor: '#08080A', borderTopColor: theme.colors.outlineVariant, height: 66, paddingBottom: 7, paddingTop: 6 },
       tabBarLabelStyle: { fontWeight: '600', fontSize: 11 },
-      tabBarIcon: ({ color, size }) => <MaterialCommunityIcons name={tabIcons[route.name] as any} size={size} color={color} />,
+      tabBarIcon: ({ color, size, focused }) => <MaterialCommunityIcons name={tabIcons[route.name][focused ? 0 : 1] as any} size={focused ? size + 1 : size} color={color} />,
     })}>
       <Tabs.Screen name="Home" getComponent={screen.home} />
       <Tabs.Screen name="Explore" getComponent={screen.explore} />
@@ -57,7 +63,7 @@ function MainTabs() {
 export function RootNavigator() {
   const theme = useTheme();
   return (
-    <Root.Navigator screenOptions={{ headerStyle: { backgroundColor: theme.colors.surface }, headerTintColor: theme.colors.onSurface, headerTitleStyle: { fontWeight: '600' }, headerShadowVisible: false, contentStyle: { backgroundColor: theme.colors.background }, freezeOnBlur: true }}>
+    <Root.Navigator screenOptions={{ headerStyle: { backgroundColor: '#08080A' }, headerTintColor: theme.colors.onSurface, headerTitleStyle: { fontWeight: '600' }, headerShadowVisible: false, headerBackButtonDisplayMode: 'minimal', contentStyle: { backgroundColor: theme.colors.background }, freezeOnBlur: true, animation: 'slide_from_right' }}>
       <Root.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
       <Root.Screen name="Anime" getComponent={screen.anime} options={({ route }) => ({ title: route.params.title || 'Anime' })} />
       <Root.Screen name="Manga" getComponent={screen.manga} options={({ route }) => ({ title: route.params.title || featureLabel('manga', 'Manga') })} />

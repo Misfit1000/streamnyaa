@@ -209,9 +209,9 @@ export function WatchScreen({ route }: Props) {
   };
 
   return (
-    <Screen title={anime.title} subtitle={`Episode ${episode}`}>
+    <Screen title={anime.title} subtitle={`Episode ${episode}`} safeTop={false}>
       <View style={[styles.player, { backgroundColor: '#070607' }]}>
-        {status.streamUrl ? <VideoView style={StyleSheet.absoluteFill} player={player} nativeControls contentFit="contain" surfaceType="surfaceView" allowsPictureInPicture startsPictureInPictureAutomatically={resourcePolicy.allowBackgroundPlayback} onPictureInPictureStart={() => { pipActive.current = true; }} onPictureInPictureStop={() => { pipActive.current = false; }} /> : <StateView loading={['metadata', 'buffering'].includes(status.state)} title={status.state === 'error' ? 'Playback could not start' : 'Ready for a source'} message={status.error || status.message} />}
+        {status.streamUrl ? <VideoView style={StyleSheet.absoluteFill} player={player} nativeControls contentFit="contain" surfaceType="surfaceView" allowsPictureInPicture startsPictureInPictureAutomatically={resourcePolicy.allowBackgroundPlayback} onPictureInPictureStart={() => { pipActive.current = true; }} onPictureInPictureStop={() => { pipActive.current = false; }} /> : <StateView compact loading={['metadata', 'buffering'].includes(status.state)} title={status.state === 'error' ? 'Playback could not start' : 'Ready for a source'} message={status.error || status.message} />}
       </View>
       {selected ? (
         <View style={[styles.streamStatus, { backgroundColor: theme.colors.surfaceVariant }]}>

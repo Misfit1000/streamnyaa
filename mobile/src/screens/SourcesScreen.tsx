@@ -64,7 +64,7 @@ export function SourcesScreen({ route, navigation }: Props) {
   };
 
   return (
-    <Screen title={anime ? `${anime.title} sources` : 'Source search'} subtitle="Ranked by match quality and torrent health" scroll={false}>
+    <Screen title={anime ? `${anime.title} sources` : 'Source search'} subtitle="Ranked by match quality and torrent health" scroll={false} safeTop={false}>
       <FlatList
         data={rows}
         keyExtractor={(source) => `${source.infoHash}-${source.title}`}

@@ -8,9 +8,13 @@ The Android client follows the desktop product contract for home, discovery, sch
 
 The native Android splash and the short JavaScript boot transition use the same StreamNyaa mark and dark Material surface. Navigation, local preference hydration, account restoration, and the first Home request initialize concurrently behind that transition; a startup fallback prevents damaged local state from leaving the app on the logo indefinitely.
 
+The v0.3 interface follows the desktop brand with a vanta-black base, restrained blood-red emphasis, translucent tonal surfaces, consistent 8/12 px geometry, and media-first layouts sized for narrow Android phones. Home uses a swipeable featured carousel that advances automatically, readable cinematic overlays, and direct Watch/Details actions. Android system navigation starts hidden and can be revealed temporarily with an edge swipe.
+
 On first launch, StreamNyaa explains access before Android displays a system prompt. Notifications are optional and used only for airing reminders. Streaming uses private app cache storage, so photo, media, external-storage, and overlay permissions are explicitly blocked from the generated Android manifest. Permission status can be reviewed later in Settings.
 
 Secondary screens use inline/lazy module initialization, inactive native screens are frozen, long lists batch rendering, poster transitions are avoided during scrolling, and search-heavy local collections defer filtering to protect frame pacing. Home feed fields are reduced to data actually rendered by each shelf, queries keep useful data longer without refetching on every app focus, and release builds enable R8/resource shrinking while leaving Hermes and native libraries uncompressed for fast loading.
+
+Metadata is resilient by design: AniList is preferred, the existing StreamNyaa-cached Jikan gateway supplies Home, schedules, and MAL-backed title details during AniList outages, and Kitsu is the final fallback for search and title resolution. AniList, MAL, and Kitsu identifiers are carried separately through navigation so an ID from one provider cannot resolve to an unrelated title on another provider.
 
 ## Shared account and data
 

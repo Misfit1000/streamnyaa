@@ -30,7 +30,7 @@ export function SignInScreen({ navigation }: Props) {
   };
 
   return (
-    <Screen title="Your StreamNyaa account" subtitle="Use the same login as web and desktop">
+    <Screen title="Your StreamNyaa account" subtitle="Use the same login as web and desktop" safeTop={false}>
       <KeyboardAvoidingView behavior="padding" style={styles.form}>
         <SegmentedButtons value={mode} onValueChange={(value) => setMode(value as typeof mode)} buttons={[{ value: 'signin', label: 'Sign in' }, { value: 'signup', label: 'Create account' }]} />
         <TextInput label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" mode="outlined" />

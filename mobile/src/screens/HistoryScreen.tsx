@@ -39,7 +39,7 @@ export function HistoryScreen({ navigation }: Props) {
   };
 
   return (
-    <Screen title="Watch history" subtitle="Progress syncs after sign-in" scroll={false} action={history.length ? <Button compact onPress={() => Alert.alert('Clear history?', 'This removes playback progress on all synced devices after the next sync.', [{ text: 'Cancel' }, { text: 'Clear', style: 'destructive', onPress: clear }])}>Clear</Button> : null}>
+    <Screen title="Watch history" subtitle="Progress syncs after sign-in" scroll={false} safeTop={false} action={history.length ? <Button compact onPress={() => Alert.alert('Clear history?', 'This removes playback progress on all synced devices after the next sync.', [{ text: 'Cancel' }, { text: 'Clear', style: 'destructive', onPress: clear }])}>Clear</Button> : null}>
       {history.length ? <>
         <Searchbar value={query} onChangeText={setQuery} placeholder="Search title, source, or episode" style={styles.search} />
         <SegmentedButtons value={filter} onValueChange={(value) => setFilter(value as typeof filter)} buttons={[{ value: 'all', label: `All (${history.length})` }, { value: 'watching', label: `Watching (${history.length - completedCount})` }, { value: 'completed', label: `Done (${completedCount})` }]} density="small" />

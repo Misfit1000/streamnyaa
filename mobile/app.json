@@ -2,7 +2,7 @@
   "expo": {
     "name": "StreamNyaa",
     "slug": "streamnyaa-android",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "icon": "../src/assets/desktop-logo.png",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
@@ -10,10 +10,10 @@
     "platforms": ["android"],
     "android": {
       "package": "com.misfit1000.streamnyaa",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "../src/assets/desktop-logo.png",
-        "backgroundColor": "#151217"
+        "backgroundColor": "#030304"
       },
       "permissions": [
         "INTERNET",
@@ -41,15 +41,16 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#121014",
+          "backgroundColor": "#030304",
           "image": "../src/assets/desktop-logo.png",
           "imageWidth": 104,
           "dark": {
-            "backgroundColor": "#121014",
+            "backgroundColor": "#030304",
             "image": "../src/assets/desktop-logo.png"
           }
         }
       ],
+      ["expo-navigation-bar", { "hidden": true, "style": "light", "enforceContrast": false }],
       "expo-secure-store",
       ["expo-notifications", { "defaultChannel": "airing-reminders" }],
       ["expo-video", { "supportsPictureInPicture": true }],

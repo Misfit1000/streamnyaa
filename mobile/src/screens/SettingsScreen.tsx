@@ -39,7 +39,7 @@ export function SettingsScreen(_props: Props) {
     setMessage(next.granted ? 'Airing reminders are enabled.' : 'Notifications were not enabled. You can change this later.');
   };
   return (
-    <Screen title="Settings" subtitle="Android playback and app preferences">
+    <Screen title="Settings" subtitle="Android playback and app preferences" safeTop={false}>
       <List.Section title="Appearance">
         <RadioButton.Group value={store.themeMode} onValueChange={(value) => store.setThemeMode(value as typeof store.themeMode)}>
           <RadioButton.Item label="Use device theme" value="system" />

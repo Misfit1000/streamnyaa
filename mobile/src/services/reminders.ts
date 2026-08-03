@@ -15,7 +15,7 @@ export async function scheduleAiringReminder(entry: ScheduleEntry, minutesBefore
   return Notifications.scheduleNotificationAsync({
     content: {
       title: `${entry.anime.title} airs soon`,
-      body: `Episode ${entry.episode} starts in about ${minutesBefore} minutes.`,
+      body: `${entry.episode ? `Episode ${entry.episode}` : 'A new episode'} starts in about ${minutesBefore} minutes.`,
       data: { animeId: entry.anime.id, episode: entry.episode },
     },
     trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },

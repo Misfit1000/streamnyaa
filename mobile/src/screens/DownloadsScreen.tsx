@@ -24,7 +24,7 @@ export function DownloadsScreen({ route, navigation }: Props) {
   const rows = useMemo(() => (query.data || []).filter((source) => quality === 'auto' || sourceQualityBucket(source.title) === quality), [quality, query.data]);
 
   return (
-    <Screen title={`${anime.title} releases`} subtitle="Stream in-app or share a magnet with another Android client" scroll={false}>
+    <Screen title={`${anime.title} releases`} subtitle="Stream in-app or share a magnet with another Android client" scroll={false} safeTop={false}>
       <FlatList
         data={rows}
         keyExtractor={(source) => `${source.infoHash}-${source.title}`}

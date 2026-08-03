@@ -9,6 +9,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { fetchSchedule } from '../services/anilist';
+import { animeRouteParams } from '../lib/mediaNavigation';
 import { scheduleAiringReminder } from '../services/reminders';
 import type { MainTabParamList, RootStackParamList } from '../types';
 import { tokens } from '../theme';
@@ -33,13 +34,14 @@ export function ScheduleScreen({ navigation }: Props) {
   return (
     <Screen title="Schedule" subtitle="Airing times use your device timezone" scroll={false}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.days}>{days.map((day, index) => <Button key={day.date.toISOString()} compact mode={selected === index ? 'contained' : 'text'} onPress={() => setSelected(index)} accessibilityState={{ selected: selected === index }}>{day.label}</Button>)}</ScrollView>
+      {query.data?.[0]?.provider ? <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Times provided by {query.data[0].provider}</Text> : null}
       {query.isLoading ? <StateView loading message="Loading the airing calendar…" /> : query.isError ? <StateView title="Schedule unavailable" message={query.error.message} onRetry={() => void query.refetch()} /> : query.data?.length ? (
-        <FlatList data={query.data} keyExtractor={(item) => `${item.anime.id}-${item.episode}`} contentContainerStyle={styles.list} ItemSeparatorComponent={() => <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />} renderItem={({ item }) => (
-          <Pressable style={styles.row} onPress={() => navigation.navigate('Anime', { animeId: item.anime.id, title: item.anime.title })}>
+        <FlatList data={query.data} keyExtractor={(item) => `${item.anime.id}-${item.airingAt}`} contentContainerStyle={styles.list} ItemSeparatorComponent={() => <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />} renderItem={({ item }) => (
+          <Pressable style={styles.row} onPress={() => navigation.navigate('Anime', animeRouteParams(item.anime))}>
             <Image source={item.anime.cover} style={styles.poster} contentFit="cover" cachePolicy="memory-disk" recyclingKey={`${item.anime.id}-${item.anime.cover}`} />
             <View style={styles.copy}>
               <Text variant="titleSmall" numberOfLines={2} style={styles.semibold}>{item.anime.title}</Text>
-              <Text style={{ color: theme.colors.onSurfaceVariant }}>Episode {item.episode} · {new Date(item.airingAt * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
+              <Text style={{ color: theme.colors.onSurfaceVariant }}>{item.episode ? `Episode ${item.episode}` : 'New episode'} · {new Date(item.airingAt * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</Text>
             </View>
             <Button compact icon="bell-outline" onPress={(event) => { event.stopPropagation(); void scheduleAiringReminder(item).then(() => setMessage('Reminder scheduled.')).catch((error) => setMessage(error.message)); }}>Remind</Button>
           </Pressable>
