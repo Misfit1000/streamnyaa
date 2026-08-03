@@ -285,6 +285,14 @@ export type DesktopPlayerReadyEvent = {
   at?: number;
 };
 
+export type DesktopEpisodeWatchState = {
+  started: boolean;
+  completed: boolean;
+  progressPercent: number;
+  positionSeconds: number;
+  updatedAt: number;
+};
+
 export type DesktopPlayerRecoveryRequestEvent = {
   action?: 'retry' | 'backup' | string;
   media_key?: string;
@@ -1096,6 +1104,72 @@ export async function listenDesktopPlayerNextEpisode(listener: (event: DesktopPl
   if (!listen) return () => {};
   return listen<DesktopPlayerNextEpisodeEvent>('streamnyaa-player-next-episode', (event) => {
     listener(event.payload || {});
+  });
+}
+
+function progressRecordMatchesAnime(record: DesktopWatchProgressRecord, anime: any) {
+  const recordId = String(record.animeId || '').trim();
+  const targetIds = [anime?.mal_id, anime?.idMal, anime?.id, anime?.anilist_id]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  if (recordId && targetIds.includes(recordId)) return true;
+
+  const recordTitle = animeTitleKey(record.title || '');
+  const targetTitles = [anime?.title, anime?.title_english, anime?.title_romaji, anime?.title_japanese]
+    .map((value) => animeTitleKey(value || ''))
+    .filter(Boolean);
+  return Boolean(recordTitle && targetTitles.includes(recordTitle));
+}
+
+function seriesTitleKey(value: unknown) {
+  return animeTitleKey(String(value || ''))
+    .replace(/\b(?:season|part|cour)\s*\d+\b/g, ' ')
+    .replace(/\b(?:second|third|fourth|fifth|final)\s+season\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function desktopEpisodeWatchState(
+  anime: any,
+  episode: number,
+  records = loadDesktopWatchProgress(),
+): DesktopEpisodeWatchState {
+  const match = records
+    .filter((record) => progressRecordMatchesAnime(record, anime))
+    .find((record) => normalizedEpisodeNumber(record.episode) === normalizedEpisodeNumber(episode));
+  if (!match) {
+    return { started: false, completed: false, progressPercent: 0, positionSeconds: 0, updatedAt: 0 };
+  }
+
+  const progressPercent = playbackProgressPercent({
+    progressPercent: match.progressPercent,
+    resumeSeconds: match.positionSeconds,
+    durationSeconds: match.durationSeconds,
+  });
+  const completed = isPlaybackEntryComplete({
+    progressPercent,
+    resumeSeconds: match.positionSeconds,
+    durationSeconds: match.durationSeconds,
+  });
+  return {
+    started: completed || progressPercent >= 1 || Number(match.positionSeconds || 0) >= 5,
+    completed,
+    progressPercent,
+    positionSeconds: Number(match.positionSeconds || 0),
+    updatedAt: Number(match.updatedAt || 0),
+  };
+}
+
+export function hasDesktopWatchedSeries(anime: any, records = loadDesktopWatchProgress()) {
+  const targetSeriesKeys = [anime?.title, anime?.title_english, anime?.title_romaji, anime?.title_japanese]
+    .map(seriesTitleKey)
+    .filter((value) => value.length >= 4);
+  return records.some((record) => {
+    const hasPlayback = Number(record.positionSeconds || 0) >= 5 || Number(record.progressPercent || 0) >= 1;
+    if (!hasPlayback) return false;
+    if (progressRecordMatchesAnime(record, anime)) return true;
+    const recordSeriesKey = seriesTitleKey(record.title);
+    return Boolean(recordSeriesKey && targetSeriesKeys.includes(recordSeriesKey));
   });
 }
 

@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from '
 import { QueryClientProvider } from '@tanstack/react-query';
 import ScrollToTop from './components/ScrollToTop';
 import DesktopShell from './components/DesktopShell';
+import DesktopPlayerPreferenceBridge from './components/DesktopPlayerPreferenceBridge';
 import { AuthProvider } from './context/AuthContext';
 import { AccountSyncProvider } from './context/AccountSyncContext';
 import { createAppQueryClient } from './lib/queryClient';
@@ -70,6 +71,7 @@ export default function AppDesktop() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AccountSyncProvider>
+          <DesktopPlayerPreferenceBridge />
           <BrowserRouter>
             <ScrollToTop />
             <DesktopRouteBoundary>

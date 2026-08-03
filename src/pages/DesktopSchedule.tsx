@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Bell, CalendarDays, Heart, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Bell, CalendarDays, ChevronRight, Heart, History, Loader2 } from 'lucide-react';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
 import { fetchSchedule } from '../api/jikan';
 import { animeIdentity } from '../lib/animeIdentity';
+import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
+import {
+  hasDesktopWatchedSeries,
+  loadDesktopWatchProgress,
+  subscribeDesktopWatchProgress,
+} from '../lib/desktop';
 import {
   DESKTOP_REMINDER_OFFSET_MINUTES as DEFAULT_REMINDER_OFFSET_MINUTES,
   type DesktopNotificationPermission as ScheduleNotificationPermission,
@@ -230,6 +237,16 @@ function formatAiringTime(ms: number) {
   });
 }
 
+function scheduleArtwork(anime: any) {
+  return anime?.images?.webp?.large_image_url
+    || anime?.images?.jpg?.large_image_url
+    || anime?.cover_image
+    || anime?.coverImage?.extraLarge
+    || anime?.coverImage?.large
+    || anime?.image
+    || '';
+}
+
 function reminderOffsetLabel(reminder: ScheduleReminder) {
   return `${reminder.reminderOffsetMinutes} minutes before airing`;
 }
@@ -241,10 +258,15 @@ export default function DesktopSchedule() {
   const [pendingReminderId, setPendingReminderId] = useState<string | null>(null);
   const [notice, setNotice] = useState<ScheduleNotice | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<ScheduleNotificationPermission>('default');
+  const [watchProgressRecords, setWatchProgressRecords] = useState(() => loadDesktopWatchProgress());
   const { isInMyList, addToMyList, removeFromMyList } = useStore();
   const days = useMemo(scheduleDays, []);
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time', []);
   const active = days[selectedDay];
+  const hasWatchHistory = useMemo(
+    () => watchProgressRecords.some((record) => Number(record.positionSeconds || 0) >= 5 || Number(record.progressPercent || 0) >= 1),
+    [watchProgressRecords],
+  );
   const scheduleQuery = useQuery({
     queryKey: ['desktop-schedule', active.start, active.end],
     queryFn: () => fetchSchedule(1, active.start, active.end),
@@ -253,6 +275,19 @@ export default function DesktopSchedule() {
     placeholderData: (previousData) => previousData,
   });
   const items = scheduleQuery.data?.data || [];
+  const watchedWeekQuery = useQuery({
+    queryKey: ['desktop-schedule-watched-week', days[0].start, days[days.length - 1].end],
+    queryFn: () => fetchSchedule(1, days[0].start, days[days.length - 1].end),
+    staleTime: 1000 * 60 * 10,
+    retry: 1,
+    enabled: hasWatchHistory,
+  });
+  const watchedWeekItems = useMemo(
+    () => (watchedWeekQuery.data?.data || [])
+      .filter((anime: any) => hasDesktopWatchedSeries(anime, watchProgressRecords))
+      .sort((left: any, right: any) => airingAtMs(left) - airingAtMs(right)),
+    [watchProgressRecords, watchedWeekQuery.data?.data],
+  );
   const visibleItems = useMemo(
     () => (favoritesOnly ? items.filter((anime: any) => isInMyList(animeIdentity(anime))) : items),
     [favoritesOnly, isInMyList, items],
@@ -286,6 +321,10 @@ export default function DesktopSchedule() {
   useEffect(() => {
     return subscribeDesktopScheduleReminders(() => setReminders(readScheduleReminders()));
   }, []);
+
+  useEffect(() => subscribeDesktopWatchProgress(() => {
+    setWatchProgressRecords(loadDesktopWatchProgress());
+  }), []);
 
   useEffect(() => {
     const refreshPermission = () => {
@@ -531,6 +570,65 @@ export default function DesktopSchedule() {
           </button>
         ))}
       </div>
+
+      <section className="mt-6 overflow-hidden rounded-2xl bg-[linear-gradient(120deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_58%,rgba(153,0,24,0.12))] p-5 shadow-xl shadow-black/20 ring-1 ring-inset ring-white/[0.07]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/14 text-primary">
+              <History className="h-4.5 w-4.5" />
+            </span>
+            <div>
+              <h2 className="text-lg font-semibold text-white">From your watch history</h2>
+              <p className="text-xs text-white/48">Upcoming episodes from anime you have started, updated automatically.</p>
+            </div>
+          </div>
+          {watchedWeekItems.length ? (
+            <span className="text-xs font-semibold text-white/46">{watchedWeekItems.length} this week</span>
+          ) : null}
+        </div>
+
+        {!hasWatchHistory ? (
+          <p className="mt-4 text-sm text-white/48">Watch an episode and its next scheduled release will appear here automatically.</p>
+        ) : watchedWeekQuery.isLoading ? (
+          <div className="mt-4 flex items-center gap-2 text-sm text-white/52">
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            Matching this week with your watch history...
+          </div>
+        ) : watchedWeekItems.length ? (
+          <div className="sn-scroll-rail mt-4 flex gap-3 pb-1">
+            {watchedWeekItems.map((anime: any) => {
+              const artwork = scheduleArtwork(anime);
+              const airingMs = airingAtMs(anime);
+              return (
+                <Link
+                  key={`watched-${anime.scheduleId || animeIdentity(anime)}`}
+                  to={desktopWatchOrBrowsePath(anime)}
+                  className="group relative h-[118px] w-[280px] shrink-0 overflow-hidden rounded-xl bg-black/35 shadow-lg shadow-black/20 ring-1 ring-inset ring-white/[0.08] transition duration-200 hover:-translate-y-0.5 hover:ring-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
+                >
+                  {artwork ? (
+                    <img
+                      src={artwork}
+                      alt=""
+                      className="absolute inset-0 h-full w-full object-cover opacity-72 transition duration-300 group-hover:scale-[1.025] group-hover:opacity-82"
+                      onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                    />
+                  ) : null}
+                  <span className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,7,10,0.94),rgba(7,7,10,0.62)_58%,rgba(7,7,10,0.18))]" />
+                  <span className="absolute inset-x-0 bottom-0 p-4">
+                    <span className="block line-clamp-1 text-sm font-semibold text-white">{safeReminderTitle(anime)}</span>
+                    <span className="mt-1 block text-xs text-white/58">Episode {anime.airingEpisode || 'TBA'} · {formatAiringTime(airingMs)}</span>
+                    <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
+                      Open anime <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                    </span>
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-white/48">None of your watched anime have an episode scheduled in the next seven days.</p>
+        )}
+      </section>
 
       <section className="mt-7">
         {scheduleQuery.isLoading ? (

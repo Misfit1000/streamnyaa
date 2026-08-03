@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
 import Seo from '../components/Seo';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
@@ -9,11 +9,13 @@ import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 import {
   findLocalPlaybackHistoryItem,
+  desktopEpisodeWatchState,
   formatPlaybackTime,
   controlLocalPlayer,
   getLocalPlaybackProgress,
   listenDesktopPlayerNextEpisode,
   listenDesktopPlayerRecoveryRequest,
+  loadDesktopWatchProgress,
   loadDesktopPlayerPreferences,
   loadDesktopAutoPlayNextEpisode,
   loadDesktopAutoOpenBestSource,
@@ -22,6 +24,7 @@ import {
   saveDesktopWatchProgress,
   subscribeDesktopAutoPlayNextEpisode,
   subscribeDesktopPlayerPreferences,
+  subscribeDesktopWatchProgress,
   saveDesktopAutoOpenBestSource,
   saveDesktopAudioPreference,
   syncDesktopPlayerPreferencesToPlayer,
@@ -32,6 +35,7 @@ import {
   type DesktopAudioPreference,
   type DesktopPlayerControlAction,
   type DesktopPlaybackProgress,
+  type DesktopEpisodeWatchState,
   type LocalPlaybackSource,
 } from '../lib/desktop';
 
@@ -1653,6 +1657,23 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function EpisodeWatchIndicator({ state }: { state: DesktopEpisodeWatchState }) {
+  if (!state.started) return null;
+  return (
+    <>
+      <span className="absolute right-2 top-2 z-20 inline-flex h-7 items-center gap-1.5 rounded-md bg-black/72 px-2 text-[10px] font-bold uppercase text-white shadow-lg shadow-black/25 backdrop-blur-md">
+        {state.completed ? <Check className="h-3.5 w-3.5 text-primary" strokeWidth={2.5} /> : null}
+        {state.completed ? 'Watched' : `${Math.max(1, Math.round(state.progressPercent))}%`}
+      </span>
+      {!state.completed ? (
+        <span className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-1 bg-white/10">
+          <span className="block h-full bg-primary" style={{ width: `${Math.max(2, Math.min(100, state.progressPercent))}%` }} />
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 export default function DesktopWatch() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1681,6 +1702,7 @@ export default function DesktopWatch() {
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(() => new Set());
   const [failedSourceVersion, setFailedSourceVersion] = useState(0);
+  const [watchProgressRecords, setWatchProgressRecords] = useState(() => loadDesktopWatchProgress());
   const routeAniListId = searchParams.get('aid') || '';
   const routeMalId = searchParams.get('mid') || '';
   const seasonRailRef = useRef<HTMLDivElement | null>(null);
@@ -1730,6 +1752,10 @@ export default function DesktopWatch() {
   useEffect(() => subscribeDesktopPlayerPreferences(() => {
     const preferences = loadDesktopPlayerPreferences();
     setAutoPlayNextEpisode(preferences.autoNextEpisode);
+  }), []);
+
+  useEffect(() => subscribeDesktopWatchProgress(() => {
+    setWatchProgressRecords(loadDesktopWatchProgress());
   }), []);
 
   useEffect(() => {
@@ -3395,7 +3421,7 @@ export default function DesktopWatch() {
                   <div
                     key={episode.number}
                     ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
-                    className={`group rounded-xl border px-3 py-3 text-left transition-all focus-within:ring-1 focus-within:ring-primary/40 ${
+                    className={`group relative rounded-xl border px-3 py-3 text-left transition-all focus-within:ring-1 focus-within:ring-primary/40 ${
                       episode.number === selectedEpisode
                         ? 'border-primary/55 bg-primary/[0.11] shadow-lg shadow-primary/14 ring-1 ring-primary/30'
                         : 'border-white/[0.10] bg-white/[0.035] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/[0.045]'
@@ -3418,6 +3444,7 @@ export default function DesktopWatch() {
                       className="min-h-[72px] w-full cursor-pointer rounded-lg text-left outline-none transition-transform focus-visible:ring-1 focus-visible:ring-primary/45 active:scale-[0.99]"
                       aria-label={`Watch episode ${episode.number}`}
                     >
+                      <EpisodeWatchIndicator state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} />
                       <p className={`text-base font-black ${episode.number === selectedEpisode ? 'text-white' : 'text-white/86'}`}>Ep {episode.number}</p>
                       <p className="mt-1 line-clamp-2 text-[11px] font-bold leading-5 text-white/48">{episode.title}</p>
                     </button>
@@ -3480,6 +3507,7 @@ export default function DesktopWatch() {
                       <SafeImage candidates={uniqueImageCandidates([episode.image, wideImageFor(anime), posterFor(anime)])} alt={episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
                       <div className={`absolute inset-0 ${episode.number === selectedEpisode ? 'bg-[linear-gradient(0deg,rgba(48,8,16,0.90),rgba(0,0,0,0.06)_62%)]' : 'bg-[linear-gradient(0deg,rgba(0,0,0,0.80),rgba(0,0,0,0.08)_62%)]'}`} />
                       <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-black shadow-md shadow-black/25 ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/72 text-white'}`}>{episode.number}</span>
+                      <EpisodeWatchIndicator state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} />
                       <p className="absolute bottom-3 left-3 right-14 line-clamp-1 text-sm font-black">{episode.title}</p>
                     </button>
                     <button
