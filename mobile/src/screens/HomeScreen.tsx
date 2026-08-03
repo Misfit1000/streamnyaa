@@ -12,7 +12,7 @@ import { StateView } from '../components/StateView';
 import { AnimeShelf } from '../components/AnimeShelf';
 import { FeaturedCarousel } from '../components/FeaturedCarousel';
 import { fetchHomeFeed } from '../services/anilist';
-import { animeRouteParams } from '../lib/mediaNavigation';
+import { watchRouteParams } from '../lib/mediaNavigation';
 import { useAppStore } from '../store/useAppStore';
 import type { Anime, MainTabParamList, RootStackParamList } from '../types';
 import { tokens } from '../theme';
@@ -25,7 +25,7 @@ export function HomeScreen({ navigation }: Props) {
   const nsfwMode = useAppStore((state) => state.nsfwMode);
   const history = useAppStore((state) => state.history);
   const query = useQuery({ queryKey: ['home', nsfwMode], queryFn: ({ signal }) => fetchHomeFeed(nsfwMode, signal), staleTime: 15 * 60 * 1000 });
-  const openAnime = useCallback((anime: Anime) => navigation.navigate('Anime', animeRouteParams(anime)), [navigation]);
+  const openAnime = useCallback((anime: Anime) => navigation.navigate('Watch', watchRouteParams(anime)), [navigation]);
   const carouselWidth = Math.max(280, width - tokens.spacing.lg * 2);
   const carouselHeight = Math.max(300, Math.min(390, height * 0.48));
   const recent = history[0];
@@ -39,10 +39,10 @@ export function HomeScreen({ navigation }: Props) {
       subtitle="Anime, sources, and progress in one place"
       action={<View style={styles.headerActions}><IconButton icon="magnify" mode="contained-tonal" onPress={() => navigation.navigate('Explore')} accessibilityLabel="Search" /><IconButton icon="account-circle-outline" onPress={() => navigation.navigate('Profile')} accessibilityLabel="Profile" /></View>}
     >
-      <FeaturedCarousel items={query.data.trending} width={carouselWidth} height={carouselHeight} onOpen={openAnime} onWatch={(anime) => navigation.navigate('Watch', { anime })} />
+      <FeaturedCarousel items={query.data.trending} width={carouselWidth} height={carouselHeight} onOpen={openAnime} onWatch={openAnime} />
 
       {recent ? (
-        <Pressable style={({ pressed }) => [styles.continue, { backgroundColor: tokens.color.glass, borderColor: theme.colors.outlineVariant, opacity: pressed ? 0.78 : 1 }]} onPress={() => navigation.navigate('History')} accessibilityRole="button" accessibilityLabel={`Continue ${recent.animeTitle}, episode ${recent.episode}`} accessibilityHint="Opens watch history">
+        <Pressable style={({ pressed }) => [styles.continue, { backgroundColor: tokens.color.glass, borderColor: theme.colors.outlineVariant, opacity: pressed ? 0.78 : 1 }]} onPress={() => navigation.navigate('Watch', { anime: { id: Number(recent.animeId), title: recent.animeTitle, cover: recent.image }, episode: recent.episode, resumeSeconds: recent.resumeSeconds, source: { title: recent.sourceTitle, magnet: recent.magnet, infoHash: '', seeders: 0, leechers: 0 } })} accessibilityRole="button" accessibilityLabel={`Continue ${recent.animeTitle}, episode ${recent.episode}`} accessibilityHint="Resumes playback">
           <Image source={recent.image} style={[styles.continuePoster, { backgroundColor: theme.colors.surfaceVariant }]} contentFit="cover" cachePolicy="memory-disk" />
           <View style={styles.continueCopy}>
             <View style={styles.continueLabel}><MaterialCommunityIcons name="play-circle" size={16} color={theme.colors.primary} /><Text variant="labelMedium" style={{ color: theme.colors.primary }}>Continue watching</Text></View>
@@ -54,10 +54,13 @@ export function HomeScreen({ navigation }: Props) {
         </Pressable>
       ) : null}
 
+      <AnimeShelf title="New episodes" items={query.data.latest} onPress={openAnime} />
       <AnimeShelf title="Trending now" items={query.data.trending} onPress={openAnime} />
-      <AnimeShelf title="Popular picks" items={query.data.popular} onPress={openAnime} />
-      <AnimeShelf title="Airing this season" items={query.data.airing} onPress={openAnime} />
+      <AnimeShelf title="Top airing" items={query.data.airing} onPress={openAnime} />
+      <AnimeShelf title="This season" items={query.data.seasonal} onPress={openAnime} />
       <AnimeShelf title="Coming soon" items={query.data.upcoming} onPress={openAnime} />
+      <AnimeShelf title="Popular picks" items={query.data.popular} onPress={openAnime} />
+      <AnimeShelf title={`Top anime of ${query.data.year}`} items={query.data.yearly} onPress={openAnime} />
     </Screen>
   );
 }

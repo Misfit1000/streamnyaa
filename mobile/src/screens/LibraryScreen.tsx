@@ -9,7 +9,7 @@ import { AnimeCard } from '../components/AnimeCard';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { useAppStore } from '../store/useAppStore';
-import { animeRouteParams } from '../lib/mediaNavigation';
+import { watchRouteParams } from '../lib/mediaNavigation';
 import type { Anime, MainTabParamList, PlaybackHistoryItem, RootStackParamList } from '../types';
 import { tokens } from '../theme';
 import { isPlaybackComplete } from '../../../shared/account';
@@ -91,7 +91,7 @@ export function LibraryScreen({ navigation }: Props) {
           </View>
         )} initialNumToRender={7} maxToRenderPerBatch={6} windowSize={5} removeClippedSubviews keyboardShouldPersistTaps="handled" />
       ) : <StateView title={query ? 'No matching progress' : section === 'completed' ? 'Nothing completed yet' : 'Nothing in progress'} message={query ? 'Try another title.' : section === 'completed' ? 'Finished episodes appear here automatically.' : 'Start an episode and it will be ready to resume here.'} /> : mediaItems.length ? (
-        <FlatList data={mediaItems} numColumns={columns} key={columns} keyExtractor={(item) => item.animeId} renderItem={({ item }) => <AnimeCard anime={item.anime} width={cardWidth} onPress={() => navigation.navigate('Anime', animeRouteParams(item.anime))} />} columnWrapperStyle={styles.row} contentContainerStyle={styles.grid} initialNumToRender={columns * 2} maxToRenderPerBatch={columns * 2} updateCellsBatchingPeriod={40} windowSize={5} removeClippedSubviews keyboardShouldPersistTaps="handled" />
+        <FlatList data={mediaItems} numColumns={columns} key={columns} keyExtractor={(item) => item.animeId} renderItem={({ item }) => <AnimeCard anime={item.anime} width={cardWidth} onPress={() => navigation.navigate('Watch', watchRouteParams(item.anime))} />} columnWrapperStyle={styles.row} contentContainerStyle={styles.grid} initialNumToRender={columns * 2} maxToRenderPerBatch={columns * 2} updateCellsBatchingPeriod={40} windowSize={5} removeClippedSubviews keyboardShouldPersistTaps="handled" />
       ) : <StateView title={query ? 'No matching anime' : `No ${section} anime`} message={query ? 'Try another title.' : `Titles you ${section === 'saved' ? 'bookmark' : 'like'} appear here and sync after sign-in.`} />}
       {total > 0 ? <Text variant="labelSmall" style={[styles.count, { color: theme.colors.onSurfaceVariant }]}>{total} {total === 1 ? 'item' : 'items'} in this view</Text> : null}
     </Screen>

@@ -7,7 +7,7 @@ import { Button, Searchbar, Text, useTheme } from 'react-native-paper';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { searchCompare } from '../services/anilist';
-import { animeRouteParams } from '../lib/mediaNavigation';
+import { watchRouteParams } from '../lib/mediaNavigation';
 import type { Anime, RootStackParamList } from '../types';
 import { tokens } from '../theme';
 
@@ -31,7 +31,7 @@ export function CompareScreen({ navigation }: Props) {
 
   return (
     <Screen title="Compare anime" subtitle="Choose two titles for a side-by-side view" safeTop={false}>
-      <View style={styles.picks}><Pick anime={left} label="Anime A" onPress={() => left && navigation.navigate('Anime', animeRouteParams(left))} /><Pick anime={right} label="Anime B" onPress={() => right && navigation.navigate('Anime', animeRouteParams(right))} /></View>
+      <View style={styles.picks}><Pick anime={left} label="Anime A" onPress={() => left && navigation.navigate('Watch', watchRouteParams(left))} /><Pick anime={right} label="Anime B" onPress={() => right && navigation.navigate('Watch', watchRouteParams(right))} /></View>
       <View style={styles.slotButtons}><Button mode={slot === 'left' ? 'contained' : 'outlined'} onPress={() => setSlot('left')}>Choose A</Button><Button mode={slot === 'right' ? 'contained' : 'outlined'} onPress={() => setSlot('right')}>Choose B</Button></View>
       <Searchbar value={text} onChangeText={setText} onSubmitEditing={() => setQuery(text.trim())} placeholder={`Search for anime ${slot === 'left' ? 'A' : 'B'}`} style={styles.search} />
       {results.isLoading ? <StateView compact loading message="Finding anime..." /> : results.isError ? <StateView compact title="Search unavailable" message={results.error.message} onRetry={() => void results.refetch()} /> : results.data?.map((anime: Anime) => <Button key={anime.id} contentStyle={styles.result} mode="text" onPress={() => choose(anime)}>{anime.title}</Button>)}

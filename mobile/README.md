@@ -2,13 +2,13 @@
 
 Native Android client for StreamNyaa. It uses a React Native/Expo Material 3 interface and a local Kotlin torrent engine; it does not embed the StreamNyaa website.
 
-The Android client follows the desktop product contract for home, discovery, schedule, catalog, anime and manga details, source search, downloads, watch, library, comparison, history, settings, profile, and authentication. Shared feature metadata, source ranking, account merging, playback preferences, and resource limits live in the repository-level `shared/` directory so desktop and Android behavior cannot silently drift.
+The Android client follows the desktop product contract for home, discovery, schedule, catalog, the integrated anime cinema, manga details, source search, downloads, library, comparison, history, settings, profile, and authentication. Shared feature metadata, source ranking, account merging, playback preferences, and resource limits live in the repository-level `shared/` directory so desktop and Android behavior cannot silently drift.
 
 ## Startup, performance, and permissions
 
 The native Android splash and the short JavaScript boot transition use the same StreamNyaa mark and dark Material surface. Navigation, local preference hydration, account restoration, and the first Home request initialize concurrently behind that transition; a startup fallback prevents damaged local state from leaving the app on the logo indefinitely.
 
-The v0.4 interface follows the desktop brand with a vanta-black base, restrained blood-red emphasis, translucent tonal surfaces, consistent 8/12 px geometry, and media-first layouts sized for narrow Android phones. Home uses a swipeable featured carousel that advances automatically, readable cinematic overlays, and direct Watch/Details actions. Android system navigation starts hidden and can be revealed temporarily with an edge swipe.
+The v0.5 interface follows the desktop brand with a vanta-black base, restrained blood-red emphasis, translucent tonal surfaces, consistent 8/12 px geometry, and media-first layouts sized for narrow Android phones. Home uses a swipeable featured carousel that advances automatically, readable cinematic overlays, direct resume, and the desktop shelf order. Anime discovery opens one integrated Android cinema screen—hero, synopsis, episode rail, source ranking, player, related titles, and library actions—rather than a web-style details flow. Android system navigation starts hidden and can be revealed temporarily with an edge swipe.
 
 Desktop parity is tracked by workflow rather than route names. Android includes paginated discovery with a mobile filter sheet, persisted airing reminders, watching/completed/saved/liked library views, direct episode jump, source trust/health filters and sorting, richer release comparison, and on-demand service diagnostics. See [`FEATURE_PARITY.md`](./FEATURE_PARITY.md) for the complete mapping and intentional platform differences.
 
@@ -68,13 +68,13 @@ For Google sign-in, add `streamnyaa://auth` to the Supabase authentication redir
 
 ## Playback architecture
 
-`StreamNyaaTorrent` uses `libtorrent4j` inside the app process, selects the largest supported video file, gives it sequential priority, buffers into private cache storage, and exposes it only to the on-device player through `127.0.0.1`. The local HTTP endpoint is never bound to the LAN.
+`StreamNyaaTorrent` uses `libtorrent4j` inside the app process, selects the largest supported video file, prioritizes its opening pieces and MP4 seek metadata, buffers into private cache storage, and exposes it only to the on-device player through `127.0.0.1`. The local HTTP endpoint is never bound to the LAN. It advertises only completed contiguous torrent ranges, preventing ExoPlayer from reading sparse, incomplete file regions as valid video data.
 
 Playback depends on seeders, tracker availability, codec support, free storage, and Android background limits. The user can clear all torrent cache data in Settings.
 
 Battery saver pauses torrent activity when the app leaves the foreground unless background playback or picture-in-picture is explicitly enabled. It also reduces progress polling and write frequency. Wi-Fi-only mode, a bounded torrent cache, automatic stale-cache cleanup, source retry limits, and free-space checks protect battery, storage, and app stability.
 
-Additional runtime protections include cancellation of stale/background API requests, transient-error-only retries, 15–25 second request timeouts, smaller AniList card payloads, disk-backed image caching, virtualized source and catalog lists, and frozen off-screen navigation routes. Playback progress sync is deduplicated and batched to 30–45 seconds while library and preference changes remain fast; pending progress is flushed when Android backgrounds the app. Wi-Fi-only torrent sessions pause if connectivity changes and resume automatically after Wi-Fi returns, while critically low storage stops the native engine safely.
+Additional runtime protections include cancellation of stale/background API requests, generation-isolated torrent sessions and player replacements, safe player detachment before the localhost server stops, automatic backup-source recovery, transient-error-only retries, 15–25 second request timeouts, smaller AniList card payloads, disk-backed image caching, virtualized source and catalog lists, and frozen off-screen navigation routes. Playback progress sync is deduplicated and batched to 30–45 seconds while library and preference changes remain fast; pending progress is flushed when Android backgrounds the app. Wi-Fi-only torrent sessions pause if connectivity changes and resume automatically after Wi-Fi returns, while critically low storage stops the native engine safely.
 
 ## Checks
 

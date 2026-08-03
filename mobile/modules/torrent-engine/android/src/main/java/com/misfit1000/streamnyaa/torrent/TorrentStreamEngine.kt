@@ -32,6 +32,11 @@ class TorrentStreamEngine(
   private var selectedFileIndex = -1
   private var selectedFile: File? = null
   private var selectedFileSize = 0L
+  private var selectedFirstPiece = -1
+  private var selectedLastPiece = -1
+  private var selectedFirstPieceOffset = 0L
+  private var contiguousPieceCursor = -1
+  private var contiguousBytes = 0L
   private var server: LocalTorrentHttpServer? = null
   private var poller: ScheduledFuture<*>? = null
   private var state = "idle"
@@ -42,11 +47,13 @@ class TorrentStreamEngine(
   private var batterySaver = true
   private var wifiOnly = false
   private var pausedForNetwork = false
+  private var sessionGeneration = 0L
 
   @Synchronized
   fun start(magnet: String, preferredFile: String?, options: Map<String, Any?>) {
     require(magnet.startsWith("magnet:?")) { "A valid magnet URI is required." }
     stop(false)
+    val runGeneration = sessionGeneration
     cacheRoot.mkdirs()
     maxCacheBytes = ((options["maxCacheMiB"] as? Number)?.toLong() ?: 2048L).coerceIn(512L, 8192L) * 1024 * 1024
     batterySaver = options["batterySaver"] as? Boolean ?: true
@@ -67,30 +74,51 @@ class TorrentStreamEngine(
     error = null
     emit()
 
-    val nextSession = SessionManager(false)
+    val nextSession = try {
+      SessionManager(false)
+    } catch (throwable: Throwable) {
+      return fail("The native streaming engine could not start: ${safeMessage(throwable)}")
+    }
+    session = nextSession
     nextSession.addListener(object : AlertListener {
       override fun types(): IntArray? = null
       override fun alert(alert: Alert<*>) {
-        when (alert.type()) {
-          AlertType.ADD_TORRENT -> {
-            handle = (alert as AddTorrentAlert).handle().also { it.resume() }
-            if (handle?.torrentFile() != null) configureSelectedFile(requireNotNull(handle))
+        if (!isCurrentSession(runGeneration, nextSession)) return
+        try {
+          when (alert.type()) {
+            AlertType.ADD_TORRENT -> {
+              val nextHandle = (alert as AddTorrentAlert).handle().also { it.resume() }
+              handle = nextHandle
+              if (nextHandle.torrentFile() != null) configureSelectedFile(nextHandle, runGeneration)
+            }
+            AlertType.METADATA_RECEIVED -> configureSelectedFile((alert as MetadataReceivedAlert).handle(), runGeneration)
+            AlertType.TORRENT_ERROR -> failForSession(runGeneration, (alert as TorrentErrorAlert).error().message)
+            else -> Unit
           }
-          AlertType.METADATA_RECEIVED -> configureSelectedFile((alert as MetadataReceivedAlert).handle())
-          AlertType.TORRENT_ERROR -> fail((alert as TorrentErrorAlert).error().message)
-          else -> Unit
+        } catch (throwable: Throwable) {
+          failForSession(runGeneration, "The selected source failed safely: ${safeMessage(throwable)}")
         }
       }
     })
-    nextSession.start()
-    session = nextSession
-    nextSession.download(magnet, sessionDir, TorrentFlags.SEQUENTIAL_DOWNLOAD)
+    try {
+      nextSession.start()
+      nextSession.maxActiveDownloads(1)
+      nextSession.maxActiveSeeds(0)
+      nextSession.maxConnections(if (batterySaver) 48 else 80)
+      nextSession.maxPeers(if (batterySaver) 40 else 70)
+      nextSession.download(magnet, sessionDir, TorrentFlags.SEQUENTIAL_DOWNLOAD)
+    } catch (throwable: Throwable) {
+      runCatching { nextSession.stop() }
+      if (isCurrentSession(runGeneration, nextSession)) session = null
+      return fail("The source could not be opened: ${safeMessage(throwable)}")
+    }
     val pollSeconds = if (batterySaver) 3L else 1L
-    poller = scheduler.scheduleAtFixedRate({ emit() }, pollSeconds, pollSeconds, TimeUnit.SECONDS)
+    poller = scheduler.scheduleAtFixedRate({ runCatching { emitForSession(runGeneration) } }, pollSeconds, pollSeconds, TimeUnit.SECONDS)
   }
 
   @Synchronized
-  private fun configureSelectedFile(torrentHandle: TorrentHandle) {
+  private fun configureSelectedFile(torrentHandle: TorrentHandle, runGeneration: Long) {
+    if (runGeneration != sessionGeneration) return
     if (selectedFileIndex >= 0) return
     val info = torrentHandle.torrentFile() ?: return
     val files = info.files()
@@ -116,10 +144,18 @@ class TorrentStreamEngine(
     }
     trimCache((maxCacheBytes - selectedFileSize).coerceAtLeast(0L))
     selectedFile = candidateFile
+    val firstRequest = info.mapFile(selectedFileIndex, 0L, 1)
+    val lastRequest = info.mapFile(selectedFileIndex, (selectedFileSize - 1L).coerceAtLeast(0L), 1)
+    selectedFirstPiece = firstRequest.piece()
+    selectedLastPiece = lastRequest.piece()
+    selectedFirstPieceOffset = firstRequest.start().toLong()
+    contiguousPieceCursor = selectedFirstPiece
+    contiguousBytes = 0L
 
     val priorities = Priority.array(Priority.IGNORE, info.numFiles())
     priorities[selectedFileIndex] = Priority.TOP_PRIORITY
     torrentHandle.prioritizeFiles(priorities)
+    prioritizePlaybackEdges(torrentHandle, files.fileName(selectedFileIndex))
     torrentHandle.resume()
     handle = torrentHandle
     state = "buffering"
@@ -128,18 +164,22 @@ class TorrentStreamEngine(
     val nextServer = LocalTorrentHttpServer(
       fileProvider = { selectedFile },
       sizeProvider = { selectedFileSize },
-      availableProvider = { availableBytes() },
+      readableBytesProvider = { offset -> readableBytesFrom(offset) },
       mimeProvider = { mimeFor(files.fileName(selectedFileIndex)) },
     )
-    nextServer.start(5_000, false)
-    server = nextServer
+    try {
+      nextServer.start(5_000, false)
+      server = nextServer
+    } catch (throwable: Throwable) {
+      return fail("The private playback server could not start: ${safeMessage(throwable)}")
+    }
     emit()
   }
 
   @Synchronized
   fun status(): Map<String, Any?> {
     val torrentStatus = runCatching { handle?.status(true) }.getOrNull()
-    val downloaded = availableBytes()
+    val downloaded = contiguousAvailableBytes()
     val buffered = if (selectedFileSize > 0) ((downloaded.toDouble() / selectedFileSize) * 100).coerceIn(0.0, 100.0) else 0.0
     if (state == "buffering" && downloaded >= minimumBufferBytes()) {
       state = "ready"
@@ -161,7 +201,13 @@ class TorrentStreamEngine(
   @Synchronized
   private fun emit() {
     enforceRuntimePolicies()
-    onStatus(status())
+    runCatching { onStatus(status()) }
+  }
+
+  @Synchronized
+  private fun emitForSession(runGeneration: Long) {
+    if (runGeneration != sessionGeneration) return
+    emit()
   }
 
   private fun enforceRuntimePolicies() {
@@ -176,11 +222,11 @@ class TorrentStreamEngine(
       } else if (unmetered && pausedForNetwork) {
         current.resume()
         pausedForNetwork = false
-        state = if (availableBytes() >= minimumBufferBytes()) "ready" else "buffering"
+        state = if (contiguousAvailableBytes() >= minimumBufferBytes()) "ready" else "buffering"
         message = "Wi-Fi restored. Download resumed."
       }
     }
-    if (selectedFileSize > availableBytes() && StatFs(cacheRoot.absolutePath).availableBytes < CRITICAL_FREE_BYTES) {
+    if (selectedFileSize > contiguousAvailableBytes() && StatFs(cacheRoot.absolutePath).availableBytes < CRITICAL_FREE_BYTES) {
       current.pause()
       poller?.cancel(false); poller = null
       server?.stop(); server = null
@@ -190,10 +236,35 @@ class TorrentStreamEngine(
     }
   }
 
-  private fun availableBytes(): Long {
+  private fun contiguousAvailableBytes(): Long {
     val current = handle ?: return 0
-    if (selectedFileIndex < 0) return 0
-    return runCatching { current.fileProgress(TorrentHandle.PIECE_GRANULARITY).getOrElse(selectedFileIndex) { 0L } }.getOrDefault(0L)
+    val info = current.torrentFile() ?: return 0
+    if (selectedFileIndex < 0 || contiguousPieceCursor < 0) return 0
+    while (contiguousPieceCursor <= selectedLastPiece && runCatching { current.havePiece(contiguousPieceCursor) }.getOrDefault(false)) {
+      val pieceSize = info.pieceSize(contiguousPieceCursor).toLong()
+      contiguousBytes += if (contiguousPieceCursor == selectedFirstPiece) (pieceSize - selectedFirstPieceOffset).coerceAtLeast(0L) else pieceSize
+      contiguousPieceCursor += 1
+    }
+    return contiguousBytes.coerceIn(0L, selectedFileSize)
+  }
+
+  @Synchronized
+  private fun readableBytesFrom(fileOffset: Long): Long {
+    val current = handle ?: return 0L
+    val info = current.torrentFile() ?: return 0L
+    if (selectedFileIndex < 0 || fileOffset !in 0L until selectedFileSize) return 0L
+    val request = runCatching { info.mapFile(selectedFileIndex, fileOffset, 1) }.getOrNull() ?: return 0L
+    var piece = request.piece()
+    var offsetInPiece = request.start().toLong()
+    var readable = 0L
+    var inspected = 0
+    while (piece <= selectedLastPiece && inspected < MAX_READABLE_PIECE_SCAN && runCatching { current.havePiece(piece) }.getOrDefault(false)) {
+      readable += (info.pieceSize(piece).toLong() - offsetInPiece).coerceAtLeast(0L)
+      offsetInPiece = 0L
+      piece += 1
+      inspected += 1
+    }
+    return readable.coerceIn(0L, selectedFileSize - fileOffset)
   }
 
   private fun minimumBufferBytes(): Long = minOf(selectedFileSize, maxOf(12L * 1024 * 1024, selectedFileSize / 100))
@@ -213,15 +284,18 @@ class TorrentStreamEngine(
       state = "paused"; message = "Waiting for Wi-Fi before resuming."; emit(); return
     }
     pausedForNetwork = false
-    handle?.resume(); state = if (availableBytes() >= minimumBufferBytes()) "ready" else "buffering"; message = "Download resumed."; emit()
+    handle?.resume(); state = if (contiguousAvailableBytes() >= minimumBufferBytes()) "ready" else "buffering"; message = "Download resumed."; emit()
   }
 
   @Synchronized
   fun stop(removeFiles: Boolean) {
+    sessionGeneration += 1L
     poller?.cancel(true); poller = null
     server?.stop(); server = null
     runCatching { session?.stop() }; session = null; handle = null
     selectedFileIndex = -1; selectedFile = null; selectedFileSize = 0
+    selectedFirstPiece = -1; selectedLastPiece = -1; selectedFirstPieceOffset = 0L
+    contiguousPieceCursor = -1; contiguousBytes = 0L
     pausedForNetwork = false
     state = "idle"; message = "Choose a source to begin."; error = null
     sessionDir.setLastModified(System.currentTimeMillis())
@@ -259,6 +333,33 @@ class TorrentStreamEngine(
     server?.stop(); server = null
     state = "error"; message = reason; error = reason; emit()
   }
+
+  @Synchronized
+  private fun failForSession(runGeneration: Long, reason: String) {
+    if (runGeneration != sessionGeneration) return
+    fail(reason)
+  }
+
+  @Synchronized
+  private fun isCurrentSession(runGeneration: Long, expected: SessionManager): Boolean =
+    runGeneration == sessionGeneration && session === expected
+
+  private fun prioritizePlaybackEdges(torrentHandle: TorrentHandle, fileName: String) {
+    if (selectedFirstPiece < 0 || selectedLastPiece < selectedFirstPiece) return
+    val leadEnd = minOf(selectedLastPiece, selectedFirstPiece + LEAD_DEADLINE_PIECES - 1)
+    for (piece in selectedFirstPiece..leadEnd) {
+      runCatching { torrentHandle.setPieceDeadline(piece, (piece - selectedFirstPiece) * 75) }
+    }
+    if (fileName.endsWith(".mp4", true) || fileName.endsWith(".m4v", true) || fileName.endsWith(".mov", true)) {
+      val tailStart = maxOf(selectedFirstPiece, selectedLastPiece - TAIL_DEADLINE_PIECES + 1)
+      for (piece in tailStart..selectedLastPiece) {
+        runCatching { torrentHandle.setPieceDeadline(piece, 1_200 + (piece - tailStart) * 75) }
+      }
+    }
+  }
+
+  private fun safeMessage(throwable: Throwable): String =
+    throwable.message?.takeIf { it.isNotBlank() }?.take(180) ?: throwable.javaClass.simpleName
 
   private fun directorySize(file: File): Long = if (!file.exists()) 0 else if (file.isFile) file.length() else file.listFiles()?.sumOf(::directorySize) ?: 0
   private fun torrentKey(magnet: String): String {
@@ -298,5 +399,8 @@ class TorrentStreamEngine(
     private const val MINIMUM_FREE_BYTES = 256L * 1024 * 1024
     private const val STORAGE_HEADROOM_BYTES = 128L * 1024 * 1024
     private const val CRITICAL_FREE_BYTES = 64L * 1024 * 1024
+    private const val LEAD_DEADLINE_PIECES = 48
+    private const val TAIL_DEADLINE_PIECES = 6
+    private const val MAX_READABLE_PIECE_SCAN = 64
   }
 }

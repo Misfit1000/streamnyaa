@@ -7,7 +7,7 @@ import { AnimeCard } from '../components/AnimeCard';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { searchAnime } from '../services/anilist';
-import { animeRouteParams } from '../lib/mediaNavigation';
+import { watchRouteParams } from '../lib/mediaNavigation';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
 import { tokens } from '../theme';
@@ -49,7 +49,7 @@ export function CatalogScreen({ route, navigation }: Props) {
           numColumns={columns}
           key={columns}
           keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => navigation.navigate('Anime', animeRouteParams(item))} />}
+          renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => navigation.navigate('Watch', watchRouteParams(item))} />}
           columnWrapperStyle={styles.row}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}

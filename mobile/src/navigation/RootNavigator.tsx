@@ -65,10 +65,10 @@ export function RootNavigator() {
   return (
     <Root.Navigator screenOptions={{ headerStyle: { backgroundColor: '#08080A' }, headerTintColor: theme.colors.onSurface, headerTitleStyle: { fontWeight: '600' }, headerShadowVisible: false, headerBackButtonDisplayMode: 'minimal', contentStyle: { backgroundColor: theme.colors.background }, freezeOnBlur: true, animation: 'slide_from_right' }}>
       <Root.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
-      <Root.Screen name="Anime" getComponent={screen.anime} options={({ route }) => ({ title: route.params.title || 'Anime' })} />
+      <Root.Screen name="Anime" getComponent={screen.anime} options={{ headerShown: false }} />
       <Root.Screen name="Manga" getComponent={screen.manga} options={({ route }) => ({ title: route.params.title || featureLabel('manga', 'Manga') })} />
       <Root.Screen name="Catalog" getComponent={screen.catalog} options={({ route }) => ({ title: route.params.title || featureLabel('catalog', 'Catalog') })} />
-      <Root.Screen name="Watch" getComponent={screen.watch} options={{ title: 'Watch' }} />
+      <Root.Screen name="Watch" getComponent={screen.watch} options={{ headerShown: false, animation: 'fade_from_bottom' }} />
       <Root.Screen name="Downloads" getComponent={screen.downloads} options={{ title: featureLabel('downloads', 'Downloads') }} />
       <Root.Screen name="Sources" getComponent={screen.sources} options={{ title: 'Sources' }} />
       <Root.Screen name="History" getComponent={screen.history} options={{ title: 'History' }} />

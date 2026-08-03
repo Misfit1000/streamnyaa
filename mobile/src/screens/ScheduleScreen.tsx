@@ -9,7 +9,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { fetchSchedule } from '../services/anilist';
-import { animeRouteParams } from '../lib/mediaNavigation';
+import { watchRouteParams } from '../lib/mediaNavigation';
 import { cancelAiringReminder, scheduleAiringReminder } from '../services/reminders';
 import { useAppStore } from '../store/useAppStore';
 import type { MainTabParamList, RootStackParamList, ScheduleEntry } from '../types';
@@ -96,7 +96,7 @@ export function ScheduleScreen({ navigation }: Props) {
             const saved = savedIds.has(animeKey(item));
             const reminded = Boolean(reminders[key]);
             return (
-              <Pressable style={styles.row} onPress={() => navigation.navigate('Anime', animeRouteParams(item.anime))}>
+              <Pressable style={styles.row} onPress={() => navigation.navigate('Watch', watchRouteParams(item.anime, Math.max(1, Number(item.episode || 1))))}>
                 <Image source={item.anime.cover} style={styles.poster} contentFit="cover" cachePolicy="memory-disk" recyclingKey={`${item.anime.id}-${item.anime.cover}`} />
                 <View style={styles.copy}>
                   <Text variant="titleSmall" numberOfLines={2} style={styles.semibold}>{item.anime.title}</Text>
@@ -114,7 +114,7 @@ export function ScheduleScreen({ navigation }: Props) {
           windowSize={5}
           removeClippedSubviews
         />
-      ) : <StateView title={collection === 'saved' ? 'No saved anime airing' : 'No scheduled episodes'} message={collection === 'saved' ? 'Save a title from this schedule or its details page, then it will appear here.' : 'No indexed episodes are airing on this day.'} />}
+      ) : <StateView title={collection === 'saved' ? 'No saved anime airing' : 'No scheduled episodes'} message={collection === 'saved' ? 'Save a title from this schedule or its cinema screen, then it will appear here.' : 'No indexed episodes are airing on this day.'} />}
       <Snackbar visible={Boolean(message)} onDismiss={() => setMessage('')} duration={3000}>{message}</Snackbar>
     </Screen>
   );

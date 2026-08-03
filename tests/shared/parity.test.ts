@@ -43,3 +43,13 @@ test('Android parity covers the desktop workflows inside each route', () => {
     signals.forEach((signal) => assert.ok(source.includes(signal), `${file} is missing ${signal}`));
   });
 });
+
+test('Android anime discovery enters the integrated cinema instead of a web details flow', () => {
+  const screenNames = ['HomeScreen.tsx', 'ExploreScreen.tsx', 'CatalogScreen.tsx', 'LibraryScreen.tsx', 'ScheduleScreen.tsx'];
+  screenNames.forEach((file) => {
+    const source = readFileSync(path.join(repoRoot, 'mobile/src/screens', file), 'utf8');
+    assert.ok(!source.includes("navigate('Anime'"), `${file} still opens the legacy details route`);
+  });
+  const watch = readFileSync(path.join(repoRoot, 'mobile/src/screens/WatchScreen.tsx'), 'utf8');
+  ['WatchHero', 'EpisodeRail', 'AnimeShelf', 'selectBackupSource'].forEach((signal) => assert.ok(watch.includes(signal), `WatchScreen is missing ${signal}`));
+});

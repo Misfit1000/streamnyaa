@@ -7,7 +7,7 @@ import { MediaHeader } from '../components/MediaHeader';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { fetchMangaDetails } from '../services/anilist';
-import { animeRouteParams, mangaRouteParams } from '../lib/mediaNavigation';
+import { mangaRouteParams, watchRouteParams } from '../lib/mediaNavigation';
 import type { Anime, RootStackParamList } from '../types';
 import { tokens } from '../theme';
 
@@ -23,7 +23,7 @@ export function MangaScreen({ route, navigation }: Props) {
   if (query.isLoading) return <Screen safeTop={false}><StateView loading message={`Loading ${route.params.title || 'manga'}…`} /></Screen>;
   if (query.isError || !query.data) return <Screen safeTop={false}><StateView title="Title details unavailable" message={query.error?.message} onRetry={() => void query.refetch()} /></Screen>;
   const manga = query.data;
-  const openMedia = (item: Anime) => item.mediaType === 'MANGA' ? navigation.push('Manga', mangaRouteParams(item)) : navigation.push('Anime', animeRouteParams(item));
+  const openMedia = (item: Anime) => item.mediaType === 'MANGA' ? navigation.push('Manga', mangaRouteParams(item)) : navigation.push('Watch', watchRouteParams(item));
 
   return (
     <Screen safeTop={false}>

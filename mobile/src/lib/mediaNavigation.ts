@@ -19,3 +19,7 @@ export function mangaRouteParams(manga: Anime): RootStackParamList['Manga'] {
     title: manga.title,
   };
 }
+
+export function watchRouteParams(anime: Anime, episode = 1): RootStackParamList['Watch'] {
+  return { anime, episode };
+}

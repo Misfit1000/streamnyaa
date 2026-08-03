@@ -10,7 +10,7 @@ export const AnimeCard = memo(function AnimeCard({ anime, onPress, width = 136 }
   const theme = useTheme();
   const metadata = [anime.year, anime.format, anime.score ? `${anime.score.toFixed(1)} out of 10` : ''].filter(Boolean).join(', ');
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.root, { width, opacity: pressed ? 0.76 : 1 }]} accessibilityRole="button" accessibilityLabel={`${anime.title}${metadata ? `, ${metadata}` : ''}`} accessibilityHint="Opens title details">
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.root, { width, opacity: pressed ? 0.76 : 1 }]} accessibilityRole="button" accessibilityLabel={`${anime.title}${metadata ? `, ${metadata}` : ''}`} accessibilityHint={anime.mediaType === 'MANGA' ? 'Opens title details' : 'Opens the watch experience'}>
       <View style={[styles.artwork, { width, height: width * 1.45, backgroundColor: theme.colors.surfaceVariant, borderColor: theme.colors.outlineVariant }]}>
         <Image source={anime.cover} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" priority="low" recyclingKey={`${anime.id}-${anime.cover}`} accessibilityIgnoresInvertColors />
         {anime.score ? (

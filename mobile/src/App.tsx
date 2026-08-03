@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { BootSequence } from './components/BootSequence';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { PermissionOnboarding } from './components/PermissionOnboarding';
 import { AuthProvider } from './context/AuthContext';
 import { RootNavigator } from './navigation/RootNavigator';
@@ -54,17 +55,19 @@ export default function App() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <PaperProvider theme={paperTheme}>
-            <View style={styles.root} onLayout={hideNativeSplash}>
-              <NavigationBar hidden style={dark ? 'light' : 'dark'} />
-              <AuthProvider>
-                <NavigationContainer theme={navigationTheme} onReady={() => setNavigationReady(true)}>
-                  <StatusBar style={dark ? 'light' : 'dark'} />
-                  <RootNavigator />
-                </NavigationContainer>
-              </AuthProvider>
-              {!bootComplete ? <BootSequence ready={hydrated && navigationReady} onComplete={completeBoot} /> : null}
-              <PermissionOnboarding visible={bootComplete && hydrated && !permissionsOnboardingCompleted} onComplete={completePermissionsOnboarding} />
-            </View>
+            <AppErrorBoundary>
+              <View style={styles.root} onLayout={hideNativeSplash}>
+                <NavigationBar hidden style={dark ? 'light' : 'dark'} />
+                <AuthProvider>
+                  <NavigationContainer theme={navigationTheme} onReady={() => setNavigationReady(true)}>
+                    <StatusBar style={dark ? 'light' : 'dark'} />
+                    <RootNavigator />
+                  </NavigationContainer>
+                </AuthProvider>
+                {!bootComplete ? <BootSequence ready={hydrated && navigationReady} onComplete={completeBoot} /> : null}
+                <PermissionOnboarding visible={bootComplete && hydrated && !permissionsOnboardingCompleted} onComplete={completePermissionsOnboarding} />
+              </View>
+            </AppErrorBoundary>
           </PaperProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

@@ -206,21 +206,31 @@ function firstSuccessful<T>(requests: Promise<T>[]): Promise<T> {
 }
 
 export async function fetchHomeFeed(includeAdult = false, signal?: AbortSignal) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const currentSeason = (['WINTER', 'WINTER', 'WINTER', 'SPRING', 'SPRING', 'SPRING', 'SUMMER', 'SUMMER', 'SUMMER', 'FALL', 'FALL', 'FALL'] as const)[now.getMonth()] ?? 'WINTER';
   let primaryError: unknown;
   try {
     const data = await graphQL<any>(`
-      query Home($adult: Boolean) {
+      query Home($adult: Boolean, $season: MediaSeason, $year: Int) {
+        latest: Page(page: 1, perPage: 16) { media(type: ANIME, status: RELEASING, sort: UPDATED_AT_DESC, isAdult: $adult) { ${MEDIA_LIST_FIELDS} } }
         trending: Page(page: 1, perPage: 16) { media(type: ANIME, sort: TRENDING_DESC, isAdult: $adult) { ${MEDIA_TRENDING_FIELDS} } }
         popular: Page(page: 1, perPage: 16) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: $adult) { ${MEDIA_LIST_FIELDS} } }
         airing: Page(page: 1, perPage: 16) { media(type: ANIME, status: RELEASING, sort: SCORE_DESC, isAdult: $adult) { ${MEDIA_LIST_FIELDS} } }
+        seasonal: Page(page: 1, perPage: 16) { media(type: ANIME, season: $season, seasonYear: $year, sort: POPULARITY_DESC, isAdult: $adult) { ${MEDIA_LIST_FIELDS} } }
         upcoming: Page(page: 1, perPage: 16) { media(type: ANIME, status: NOT_YET_RELEASED, sort: POPULARITY_DESC, isAdult: $adult) { ${MEDIA_LIST_FIELDS} } }
+        yearly: Page(page: 1, perPage: 16) { media(type: ANIME, seasonYear: $year, sort: SCORE_DESC, isAdult: $adult) { ${MEDIA_LIST_FIELDS} } }
       }
-    `, { adult: includeAdult ? null : false }, signal);
+    `, { adult: includeAdult ? null : false, season: currentSeason, year }, signal);
     return {
+      latest: data.latest.media.map(mapAniListMedia),
       trending: data.trending.media.map(mapAniListMedia),
       popular: data.popular.media.map(mapAniListMedia),
       airing: data.airing.media.map(mapAniListMedia),
+      seasonal: data.seasonal.media.map(mapAniListMedia),
       upcoming: data.upcoming.media.map(mapAniListMedia),
+      yearly: data.yearly.media.map(mapAniListMedia),
+      year,
       provider: 'AniList' as const,
     };
   } catch (error) {
@@ -233,25 +243,29 @@ export async function fetchHomeFeed(includeAdult = false, signal?: AbortSignal) 
     requestJikan(`/top/anime?limit=25${sfw}`, signal),
     requestJikan(`/seasons/upcoming?limit=20${sfw}`, signal),
   ]);
-  const season = itemsFrom(results[0]);
+  const seasonItems = itemsFrom(results[0]);
   const top = itemsFrom(results[1]);
   const upcoming = itemsFrom(results[2]);
-  const available = uniqueMedia([...season, ...top, ...upcoming]);
+  const available = uniqueMedia([...seasonItems, ...top, ...upcoming]);
   if (!available.length) {
     try {
       const kitsu = await requestKitsu('/anime?sort=-userCount&page[limit]=20', signal);
       const titles = uniqueMedia((kitsu.data || []).map((item: any) => mapKitsuMedia(item)));
-      if (titles.length) return { trending: titles.slice(0, 16), popular: titles.slice(0, 16), airing: [], upcoming: [], provider: 'Kitsu' as const };
+      if (titles.length) return { latest: titles.slice(0, 16), trending: titles.slice(0, 16), popular: titles.slice(0, 16), airing: [], seasonal: [], upcoming: [], yearly: titles.slice(0, 16), year, provider: 'Kitsu' as const };
     } catch (fallbackError) {
       throw metadataUnavailable(primaryError, fallbackError);
     }
     throw metadataUnavailable(primaryError, null);
   }
   return {
-    trending: (season.length ? season : top).slice(0, 16),
-    popular: (top.length ? top : season).slice(0, 16),
-    airing: season.slice(0, 16),
+    latest: seasonItems.slice(0, 16),
+    trending: (seasonItems.length ? seasonItems : top).slice(0, 16),
+    popular: (top.length ? top : seasonItems).slice(0, 16),
+    airing: seasonItems.slice(0, 16),
+    seasonal: seasonItems.slice(0, 16),
     upcoming: upcoming.slice(0, 16),
+    yearly: top.slice(0, 16),
+    year,
     provider: 'Jikan' as const,
   };
 }

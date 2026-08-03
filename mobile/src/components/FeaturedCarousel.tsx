@@ -64,7 +64,7 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch }: Prop
         onScrollEndDrag={() => { setTimeout(() => { interacting.current = false; }, 800); }}
         onScrollToIndexFailed={({ index }) => list.current?.scrollToOffset({ offset: width * index, animated: true })}
         renderItem={({ item }) => (
-          <Pressable onPress={() => onOpen(item)} style={({ pressed }) => [{ width, height }, styles.slide, { opacity: pressed ? 0.94 : 1 }]} accessibilityRole="button" accessibilityLabel={`${item.title}. Featured title`} accessibilityHint="Opens title details">
+          <Pressable onPress={() => onOpen(item)} style={({ pressed }) => [{ width, height }, styles.slide, { opacity: pressed ? 0.94 : 1 }]} accessibilityRole="button" accessibilityLabel={`${item.title}. Featured title`} accessibilityHint="Opens the watch experience">
             <ImageBackground source={item.banner || item.cover} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" priority="high" accessibilityIgnoresInvertColors />
             <LinearGradient colors={['rgba(2,2,3,0.04)', 'rgba(2,2,3,0.34)', 'rgba(2,2,3,0.98)']} locations={[0.12, 0.48, 0.88]} style={StyleSheet.absoluteFill} />
             <LinearGradient colors={['rgba(105,4,28,0.08)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 0.8, y: 0 }} style={StyleSheet.absoluteFill} />
@@ -80,7 +80,7 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch }: Prop
               </View>
               <View style={styles.actions}>
                 <Button mode="contained" icon="play" onPress={(event) => { event.stopPropagation(); onWatch(item); }} contentStyle={styles.buttonContent}>Watch now</Button>
-                <Button mode="contained-tonal" icon="information-outline" onPress={(event) => { event.stopPropagation(); onOpen(item); }} contentStyle={styles.buttonContent}>Details</Button>
+                <Button mode="contained-tonal" icon="information-outline" onPress={(event) => { event.stopPropagation(); onOpen(item); }} contentStyle={styles.buttonContent}>More info</Button>
               </View>
             </View>
           </Pressable>

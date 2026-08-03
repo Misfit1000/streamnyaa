@@ -9,7 +9,7 @@ import { AnimeCard } from '../components/AnimeCard';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
 import { fetchGenres, searchMedia, type AnimeSearchFilters } from '../services/anilist';
-import { animeRouteParams, mangaRouteParams } from '../lib/mediaNavigation';
+import { mangaRouteParams, watchRouteParams } from '../lib/mediaNavigation';
 import { useAppStore } from '../store/useAppStore';
 import type { Anime, MainTabParamList, RootStackParamList } from '../types';
 import { tokens } from '../theme';
@@ -106,7 +106,7 @@ export function ExploreScreen({ navigation }: Props) {
             numColumns={columns}
             key={`${mediaType}-${columns}`}
             keyExtractor={(item) => `${item.metadataProvider}-${item.id}`}
-            renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => item.mediaType === 'MANGA' ? navigation.navigate('Manga', mangaRouteParams(item)) : navigation.navigate('Anime', animeRouteParams(item))} />}
+            renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => item.mediaType === 'MANGA' ? navigation.navigate('Manga', mangaRouteParams(item)) : navigation.navigate('Watch', watchRouteParams(item))} />}
             columnWrapperStyle={styles.row}
             contentContainerStyle={styles.results}
             showsVerticalScrollIndicator={false}
