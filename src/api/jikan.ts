@@ -1367,3 +1367,30 @@ export const fetchSchedule = async (page = 1, startDate: number, endDate: number
     }
   };
 };
+
+export const fetchCompleteSchedule = async (startDate: number, endDate: number, maxPages = 10) => {
+  const items: any[] = [];
+  const seen = new Set<string>();
+  let page = 1;
+  let hasNextPage = true;
+
+  while (hasNextPage && page <= maxPages) {
+    const response = await fetchSchedule(page, startDate, endDate);
+    response.data.forEach((anime: any) => {
+      const key = String(anime?.mal_id || anime?.id || anime?.scheduleId || anime?.title || '');
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      items.push(anime);
+    });
+    hasNextPage = Boolean(response.pagination?.has_next_page);
+    page += 1;
+  }
+
+  return {
+    data: items,
+    pagination: {
+      has_next_page: hasNextPage,
+      last_visible_page: page - 1,
+    },
+  };
+};

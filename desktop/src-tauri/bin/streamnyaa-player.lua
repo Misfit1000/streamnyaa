@@ -149,6 +149,9 @@ local ui = {
   last_next_episode_request_key = "",
   end_overlay = false,
   end_overlay_key = "",
+  end_next_pending = false,
+  end_next_pending_at = 0,
+  end_next_request_token = 0,
   eof_handled_key = "",
   eof_candidate_key = "",
   last_buffering_active = false,
@@ -1920,6 +1923,9 @@ end
 function reset_end_overlay_state()
   ui.end_overlay = false
   ui.end_overlay_key = ""
+  ui.end_next_pending = false
+  ui.end_next_pending_at = 0
+  ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
   ui.eof_handled_key = ""
   ui.last_next_episode_request_key = ""
 end
@@ -1927,6 +1933,9 @@ end
 function hide_end_overlay()
   ui.end_overlay = false
   ui.end_overlay_key = ""
+  ui.end_next_pending = false
+  ui.end_next_pending_at = 0
+  ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
 end
 
 function scaled(width, height)
@@ -1988,6 +1997,19 @@ function request_next_episode(reason)
     end
   end
   msg.info("[StreamNyaa Lua] Sending next episode request reason=" .. next_reason .. " key=" .. tostring(key))
+  if next_reason == "manual" or state.autoplay then
+    ui.end_next_pending = true
+    ui.end_next_pending_at = mp.get_time()
+    ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
+    local request_token = ui.end_next_request_token
+    mp.add_timeout(8, function()
+      if request_token ~= ui.end_next_request_token or not ui.end_overlay then return end
+      ui.end_next_pending = false
+      ui.end_next_pending_at = 0
+      settings_notice("The next episode is not ready yet. You can try again.")
+      draw(true, "end-next-timeout")
+    end)
+  end
   safe_commandv("script-message", "streamnyaa-next-episode-request", next_reason)
   if next_reason ~= "ended" or state.autoplay then
     settings_notice(next_reason == "ended" and "Opening next episode..." or "Next episode requested")
@@ -2557,48 +2579,57 @@ function draw_manual_skip_buttons(ass, width, height, mouse, s)
   if intro then draw_manual_skip_button(ass, mouse, intro, 0, width, height, s) end
 end
 
-function draw_end_button(ass, mouse, id, x1, y1, x2, y2, label, primary, s)
-  local hot = inside(mouse, x1, y1, x2, y2)
-  rounded_rect(ass, x1 - 5 * s, y1 - 5 * s, x2 + 5 * s, y2 + 5 * s, 17 * s, primary and C.accent or C.white, hot and 226 or 242)
-  rounded_rect(ass, x1, y1, x2, y2, 14 * s, primary and C.accent or C.panel_2, hot and 0 or (primary and 8 or 18))
-  rounded_outline(ass, x1, y1, x2, y2, 14 * s, 1.2 * s, primary and C.hover or C.white, hot and 42 or 150)
-  draw_text(ass, (x1 + x2) / 2, y1 + 29 * s, 5, font_px(s, 14, 13, 16), C.white, 0, label, true, "Segoe UI Semibold")
-  add_region(id, x1, y1, x2, y2)
+function draw_end_button(ass, mouse, id, x1, y1, x2, y2, label, primary, s, disabled)
+  local hot = not disabled and inside(mouse, x1, y1, x2, y2)
+  local fill = disabled and C.muted or (primary and C.accent or C.panel_2)
+  local text_color = disabled and C.secondary or C.white
+  rounded_rect(ass, x1 - 4 * s, y1 - 4 * s, x2 + 4 * s, y2 + 4 * s, 13 * s, primary and C.accent or C.white, disabled and 250 or (hot and 228 or 244))
+  rounded_rect(ass, x1, y1, x2, y2, 10 * s, fill, disabled and 55 or (hot and 0 or (primary and 8 or 18)))
+  rounded_outline(ass, x1, y1, x2, y2, 10 * s, 1.0 * s, primary and C.hover or C.white, disabled and 220 or (hot and 54 or 170))
+  draw_text(ass, (x1 + x2) / 2, y1 + 29 * s, 5, font_px(s, 14, 13, 16), text_color, 0, label, true, "Segoe UI Semibold")
+  if not disabled then add_region(id, x1, y1, x2, y2) end
 end
 
 function draw_end_overlay(ass, width, height, mouse, s)
   if not ui.end_overlay then return end
-  local panel_w = math.min(width - 80 * s, 530 * s)
-  local panel_h = 230 * s
+  local panel_w = math.min(width - 96 * s, 670 * s)
+  local panel_h = 270 * s
   local x1 = (width - panel_w) / 2
   local y1 = (height - panel_h) / 2
   local x2 = x1 + panel_w
   local y2 = y1 + panel_h
 
-  rounded_rect(ass, x1 - 14 * s, y1 - 14 * s, x2 + 14 * s, y2 + 14 * s, 30 * s, C.accent, 238)
-  rounded_rect(ass, x1, y1, x2, y2, 24 * s, C.panel, 12)
-  rounded_outline(ass, x1, y1, x2, y2, 24 * s, 1.3 * s, C.white, 214)
-  local prompt = state.autoplay and "Opening the next episode..." or "Play the next episode?"
-  local detail = state.autoplay
-    and "Auto Next is on. StreamNyaa is finding the best matching source."
-    or "Continue with the next aired episode, or replay this one."
-  draw_spaced_text(ass, (x1 + x2) / 2, y1 + 48 * s, 5, font_px(s, 13, 12, 15), C.accent, 0, "EPISODE FINISHED", 3 * s, true, "Segoe UI Semibold")
-  draw_text(ass, (x1 + x2) / 2, y1 + 91 * s, 5, font_px(s, 25, 22, 28), C.white, 0, prompt, true, "Segoe UI Semibold")
-  draw_text(ass, (x1 + x2) / 2, y1 + 122 * s, 5, font_px(s, 15, 14, 17), C.secondary, 20, detail, false, "Segoe UI")
+  rect(ass, 0, 0, width, height, C.black, 142)
+  rounded_rect(ass, x1 - 12 * s, y1 - 12 * s, x2 + 12 * s, y2 + 12 * s, 23 * s, C.accent, 242)
+  rounded_rect(ass, x1, y1, x2, y2, 18 * s, C.panel, 8)
+  rounded_outline(ass, x1, y1, x2, y2, 18 * s, 1.1 * s, C.white, 218)
+  local prompt = ui.end_next_pending and "Preparing next episode" or "Episode complete"
+  local detail = ui.end_next_pending
+    and "StreamNyaa is matching the next aired episode with a playable source."
+    or "Continue when you are ready, or replay this episode from the beginning."
+  draw_spaced_text(ass, x1 + 34 * s, y1 + 43 * s, 4, font_px(s, 12, 11, 14), C.accent, 0, "STREAMNYAA", 2.2 * s, true, "Segoe UI Semibold")
+  draw_text(ass, x1 + 34 * s, y1 + 87 * s, 4, font_px(s, 29, 25, 32), C.white, 0, prompt, true, "Segoe UI Semibold")
+  draw_text(ass, x1 + 34 * s, y1 + 121 * s, 4, font_px(s, 15, 14, 17), C.secondary, 28, detail, false, "Segoe UI")
 
-  local gap = 14 * s
-  local button_h = 44 * s
-  local next_w = 198 * s
-  local replay_w = 118 * s
-  local close_w = 98 * s
-  local total_w = next_w + replay_w + close_w + gap * 2
-  local bx = (width - total_w) / 2
-  local by = y2 - 66 * s
-  draw_end_button(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, "PLAY NEXT EPISODE", true, s)
+  local status_w = 112 * s
+  local status_x = x2 - status_w - 26 * s
+  local status_y = y1 + 28 * s
+  rounded_rect(ass, status_x, status_y, status_x + status_w, status_y + 32 * s, 9 * s, state.autoplay and C.accent or C.panel_2, state.autoplay and 28 or 18)
+  draw_text(ass, status_x + status_w / 2, status_y + 21 * s, 5, font_px(s, 11, 10, 13), state.autoplay and C.white or C.secondary, 0, state.autoplay and "AUTO NEXT ON" or "AUTO NEXT OFF", true, "Segoe UI Semibold")
+
+  local gap = 12 * s
+  local button_h = 46 * s
+  local next_w = 224 * s
+  local replay_w = 128 * s
+  local close_w = 112 * s
+  local bx = x1 + 34 * s
+  local by = y2 - 76 * s
+  local next_label = ui.end_next_pending and "FINDING NEXT EPISODE..." or "PLAY NEXT EPISODE"
+  draw_end_button(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, next_label, true, s, ui.end_next_pending)
   bx = bx + next_w + gap
   draw_end_button(ass, mouse, "end_replay", bx, by, bx + replay_w, by + button_h, "REPLAY", false, s)
   bx = bx + replay_w + gap
-  draw_end_button(ass, mouse, "end_close", bx, by, bx + close_w, by + button_h, "CLOSE", false, s)
+  draw_end_button(ass, mouse, "end_close", bx, by, bx + close_w, by + button_h, "STAY HERE", false, s)
 end
 
 function loading_status_text()

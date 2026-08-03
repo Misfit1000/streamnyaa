@@ -4,12 +4,12 @@ import { Link } from 'react-router-dom';
 import { Bell, CalendarDays, ChevronRight, Heart, History, Loader2 } from 'lucide-react';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
-import { fetchSchedule } from '../api/jikan';
+import { fetchCompleteSchedule, fetchSchedule } from '../api/jikan';
 import { animeIdentity } from '../lib/animeIdentity';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 import {
-  hasDesktopWatchedSeries,
-  loadDesktopWatchProgress,
+  desktopWatchedSeriesMatchesAnime,
+  loadDesktopWatchedSeries,
   subscribeDesktopWatchProgress,
 } from '../lib/desktop';
 import {
@@ -258,15 +258,12 @@ export default function DesktopSchedule() {
   const [pendingReminderId, setPendingReminderId] = useState<string | null>(null);
   const [notice, setNotice] = useState<ScheduleNotice | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<ScheduleNotificationPermission>('default');
-  const [watchProgressRecords, setWatchProgressRecords] = useState(() => loadDesktopWatchProgress());
+  const [watchedSeries, setWatchedSeries] = useState(() => loadDesktopWatchedSeries());
   const { isInMyList, addToMyList, removeFromMyList } = useStore();
   const days = useMemo(scheduleDays, []);
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time', []);
   const active = days[selectedDay];
-  const hasWatchHistory = useMemo(
-    () => watchProgressRecords.some((record) => Number(record.positionSeconds || 0) >= 5 || Number(record.progressPercent || 0) >= 1),
-    [watchProgressRecords],
-  );
+  const hasWatchHistory = watchedSeries.length > 0;
   const scheduleQuery = useQuery({
     queryKey: ['desktop-schedule', active.start, active.end],
     queryFn: () => fetchSchedule(1, active.start, active.end),
@@ -277,16 +274,22 @@ export default function DesktopSchedule() {
   const items = scheduleQuery.data?.data || [];
   const watchedWeekQuery = useQuery({
     queryKey: ['desktop-schedule-watched-week', days[0].start, days[days.length - 1].end],
-    queryFn: () => fetchSchedule(1, days[0].start, days[days.length - 1].end),
+    queryFn: () => fetchCompleteSchedule(days[0].start, days[days.length - 1].end),
     staleTime: 1000 * 60 * 10,
     retry: 1,
     enabled: hasWatchHistory,
   });
   const watchedWeekItems = useMemo(
     () => (watchedWeekQuery.data?.data || [])
-      .filter((anime: any) => hasDesktopWatchedSeries(anime, watchProgressRecords))
+      .filter((anime: any) => watchedSeries.some((record) => desktopWatchedSeriesMatchesAnime(record, anime)))
       .sort((left: any, right: any) => airingAtMs(left) - airingAtMs(right)),
-    [watchProgressRecords, watchedWeekQuery.data?.data],
+    [watchedSeries, watchedWeekQuery.data?.data],
+  );
+  const watchedSeriesWithoutRelease = useMemo(
+    () => watchedSeries.filter(
+      (record) => !watchedWeekItems.some((anime: any) => desktopWatchedSeriesMatchesAnime(record, anime)),
+    ),
+    [watchedSeries, watchedWeekItems],
   );
   const visibleItems = useMemo(
     () => (favoritesOnly ? items.filter((anime: any) => isInMyList(animeIdentity(anime))) : items),
@@ -323,7 +326,7 @@ export default function DesktopSchedule() {
   }, []);
 
   useEffect(() => subscribeDesktopWatchProgress(() => {
-    setWatchProgressRecords(loadDesktopWatchProgress());
+    setWatchedSeries(loadDesktopWatchedSeries());
   }), []);
 
   useEffect(() => {
@@ -582,8 +585,10 @@ export default function DesktopSchedule() {
               <p className="text-xs text-white/48">Upcoming episodes from anime you have started, updated automatically.</p>
             </div>
           </div>
-          {watchedWeekItems.length ? (
-            <span className="text-xs font-semibold text-white/46">{watchedWeekItems.length} this week</span>
+          {watchedSeries.length ? (
+            <span className="text-xs font-semibold text-white/46">
+              {watchedSeries.length} tracked / {watchedWeekItems.length} airing this week
+            </span>
           ) : null}
         </div>
 
@@ -594,9 +599,11 @@ export default function DesktopSchedule() {
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
             Matching this week with your watch history...
           </div>
-        ) : watchedWeekItems.length ? (
-          <div className="sn-scroll-rail mt-4 flex gap-3 pb-1">
-            {watchedWeekItems.map((anime: any) => {
+        ) : (
+          <>
+            {watchedWeekItems.length ? (
+              <div className="sn-scroll-rail mt-4 flex gap-3 pb-1">
+                {watchedWeekItems.map((anime: any) => {
               const artwork = scheduleArtwork(anime);
               const airingMs = airingAtMs(anime);
               return (
@@ -623,10 +630,45 @@ export default function DesktopSchedule() {
                   </span>
                 </Link>
               );
-            })}
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-white/48">None of your watched anime have an episode scheduled in the next seven days.</p>
+                })}
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-white/48">None of your watched anime have an episode scheduled in the next seven days.</p>
+            )}
+
+            {watchedSeriesWithoutRelease.length ? (
+              <div className="mt-5 border-t border-white/[0.07] pt-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-sm font-semibold text-white/76">No release announced this week</h3>
+                <span className="text-xs text-white/38">Still tracked automatically</span>
+              </div>
+              <div className="sn-scroll-rail mt-3 flex gap-2 pb-1">
+                {watchedSeriesWithoutRelease.map((record) => (
+                  <Link
+                    key={`tracked-${record.animeId}-${record.title}`}
+                    to={desktopWatchOrBrowsePath({ id: record.animeId, mal_id: record.animeId, title: record.title })}
+                    className="group flex h-16 w-[230px] shrink-0 items-center gap-3 rounded-lg bg-black/28 px-3 ring-1 ring-inset ring-white/[0.07] transition hover:bg-white/[0.055] hover:ring-white/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/65"
+                  >
+                    <span className="h-11 w-8 shrink-0 overflow-hidden rounded-md bg-white/[0.05]">
+                      {record.poster ? (
+                        <img
+                          src={record.poster}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                        />
+                      ) : null}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block line-clamp-2 text-xs font-semibold leading-4 text-white/78 group-hover:text-white">{record.title}</span>
+                      <span className="mt-1 block text-[11px] text-white/40">Last watched episode {record.lastEpisode || 'unknown'}</span>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+              </div>
+            ) : null}
+          </>
         )}
       </section>
 
