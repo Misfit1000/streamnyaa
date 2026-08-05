@@ -27,6 +27,7 @@ local script_options = {
   subtitle_request_file = "",
   next_episode_request_file = "",
   settings_request_file = "",
+  preferences_file = "",
 }
 
 options.read_options(script_options)
@@ -40,6 +41,8 @@ msg.info(
     .. tostring(script_options.next_episode_request_file or "")
     .. " settings_request_file="
     .. tostring(script_options.settings_request_file or "")
+    .. " preferences_file="
+    .. tostring(script_options.preferences_file or "")
 )
 
 local DEBUG_INPUT = false
@@ -247,8 +250,8 @@ local SUBTITLE_STYLE_DEFAULT = {
   position = "normal",
   text_color = "white",
   outline = "medium",
-  shadow = "off",
-  background = "light",
+  shadow = "soft",
+  background = "off",
   custom = false,
 }
 local SUBTITLE_STYLE_OPTIONS = {
@@ -1398,6 +1401,42 @@ function is_midplayback_buffering()
   if state.cache_buffering_active then return true end
   if state.demuxer_underrun == true then return true end
   return ui.inferred_buffering == true or ui.playback_stalled == true
+end
+
+function load_persisted_player_preferences()
+  local preferences_file = tostring(script_options.preferences_file or "")
+  if preferences_file == "" then return false end
+  local content = read_binary_file(preferences_file)
+  if not content or content == "" then return false end
+  local parsed = utils.parse_json(content)
+  if type(parsed) ~= "table" then
+    msg.warn("[StreamNyaa Lua] Could not parse persisted player preferences")
+    return false
+  end
+  local ordered_keys = {
+    "autoNextEpisode",
+    "autoSkipIntro",
+    "autoSkipOutro",
+    "rememberSpeed",
+    "playbackSpeed",
+    "volume",
+    "muted",
+    "subtitleStyle.fontSize",
+    "subtitleStyle.position",
+    "subtitleStyle.textColor",
+    "subtitleStyle.outline",
+    "subtitleStyle.shadow",
+    "subtitleStyle.background",
+    "subtitleStyle.custom",
+  }
+  local applied = 0
+  for _, key in ipairs(ordered_keys) do
+    if parsed[key] ~= nil and apply_player_preference(key, parsed[key]) then
+      applied = applied + 1
+    end
+  end
+  msg.info("[StreamNyaa Lua] Loaded " .. tostring(applied) .. " persisted player preferences")
+  return applied > 0
 end
 
 function is_buffering()
@@ -2590,46 +2629,70 @@ function draw_end_button(ass, mouse, id, x1, y1, x2, y2, label, primary, s, disa
   if not disabled then add_region(id, x1, y1, x2, y2) end
 end
 
+function icon_replay(ass, cx, cy, size, color)
+  local t = icon_stroke(size, 0.085)
+  draw_arc(ass, cx, cy, size * 0.40, -55, 285, t, color, 0)
+  icon_polyline(ass, cx, cy, size, {{7.6, 4.9}, {4.6, 6.2}, {6.0, 9.1}}, color, t)
+end
+
+function draw_end_action(ass, mouse, id, x1, y1, x2, y2, label, primary, s, disabled, icon_name)
+  local hot = not disabled and inside(mouse, x1, y1, x2, y2)
+  local fill = primary and (hot and C.hover or C.accent) or (hot and C.panel_2 or C.panel)
+  local alpha = disabled and 105 or (primary and 0 or 16)
+  rounded_rect(ass, x1, y1, x2, y2, 8 * s, disabled and C.muted or fill, alpha)
+  if not primary then
+    rounded_outline(ass, x1, y1, x2, y2, 8 * s, 1.0 * s, C.white, disabled and 236 or (hot and 164 or 214))
+  end
+  local icon_x = x1 + 24 * s
+  local center_y = (y1 + y2) / 2
+  if icon_name == "next" then
+    icon_next_episode(ass, icon_x, center_y, 19 * s, disabled and C.secondary or C.white)
+  elseif icon_name == "replay" then
+    icon_replay(ass, icon_x, center_y, 19 * s, disabled and C.secondary or C.white)
+  end
+  local text_x = icon_name and (x1 + 45 * s) or ((x1 + x2) / 2)
+  local align = icon_name and 4 or 5
+  draw_text(ass, text_x, center_y + 1 * s, align, font_px(s, 13, 12, 15), disabled and C.secondary or C.white, 0, label, true, "Segoe UI Semibold")
+  if not disabled then add_region(id, x1, y1, x2, y2) end
+end
+
 function draw_end_overlay(ass, width, height, mouse, s)
   if not ui.end_overlay then return end
-  local panel_w = math.min(width - 96 * s, 670 * s)
-  local panel_h = 270 * s
+  local panel_w = math.min(width - 72 * s, 880 * s)
+  local panel_h = 218 * s
   local x1 = (width - panel_w) / 2
-  local y1 = (height - panel_h) / 2
+  local y1 = height - panel_h - 58 * s
   local x2 = x1 + panel_w
   local y2 = y1 + panel_h
 
-  rect(ass, 0, 0, width, height, C.black, 142)
-  rounded_rect(ass, x1 - 12 * s, y1 - 12 * s, x2 + 12 * s, y2 + 12 * s, 23 * s, C.accent, 242)
-  rounded_rect(ass, x1, y1, x2, y2, 18 * s, C.panel, 8)
-  rounded_outline(ass, x1, y1, x2, y2, 18 * s, 1.1 * s, C.white, 218)
+  rect(ass, 0, 0, width, height, C.black, 162)
+  rounded_rect(ass, x1, y1, x2, y2, 12 * s, C.panel, 12)
+  rounded_outline(ass, x1, y1, x2, y2, 12 * s, 1.0 * s, C.white, 224)
+  rounded_rect(ass, x1, y1 + 20 * s, x1 + 4 * s, y2 - 20 * s, 2 * s, C.accent, 0)
   local prompt = ui.end_next_pending and "Preparing next episode" or "Episode complete"
   local detail = ui.end_next_pending
-    and "StreamNyaa is matching the next aired episode with a playable source."
-    or "Continue when you are ready, or replay this episode from the beginning."
-  draw_spaced_text(ass, x1 + 34 * s, y1 + 43 * s, 4, font_px(s, 12, 11, 14), C.accent, 0, "STREAMNYAA", 2.2 * s, true, "Segoe UI Semibold")
-  draw_text(ass, x1 + 34 * s, y1 + 87 * s, 4, font_px(s, 29, 25, 32), C.white, 0, prompt, true, "Segoe UI Semibold")
-  draw_text(ass, x1 + 34 * s, y1 + 121 * s, 4, font_px(s, 15, 14, 17), C.secondary, 28, detail, false, "Segoe UI")
-
-  local status_w = 112 * s
-  local status_x = x2 - status_w - 26 * s
-  local status_y = y1 + 28 * s
-  rounded_rect(ass, status_x, status_y, status_x + status_w, status_y + 32 * s, 9 * s, state.autoplay and C.accent or C.panel_2, state.autoplay and 28 or 18)
-  draw_text(ass, status_x + status_w / 2, status_y + 21 * s, 5, font_px(s, 11, 10, 13), state.autoplay and C.white or C.secondary, 0, state.autoplay and "AUTO NEXT ON" or "AUTO NEXT OFF", true, "Segoe UI Semibold")
+    and "Finding a playable source for the next aired episode."
+    or "Replay this episode or continue to the next aired episode."
+  draw_text(ass, x1 + 30 * s, y1 + 35 * s, 4, font_px(s, 12, 11, 13), C.accent, 0, "STREAMNYAA", true, "Segoe UI Semibold")
+  draw_text(ass, x1 + 30 * s, y1 + 75 * s, 4, font_px(s, 27, 24, 31), C.white, 0, prompt, true, "Segoe UI Semibold")
+  draw_text(ass, x1 + 30 * s, y1 + 105 * s, 4, font_px(s, 14, 13, 16), C.secondary, 18, detail, false, "Segoe UI")
+  local status_x = x2 - 30 * s
+  circle(ass, status_x - 109 * s, y1 + 35 * s, 4 * s, state.autoplay and C.accent or C.muted, 0)
+  draw_text(ass, status_x, y1 + 35 * s, 6, font_px(s, 11, 10, 13), state.autoplay and C.white or C.secondary, 0, state.autoplay and "Auto next active" or "Auto next paused", true, "Segoe UI Semibold")
 
   local gap = 12 * s
-  local button_h = 46 * s
-  local next_w = 224 * s
-  local replay_w = 128 * s
-  local close_w = 112 * s
-  local bx = x1 + 34 * s
-  local by = y2 - 76 * s
-  local next_label = ui.end_next_pending and "FINDING NEXT EPISODE..." or "PLAY NEXT EPISODE"
-  draw_end_button(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, next_label, true, s, ui.end_next_pending)
+  local button_h = 44 * s
+  local next_w = 220 * s
+  local replay_w = 122 * s
+  local close_w = 96 * s
+  local bx = x1 + 30 * s
+  local by = y2 - 64 * s
+  local next_label = ui.end_next_pending and "FINDING NEXT..." or "NEXT EPISODE"
+  draw_end_action(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, next_label, true, s, ui.end_next_pending, "next")
   bx = bx + next_w + gap
-  draw_end_button(ass, mouse, "end_replay", bx, by, bx + replay_w, by + button_h, "REPLAY", false, s)
+  draw_end_action(ass, mouse, "end_replay", bx, by, bx + replay_w, by + button_h, "REPLAY", false, s, false, "replay")
   bx = bx + replay_w + gap
-  draw_end_button(ass, mouse, "end_close", bx, by, bx + close_w, by + button_h, "STAY HERE", false, s)
+  draw_end_action(ass, mouse, "end_close", bx, by, bx + close_w, by + button_h, "CLOSE", false, s, false)
 end
 
 function loading_status_text()
@@ -4304,6 +4367,7 @@ mp.register_script_message("streamnyaa-playback-ready", function()
   draw(true, "playback-ready")
 end)
 
+load_persisted_player_preferences()
 load_player_meta()
 msg.info("[StreamNyaa Lua] render requested after startup metadata load")
 refresh_track_cache(state.tracks)

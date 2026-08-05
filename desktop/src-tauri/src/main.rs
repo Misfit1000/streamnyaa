@@ -17,6 +17,8 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 
 const DESKTOP_OAUTH_WINDOW_LABEL: &str = "streamnyaa-oauth";
@@ -55,8 +57,10 @@ struct DesktopOAuthCallback {
 }
 
 fn is_streamnyaa_auth_callback(url: &tauri::Url) -> bool {
-    matches!(url.host_str(), Some("www.streamnyaa.xyz") | Some("streamnyaa.xyz"))
-        && url.path().trim_end_matches('/') == "/login"
+    matches!(
+        url.host_str(),
+        Some("www.streamnyaa.xyz") | Some("streamnyaa.xyz")
+    ) && url.path().trim_end_matches('/') == "/login"
         && url
             .query_pairs()
             .any(|(key, value)| key == "desktop_oauth" && value == "1")
@@ -104,10 +108,7 @@ fn validate_google_oauth_authorize_url(url: &tauri::Url) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn begin_desktop_google_oauth(
-    app: tauri::AppHandle,
-    authorize_url: String,
-) -> Result<(), String> {
+fn begin_desktop_google_oauth(app: tauri::AppHandle, authorize_url: String) -> Result<(), String> {
     let authorize_url = tauri::Url::parse(&authorize_url)
         .map_err(|_| "The desktop sign-in URL is invalid.".to_string())?;
     validate_google_oauth_authorize_url(&authorize_url)?;
@@ -418,7 +419,10 @@ static LAST_NEXT_EPISODE_EVENT: OnceLock<Mutex<Option<(String, u128)>>> = OnceLo
 static PLAYBACK_SWITCH_GENERATION: AtomicU64 = AtomicU64::new(0);
 static SOURCE_CACHE: OnceLock<Mutex<HashMap<String, SourceCacheEntry>>> = OnceLock::new();
 static METADATA_CACHE: OnceLock<Mutex<HashMap<String, SourceCacheEntry>>> = OnceLock::new();
+static PLAYER_PREFERENCES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static SUBTITLE_IMPORT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+static APP_EXITING: AtomicBool = AtomicBool::new(false);
+static TRAY_SUSPEND_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
 fn manager() -> &'static Mutex<PlaybackManager> {
     MANAGER.get_or_init(|| Mutex::new(PlaybackManager::default()))
@@ -749,6 +753,149 @@ fn logs_root() -> PathBuf {
         return PathBuf::from(local).join("StreamNyaa").join("logs");
     }
     cache_root().join("logs")
+}
+
+fn player_preferences_path() -> PathBuf {
+    if let Ok(local) = env::var("LOCALAPPDATA") {
+        return PathBuf::from(local)
+            .join("StreamNyaa")
+            .join("player-preferences.json");
+    }
+    cache_root().join("player-preferences.json")
+}
+
+fn load_player_preferences_from_disk() -> HashMap<String, String> {
+    fs::read_to_string(player_preferences_path())
+        .ok()
+        .and_then(|content| serde_json::from_str::<HashMap<String, String>>(&content).ok())
+        .unwrap_or_default()
+}
+
+fn player_preferences() -> &'static Mutex<HashMap<String, String>> {
+    PLAYER_PREFERENCES.get_or_init(|| Mutex::new(load_player_preferences_from_disk()))
+}
+
+fn persist_player_preference(key: &str, value: &str) {
+    let key = key.trim();
+    if key.is_empty() {
+        return;
+    }
+    let snapshot = {
+        let Ok(mut preferences) = player_preferences().lock() else {
+            log_info("Could not lock the desktop player preference cache");
+            return;
+        };
+        preferences.insert(key.to_string(), value.to_string());
+        preferences.clone()
+    };
+    let path = player_preferences_path();
+    if let Some(parent) = path.parent() {
+        if let Err(error) = fs::create_dir_all(parent) {
+            log_info(format!(
+                "Could not create player preference folder: {}",
+                error
+            ));
+            return;
+        }
+    }
+    let temporary = path.with_extension("json.tmp");
+    let Ok(payload) = serde_json::to_vec_pretty(&snapshot) else {
+        return;
+    };
+    if fs::write(&temporary, payload).is_err() {
+        return;
+    }
+    if path.exists() {
+        let _ = fs::remove_file(&path);
+    }
+    if let Err(error) = fs::rename(&temporary, &path) {
+        log_info(format!("Could not persist player preferences: {}", error));
+    }
+}
+
+fn persisted_player_preference(key: &str) -> Option<String> {
+    player_preferences().lock().ok()?.get(key).cloned()
+}
+
+fn add_persisted_subtitle_preferences(command: &mut Command) {
+    let custom = persisted_player_preference("subtitleStyle.custom")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "true" | "1" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false);
+    command.arg(if custom {
+        "--sub-ass-override=force"
+    } else {
+        "--sub-ass-override=no"
+    });
+
+    match persisted_player_preference("subtitleStyle.fontSize").as_deref() {
+        Some("small") => {
+            command.arg("--sub-font-size=34").arg("--sub-scale=0.86");
+        }
+        Some("large") => {
+            command.arg("--sub-font-size=50").arg("--sub-scale=1.05");
+        }
+        Some("extra_large") => {
+            command.arg("--sub-font-size=58").arg("--sub-scale=1.18");
+        }
+        _ => {
+            command.arg("--sub-font-size=42").arg("--sub-scale=0.92");
+        }
+    }
+    match persisted_player_preference("subtitleStyle.position").as_deref() {
+        Some("low") => {
+            command.arg("--sub-pos=96").arg("--sub-margin-y=20");
+        }
+        Some("high") => {
+            command.arg("--sub-pos=78").arg("--sub-margin-y=68");
+        }
+        _ => {
+            command.arg("--sub-pos=90").arg("--sub-margin-y=34");
+        }
+    }
+    let color = match persisted_player_preference("subtitleStyle.textColor").as_deref() {
+        Some("yellow") => "#FFD86B",
+        Some("red") => "#FF4B55",
+        Some("cyan") => "#4DD0E1",
+        _ => "#FFF8F7",
+    };
+    command.arg(format!("--sub-color={}", color));
+    let border_size = match persisted_player_preference("subtitleStyle.outline").as_deref() {
+        Some("none") => "0",
+        Some("thin") => "1.3",
+        Some("thick") => "4.0",
+        _ => "2.5",
+    };
+    command
+        .arg(format!("--sub-border-size={}", border_size))
+        .arg("--sub-border-color=#06070A");
+    let shadow_offset = match persisted_player_preference("subtitleStyle.shadow").as_deref() {
+        Some("soft") => "1.2",
+        Some("strong") => "2.8",
+        _ => "0",
+    };
+    command.arg(format!("--sub-shadow-offset={}", shadow_offset));
+    match persisted_player_preference("subtitleStyle.background").as_deref() {
+        Some("light") => {
+            command
+                .arg("--sub-back-color=#33000000")
+                .arg("--sub-border-style=background-box");
+        }
+        Some("dark") => {
+            command
+                .arg("--sub-back-color=#AA000000")
+                .arg("--sub-border-style=background-box");
+        }
+        _ => {
+            command
+                .arg("--sub-back-color=#00000000")
+                .arg("--sub-border-style=outline-and-shadow");
+        }
+    }
 }
 
 fn rotate_logs(log_file: &Path) {
@@ -3144,6 +3291,7 @@ fn control_player(request: PlayerControlRequest) -> Result<PlayerControlStatus, 
                     .map(|item| item.to_string())
                     .unwrap_or_default()
             });
+            persist_player_preference(key, &value);
             format!(
                 r#"{{"command":["script-message","streamnyaa-set-player-preference",{},{}],"request_id":75}}"#,
                 json_string(key),
@@ -3558,6 +3706,7 @@ fn emit_player_setting_changed(key: &str, value: &str) {
     if payload.key.is_empty() {
         return;
     }
+    persist_player_preference(&payload.key, &payload.value);
     if let Some(app) = APP_HANDLE.get() {
         if let Err(error) = app.emit("streamnyaa-player-setting-changed", payload) {
             log_info(format!("Could not emit player setting change: {}", error));
@@ -4072,9 +4221,6 @@ fn launch_or_reuse_player(
         .arg("--demuxer-readahead-secs=45")
         .arg("--save-position-on-quit=no")
         .arg("--sub-auto=fuzzy")
-        .arg("--sub-ass-override=no")
-        .arg("--sub-scale=0.92")
-        .arg("--sub-pos=90")
         .arg("--sub-scale-by-window=yes")
         .arg("--sub-use-margins=yes")
         .arg("--osd-font=Segoe UI Semibold")
@@ -4084,12 +4230,6 @@ fn launch_or_reuse_player(
         .arg("--osd-border-size=2.2")
         .arg("--osd-shadow-offset=0")
         .arg("--sub-font=Segoe UI Semibold")
-        .arg("--sub-font-size=42")
-        .arg("--sub-color=#FFF8F7")
-        .arg("--sub-border-color=#06070A")
-        .arg("--sub-border-size=2.5")
-        .arg("--sub-shadow-offset=0")
-        .arg("--sub-back-color=#00000022")
         .arg(format!(
             "--log-file={}",
             path_for_player_option(&player_log)
@@ -4097,6 +4237,8 @@ fn launch_or_reuse_player(
         .arg(format!("--input-ipc-server={}", ipc))
         .arg(format!("--force-media-title={}", title))
         .arg(format!("--title=StreamNyaa - {}", title));
+
+    add_persisted_subtitle_preferences(&mut command);
 
     let mut script_opts: Vec<String> = Vec::new();
     if let Some(metadata_file) = metadata_file.as_ref() {
@@ -4123,6 +4265,10 @@ fn launch_or_reuse_player(
             path_for_player_option(player_setting_request_file)
         ));
     }
+    script_opts.push(format!(
+        "streamnyaa_player-preferences_file={}",
+        path_for_player_option(&player_preferences_path())
+    ));
     if !script_opts.is_empty() {
         command.arg(format!("--script-opts={}", script_opts.join(",")));
     }
@@ -5634,6 +5780,100 @@ fn startup_maintenance() {
     ));
 }
 
+fn shutdown_desktop_runtime(reason: &str) {
+    if let Ok(_operation_guard) = playback_operation_lock().try_lock() {
+        let status = runtime_status(None);
+        close_player_if_needed();
+        stop_active_session(true);
+        stop_rqbit_server(status.torrent_engine_path.as_deref());
+        let cache_dir = PathBuf::from(status.cache_dir);
+        cleanup_abandoned_sessions(&cache_dir, None);
+        prune_cache(&cache_dir, None);
+        clear_memory_caches();
+    } else {
+        close_player_if_needed();
+        let status = runtime_status(None);
+        stop_rqbit_server(status.torrent_engine_path.as_deref());
+    }
+    log_info(format!("StreamNyaa desktop runtime suspended: {}", reason));
+}
+
+fn suspend_runtime_to_tray() {
+    if TRAY_SUSPEND_IN_PROGRESS
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    thread::spawn(|| {
+        shutdown_desktop_runtime("window moved to tray");
+        TRAY_SUSPEND_IN_PROGRESS.store(false, Ordering::SeqCst);
+    });
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn quit_desktop_app(app: tauri::AppHandle) {
+    if APP_EXITING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    thread::spawn(move || {
+        shutdown_desktop_runtime("explicit tray quit");
+        log_info("StreamNyaa desktop app closing");
+        app.exit(0);
+    });
+}
+
+fn install_system_tray(app: &tauri::App) -> tauri::Result<()> {
+    let show_item = MenuItem::with_id(
+        app,
+        "streamnyaa-show",
+        "Open StreamNyaa",
+        true,
+        None::<&str>,
+    )?;
+    let quit_item = MenuItem::with_id(
+        app,
+        "streamnyaa-quit",
+        "Quit StreamNyaa",
+        true,
+        None::<&str>,
+    )?;
+    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+    let mut builder = TrayIconBuilder::with_id("streamnyaa-tray")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .tooltip("StreamNyaa")
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "streamnyaa-show" => show_main_window(app),
+            "streamnyaa-quit" => quit_desktop_app(app.clone()),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| match event {
+            TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            }
+            | TrayIconEvent::DoubleClick {
+                button: MouseButton::Left,
+                ..
+            } => show_main_window(tray.app_handle()),
+            _ => {}
+        });
+    if let Some(icon) = app.default_window_icon().cloned() {
+        builder = builder.icon(icon);
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -5646,29 +5886,26 @@ fn main() {
             ) {
                 let _ = window.set_icon(icon);
             }
+            install_system_tray(app)?;
             spawn_player_watchdog();
             thread::spawn(startup_maintenance);
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() == "main"
-                && matches!(event, tauri::WindowEvent::CloseRequested { .. })
+            if window.label() != "main" || APP_EXITING.load(Ordering::SeqCst) {
+                return;
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+                suspend_runtime_to_tray();
+                return;
+            }
+            if matches!(event, tauri::WindowEvent::Resized(_))
+                && window.is_minimized().unwrap_or(false)
             {
-                if let Ok(_operation_guard) = playback_operation_lock().try_lock() {
-                    let status = runtime_status(None);
-                    close_player_if_needed();
-                    stop_active_session(true);
-                    stop_rqbit_server(status.torrent_engine_path.as_deref());
-                    let cache_dir = PathBuf::from(status.cache_dir);
-                    cleanup_abandoned_sessions(&cache_dir, None);
-                    prune_cache(&cache_dir, None);
-                    clear_memory_caches();
-                } else {
-                    close_player_if_needed();
-                    let status = runtime_status(None);
-                    stop_rqbit_server(status.torrent_engine_path.as_deref());
-                }
-                log_info("StreamNyaa desktop app closing");
+                let _ = window.hide();
+                suspend_runtime_to_tray();
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -5709,14 +5946,13 @@ mod tests {
 
     #[test]
     fn desktop_oauth_callback_requires_the_desktop_marker() {
-        let callback = tauri::Url::parse(
-            "https://www.streamnyaa.xyz/login?desktop_oauth=1#access_token=test",
-        )
-        .expect("valid callback URL");
+        let callback =
+            tauri::Url::parse("https://www.streamnyaa.xyz/login?desktop_oauth=1#access_token=test")
+                .expect("valid callback URL");
         assert!(is_streamnyaa_auth_callback(&callback));
 
-        let normal_web_login = tauri::Url::parse("https://www.streamnyaa.xyz/login")
-            .expect("valid normal login URL");
+        let normal_web_login =
+            tauri::Url::parse("https://www.streamnyaa.xyz/login").expect("valid normal login URL");
         assert!(!is_streamnyaa_auth_callback(&normal_web_login));
     }
 
