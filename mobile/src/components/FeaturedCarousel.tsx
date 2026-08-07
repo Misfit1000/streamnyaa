@@ -80,7 +80,6 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch }: Prop
               </View>
               <View style={styles.actions}>
                 <Button mode="contained" icon="play" onPress={(event) => { event.stopPropagation(); onWatch(item); }} contentStyle={styles.buttonContent}>Watch now</Button>
-                <Button mode="contained-tonal" icon="information-outline" onPress={(event) => { event.stopPropagation(); onOpen(item); }} contentStyle={styles.buttonContent}>More info</Button>
               </View>
             </View>
           </Pressable>
@@ -96,7 +95,7 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch }: Prop
 }
 
 const styles = StyleSheet.create({
-  root: { borderRadius: tokens.radius.card, overflow: 'hidden', backgroundColor: tokens.color.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: tokens.color.outlineSoft },
+  root: { marginHorizontal: -tokens.spacing.lg, overflow: 'hidden', backgroundColor: tokens.color.surface },
   slide: { justifyContent: 'flex-end' },
   copy: { paddingHorizontal: tokens.spacing.lg, paddingBottom: 34, gap: tokens.spacing.sm, maxWidth: 430 },
   factualLabel: { flexDirection: 'row', alignItems: 'center', gap: 6 },

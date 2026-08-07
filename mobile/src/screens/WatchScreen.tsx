@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Linking, Share, StyleSheet, View } from 'react-native';
+import { AppState, Linking, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { ImageBackground } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEventListener } from 'expo';
 import { useQuery } from '@tanstack/react-query';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Button, Chip, Menu, ProgressBar, SegmentedButtons, Text, TextInput, useTheme } from 'react-native-paper';
+import { Button, Chip, IconButton, Menu, Modal, Portal, ProgressBar, SegmentedButtons, Text, TextInput, useTheme } from 'react-native-paper';
 import { AnimeShelf } from '../components/AnimeShelf';
 import { EpisodeRail } from '../components/EpisodeRail';
 import { Screen } from '../components/Screen';
@@ -14,8 +14,9 @@ import { SourceRow } from '../components/SourceRow';
 import { StateView } from '../components/StateView';
 import { WatchHero } from '../components/WatchHero';
 import { watchRouteParams, mangaRouteParams } from '../lib/mediaNavigation';
+import { mobileSourceCompatibilityScore, sourceAllowedByMode, type MobileSourceMode } from '../lib/mobileSourcePolicy';
 import { TorrentEngine } from '../native/TorrentEngine';
-import { fetchAnimeDetails } from '../services/anilist';
+import { fetchAnimeDetails, fetchAnimeEpisodes } from '../services/anilist';
 import { searchSources, sourceQuery } from '../services/sources';
 import { useAppStore } from '../store/useAppStore';
 import type { Anime, RootStackParamList, TorrentSource, TorrentStreamStatus } from '../types';
@@ -37,8 +38,10 @@ export function WatchScreen({ route, navigation }: Props) {
   const [quality, setQuality] = useState('auto');
   const [sourceFilter, setSourceFilter] = useState<'all' | 'trusted' | 'no-remakes'>('all');
   const [sourceSort, setSourceSort] = useState<'best' | 'seeders' | 'size'>('best');
+  const [sourceMode, setSourceMode] = useState<MobileSourceMode>('balanced');
   const [sortMenu, setSortMenu] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const failedSources = useRef(new Set<string>());
   const automaticRetries = useRef(0);
   const starting = useRef(false);
@@ -60,6 +63,9 @@ export function WatchScreen({ route, navigation }: Props) {
   const toggleBookmark = useAppStore((state) => state.toggleBookmark);
   const toggleLike = useAppStore((state) => state.toggleLike);
   const saveProgress = useAppStore((state) => state.saveProgress);
+  const sourceFailures = useAppStore((state) => state.sourceFailures);
+  const recordSourceFailure = useAppStore((state) => state.recordSourceFailure);
+  const clearSourceFailure = useAppStore((state) => state.clearSourceFailure);
 
   const details = useQuery({
     queryKey: ['anime', routeAnime.id, routeAnime.anilistId, routeAnime.malId, routeAnime.kitsuId],
@@ -72,6 +78,14 @@ export function WatchScreen({ route, navigation }: Props) {
     staleTime: 30 * 60 * 1000,
   });
   const anime = details.data || routeAnime;
+  const notYetAired = /NOT.*YET|UPCOMING/i.test(String(anime.status || ''));
+  const episodePage = Math.floor((episode - 1) / 100) + 1;
+  const episodeMetadata = useQuery({
+    queryKey: ['anime-episodes', anime.malId, episodePage],
+    queryFn: ({ signal }) => fetchAnimeEpisodes(Number(anime.malId), episodePage, signal),
+    enabled: Boolean(anime.malId),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
   const saved = library.find((item) => item.animeId === String(anime.malId || anime.id));
   const queryText = useMemo(() => sourceQuery(anime.title, episode, audio), [anime.title, audio, episode]);
   const sources = useQuery({
@@ -81,15 +95,28 @@ export function WatchScreen({ route, navigation }: Props) {
       pages: resourcePolicy.batterySaver ? 1 : 2,
       wide: !resourcePolicy.batterySaver,
     }),
+    enabled: !notYetAired,
   });
-  const visibleSources = useMemo(() => (sources.data || [])
+  const visibleSources = useMemo(() => {
+    const allSources = sources.data || [];
+    const hasMatchScores = allSources.some((source) => Number(source.matchScore || 0) > 0);
+    return allSources
+    .filter((source) => sourceAllowedByMode(source, sourceMode, hasMatchScores))
     .filter((source) => quality === 'auto' || sourceQualityBucket(source.title) === quality)
     .filter((source) => sourceFilter === 'all' || (sourceFilter === 'trusted' ? source.trusted : !source.remake))
     .sort((left, right) => sourceSort === 'seeders'
       ? right.seeders - left.seeders
       : sourceSort === 'size'
         ? parseSizeBytes(left.size) - parseSizeBytes(right.size)
-        : Number(right.sourceScore || 0) - Number(left.sourceScore || 0)), [quality, sourceFilter, sourceSort, sources.data]);
+        : mobileSourceCompatibilityScore(right, resourcePolicy.batterySaver) - mobileSourceCompatibilityScore(left, resourcePolicy.batterySaver));
+  }, [quality, resourcePolicy.batterySaver, sourceFilter, sourceMode, sourceSort, sources.data]);
+  const recommendedSource = useMemo(() => {
+    const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return visibleSources.find((source) => {
+      const failure = sourceFailures[sourceId(source)];
+      return source.seeders > 0 && (!failure || Date.parse(failure.lastFailedAt) < recentCutoff);
+    }) || visibleSources.find((source) => source.seeders > 0) || visibleSources[0];
+  }, [sourceFailures, visibleSources]);
   const player = useVideoPlayer(null, (instance) => { instance.timeUpdateEventInterval = resourcePolicy.batterySaver ? 8 : 5; });
 
   const persistProgress = useCallback(() => {
@@ -125,7 +152,7 @@ export function WatchScreen({ route, navigation }: Props) {
       await player.replaceAsync(null).catch(() => undefined);
       await TorrentEngine.stop(false).catch(() => undefined);
       if (!mounted.current || generation !== playbackGeneration.current) return;
-      const next = await TorrentEngine.startStream(source.magnet, undefined, {
+      const next = await TorrentEngine.startStream(source.magnet, `episode:${episode}`, {
         wifiOnly: resourcePolicy.wifiOnly,
         maxCacheMiB: resourcePolicy.maxCacheMiB,
         batterySaver: resourcePolicy.batterySaver,
@@ -140,12 +167,13 @@ export function WatchScreen({ route, navigation }: Props) {
       if (generation !== playbackGeneration.current) return;
       failedSources.current.add(sourceId(source));
       const message = error instanceof Error ? error.message : 'The source could not be opened.';
+      recordSourceFailure(sourceId(source), message);
       setStatus({ ...idleStatus, state: 'error', message, error: message });
     } finally {
       starting.current = false;
       if (mounted.current) setIsStarting(false);
     }
-  }, [player, resourcePolicy.batterySaver, resourcePolicy.maxCacheMiB, resourcePolicy.wifiOnly]);
+  }, [episode, player, recordSourceFailure, resourcePolicy.batterySaver, resourcePolicy.maxCacheMiB, resourcePolicy.wifiOnly]);
 
   const changeEpisode = useCallback((next: number, openAutomatically = false) => {
     const maximum = Number(anime.episodes || Number.MAX_SAFE_INTEGER);
@@ -185,26 +213,35 @@ export function WatchScreen({ route, navigation }: Props) {
   }, [queryText]);
 
   useEffect(() => {
+    const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    Object.entries(sourceFailures).forEach(([key, failure]) => { if (Date.parse(failure.lastFailedAt) >= recentCutoff) failedSources.current.add(key); });
+  }, [sourceFailures]);
+
+  useEffect(() => {
     playbackSnapshot.current = { ...playbackSnapshot.current, selected, episode };
     setEpisodeDraft(String(episode));
   }, [episode, selected]);
 
   useEffect(() => {
-    if (!isStarting && !selected && (autoOpen || pendingAutoNext) && visibleSources[0]) {
+    if (!isStarting && !selected && (autoOpen || pendingAutoNext) && recommendedSource) {
       setPendingAutoNext(false);
-      void start(visibleSources[0]);
+      void start(recommendedSource);
     }
-  }, [autoOpen, isStarting, pendingAutoNext, selected, start, visibleSources]);
+  }, [autoOpen, isStarting, pendingAutoNext, recommendedSource, selected, start]);
 
   useEffect(() => {
     if (status.state !== 'error' || !visibleSources.length || automaticRetries.current >= 2) return;
-    if (selected) failedSources.current.add(sourceId(selected));
+    if (selected) {
+      const id = sourceId(selected);
+      if (!failedSources.current.has(id)) recordSourceFailure(id, status.error || status.message || 'Playback failed.');
+      failedSources.current.add(id);
+    }
     const backup = selectBackupSource(visibleSources, failedSources.current);
     if (!backup) return;
     automaticRetries.current += 1;
     const timer = setTimeout(() => void start(backup, true), 900);
     return () => clearTimeout(timer);
-  }, [selected, start, status.state, visibleSources]);
+  }, [recordSourceFailure, selected, start, status.error, status.message, status.state, visibleSources]);
 
   useEffect(() => {
     if (!status.streamUrl) return;
@@ -238,6 +275,7 @@ export function WatchScreen({ route, navigation }: Props) {
     resumeApplied.current = true;
     const resume = Number(route.params.resumeSeconds || 0);
     if (resume > 0 && player.currentTime < 2) player.currentTime = resume;
+    if (selected) clearSourceFailure(sourceId(selected));
   });
 
   useEventListener(player, 'statusChange', ({ status: playerStatus, error }) => {
@@ -299,19 +337,25 @@ export function WatchScreen({ route, navigation }: Props) {
 
   return (
     <Screen safeTop contentContainerStyle={styles.screen}>
-      <WatchHero
+      {!status.streamUrl ? <WatchHero
         anime={anime}
         episode={episode}
         bookmarked={Boolean(saved?.bookmarked)}
         liked={Boolean(saved?.liked)}
         sourceLoading={sources.isLoading || isStarting}
-        canPlay={Boolean(visibleSources[0]) && !isStarting}
+        canPlay={Boolean(recommendedSource) && !isStarting}
         onBack={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Tabs')}
-        onPlay={() => visibleSources[0] && void start(visibleSources[0])}
+        onPlay={() => recommendedSource && void start(recommendedSource)}
         onBookmark={() => toggleBookmark(anime)}
         onLike={() => toggleLike(anime)}
         onTrailer={anime.trailerId ? () => void Linking.openURL(`https://www.youtube.com/watch?v=${anime.trailerId}`) : undefined}
-      />
+      /> : (
+        <View style={styles.playerToolbar}>
+          <IconButton icon="arrow-left" onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Tabs')} accessibilityLabel="Go back" />
+          <View style={styles.playerToolbarCopy}><Text variant="titleMedium" numberOfLines={1} style={styles.semibold}>{anime.title}</Text><Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Episode {episode}</Text></View>
+          <IconButton icon={saved?.bookmarked ? 'bookmark' : 'bookmark-outline'} onPress={() => toggleBookmark(anime)} accessibilityLabel={saved?.bookmarked ? 'Remove bookmark' : 'Bookmark'} />
+        </View>
+      )}
 
       <View style={[styles.player, { borderColor: theme.colors.outlineVariant }]}>
         {status.streamUrl ? (
@@ -319,7 +363,7 @@ export function WatchScreen({ route, navigation }: Props) {
         ) : (
           <ImageBackground source={anime.banner || anime.cover} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk">
             <LinearGradient colors={['rgba(3,3,4,0.58)', 'rgba(3,3,4,0.94)']} style={StyleSheet.absoluteFill} />
-            <View style={styles.playerState}><StateView compact loading={['metadata', 'buffering'].includes(status.state)} title={status.state === 'error' ? 'Playback recovered safely' : `Episode ${episode} ready`} message={status.error || status.message} /></View>
+            <View style={styles.playerState}><StateView compact loading={['metadata', 'buffering'].includes(status.state)} title={notYetAired ? 'Not aired yet' : status.state === 'error' ? 'Playback recovered safely' : `Episode ${episode} ready`} message={notYetAired ? 'Sources will appear after this title starts airing.' : status.error || status.message} /></View>
           </ImageBackground>
         )}
       </View>
@@ -332,7 +376,7 @@ export function WatchScreen({ route, navigation }: Props) {
         </View>
       ) : null}
 
-      <EpisodeRail current={episode} total={anime.episodes} onSelect={(value) => changeEpisode(value)} />
+      <EpisodeRail current={episode} total={anime.episodes} details={episodeMetadata.data?.episodes} onSelect={(value) => changeEpisode(value)} />
       <View style={styles.episodeNavigation}>
         <Button compact mode="outlined" icon="chevron-left" disabled={episode <= 1} onPress={() => changeEpisode(episode - 1)}>Previous</Button>
         <Text variant="titleMedium" style={styles.semibold}>Episode {episode}</Text>
@@ -344,24 +388,46 @@ export function WatchScreen({ route, navigation }: Props) {
       </View>
       {autoNext ? <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Auto-next will choose the best healthy release after this episode.</Text> : null}
 
-      <View style={styles.sourceHeading}>
-        <View style={styles.sourceHeadingCopy}><Text variant="titleLarge" style={styles.semibold}>Sources for episode {episode}</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Ranked by match, health, and playback compatibility</Text></View>
-        <Button compact mode="text" icon="download" onPress={() => navigation.navigate('Downloads', { anime, episode })}>Downloads</Button>
+      <View style={[styles.recommended, { backgroundColor: tokens.color.glass, borderColor: theme.colors.outlineVariant }]}>
+        <View style={styles.recommendedCopy}>
+          <Text variant="labelMedium" style={{ color: theme.colors.primary }}>{selected ? 'Playing source' : 'Recommended source'}</Text>
+          <Text variant="titleSmall" numberOfLines={2} style={styles.semibold}>{selected?.title || recommendedSource?.title || (sources.isLoading ? 'Finding the best release...' : 'No compatible release found')}</Text>
+          {(selected || recommendedSource) ? <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{selected?.seeders ?? recommendedSource?.seeders ?? 0} seeders · {sourceQualityBucket((selected || recommendedSource)?.title || '').replace('other', 'Auto quality')}</Text> : null}
+        </View>
+        <Button mode="contained-tonal" icon="swap-horizontal" onPress={() => setSourcePickerOpen(true)}>Change</Button>
       </View>
-      <SegmentedButtons value={audio} onValueChange={(value) => setAudio(value as typeof audio)} buttons={[{ value: 'sub-preferred', label: 'Sub' }, { value: 'dual-preferred', label: 'Dual' }, { value: 'dub-only', label: 'Dub' }]} density="small" />
-      <SegmentedButtons value={quality} onValueChange={setQuality} buttons={[{ value: 'auto', label: 'Best' }, { value: '1080p', label: '1080p' }, { value: '720p', label: '720p' }, { value: '2160p', label: '4K' }]} density="small" />
-      <View style={styles.sourceTools}>
-        <Chip selected={sourceFilter === 'trusted'} mode="outlined" icon="check-decagram-outline" onPress={() => setSourceFilter(sourceFilter === 'trusted' ? 'all' : 'trusted')}>Trusted</Chip>
-        <Chip selected={sourceFilter === 'no-remakes'} mode="outlined" icon="shield-check-outline" onPress={() => setSourceFilter(sourceFilter === 'no-remakes' ? 'all' : 'no-remakes')}>No remakes</Chip>
-        <Menu visible={sortMenu} onDismiss={() => setSortMenu(false)} anchor={<Button compact mode="text" icon="sort" onPress={() => setSortMenu(true)}>{sourceSort === 'best' ? 'Best match' : sourceSort === 'seeders' ? 'Seeders' : 'Smallest'}</Button>}>
-          {([['best', 'Best match'], ['seeders', 'Most seeders'], ['size', 'Smallest size']] as const).map(([value, label]) => <Menu.Item key={value} title={label} leadingIcon={sourceSort === value ? 'check' : undefined} onPress={() => { setSourceSort(value); setSortMenu(false); }} />)}
-        </Menu>
+      <View style={styles.secondaryActions}>
+        <Button mode="text" icon="download" onPress={() => navigation.navigate('Downloads', { anime, episode })}>Downloads</Button>
+        <Button mode="text" icon="magnify" onPress={() => navigation.navigate('Sources', { anime, episode })}>Manual search</Button>
       </View>
-      {sources.isLoading ? <StateView loading message="Finding the best matching releases..." /> : sources.isError ? <StateView title="Source search failed" message={sources.error.message} onRetry={() => void sources.refetch()} /> : visibleSources.length ? visibleSources.slice(0, resourcePolicy.batterySaver ? 6 : 10).map((source) => <SourceRow key={`${source.infoHash}-${source.title}`} source={source} onPlay={() => void start(source)} onShare={() => void Share.share({ message: source.magnet })} />) : <StateView title="No source found" message="Try Best quality, another audio mode, or the broader Source Search." />}
+
+      {anime.description ? <View style={styles.about}><Text variant="titleLarge" style={styles.semibold}>About</Text><Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, lineHeight: 22 }}>{anime.description}</Text></View> : null}
 
       {anime.genres?.length ? <View style={styles.genres}>{anime.genres.slice(0, 6).map((genre) => <Chip key={genre} compact mode="outlined" onPress={() => navigation.navigate('Catalog', { title: `${genre} anime`, genre })}>{genre}</Chip>)}</View> : null}
       {anime.relations?.length ? <AnimeShelf title="More from this story" items={anime.relations} onPress={openRelated} /> : null}
       {anime.recommendations?.length ? <AnimeShelf title="Because you chose this" items={anime.recommendations} onPress={openRelated} /> : null}
+
+      <Portal>
+        <Modal visible={sourcePickerOpen} onDismiss={() => setSourcePickerOpen(false)} contentContainerStyle={[styles.sourceSheet, { backgroundColor: theme.colors.surface }]}>
+          <View style={styles.sheetHeading}>
+            <View style={styles.sourceHeadingCopy}><Text variant="titleLarge" style={styles.semibold}>Change source</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Episode {episode} · best matches first</Text></View>
+            <Button compact onPress={() => setSourcePickerOpen(false)}>Done</Button>
+          </View>
+          <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <SegmentedButtons value={audio} onValueChange={(value) => setAudio(value as typeof audio)} buttons={[{ value: 'sub-preferred', label: 'Sub' }, { value: 'dual-preferred', label: 'Dual' }, { value: 'dub-only', label: 'Dub' }]} density="small" />
+            <SegmentedButtons value={sourceMode} onValueChange={(value) => setSourceMode(value as MobileSourceMode)} buttons={[{ value: 'strict', label: 'Exact' }, { value: 'balanced', label: 'Balanced' }, { value: 'broad', label: 'Broad' }]} density="small" />
+            <SegmentedButtons value={quality} onValueChange={setQuality} buttons={[{ value: 'auto', label: 'Best' }, { value: '1080p', label: '1080p' }, { value: '720p', label: '720p' }, { value: '2160p', label: '4K' }]} density="small" />
+            <View style={styles.sourceTools}>
+              <Chip selected={sourceFilter === 'trusted'} mode="outlined" icon="check-decagram-outline" onPress={() => setSourceFilter(sourceFilter === 'trusted' ? 'all' : 'trusted')}>Trusted</Chip>
+              <Chip selected={sourceFilter === 'no-remakes'} mode="outlined" icon="shield-check-outline" onPress={() => setSourceFilter(sourceFilter === 'no-remakes' ? 'all' : 'no-remakes')}>No remakes</Chip>
+              <Menu visible={sortMenu} onDismiss={() => setSortMenu(false)} anchor={<Button compact mode="text" icon="sort" onPress={() => setSortMenu(true)}>{sourceSort === 'best' ? 'Best match' : sourceSort === 'seeders' ? 'Seeders' : 'Smallest'}</Button>}>
+                {([['best', 'Best match'], ['seeders', 'Most seeders'], ['size', 'Smallest size']] as const).map(([value, label]) => <Menu.Item key={value} title={label} leadingIcon={sourceSort === value ? 'check' : undefined} onPress={() => { setSourceSort(value); setSortMenu(false); }} />)}
+              </Menu>
+            </View>
+            {sources.isLoading ? <StateView loading message="Finding compatible releases..." /> : sources.isError ? <StateView title="Source search failed" message={sources.error.message} onRetry={() => void sources.refetch()} /> : visibleSources.length ? visibleSources.slice(0, resourcePolicy.batterySaver ? 6 : 10).map((source) => <SourceRow key={`${source.infoHash}-${source.title}`} source={source} onPlay={() => { setSourcePickerOpen(false); void start(source); }} onShare={() => void Share.share({ message: source.magnet })} />) : <StateView title="No source found" message="Try Best quality, another audio mode, or manual search." />}
+          </ScrollView>
+        </Modal>
+      </Portal>
     </Screen>
   );
 }
@@ -369,6 +435,8 @@ export function WatchScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   screen: { gap: tokens.spacing.xl },
   player: { aspectRatio: 16 / 9, borderRadius: tokens.radius.card, overflow: 'hidden', backgroundColor: '#050506', borderWidth: StyleSheet.hairlineWidth },
+  playerToolbar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: -tokens.spacing.sm },
+  playerToolbarCopy: { flex: 1 },
   playerState: { flex: 1, justifyContent: 'center' },
   streamStatus: { padding: tokens.spacing.md, borderRadius: tokens.radius.card, borderWidth: StyleSheet.hairlineWidth, gap: tokens.spacing.sm },
   statusTitle: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
@@ -376,8 +444,14 @@ const styles = StyleSheet.create({
   episodeJump: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
   episodeInput: { flex: 1, minWidth: 74 },
   nextContent: { flexDirection: 'row-reverse' },
-  sourceHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.md },
   sourceHeadingCopy: { flex: 1, gap: 3 },
+  recommended: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, borderWidth: StyleSheet.hairlineWidth, borderRadius: tokens.radius.card, padding: tokens.spacing.md },
+  recommendedCopy: { flex: 1, gap: 4 },
+  secondaryActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: tokens.spacing.sm, marginTop: -tokens.spacing.md },
+  about: { gap: tokens.spacing.sm },
+  sourceSheet: { marginHorizontal: tokens.spacing.md, maxHeight: '88%', borderRadius: tokens.radius.card, overflow: 'hidden' },
+  sheetHeading: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, padding: tokens.spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.outlineSoft },
+  sheetContent: { gap: tokens.spacing.md, padding: tokens.spacing.lg, paddingBottom: tokens.spacing.xxl },
   sourceTools: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: tokens.spacing.sm },
   genres: { flexDirection: 'row', flexWrap: 'wrap', gap: tokens.spacing.sm },
   semibold: { fontWeight: '600', flexShrink: 1 },

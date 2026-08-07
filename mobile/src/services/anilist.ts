@@ -1,5 +1,5 @@
 import { ANILIST_URL, API_ORIGIN, JIKAN_URL, KITSU_URL } from '../config';
-import type { Anime, ScheduleEntry } from '../types';
+import type { Anime, AnimeEpisode, ScheduleEntry } from '../types';
 import { HttpError, requestJson } from '../lib/network';
 
 type Variables = Record<string, string | number | boolean | null | undefined>;
@@ -420,6 +420,18 @@ export async function fetchAnimeDetails(id: number, lookup: DetailLookup = {}, s
   } catch (fallbackError) {
     throw metadataUnavailable(primaryError, fallbackError);
   }
+}
+
+export async function fetchAnimeEpisodes(malId: number, page = 1, signal?: AbortSignal) {
+  const payload = await requestJikan(`/anime/${malId}/episodes?page=${Math.max(1, page)}`, signal);
+  const episodes = (payload.data || []).map((item: any): AnimeEpisode => ({
+    number: Number(item.mal_id),
+    title: String(item.title || `Episode ${item.mal_id}`),
+    aired: item.aired || undefined,
+    filler: Boolean(item.filler),
+    recap: Boolean(item.recap),
+  })).filter((item: AnimeEpisode) => item.number > 0);
+  return { episodes, hasNextPage: Boolean(payload.pagination?.has_next_page), lastVisiblePage: Number(payload.pagination?.last_visible_page || page) };
 }
 
 export async function fetchMangaDetails(id: number, lookup: DetailLookup = {}, signal?: AbortSignal) {

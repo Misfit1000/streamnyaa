@@ -26,8 +26,8 @@ export function HomeScreen({ navigation }: Props) {
   const history = useAppStore((state) => state.history);
   const query = useQuery({ queryKey: ['home', nsfwMode], queryFn: ({ signal }) => fetchHomeFeed(nsfwMode, signal), staleTime: 15 * 60 * 1000 });
   const openAnime = useCallback((anime: Anime) => navigation.navigate('Watch', watchRouteParams(anime)), [navigation]);
-  const carouselWidth = Math.max(280, width - tokens.spacing.lg * 2);
-  const carouselHeight = Math.max(300, Math.min(390, height * 0.48));
+  const carouselWidth = width;
+  const carouselHeight = Math.max(280, Math.min(370, height * 0.43));
   const recent = history[0];
 
   if (query.isLoading) return <Screen title="StreamNyaa" subtitle="Preparing your home feed"><StateView loading message="Loading this season’s anime…" /></Screen>;
@@ -36,7 +36,7 @@ export function HomeScreen({ navigation }: Props) {
   return (
     <Screen
       title="StreamNyaa"
-      subtitle="Anime, sources, and progress in one place"
+      subtitle="Pick a title and playback starts with the best match"
       action={<View style={styles.headerActions}><IconButton icon="magnify" mode="contained-tonal" onPress={() => navigation.navigate('Explore')} accessibilityLabel="Search" /><IconButton icon="account-circle-outline" onPress={() => navigation.navigate('Profile')} accessibilityLabel="Profile" /></View>}
     >
       <FeaturedCarousel items={query.data.trending} width={carouselWidth} height={carouselHeight} onOpen={openAnime} onWatch={openAnime} />

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { tokens } from '../theme';
+import type { AnimeEpisode } from '../types';
 
-type Props = { current: number; total?: number | null; onSelect: (episode: number) => void };
+type Props = { current: number; total?: number | null; details?: AnimeEpisode[]; onSelect: (episode: number) => void };
 
-export function EpisodeRail({ current, total, onSelect }: Props) {
+export function EpisodeRail({ current, total, details = [], onSelect }: Props) {
   const theme = useTheme();
   const list = useRef<FlatList<number>>(null);
   const episodes = useMemo(() => {
@@ -17,6 +18,9 @@ export function EpisodeRail({ current, total, onSelect }: Props) {
     return Array.from({ length: last - first + 1 }, (_, index) => first + index);
   }, [current, total]);
   const selectedIndex = Math.max(0, episodes.indexOf(current));
+  const detailsByNumber = useMemo(() => new Map(details.map((item) => [item.number, item])), [details]);
+  const detailed = details.length > 0;
+  const itemLength = detailed ? 136 : 72;
 
   useEffect(() => {
     const timer = setTimeout(() => list.current?.scrollToIndex({ index: selectedIndex, animated: true, viewPosition: 0.45 }), 80);
@@ -36,20 +40,21 @@ export function EpisodeRail({ current, total, onSelect }: Props) {
         keyExtractor={(item) => String(item)}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.list}
-        getItemLayout={(_data, index) => ({ length: 72, offset: 72 * index, index })}
-        onScrollToIndexFailed={({ index }) => list.current?.scrollToOffset({ offset: Math.max(0, index * 72), animated: true })}
+        getItemLayout={(_data, index) => ({ length: itemLength, offset: itemLength * index, index })}
+        onScrollToIndexFailed={({ index }) => list.current?.scrollToOffset({ offset: Math.max(0, index * itemLength), animated: true })}
         renderItem={({ item }) => {
           const active = item === current;
+          const detail = detailsByNumber.get(item);
           return (
             <Pressable
               onPress={() => onSelect(item)}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
               accessibilityLabel={`Episode ${item}`}
-              style={({ pressed }) => [styles.episode, { backgroundColor: active ? theme.colors.primaryContainer : tokens.color.surfaceRaised, borderColor: active ? tokens.color.outlineBrand : theme.colors.outlineVariant, opacity: pressed ? 0.72 : 1 }]}
+              style={({ pressed }) => [styles.episode, detailed && styles.detailedEpisode, { backgroundColor: active ? theme.colors.primaryContainer : tokens.color.surfaceRaised, borderColor: active ? tokens.color.outlineBrand : theme.colors.outlineVariant, opacity: pressed ? 0.72 : 1 }]}
             >
-              <Text variant="labelSmall" style={{ color: active ? theme.colors.primary : theme.colors.onSurfaceVariant }}>EPISODE</Text>
-              <Text variant="titleLarge" style={[styles.number, { color: active ? theme.colors.primary : theme.colors.onSurface }]}>{item}</Text>
+              <Text variant="labelSmall" style={{ color: active ? theme.colors.primary : theme.colors.onSurfaceVariant }}>Episode {item}{detail?.filler ? ' · Filler' : detail?.recap ? ' · Recap' : ''}</Text>
+              {detail ? <Text variant="labelLarge" numberOfLines={2} style={[styles.detailTitle, { color: active ? theme.colors.onPrimaryContainer : theme.colors.onSurface }]}>{detail.title}</Text> : <Text variant="titleLarge" style={[styles.number, { color: active ? theme.colors.primary : theme.colors.onSurface }]}>{item}</Text>}
               <View style={[styles.indicator, { backgroundColor: active ? theme.colors.primary : 'transparent' }]} />
             </Pressable>
           );
@@ -64,6 +69,8 @@ const styles = StyleSheet.create({
   heading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: tokens.spacing.md },
   list: { gap: tokens.spacing.sm, paddingRight: tokens.spacing.lg },
   episode: { width: 64, height: 78, borderWidth: StyleSheet.hairlineWidth, borderRadius: tokens.radius.card, alignItems: 'center', justifyContent: 'center', gap: 2, overflow: 'hidden' },
+  detailedEpisode: { width: 128, alignItems: 'flex-start', paddingHorizontal: tokens.spacing.sm },
+  detailTitle: { fontWeight: '600', lineHeight: 17 },
   number: { fontWeight: '700' },
   indicator: { position: 'absolute', height: 3, bottom: 0, left: 10, right: 10, borderRadius: tokens.radius.pill },
   semibold: { fontWeight: '600' },

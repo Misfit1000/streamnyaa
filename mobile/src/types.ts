@@ -45,6 +45,14 @@ export type ScheduleEntry = {
   provider?: 'AniList' | 'Jikan';
 };
 
+export type AnimeEpisode = {
+  number: number;
+  title: string;
+  aired?: string;
+  filler?: boolean;
+  recap?: boolean;
+};
+
 export type TorrentSource = {
   title: string;
   link?: string;

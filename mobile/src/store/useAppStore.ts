@@ -5,6 +5,7 @@ import type { Anime, LibraryItem, PlaybackHistoryItem } from '../types';
 import { isPlaybackComplete } from '../../../shared/account';
 import {
   DEFAULT_AUDIO_PREFERENCE,
+  DEFAULT_AUTO_OPEN_BEST_SOURCE,
   DEFAULT_MOBILE_RESOURCE_POLICY,
   DEFAULT_PLAYER_PREFERENCES,
   normalizeMobileResourcePolicy,
@@ -27,6 +28,8 @@ export type AiringReminderRecord = {
   airingAt: number;
 };
 
+export type SourceFailureRecord = { count: number; lastFailedAt: string; reason: string };
+
 type AppState = {
   hydrated: boolean;
   permissionsOnboardingCompleted: boolean;
@@ -41,6 +44,7 @@ type AppState = {
   recentExploreSearches: string[];
   recentSourceSearches: string[];
   airingReminders: Record<string, AiringReminderRecord>;
+  sourceFailures: Record<string, SourceFailureRecord>;
   library: LibraryItem[];
   history: PlaybackHistoryItem[];
   setHydrated: (value: boolean) => void;
@@ -57,6 +61,8 @@ type AppState = {
   addRecentSourceSearch: (value: string) => void;
   saveAiringReminder: (key: string, value: AiringReminderRecord) => void;
   removeAiringReminder: (key: string) => void;
+  recordSourceFailure: (key: string, reason: string) => void;
+  clearSourceFailure: (key: string) => void;
   toggleBookmark: (anime: Anime) => void;
   toggleLike: (anime: Anime) => void;
   replaceLibrary: (items: LibraryItem[]) => void;
@@ -93,13 +99,14 @@ export const useAppStore = create<AppState>()(
       nsfwMode: false,
       audioPreference: DEFAULT_AUDIO_PREFERENCE,
       autoPlayNext: DEFAULT_PLAYER_PREFERENCES.autoNextEpisode,
-      autoOpenBestSource: false,
+      autoOpenBestSource: DEFAULT_AUTO_OPEN_BEST_SOURCE,
       playerPreferences: DEFAULT_PLAYER_PREFERENCES,
       resourcePolicy: DEFAULT_MOBILE_RESOURCE_POLICY,
       preferencesUpdatedAt: new Date(0).toISOString(),
       recentExploreSearches: [],
       recentSourceSearches: [],
       airingReminders: {},
+      sourceFailures: {},
       library: [],
       history: [],
       setHydrated: (hydrated) => set({ hydrated }),
@@ -144,6 +151,18 @@ export const useAppStore = create<AppState>()(
         delete airingReminders[key];
         return { airingReminders };
       }),
+      recordSourceFailure: (key, reason) => set((state) => {
+        const previous = state.sourceFailures[key];
+        const next = { ...state.sourceFailures, [key]: { count: Math.min(9, Number(previous?.count || 0) + 1), lastFailedAt: new Date().toISOString(), reason: reason.slice(0, 180) } };
+        const kept = Object.entries(next).sort((left, right) => Date.parse(right[1].lastFailedAt) - Date.parse(left[1].lastFailedAt)).slice(0, 50);
+        return { sourceFailures: Object.fromEntries(kept) };
+      }),
+      clearSourceFailure: (key) => set((state) => {
+        if (!state.sourceFailures[key]) return state;
+        const sourceFailures = { ...state.sourceFailures };
+        delete sourceFailures[key];
+        return { sourceFailures };
+      }),
       toggleBookmark: (anime) => set((state) => ({ library: updateLibrary(state.library, anime, 'bookmarked') })),
       toggleLike: (anime) => set((state) => ({ library: updateLibrary(state.library, anime, 'liked') })),
       replaceLibrary: (library) => set({ library: library.slice(0, 500) }),
@@ -161,9 +180,9 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'streamnyaa.mobile.v1',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => AsyncStorage),
-      migrate: (persisted: unknown) => {
+      migrate: (persisted: unknown, version) => {
         const state = (persisted || {}) as Partial<AppState>;
         const playerPreferences = normalizePlayerPreferences({
           ...(state.playerPreferences || {}),
@@ -174,13 +193,14 @@ export const useAppStore = create<AppState>()(
           permissionsOnboardingCompleted: state.permissionsOnboardingCompleted ?? false,
           audioPreference: state.audioPreference || DEFAULT_AUDIO_PREFERENCE,
           autoPlayNext: playerPreferences.autoNextEpisode,
-          autoOpenBestSource: state.autoOpenBestSource ?? false,
+          autoOpenBestSource: version < 5 ? true : state.autoOpenBestSource ?? DEFAULT_AUTO_OPEN_BEST_SOURCE,
           playerPreferences,
           resourcePolicy: normalizeMobileResourcePolicy(state.resourcePolicy),
           preferencesUpdatedAt: state.preferencesUpdatedAt || new Date(0).toISOString(),
           recentExploreSearches: state.recentExploreSearches || [],
           recentSourceSearches: state.recentSourceSearches || [],
           airingReminders: state.airingReminders || {},
+          sourceFailures: state.sourceFailures || {},
         } as AppState;
       },
       partialize: (state) => ({
@@ -196,6 +216,7 @@ export const useAppStore = create<AppState>()(
         recentExploreSearches: state.recentExploreSearches,
         recentSourceSearches: state.recentSourceSearches,
         airingReminders: state.airingReminders,
+        sourceFailures: state.sourceFailures,
         library: state.library,
         history: state.history,
       }) as AppState,

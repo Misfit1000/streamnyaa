@@ -40,7 +40,7 @@ export type SyncedPreferences = {
 };
 
 export const DEFAULT_AUDIO_PREFERENCE: AudioPreference = 'sub-preferred';
-export const DEFAULT_AUTO_OPEN_BEST_SOURCE = false;
+export const DEFAULT_AUTO_OPEN_BEST_SOURCE = true;
 export const DEFAULT_PLAYER_PREFERENCES: PlayerPreferences = {
   autoNextEpisode: false,
   autoSkipIntro: false,

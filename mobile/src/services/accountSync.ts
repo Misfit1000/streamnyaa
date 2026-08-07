@@ -62,11 +62,22 @@ export async function fetchAccountSync(session: AuthSession) {
 }
 
 export async function pushAccountSync(session: AuthSession, payload: AccountSyncPayload) {
+  const compatiblePayload = {
+    ...payload,
+    watchHistory: payload.watchHistory.map((item) => ({
+      key: item.key,
+      source: item,
+      animeId: item.animeId,
+      animeTitle: item.animeTitle,
+      episode: item.episode,
+      updatedAt: item.updatedAt,
+    })),
+  };
   try {
     return await requestJson<any>(`${API_ORIGIN}/api/account-sync`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(compatiblePayload),
       timeoutMs: 25_000,
     });
   } catch (error) {
@@ -87,6 +98,30 @@ async function supabaseJson(url: string, init: RequestInit) {
   return requestJson<any>(url, { ...init, timeoutMs: 20_000 });
 }
 
+async function replaceDirectRows(
+  base: string,
+  userId: string,
+  table: 'user_library' | 'user_watch_history',
+  keyColumn: 'anime_id' | 'history_key',
+  rows: any[],
+  headers: Record<string, string>,
+) {
+  const existing = await supabaseJson(`${base}/${table}?user_id=eq.${encodeURIComponent(userId)}&select=${keyColumn}`, { headers });
+  if (rows.length) {
+    await supabaseJson(`${base}/${table}?on_conflict=user_id,${keyColumn}`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(rows),
+    });
+  }
+  const desired = new Set(rows.map((row) => String(row[keyColumn] || '')));
+  const stale = (Array.isArray(existing) ? existing : []).map((row: any) => String(row[keyColumn] || '')).filter((key) => key && !desired.has(key));
+  for (let index = 0; index < stale.length; index += 25) {
+    const values = stale.slice(index, index + 25).map(encodeURIComponent).join(',');
+    await supabaseJson(`${base}/${table}?user_id=eq.${encodeURIComponent(userId)}&${keyColumn}=in.(${values})`, { method: 'DELETE', headers });
+  }
+}
+
 async function fetchDirectAccountSync(session: AuthSession) {
   const context = await directContext(session);
   const base = `${context.supabaseUrl}/rest/v1`;
@@ -103,11 +138,6 @@ async function pushDirectAccountSync(session: AuthSession, payload: AccountSyncP
   const context = await directContext(session);
   const base = `${context.supabaseUrl}/rest/v1`;
   const commonHeaders = { ...context.headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' };
-  await Promise.all([
-    supabaseJson(`${base}/user_library?user_id=eq.${encodeURIComponent(context.userId)}`, { method: 'DELETE', headers: commonHeaders }),
-    supabaseJson(`${base}/user_watch_history?user_id=eq.${encodeURIComponent(context.userId)}`, { method: 'DELETE', headers: commonHeaders }),
-  ]);
-
   const libraryRows = payload.library.map((item) => ({
     user_id: context.userId, anime_id: item.animeId, anime_title: item.animeTitle, anime: item.anime,
     bookmarked: item.bookmarked, liked: item.liked, updated_at: item.updatedAt,
@@ -117,8 +147,8 @@ async function pushDirectAccountSync(session: AuthSession, payload: AccountSyncP
     anime_title: item.animeTitle, episode: String(item.episode), progress_percent: item.progressPercent,
     resume_seconds: item.resumeSeconds, duration_seconds: item.durationSeconds, updated_at: item.updatedAt,
   }));
-  if (libraryRows.length) await supabaseJson(`${base}/user_library`, { method: 'POST', headers: commonHeaders, body: JSON.stringify(libraryRows) });
-  if (historyRows.length) await supabaseJson(`${base}/user_watch_history`, { method: 'POST', headers: commonHeaders, body: JSON.stringify(historyRows) });
+  await replaceDirectRows(base, context.userId, 'user_library', 'anime_id', libraryRows, commonHeaders);
+  await replaceDirectRows(base, context.userId, 'user_watch_history', 'history_key', historyRows, commonHeaders);
   try {
     await supabaseJson(`${base}/user_profiles?on_conflict=user_id`, {
       method: 'POST',

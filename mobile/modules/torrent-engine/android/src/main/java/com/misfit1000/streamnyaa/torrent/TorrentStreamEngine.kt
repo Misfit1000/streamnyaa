@@ -129,8 +129,19 @@ class TorrentStreamEngine(
     }
     if (candidates.isEmpty()) return fail("This source does not contain a supported video file.")
     val preferred = preferredFile?.lowercase()
-    selectedFileIndex = candidates.firstOrNull { preferred != null && files.fileName(it).lowercase().contains(preferred) }
-      ?: candidates.maxBy { files.fileSize(it) }
+    val preferredEpisode = preferred?.removePrefix("episode:")?.toIntOrNull()
+    selectedFileIndex = when {
+      candidates.size == 1 -> candidates.first()
+      preferredEpisode != null -> candidates
+        .map { index -> index to episodeFileScore(files.fileName(index), preferredEpisode) }
+        .filter { it.second > 0 }
+        .maxWithOrNull(compareBy<Pair<Int, Int>> { it.second }.thenBy { files.fileSize(it.first) })
+        ?.first
+        ?: return fail("This release contains multiple videos, but Episode $preferredEpisode could not be identified safely.")
+      preferred != null -> candidates.firstOrNull { files.fileName(it).lowercase().contains(preferred) }
+        ?: return fail("The requested episode file is not present in this release.")
+      else -> candidates.maxBy { files.fileSize(it) }
+    }
     selectedFileSize = files.fileSize(selectedFileIndex)
     if (selectedFileSize > maxCacheBytes) {
       return fail("The selected video is larger than the ${maxCacheBytes / 1024 / 1024} MB cache limit.")
@@ -360,6 +371,17 @@ class TorrentStreamEngine(
 
   private fun safeMessage(throwable: Throwable): String =
     throwable.message?.takeIf { it.isNotBlank() }?.take(180) ?: throwable.javaClass.simpleName
+
+  private fun episodeFileScore(fileName: String, episode: Int): Int {
+    val normalized = fileName.substringBeforeLast('.').lowercase()
+    if (Regex("(?:^|[\\W_])(ncop|nced|opening|ending|preview|trailer|creditless)(?:[\\W_]|$)").containsMatchIn(normalized)) return -100
+    val seasonEpisode = Regex("s\\d{1,2}[ ._-]*e(\\d{1,4})", RegexOption.IGNORE_CASE).find(normalized)
+    if (seasonEpisode != null) return if (seasonEpisode.groupValues[1].toIntOrNull() == episode) 100 else -10
+    val labeled = Regex("(?:^|[^a-z0-9])(?:ep|episode)[ ._-]*0*${episode}(?:[^0-9]|$)", RegexOption.IGNORE_CASE)
+    if (labeled.containsMatchIn(normalized)) return 90
+    val standalone = Regex("(?:^|[^0-9])0*${episode}(?:[^0-9]|$)")
+    return if (standalone.containsMatchIn(normalized)) 60 else 0
+  }
 
   private fun directorySize(file: File): Long = if (!file.exists()) 0 else if (file.isFile) file.length() else file.listFiles()?.sumOf(::directorySize) ?: 0
   private fun torrentKey(magnet: String): String {
