@@ -125,6 +125,30 @@ async function supabaseJson(url: string, init: RequestInit) {
   return data;
 }
 
+async function replaceDirectRows(
+  base: string,
+  userId: string,
+  table: 'user_library' | 'user_watch_history',
+  keyColumn: 'anime_id' | 'history_key',
+  rows: any[],
+  headers: Record<string, string>,
+) {
+  const existing = await supabaseJson(`${base}/${table}?user_id=eq.${encodeURIComponent(userId)}&select=${keyColumn}`, { headers });
+  if (rows.length) {
+    await supabaseJson(`${base}/${table}?on_conflict=user_id,${keyColumn}`, {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(rows),
+    });
+  }
+  const desired = new Set(rows.map((row) => String(row[keyColumn] || '')));
+  const stale = (Array.isArray(existing) ? existing : []).map((row: any) => String(row[keyColumn] || '')).filter((key) => key && !desired.has(key));
+  for (let index = 0; index < stale.length; index += 25) {
+    const values = stale.slice(index, index + 25).map(encodeURIComponent).join(',');
+    await supabaseJson(`${base}/${table}?user_id=eq.${encodeURIComponent(userId)}&${keyColumn}=in.(${values})`, { method: 'DELETE', headers });
+  }
+}
+
 async function fetchDirectAccountSync(session: AuthSession): Promise<AccountSyncPayload> {
   const context = await directContext(session);
   const base = `${context.supabaseUrl}/rest/v1`;
@@ -149,20 +173,18 @@ async function replaceDirectAccountSyncData(
   const base = `${context.supabaseUrl}/rest/v1`;
   const headers = { ...context.headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' };
   if (payload.library) {
-    await supabaseJson(`${base}/user_library?user_id=eq.${encodeURIComponent(context.userId)}`, { method: 'DELETE', headers });
     const rows = payload.library.map((item) => ({
       user_id: context.userId, anime_id: item.animeId, anime_title: item.animeTitle, anime: item.anime,
       bookmarked: item.bookmarked, liked: item.liked, updated_at: item.updatedAt,
     }));
-    if (rows.length) await supabaseJson(`${base}/user_library`, { method: 'POST', headers, body: JSON.stringify(rows) });
+    await replaceDirectRows(base, context.userId, 'user_library', 'anime_id', rows, headers);
   }
   if (payload.watchHistory) {
-    await supabaseJson(`${base}/user_watch_history?user_id=eq.${encodeURIComponent(context.userId)}`, { method: 'DELETE', headers });
     const rows = payload.watchHistory.map((item) => ({
       user_id: context.userId, history_key: item.key, source: item.source, anime_id: item.animeId,
       anime_title: item.animeTitle, episode: item.episode, updated_at: item.updatedAt,
     }));
-    if (rows.length) await supabaseJson(`${base}/user_watch_history`, { method: 'POST', headers, body: JSON.stringify(rows) });
+    await replaceDirectRows(base, context.userId, 'user_watch_history', 'history_key', rows, headers);
   }
   if (payload.preferences) {
     try {
