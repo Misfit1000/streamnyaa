@@ -114,6 +114,7 @@ export type TorrentStreamStatus = {
   bufferedPercent: number;
   peers: number;
   downloadRate: number;
+  waitSeconds?: number;
   fileName?: string;
   streamUrl?: string;
   error?: string;

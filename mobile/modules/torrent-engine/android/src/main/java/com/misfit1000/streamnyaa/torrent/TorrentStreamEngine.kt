@@ -48,6 +48,9 @@ class TorrentStreamEngine(
   private var wifiOnly = false
   private var pausedForNetwork = false
   private var sessionGeneration = 0L
+  private var startedAtMs = 0L
+  private var lastBufferAdvanceAtMs = 0L
+  private var lastObservedContiguousBytes = 0L
 
   @Synchronized
   fun start(magnet: String, preferredFile: String?, options: Map<String, Any?>) {
@@ -69,6 +72,9 @@ class TorrentStreamEngine(
     trimCache(maxCacheBytes)
     sessionDir = File(cacheRoot, torrentKey(magnet)).apply { mkdirs(); setLastModified(System.currentTimeMillis()) }
     this.preferredFile = preferredFile
+    startedAtMs = System.currentTimeMillis()
+    lastBufferAdvanceAtMs = startedAtMs
+    lastObservedContiguousBytes = 0L
     state = "metadata"
     message = "Connecting to peers and loading metadata…"
     error = null
@@ -162,6 +168,8 @@ class TorrentStreamEngine(
     selectedFirstPieceOffset = firstRequest.start().toLong()
     contiguousPieceCursor = selectedFirstPiece
     contiguousBytes = 0L
+    lastObservedContiguousBytes = 0L
+    lastBufferAdvanceAtMs = System.currentTimeMillis()
 
     val priorities = Priority.array(Priority.IGNORE, info.numFiles())
     priorities[selectedFileIndex] = Priority.TOP_PRIORITY
@@ -191,10 +199,22 @@ class TorrentStreamEngine(
   fun status(): Map<String, Any?> {
     val torrentStatus = runCatching { handle?.status(true) }.getOrNull()
     val downloaded = contiguousAvailableBytes()
+    val now = System.currentTimeMillis()
+    if (downloaded > lastObservedContiguousBytes) {
+      lastObservedContiguousBytes = downloaded
+      lastBufferAdvanceAtMs = now
+    }
     val buffered = if (selectedFileSize > 0) ((downloaded.toDouble() / selectedFileSize) * 100).coerceIn(0.0, 100.0) else 0.0
     if (state == "buffering" && downloaded >= minimumBufferBytes()) {
       state = "ready"
       message = "Buffered and ready to play."
+    }
+    if (state == "metadata" && now - startedAtMs >= METADATA_TIMEOUT_MS) {
+      transitionToError("This source did not return video metadata. Trying another source is recommended.")
+    } else if (state == "buffering" && now - lastBufferAdvanceAtMs >= BUFFER_STALL_TIMEOUT_MS) {
+      transitionToError("This source stopped sending video data. StreamNyaa will try another source.")
+    } else if (state == "buffering" && now - startedAtMs >= PLAYBACK_READY_TIMEOUT_MS) {
+      transitionToError("This source is too slow to start reliably. StreamNyaa will try another source.")
     }
     return mapOf(
       "state" to state,
@@ -203,6 +223,7 @@ class TorrentStreamEngine(
       "bufferedPercent" to buffered,
       "peers" to (torrentStatus?.numPeers() ?: 0),
       "downloadRate" to (torrentStatus?.downloadPayloadRate() ?: 0),
+      "waitSeconds" to if (startedAtMs > 0L) ((now - startedAtMs) / 1000L).coerceAtLeast(0L) else 0L,
       "fileName" to selectedFile?.name,
       "streamUrl" to if (downloaded >= minimumBufferBytes()) "http://127.0.0.1:${server?.listeningPort}/video" else null,
       "error" to error,
@@ -307,6 +328,7 @@ class TorrentStreamEngine(
     selectedFileIndex = -1; selectedFile = null; selectedFileSize = 0
     selectedFirstPiece = -1; selectedLastPiece = -1; selectedFirstPieceOffset = 0L
     contiguousPieceCursor = -1; contiguousBytes = 0L
+    startedAtMs = 0L; lastBufferAdvanceAtMs = 0L; lastObservedContiguousBytes = 0L
     pausedForNetwork = false
     state = "idle"; message = "Choose a source to begin."; error = null
     sessionDir.setLastModified(System.currentTimeMillis())
@@ -339,10 +361,16 @@ class TorrentStreamEngine(
 
   @Synchronized
   private fun fail(reason: String) {
+    transitionToError(reason)
+    emit()
+  }
+
+  @Synchronized
+  private fun transitionToError(reason: String) {
     handle?.pause()
     poller?.cancel(false); poller = null
     server?.stop(); server = null
-    state = "error"; message = reason; error = reason; emit()
+    state = "error"; message = reason; error = reason
   }
 
   @Synchronized
@@ -424,5 +452,8 @@ class TorrentStreamEngine(
     private const val LEAD_DEADLINE_PIECES = 48
     private const val TAIL_DEADLINE_PIECES = 6
     private const val MAX_READABLE_PIECE_SCAN = 64
+    private const val METADATA_TIMEOUT_MS = 30_000L
+    private const val BUFFER_STALL_TIMEOUT_MS = 35_000L
+    private const val PLAYBACK_READY_TIMEOUT_MS = 60_000L
   }
 }

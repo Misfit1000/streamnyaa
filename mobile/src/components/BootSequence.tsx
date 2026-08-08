@@ -3,7 +3,7 @@ import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { tokens } from '../theme';
 
-const logo = require('../../../src/assets/desktop-logo.png');
+const logo = require('../../../desktop/src-tauri/icons/icon.png');
 const MINIMUM_BOOT_MS = 850;
 
 export function BootSequence({ ready, onComplete }: { ready: boolean; onComplete: () => void }) {

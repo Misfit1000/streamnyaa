@@ -2,17 +2,17 @@
   "expo": {
     "name": "StreamNyaa",
     "slug": "streamnyaa-android",
-    "version": "0.6.0",
-    "icon": "../src/assets/desktop-logo.png",
+    "version": "0.7.0",
+    "icon": "../desktop/src-tauri/icons/icon.png",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "scheme": "streamnyaa",
     "platforms": ["android"],
     "android": {
       "package": "com.misfit1000.streamnyaa",
-      "versionCode": 6,
+      "versionCode": 7,
       "adaptiveIcon": {
-        "foregroundImage": "../src/assets/desktop-logo.png",
+        "foregroundImage": "../desktop/src-tauri/icons/icon.png",
         "backgroundColor": "#030304"
       },
       "permissions": [
@@ -42,11 +42,11 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#030304",
-          "image": "../src/assets/desktop-logo.png",
+          "image": "../desktop/src-tauri/icons/icon.png",
           "imageWidth": 104,
           "dark": {
             "backgroundColor": "#030304",
-            "image": "../src/assets/desktop-logo.png"
+            "image": "../desktop/src-tauri/icons/icon.png"
           }
         }
       ],

@@ -52,10 +52,10 @@ function MainTabs() {
       tabBarIcon: ({ color, size, focused }) => <MaterialCommunityIcons name={tabIcons[route.name][focused ? 0 : 1] as any} size={focused ? size + 1 : size} color={color} />,
     })}>
       <Tabs.Screen name="Home" getComponent={screen.home} />
-      <Tabs.Screen name="Explore" getComponent={screen.explore} />
-      <Tabs.Screen name="Schedule" getComponent={screen.schedule} />
+      <Tabs.Screen name="Explore" getComponent={screen.explore} options={{ title: 'Search' }} />
+      <Tabs.Screen name="Schedule" getComponent={screen.schedule} options={{ tabBarButton: () => null }} />
       <Tabs.Screen name="Library" getComponent={screen.library} />
-      <Tabs.Screen name="Profile" getComponent={screen.profile} />
+      <Tabs.Screen name="Profile" getComponent={screen.profile} options={{ title: 'You' }} />
     </Tabs.Navigator>
   );
 }

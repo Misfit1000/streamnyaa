@@ -36,8 +36,7 @@ export function HomeScreen({ navigation }: Props) {
   return (
     <Screen
       title="StreamNyaa"
-      subtitle="Pick a title and playback starts with the best match"
-      action={<View style={styles.headerActions}><IconButton icon="magnify" mode="contained-tonal" onPress={() => navigation.navigate('Explore')} accessibilityLabel="Search" /><IconButton icon="account-circle-outline" onPress={() => navigation.navigate('Profile')} accessibilityLabel="Profile" /></View>}
+      action={<View style={styles.headerActions}><IconButton icon="calendar-month-outline" mode="contained-tonal" onPress={() => navigation.navigate('Schedule')} accessibilityLabel="Airing schedule" /></View>}
     >
       <FeaturedCarousel items={query.data.trending} width={carouselWidth} height={carouselHeight} onOpen={openAnime} onWatch={openAnime} />
 

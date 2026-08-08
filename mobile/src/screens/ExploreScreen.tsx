@@ -90,8 +90,8 @@ export function ExploreScreen({ navigation }: Props) {
   return (
     <>
       <Screen
-        title="Explore"
-        subtitle="Search anime and manga with precise discovery controls"
+        title="Search"
+        subtitle="Find anime and manga"
         scroll={false}
         action={<Button compact mode={activeFilterCount ? 'contained-tonal' : 'text'} icon="tune-variant" onPress={() => setFiltersOpen(true)}>Filters{activeFilterCount ? ` ${activeFilterCount}` : ''}</Button>}
       >

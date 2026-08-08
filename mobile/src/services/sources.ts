@@ -2,6 +2,11 @@ import { API_ORIGIN, SOURCE_CATEGORY, SOURCE_TRACKERS } from '../config';
 import type { TorrentSource } from '../types';
 import { buildSourceQuery, sourceQualityScore } from '../../../shared/sources';
 import { requestJson } from '../lib/network';
+import { sourceQueriesForAnime } from '../lib/sourceDiscovery';
+import type { Anime } from '../types';
+import type { AudioPreference } from '../../../shared/preferences';
+
+export type SourceSearchOptions = { category?: string; filter?: string; page?: number; deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal };
 
 function magnetFor(item: any) {
   if (String(item.link || '').startsWith('magnet:')) return item.link;
@@ -11,7 +16,7 @@ function magnetFor(item: any) {
   return magnet;
 }
 
-export async function searchSources(query: string, options: { category?: string; filter?: string; page?: number; deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal } = {}) {
+export async function searchSources(query: string, options: SourceSearchOptions = {}) {
   const params = new URLSearchParams({
     q: query,
     c: options.category || SOURCE_CATEGORY,
@@ -50,6 +55,42 @@ export async function searchSources(query: string, options: { category?: string;
       || (b.sourceScore || 0) - (a.sourceScore || 0)
       || b.seeders - a.seeders,
   );
+}
+
+export async function searchAnimeSources(
+  anime: Pick<Anime, 'title' | 'titles'>,
+  episode: number,
+  audio: AudioPreference,
+  options: SourceSearchOptions = {},
+) {
+  const queries = sourceQueriesForAnime(anime, episode, audio);
+  const sources = new Map<string, TorrentSource>();
+  let lastError: unknown;
+
+  for (const query of queries) {
+    if (options.signal?.aborted) throw options.signal.reason;
+    try {
+      const matches = await searchSources(query, options);
+      matches.forEach((source) => {
+        const key = source.infoHash?.toLowerCase() || source.magnet;
+        const previous = sources.get(key);
+        if (!previous || Number(source.sourceScore || 0) > Number(previous.sourceScore || 0)) sources.set(key, source);
+      });
+      const healthy = [...sources.values()].filter((source) => source.seeders > 0);
+      if (healthy.length >= 3) break;
+    } catch (error) {
+      if (options.signal?.aborted) throw error;
+      lastError = error;
+    }
+  }
+
+  const result = [...sources.values()].sort((left, right) =>
+    (right.matchScore || 0) - (left.matchScore || 0)
+      || (right.sourceScore || 0) - (left.sourceScore || 0)
+      || right.seeders - left.seeders,
+  );
+  if (!result.length && lastError) throw lastError;
+  return result;
 }
 
 export function sourceQuery(title: string, episode?: number, audio = 'sub-preferred') {

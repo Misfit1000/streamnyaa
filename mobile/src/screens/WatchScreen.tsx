@@ -17,7 +17,8 @@ import { watchRouteParams, mangaRouteParams } from '../lib/mediaNavigation';
 import { mobileSourceCompatibilityScore, sourceAllowedByMode, type MobileSourceMode } from '../lib/mobileSourcePolicy';
 import { TorrentEngine } from '../native/TorrentEngine';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../services/anilist';
-import { searchSources, sourceQuery } from '../services/sources';
+import { searchAnimeSources } from '../services/sources';
+import { sourceQueriesForAnime } from '../lib/sourceDiscovery';
 import { useAppStore } from '../store/useAppStore';
 import type { Anime, RootStackParamList, TorrentSource, TorrentStreamStatus } from '../types';
 import { tokens } from '../theme';
@@ -42,6 +43,7 @@ export function WatchScreen({ route, navigation }: Props) {
   const [sortMenu, setSortMenu] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
+  const [episodePickerOpen, setEpisodePickerOpen] = useState(false);
   const failedSources = useRef(new Set<string>());
   const automaticRetries = useRef(0);
   const starting = useRef(false);
@@ -87,10 +89,11 @@ export function WatchScreen({ route, navigation }: Props) {
     staleTime: 24 * 60 * 60 * 1000,
   });
   const saved = library.find((item) => item.animeId === String(anime.malId || anime.id));
-  const queryText = useMemo(() => sourceQuery(anime.title, episode, audio), [anime.title, audio, episode]);
+  const sourceQueries = useMemo(() => sourceQueriesForAnime(anime, episode, audio), [anime, audio, episode]);
+  const queryText = sourceQueries.join('|');
   const sources = useQuery({
-    queryKey: ['watch-sources', queryText, resourcePolicy.batterySaver],
-    queryFn: ({ signal }) => searchSources(queryText, {
+    queryKey: ['watch-sources', sourceQueries, resourcePolicy.batterySaver],
+    queryFn: ({ signal }) => searchAnimeSources(anime, episode, audio, {
       signal,
       pages: resourcePolicy.batterySaver ? 1 : 2,
       wide: !resourcePolicy.batterySaver,
@@ -230,7 +233,7 @@ export function WatchScreen({ route, navigation }: Props) {
   }, [autoOpen, isStarting, pendingAutoNext, recommendedSource, selected, start]);
 
   useEffect(() => {
-    if (status.state !== 'error' || !visibleSources.length || automaticRetries.current >= 2) return;
+    if (status.state !== 'error' || !visibleSources.length || automaticRetries.current >= 3) return;
     if (selected) {
       const id = sourceId(selected);
       if (!failedSources.current.has(id)) recordSourceFailure(id, status.error || status.message || 'Playback failed.');
@@ -321,6 +324,7 @@ export function WatchScreen({ route, navigation }: Props) {
       setEpisodeDraft(String(episode));
       return;
     }
+    setEpisodePickerOpen(false);
     changeEpisode(parsed);
   };
 
@@ -335,9 +339,13 @@ export function WatchScreen({ route, navigation }: Props) {
     });
   };
 
+  const preparingPlayback = status.state === 'metadata' || status.state === 'buffering';
+  const activeSource = selected || recommendedSource;
+  const activeQuality = sourceQualityBucket(activeSource?.title || '').replace('other', 'Auto');
+
   return (
     <Screen safeTop contentContainerStyle={styles.screen}>
-      {!status.streamUrl ? <WatchHero
+      {!selected ? <WatchHero
         anime={anime}
         episode={episode}
         bookmarked={Boolean(saved?.bookmarked)}
@@ -357,48 +365,54 @@ export function WatchScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      <View style={[styles.player, { borderColor: theme.colors.outlineVariant }]}>
-        {status.streamUrl ? (
-          <VideoView style={StyleSheet.absoluteFill} player={player} nativeControls contentFit="contain" surfaceType="surfaceView" allowsPictureInPicture startsPictureInPictureAutomatically={resourcePolicy.allowBackgroundPlayback} onPictureInPictureStart={() => { pipActive.current = true; }} onPictureInPictureStop={() => { pipActive.current = false; }} />
-        ) : (
-          <ImageBackground source={anime.banner || anime.cover} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk">
-            <LinearGradient colors={['rgba(3,3,4,0.58)', 'rgba(3,3,4,0.94)']} style={StyleSheet.absoluteFill} />
-            <View style={styles.playerState}><StateView compact loading={['metadata', 'buffering'].includes(status.state)} title={notYetAired ? 'Not aired yet' : status.state === 'error' ? 'Playback recovered safely' : `Episode ${episode} ready`} message={notYetAired ? 'Sources will appear after this title starts airing.' : status.error || status.message} /></View>
-          </ImageBackground>
-        )}
-      </View>
-
       {selected ? (
-        <View style={[styles.streamStatus, { backgroundColor: tokens.color.glass, borderColor: theme.colors.outlineVariant }]}>
-          <View style={styles.statusTitle}><Text variant="titleSmall" style={styles.semibold} numberOfLines={1}>{status.fileName || selected.title}</Text><Chip compact>{status.peers} peers</Chip></View>
-          <ProgressBar progress={Math.max(status.bufferedPercent, status.progress) / 100} />
-          <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>{status.message} · {(status.downloadRate / 1024 / 1024).toFixed(1)} MB/s</Text>
+        <>
+          <View style={styles.player}>
+            {status.streamUrl ? (
+              <VideoView style={StyleSheet.absoluteFill} player={player} nativeControls contentFit="contain" surfaceType="surfaceView" allowsPictureInPicture startsPictureInPictureAutomatically={resourcePolicy.allowBackgroundPlayback} onPictureInPictureStart={() => { pipActive.current = true; }} onPictureInPictureStop={() => { pipActive.current = false; }} />
+            ) : (
+              <ImageBackground source={anime.banner || anime.cover} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk">
+                <LinearGradient colors={['rgba(3,3,4,0.52)', 'rgba(3,3,4,0.96)']} style={StyleSheet.absoluteFill} />
+                <View style={styles.playerState}>
+                  <StateView compact loading={preparingPlayback} title={status.state === 'error' ? 'Source unavailable' : status.state === 'metadata' ? 'Finding peers' : `Buffering episode ${episode}`} message={status.error || status.message} />
+                </View>
+              </ImageBackground>
+            )}
+          </View>
+          <View style={[styles.streamStatus, { borderColor: theme.colors.outlineVariant }]}>
+            <View style={styles.statusTitle}>
+              <View style={styles.statusCopy}><Text variant="titleSmall" style={styles.semibold} numberOfLines={1}>{status.fileName || selected.title}</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{status.message}</Text></View>
+              <Chip compact>{status.peers} peers</Chip>
+            </View>
+            {preparingPlayback ? <ProgressBar indeterminate={status.bufferedPercent <= 0} progress={Math.max(status.bufferedPercent, status.progress) / 100} /> : null}
+            <View style={styles.statusFooter}>
+              <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>{(status.downloadRate / 1024 / 1024).toFixed(1)} MB/s{status.waitSeconds ? ` · ${status.waitSeconds}s` : ''}</Text>
+              <View style={styles.statusActions}>
+                <Button compact mode="text" icon="tune-variant" onPress={() => setSourcePickerOpen(true)}>Source</Button>
+                <Button compact mode="text" onPress={() => { setSelected(undefined); setStatus(idleStatus); void releasePlayerAndEngine(); }}>Stop</Button>
+              </View>
+            </View>
+          </View>
+        </>
+      ) : null}
+
+      {!selected && !sources.isLoading && (sources.isError || !recommendedSource) ? (
+        <View style={[styles.sourceNotice, { borderColor: theme.colors.outlineVariant }]}>
+          <View style={styles.sourceNoticeCopy}><Text variant="titleSmall" style={styles.semibold}>No playable source yet</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{sources.isError ? sources.error.message : 'Try the search again or choose a different audio mode.'}</Text></View>
+          <Button compact mode="contained-tonal" onPress={() => void sources.refetch()}>Retry</Button>
         </View>
       ) : null}
 
       <EpisodeRail current={episode} total={anime.episodes} details={episodeMetadata.data?.episodes} onSelect={(value) => changeEpisode(value)} />
       <View style={styles.episodeNavigation}>
-        <Button compact mode="outlined" icon="chevron-left" disabled={episode <= 1} onPress={() => changeEpisode(episode - 1)}>Previous</Button>
-        <Text variant="titleMedium" style={styles.semibold}>Episode {episode}</Text>
-        <Button compact mode="outlined" contentStyle={styles.nextContent} onPress={() => changeEpisode(episode + 1)}>Next</Button>
+        <IconButton icon="chevron-left" mode="contained-tonal" size={20} disabled={episode <= 1} onPress={() => changeEpisode(episode - 1)} accessibilityLabel="Previous episode" />
+        <Button compact mode="text" icon="format-list-numbered" onPress={() => { setEpisodeDraft(String(episode)); setEpisodePickerOpen(true); }}>Episode {episode}</Button>
+        <IconButton icon="chevron-right" mode="contained-tonal" size={20} onPress={() => changeEpisode(episode + 1)} accessibilityLabel="Next episode" />
       </View>
-      <View style={styles.episodeJump}>
-        <TextInput value={episodeDraft} onChangeText={setEpisodeDraft} onSubmitEditing={jumpToEpisode} keyboardType="number-pad" mode="outlined" dense label="Jump to episode" style={styles.episodeInput} />
-        <Button mode="contained-tonal" icon="arrow-right" onPress={jumpToEpisode}>Go</Button>
-      </View>
-      {autoNext ? <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Auto-next will choose the best healthy release after this episode.</Text> : null}
 
-      <View style={[styles.recommended, { backgroundColor: tokens.color.glass, borderColor: theme.colors.outlineVariant }]}>
-        <View style={styles.recommendedCopy}>
-          <Text variant="labelMedium" style={{ color: theme.colors.primary }}>{selected ? 'Playing source' : 'Recommended source'}</Text>
-          <Text variant="titleSmall" numberOfLines={2} style={styles.semibold}>{selected?.title || recommendedSource?.title || (sources.isLoading ? 'Finding the best release...' : 'No compatible release found')}</Text>
-          {(selected || recommendedSource) ? <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{selected?.seeders ?? recommendedSource?.seeders ?? 0} seeders · {sourceQualityBucket((selected || recommendedSource)?.title || '').replace('other', 'Auto quality')}</Text> : null}
-        </View>
-        <Button mode="contained-tonal" icon="swap-horizontal" onPress={() => setSourcePickerOpen(true)}>Change</Button>
-      </View>
-      <View style={styles.secondaryActions}>
-        <Button mode="text" icon="download" onPress={() => navigation.navigate('Downloads', { anime, episode })}>Downloads</Button>
-        <Button mode="text" icon="magnify" onPress={() => navigation.navigate('Sources', { anime, episode })}>Manual search</Button>
+      <View style={styles.quickControls}>
+        <Button compact mode="contained-tonal" icon="tune-variant" onPress={() => setSourcePickerOpen(true)}>Sources · {activeQuality}</Button>
+        <Button compact mode="text" icon="download-outline" onPress={() => navigation.navigate('Downloads', { anime, episode })}>All releases</Button>
       </View>
 
       {anime.description ? <View style={styles.about}><Text variant="titleLarge" style={styles.semibold}>About</Text><Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, lineHeight: 22 }}>{anime.description}</Text></View> : null}
@@ -408,6 +422,11 @@ export function WatchScreen({ route, navigation }: Props) {
       {anime.recommendations?.length ? <AnimeShelf title="Because you chose this" items={anime.recommendations} onPress={openRelated} /> : null}
 
       <Portal>
+        <Modal visible={episodePickerOpen} onDismiss={() => setEpisodePickerOpen(false)} contentContainerStyle={[styles.episodeSheet, { backgroundColor: theme.colors.surface }]}>
+          <Text variant="titleLarge" style={styles.semibold}>Jump to episode</Text>
+          <TextInput value={episodeDraft} onChangeText={setEpisodeDraft} onSubmitEditing={jumpToEpisode} keyboardType="number-pad" mode="outlined" autoFocus label="Episode number" />
+          <View style={styles.episodeSheetActions}><Button onPress={() => setEpisodePickerOpen(false)}>Cancel</Button><Button mode="contained" onPress={jumpToEpisode}>Open episode</Button></View>
+        </Modal>
         <Modal visible={sourcePickerOpen} onDismiss={() => setSourcePickerOpen(false)} contentContainerStyle={[styles.sourceSheet, { backgroundColor: theme.colors.surface }]}>
           <View style={styles.sheetHeading}>
             <View style={styles.sourceHeadingCopy}><Text variant="titleLarge" style={styles.semibold}>Change source</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Episode {episode} · best matches first</Text></View>
@@ -433,22 +452,24 @@ export function WatchScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  screen: { gap: tokens.spacing.xl },
-  player: { aspectRatio: 16 / 9, borderRadius: tokens.radius.card, overflow: 'hidden', backgroundColor: '#050506', borderWidth: StyleSheet.hairlineWidth },
+  screen: { gap: tokens.spacing.lg },
+  player: { aspectRatio: 16 / 9, marginHorizontal: -tokens.spacing.lg, overflow: 'hidden', backgroundColor: '#050506' },
   playerToolbar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: -tokens.spacing.sm },
   playerToolbarCopy: { flex: 1 },
   playerState: { flex: 1, justifyContent: 'center' },
-  streamStatus: { padding: tokens.spacing.md, borderRadius: tokens.radius.card, borderWidth: StyleSheet.hairlineWidth, gap: tokens.spacing.sm },
+  streamStatus: { paddingVertical: tokens.spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, gap: tokens.spacing.sm },
   statusTitle: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
+  statusCopy: { flex: 1, gap: 2 },
+  statusFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.sm },
+  statusActions: { flexDirection: 'row', alignItems: 'center' },
+  sourceNotice: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: tokens.spacing.md },
+  sourceNoticeCopy: { flex: 1, gap: 3 },
   episodeNavigation: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.sm },
-  episodeJump: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
-  episodeInput: { flex: 1, minWidth: 74 },
-  nextContent: { flexDirection: 'row-reverse' },
   sourceHeadingCopy: { flex: 1, gap: 3 },
-  recommended: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, borderWidth: StyleSheet.hairlineWidth, borderRadius: tokens.radius.card, padding: tokens.spacing.md },
-  recommendedCopy: { flex: 1, gap: 4 },
-  secondaryActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: tokens.spacing.sm, marginTop: -tokens.spacing.md },
+  quickControls: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: tokens.spacing.sm },
   about: { gap: tokens.spacing.sm },
+  episodeSheet: { marginHorizontal: tokens.spacing.xl, borderRadius: tokens.radius.card, padding: tokens.spacing.lg, gap: tokens.spacing.lg },
+  episodeSheetActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: tokens.spacing.sm },
   sourceSheet: { marginHorizontal: tokens.spacing.md, maxHeight: '88%', borderRadius: tokens.radius.card, overflow: 'hidden' },
   sheetHeading: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, padding: tokens.spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.outlineSoft },
   sheetContent: { gap: tokens.spacing.md, padding: tokens.spacing.lg, paddingBottom: tokens.spacing.xxl },

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { accountPayloadFingerprint, accountSyncDelayMs } from '../../mobile/src/lib/accountSyncPolicy';
 import { HttpError, shouldRetryRequest } from '../../mobile/src/lib/network';
 import { mobileSourceCompatibilityScore, sourceAllowedByMode } from '../../mobile/src/lib/mobileSourcePolicy';
+import { sourceQueriesForAnime, sourceTitleCandidates } from '../../mobile/src/lib/sourceDiscovery';
 import { normalizeWatchHistoryRows } from '../../api/account-sync';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -69,6 +70,34 @@ test('mobile source ranking avoids expensive codecs on battery saver', () => {
   assert.ok(mobileSourceCompatibilityScore(h264, true) > mobileSourceCompatibilityScore(av1, true));
   assert.equal(sourceAllowedByMode({ ...base, title: 'exact' }, 'strict', true), true);
   assert.equal(sourceAllowedByMode({ ...base, title: 'weak', matchScore: 20 }, 'strict', true), false);
+});
+
+test('mobile source discovery prefers index-friendly title aliases', () => {
+  const anime = {
+    title: "Frieren: Beyond Journey's End",
+    titles: { english: "Frieren: Beyond Journey's End", romaji: 'Sousou no Frieren', native: 'Japanese title' },
+  };
+  assert.deepEqual(sourceTitleCandidates(anime).slice(0, 2), ['Sousou no Frieren', "Frieren: Beyond Journey's End"]);
+  assert.match(sourceQueriesForAnime(anime, 1, 'sub-preferred')[0] || '', /Sousou no Frieren 01/);
+});
+
+test('stalled torrent sources time out and return to the in-app recovery flow', () => {
+  const engine = readFileSync(path.join(repoRoot, 'mobile/modules/torrent-engine/android/src/main/java/com/misfit1000/streamnyaa/torrent/TorrentStreamEngine.kt'), 'utf8');
+  const watch = readFileSync(path.join(repoRoot, 'mobile/src/screens/WatchScreen.tsx'), 'utf8');
+  assert.match(engine, /METADATA_TIMEOUT_MS/);
+  assert.match(engine, /BUFFER_STALL_TIMEOUT_MS/);
+  assert.match(engine, /PLAYBACK_READY_TIMEOUT_MS/);
+  assert.match(watch, /automaticRetries\.current >= 3/);
+  assert.match(watch, /<VideoView[\s\S]*nativeControls/, 'playback must remain embedded in the Android screen');
+});
+
+test('mobile authentication returns to the native app instead of rendering the website', () => {
+  const auth = readFileSync(path.join(repoRoot, 'mobile/src/services/auth.ts'), 'utf8');
+  const callback = readFileSync(path.join(repoRoot, 'api/auth/mobile-callback.ts'), 'utf8');
+  assert.match(auth, /MOBILE_AUTH_CALLBACK_URL/);
+  assert.match(auth, /sessionFromAuthUrl/);
+  assert.match(callback, /streamnyaa:\/\/auth/);
+  assert.match(callback, /location\.replace\(target\)/);
 });
 
 test('account sync accepts mobile and web history shapes without losing zero progress', () => {

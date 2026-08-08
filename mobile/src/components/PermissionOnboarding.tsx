@@ -11,7 +11,7 @@ import {
 } from '../services/permissions';
 import { tokens } from '../theme';
 
-const logo = require('../../../src/assets/desktop-logo.png');
+const logo = require('../../../desktop/src-tauri/icons/icon.png');
 
 export function PermissionOnboarding({ visible, onComplete }: { visible: boolean; onComplete: () => void }) {
   const theme = useTheme();

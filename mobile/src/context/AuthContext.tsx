@@ -1,11 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
 import { AppState } from 'react-native';
+import * as Linking from 'expo-linking';
 import type { AccountUser, AuthSession } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import {
   fetchAccountUser,
   loadSession,
   refreshAuthSession,
+  sessionFromAuthUrl,
   signInWithGoogle,
   signInWithPassword,
   signOut as signOutService,
@@ -143,7 +145,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     let active = true;
     void (async () => {
       try {
-        let stored = await loadSession();
+        const callbackSession = await sessionFromAuthUrl(await Linking.getInitialURL());
+        let stored = callbackSession || await loadSession();
         if (!active) return;
         setLoading(false);
         if (!stored?.access_token) {
@@ -167,6 +170,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
     })();
     return () => { active = false; };
+  }, [applySession]);
+
+  useEffect(() => {
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      void sessionFromAuthUrl(url)
+        .then((next) => next && applySession(next))
+        .catch((authError) => setError(authError instanceof Error ? authError.message : 'Sign-in could not be completed.'));
+    });
+    return () => subscription.remove();
   }, [applySession]);
 
   useEffect(() => {
