@@ -68,6 +68,7 @@ export type TorrentSource = {
   sourceScore?: number;
   matchScore?: number;
   magnet: string;
+  metadataUrls?: string[];
 };
 
 export type PlaybackHistoryItem = {
@@ -124,6 +125,7 @@ export type TorrentStartOptions = {
   wifiOnly: boolean;
   maxCacheMiB: number;
   batterySaver: boolean;
+  metadataUrls?: string[];
 };
 
 export type TorrentCacheStats = {
@@ -137,7 +139,7 @@ export type RootStackParamList = {
   Anime: { animeId: number; anilistId?: number; malId?: number | null; kitsuId?: string; title?: string };
   Manga: { mangaId: number; anilistId?: number; malId?: number | null; kitsuId?: string; title?: string };
   Catalog: { title: string; genre?: string; season?: string; year?: number; sort?: 'TRENDING_DESC' | 'POPULARITY_DESC' | 'SCORE_DESC' };
-  Watch: { anime: Anime; episode?: number; source?: TorrentSource; resumeSeconds?: number };
+  Watch: { anime: Anime; episode?: number; source?: TorrentSource; resumeSeconds?: number; autoPlay?: boolean };
   Downloads: { anime: Anime; episode?: number };
   Sources: { anime?: Anime; query?: string; episode?: number };
   History: undefined;

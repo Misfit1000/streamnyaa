@@ -70,6 +70,10 @@ test('mobile source ranking avoids expensive codecs on battery saver', () => {
   assert.ok(mobileSourceCompatibilityScore(h264, true) > mobileSourceCompatibilityScore(av1, true));
   assert.equal(sourceAllowedByMode({ ...base, title: 'exact' }, 'strict', true), true);
   assert.equal(sourceAllowedByMode({ ...base, title: 'weak', matchScore: 20 }, 'strict', true), false);
+  const seasonOneAnime = { title: 'Sousou no Frieren', titles: { romaji: 'Sousou no Frieren' } };
+  const seasonOne = { ...base, title: 'Sousou no Frieren - 01 1080p AVC', seeders: 30 };
+  const wrongSeason = { ...base, infoHash: 'c', title: 'Sousou no Frieren S2 - 01 1080p AVC', seeders: 800 };
+  assert.ok(mobileSourceCompatibilityScore(seasonOne, true, seasonOneAnime) > mobileSourceCompatibilityScore(wrongSeason, true, seasonOneAnime));
 });
 
 test('mobile source discovery prefers index-friendly title aliases', () => {
@@ -87,8 +91,12 @@ test('stalled torrent sources time out and return to the in-app recovery flow', 
   assert.match(engine, /METADATA_TIMEOUT_MS/);
   assert.match(engine, /BUFFER_STALL_TIMEOUT_MS/);
   assert.match(engine, /PLAYBACK_READY_TIMEOUT_MS/);
+  assert.match(engine, /NO_PEER_TIMEOUT_MS/);
+  assert.match(engine, /fetchTorrentInfo/, 'torrent-file metadata should be tried before waiting on magnet metadata');
+  assert.match(engine, /forceDHTAnnounce/, 'peer discovery should explicitly announce over DHT');
   assert.match(watch, /automaticRetries\.current >= 3/);
   assert.match(watch, /<VideoView[\s\S]*nativeControls/, 'playback must remain embedded in the Android screen');
+  assert.match(watch, />Advanced</, 'manual releases and diagnostics must remain available without cluttering default playback');
 });
 
 test('mobile authentication returns to the native app instead of rendering the website', () => {

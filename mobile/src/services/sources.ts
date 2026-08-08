@@ -9,11 +9,26 @@ import type { AudioPreference } from '../../../shared/preferences';
 export type SourceSearchOptions = { category?: string; filter?: string; page?: number; deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal };
 
 function magnetFor(item: any) {
-  if (String(item.link || '').startsWith('magnet:')) return item.link;
-  const hash = String(item.infoHash || '').trim();
+  const original = String(item.link || '').startsWith('magnet:') ? String(item.link) : '';
+  const hash = String(item.infoHash || '').trim() || original.match(/(?:xt=urn:btih:)([a-z0-9]+)/i)?.[1] || '';
   let magnet = `magnet:?xt=urn:btih:${encodeURIComponent(hash)}&dn=${encodeURIComponent(item.title || 'StreamNyaa source')}`;
-  SOURCE_TRACKERS.forEach((tracker) => { magnet += `&tr=${encodeURIComponent(tracker)}`; });
+  const existingTrackers = new Set<string>();
+  if (original) {
+    try {
+      new URL(original).searchParams.getAll('tr').forEach((tracker) => existingTrackers.add(tracker));
+    } catch { /* Rebuild malformed magnets from the verified info hash. */ }
+  }
+  [...existingTrackers, ...SOURCE_TRACKERS].forEach((tracker) => { magnet += `&tr=${encodeURIComponent(tracker)}`; });
   return magnet;
+}
+
+function metadataUrlsFor(item: any) {
+  const direct = String(item.link || '').trim();
+  const match = direct.match(/^https:\/\/(?:www\.)?nyaa\.si\/download\/(\d+)\.torrent(?:\?.*)?$/i);
+  const urls: string[] = [];
+  if (match?.[1]) urls.push(`${API_ORIGIN}/api/torrent?id=${encodeURIComponent(match[1])}`);
+  if (/^https:\/\//i.test(direct)) urls.push(direct);
+  return [...new Set(urls)];
 }
 
 export async function searchSources(query: string, options: SourceSearchOptions = {}) {
@@ -50,6 +65,7 @@ export async function searchSources(query: string, options: SourceSearchOptions 
     })),
     matchScore: Number(item.matchScore || 0),
     magnet: magnetFor(item),
+    metadataUrls: metadataUrlsFor(item),
   })).sort((a: TorrentSource, b: TorrentSource) =>
     (b.matchScore || 0) - (a.matchScore || 0)
       || (b.sourceScore || 0) - (a.sourceScore || 0)

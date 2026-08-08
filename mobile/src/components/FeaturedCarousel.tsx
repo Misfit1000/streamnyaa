@@ -13,9 +13,11 @@ type Props = {
   height: number;
   onOpen: (anime: Anime) => void;
   onWatch: (anime: Anime) => void;
+  onToggleSave: (anime: Anime) => void;
+  isSaved: (anime: Anime) => boolean;
 };
 
-export function FeaturedCarousel({ items, width, height, onOpen, onWatch }: Props) {
+export function FeaturedCarousel({ items, width, height, onOpen, onWatch, onToggleSave, isSaved }: Props) {
   const theme = useTheme();
   const list = useRef<FlatList<Anime>>(null);
   const interacting = useRef(false);
@@ -49,7 +51,7 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch }: Prop
 
   if (!slides.length) return null;
   return (
-    <View style={styles.root} accessibilityRole="adjustable" accessibilityLabel={`Featured titles, item ${activeIndex + 1} of ${slides.length}`}>
+    <View style={[styles.root, { borderColor: theme.colors.outlineVariant }]} accessibilityRole="adjustable" accessibilityLabel={`Featured titles, item ${activeIndex + 1} of ${slides.length}`}>
       <FlatList
         ref={list}
         data={slides}
@@ -64,15 +66,11 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch }: Prop
         onScrollEndDrag={() => { setTimeout(() => { interacting.current = false; }, 800); }}
         onScrollToIndexFailed={({ index }) => list.current?.scrollToOffset({ offset: width * index, animated: true })}
         renderItem={({ item }) => (
-          <Pressable onPress={() => onOpen(item)} style={({ pressed }) => [{ width, height }, styles.slide, { opacity: pressed ? 0.94 : 1 }]} accessibilityRole="button" accessibilityLabel={`${item.title}. Featured title`} accessibilityHint="Opens the watch experience">
+          <Pressable onPress={() => onOpen(item)} style={({ pressed }) => [{ width, height }, styles.slide, { opacity: pressed ? 0.94 : 1 }]} accessibilityRole="button" accessibilityLabel={`${item.title}. Featured title`} accessibilityHint="Starts the watch experience">
             <ImageBackground source={item.banner || item.cover} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk" priority="high" accessibilityIgnoresInvertColors />
             <LinearGradient colors={['rgba(2,2,3,0.04)', 'rgba(2,2,3,0.34)', 'rgba(2,2,3,0.98)']} locations={[0.12, 0.48, 0.88]} style={StyleSheet.absoluteFill} />
             <LinearGradient colors={['rgba(105,4,28,0.08)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 0.8, y: 0 }} style={StyleSheet.absoluteFill} />
             <View style={styles.copy}>
-              <View style={styles.factualLabel}>
-                <MaterialCommunityIcons name="chart-line" size={14} color={theme.colors.primary} />
-                <Text variant="labelMedium" style={{ color: theme.colors.onSurface }}>Trending now</Text>
-              </View>
               <Text variant="headlineMedium" numberOfLines={2} style={styles.title}>{item.title}</Text>
               <View style={styles.metadata}>
                 {item.score ? <><MaterialCommunityIcons name="star" size={15} color={tokens.color.warning} /><Text variant="labelLarge" style={styles.metaText}>{item.score.toFixed(1)}</Text></> : null}
@@ -80,6 +78,7 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch }: Prop
               </View>
               <View style={styles.actions}>
                 <Button mode="contained" icon="play" onPress={(event) => { event.stopPropagation(); onWatch(item); }} contentStyle={styles.buttonContent}>Watch now</Button>
+                <Button mode="outlined" icon={isSaved(item) ? 'check' : 'plus'} textColor="#FFFFFF" onPress={(event) => { event.stopPropagation(); onToggleSave(item); }} contentStyle={styles.buttonContent}>{isSaved(item) ? 'In My List' : 'My List'}</Button>
               </View>
             </View>
           </Pressable>
@@ -95,10 +94,9 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch }: Prop
 }
 
 const styles = StyleSheet.create({
-  root: { marginHorizontal: -tokens.spacing.lg, overflow: 'hidden', backgroundColor: tokens.color.surface },
+  root: { overflow: 'hidden', borderRadius: tokens.radius.card, borderWidth: StyleSheet.hairlineWidth, backgroundColor: tokens.color.surface },
   slide: { justifyContent: 'flex-end' },
   copy: { paddingHorizontal: tokens.spacing.lg, paddingBottom: 34, gap: tokens.spacing.sm, maxWidth: 430 },
-  factualLabel: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   title: { color: '#FFFFFF', fontWeight: '700', letterSpacing: -0.5, lineHeight: 33 },
   metadata: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   metaText: { color: '#E8E1E4' },

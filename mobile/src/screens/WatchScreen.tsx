@@ -111,8 +111,8 @@ export function WatchScreen({ route, navigation }: Props) {
       ? right.seeders - left.seeders
       : sourceSort === 'size'
         ? parseSizeBytes(left.size) - parseSizeBytes(right.size)
-        : mobileSourceCompatibilityScore(right, resourcePolicy.batterySaver) - mobileSourceCompatibilityScore(left, resourcePolicy.batterySaver));
-  }, [quality, resourcePolicy.batterySaver, sourceFilter, sourceMode, sourceSort, sources.data]);
+        : mobileSourceCompatibilityScore(right, resourcePolicy.batterySaver, anime) - mobileSourceCompatibilityScore(left, resourcePolicy.batterySaver, anime));
+  }, [anime, quality, resourcePolicy.batterySaver, sourceFilter, sourceMode, sourceSort, sources.data]);
   const recommendedSource = useMemo(() => {
     const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
     return visibleSources.find((source) => {
@@ -159,6 +159,7 @@ export function WatchScreen({ route, navigation }: Props) {
         wifiOnly: resourcePolicy.wifiOnly,
         maxCacheMiB: resourcePolicy.maxCacheMiB,
         batterySaver: resourcePolicy.batterySaver,
+        metadataUrls: source.metadataUrls,
       });
       if (!mounted.current || generation !== playbackGeneration.current) {
         await TorrentEngine.stop(false).catch(() => undefined);
@@ -226,11 +227,11 @@ export function WatchScreen({ route, navigation }: Props) {
   }, [episode, selected]);
 
   useEffect(() => {
-    if (!isStarting && !selected && (autoOpen || pendingAutoNext) && recommendedSource) {
+    if (!isStarting && !selected && (route.params.autoPlay || autoOpen || pendingAutoNext) && recommendedSource) {
       setPendingAutoNext(false);
       void start(recommendedSource);
     }
-  }, [autoOpen, isStarting, pendingAutoNext, recommendedSource, selected, start]);
+  }, [autoOpen, isStarting, pendingAutoNext, recommendedSource, route.params.autoPlay, selected, start]);
 
   useEffect(() => {
     if (status.state !== 'error' || !visibleSources.length || automaticRetries.current >= 3) return;
@@ -374,32 +375,21 @@ export function WatchScreen({ route, navigation }: Props) {
               <ImageBackground source={anime.banner || anime.cover} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk">
                 <LinearGradient colors={['rgba(3,3,4,0.52)', 'rgba(3,3,4,0.96)']} style={StyleSheet.absoluteFill} />
                 <View style={styles.playerState}>
-                  <StateView compact loading={preparingPlayback} title={status.state === 'error' ? 'Source unavailable' : status.state === 'metadata' ? 'Finding peers' : `Buffering episode ${episode}`} message={status.error || status.message} />
+                  <StateView compact loading={preparingPlayback} title={status.state === 'error' ? 'Playback needs attention' : `Preparing episode ${episode}`} message={status.state === 'error' ? status.error || status.message : 'StreamNyaa is testing the fastest available playback path.'} />
                 </View>
               </ImageBackground>
             )}
           </View>
-          <View style={[styles.streamStatus, { borderColor: theme.colors.outlineVariant }]}>
-            <View style={styles.statusTitle}>
-              <View style={styles.statusCopy}><Text variant="titleSmall" style={styles.semibold} numberOfLines={1}>{status.fileName || selected.title}</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{status.message}</Text></View>
-              <Chip compact>{status.peers} peers</Chip>
-            </View>
-            {preparingPlayback ? <ProgressBar indeterminate={status.bufferedPercent <= 0} progress={Math.max(status.bufferedPercent, status.progress) / 100} /> : null}
-            <View style={styles.statusFooter}>
-              <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>{(status.downloadRate / 1024 / 1024).toFixed(1)} MB/s{status.waitSeconds ? ` · ${status.waitSeconds}s` : ''}</Text>
-              <View style={styles.statusActions}>
-                <Button compact mode="text" icon="tune-variant" onPress={() => setSourcePickerOpen(true)}>Source</Button>
-                <Button compact mode="text" onPress={() => { setSelected(undefined); setStatus(idleStatus); void releasePlayerAndEngine(); }}>Stop</Button>
-              </View>
-            </View>
-          </View>
+          {preparingPlayback ? <View style={styles.preparing}><View style={styles.preparingCopy}><Text variant="titleSmall" style={styles.semibold}>Preparing video</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>A healthier backup is selected automatically if this release stalls.</Text></View><ProgressBar indeterminate={status.bufferedPercent <= 0} progress={Math.max(status.bufferedPercent, status.progress) / 100} /></View> : null}
+          {status.state === 'error' ? <View style={[styles.playbackError, { borderColor: theme.colors.outlineVariant }]}><View style={styles.playbackErrorCopy}><Text variant="titleSmall" style={styles.semibold}>This release could not start</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{status.error || status.message}</Text></View><Button mode="contained-tonal" onPress={() => recommendedSource && void start(recommendedSource)}>Retry</Button><Button mode="text" onPress={() => setSourcePickerOpen(true)}>Advanced</Button></View> : null}
         </>
       ) : null}
 
       {!selected && !sources.isLoading && (sources.isError || !recommendedSource) ? (
         <View style={[styles.sourceNotice, { borderColor: theme.colors.outlineVariant }]}>
-          <View style={styles.sourceNoticeCopy}><Text variant="titleSmall" style={styles.semibold}>No playable source yet</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{sources.isError ? sources.error.message : 'Try the search again or choose a different audio mode.'}</Text></View>
-          <Button compact mode="contained-tonal" onPress={() => void sources.refetch()}>Retry</Button>
+          <View style={styles.sourceNoticeCopy}><Text variant="titleSmall" style={styles.semibold}>Playback is not ready</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{sources.isError ? sources.error.message : 'No active release was available for this episode.'}</Text></View>
+          <Button compact mode="contained-tonal" onPress={() => void sources.refetch()}>Try again</Button>
+          <Button compact mode="text" onPress={() => setSourcePickerOpen(true)}>Advanced</Button>
         </View>
       ) : null}
 
@@ -410,9 +400,11 @@ export function WatchScreen({ route, navigation }: Props) {
         <IconButton icon="chevron-right" mode="contained-tonal" size={20} onPress={() => changeEpisode(episode + 1)} accessibilityLabel="Next episode" />
       </View>
 
-      <View style={styles.quickControls}>
-        <Button compact mode="contained-tonal" icon="tune-variant" onPress={() => setSourcePickerOpen(true)}>Sources · {activeQuality}</Button>
-        <Button compact mode="text" icon="download-outline" onPress={() => navigation.navigate('Downloads', { anime, episode })}>All releases</Button>
+      <View style={styles.watchActions}>
+        <Button mode={saved?.bookmarked ? 'contained-tonal' : 'text'} icon={saved?.bookmarked ? 'check' : 'plus'} onPress={() => toggleBookmark(anime)}>My List</Button>
+        <Button mode={saved?.liked ? 'contained-tonal' : 'text'} icon={saved?.liked ? 'heart' : 'heart-outline'} onPress={() => toggleLike(anime)}>Like</Button>
+        <Button mode="text" icon="share-variant-outline" onPress={() => void Share.share({ title: anime.title, message: `${anime.title} · Episode ${episode}` })}>Share</Button>
+        <Button mode="text" icon="tune-variant" onPress={() => setSourcePickerOpen(true)}>Advanced</Button>
       </View>
 
       {anime.description ? <View style={styles.about}><Text variant="titleLarge" style={styles.semibold}>About</Text><Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, lineHeight: 22 }}>{anime.description}</Text></View> : null}
@@ -429,7 +421,7 @@ export function WatchScreen({ route, navigation }: Props) {
         </Modal>
         <Modal visible={sourcePickerOpen} onDismiss={() => setSourcePickerOpen(false)} contentContainerStyle={[styles.sourceSheet, { backgroundColor: theme.colors.surface }]}>
           <View style={styles.sheetHeading}>
-            <View style={styles.sourceHeadingCopy}><Text variant="titleLarge" style={styles.semibold}>Change source</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Episode {episode} · best matches first</Text></View>
+            <View style={styles.sourceHeadingCopy}><Text variant="titleLarge" style={styles.semibold}>Playback options</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Episode {episode} · {activeQuality} · {status.peers} peers · {(status.downloadRate / 1024 / 1024).toFixed(1)} MB/s</Text></View>
             <Button compact onPress={() => setSourcePickerOpen(false)}>Done</Button>
           </View>
           <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -443,7 +435,9 @@ export function WatchScreen({ route, navigation }: Props) {
                 {([['best', 'Best match'], ['seeders', 'Most seeders'], ['size', 'Smallest size']] as const).map(([value, label]) => <Menu.Item key={value} title={label} leadingIcon={sourceSort === value ? 'check' : undefined} onPress={() => { setSourceSort(value); setSortMenu(false); }} />)}
               </Menu>
             </View>
-            {sources.isLoading ? <StateView loading message="Finding compatible releases..." /> : sources.isError ? <StateView title="Source search failed" message={sources.error.message} onRetry={() => void sources.refetch()} /> : visibleSources.length ? visibleSources.slice(0, resourcePolicy.batterySaver ? 6 : 10).map((source) => <SourceRow key={`${source.infoHash}-${source.title}`} source={source} onPlay={() => { setSourcePickerOpen(false); void start(source); }} onShare={() => void Share.share({ message: source.magnet })} />) : <StateView title="No source found" message="Try Best quality, another audio mode, or manual search." />}
+            <View style={[styles.diagnostics, { borderColor: theme.colors.outlineVariant }]}><Text variant="labelLarge" style={styles.semibold}>Connection details</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{status.message}{status.waitSeconds ? ` · ${status.waitSeconds}s elapsed` : ''}</Text></View>
+            <Button mode="outlined" icon="download-outline" onPress={() => { setSourcePickerOpen(false); navigation.navigate('Downloads', { anime, episode }); }}>Browse every release</Button>
+            {sources.isLoading ? <StateView loading message="Checking compatible releases..." /> : sources.isError ? <StateView title="Release check failed" message={sources.error.message} onRetry={() => void sources.refetch()} /> : visibleSources.length ? visibleSources.slice(0, resourcePolicy.batterySaver ? 6 : 10).map((source) => <SourceRow key={`${source.infoHash}-${source.title}`} source={source} onPlay={() => { setSourcePickerOpen(false); void start(source); }} onShare={() => void Share.share({ message: source.magnet })} />) : <StateView title="No release found" message="Try Best quality or another audio mode." />}
           </ScrollView>
         </Modal>
       </Portal>
@@ -457,16 +451,15 @@ const styles = StyleSheet.create({
   playerToolbar: { flexDirection: 'row', alignItems: 'center', marginHorizontal: -tokens.spacing.sm },
   playerToolbarCopy: { flex: 1 },
   playerState: { flex: 1, justifyContent: 'center' },
-  streamStatus: { paddingVertical: tokens.spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, gap: tokens.spacing.sm },
-  statusTitle: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
-  statusCopy: { flex: 1, gap: 2 },
-  statusFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.sm },
-  statusActions: { flexDirection: 'row', alignItems: 'center' },
-  sourceNotice: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: tokens.spacing.md },
+  preparing: { gap: tokens.spacing.sm, paddingVertical: tokens.spacing.md },
+  preparingCopy: { gap: 3 },
+  playbackError: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: tokens.spacing.sm, paddingVertical: tokens.spacing.md, borderBottomWidth: StyleSheet.hairlineWidth },
+  playbackErrorCopy: { width: '100%', gap: 3 },
+  sourceNotice: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: tokens.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: tokens.spacing.md },
   sourceNoticeCopy: { flex: 1, gap: 3 },
   episodeNavigation: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.sm },
   sourceHeadingCopy: { flex: 1, gap: 3 },
-  quickControls: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: tokens.spacing.sm },
+  watchActions: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: tokens.spacing.xs },
   about: { gap: tokens.spacing.sm },
   episodeSheet: { marginHorizontal: tokens.spacing.xl, borderRadius: tokens.radius.card, padding: tokens.spacing.lg, gap: tokens.spacing.lg },
   episodeSheetActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: tokens.spacing.sm },
@@ -474,6 +467,7 @@ const styles = StyleSheet.create({
   sheetHeading: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, padding: tokens.spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.outlineSoft },
   sheetContent: { gap: tokens.spacing.md, padding: tokens.spacing.lg, paddingBottom: tokens.spacing.xxl },
   sourceTools: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: tokens.spacing.sm },
+  diagnostics: { gap: 4, padding: tokens.spacing.md, borderRadius: tokens.radius.card, borderWidth: StyleSheet.hairlineWidth },
   genres: { flexDirection: 'row', flexWrap: 'wrap', gap: tokens.spacing.sm },
   semibold: { fontWeight: '600', flexShrink: 1 },
 });

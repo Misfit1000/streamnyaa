@@ -21,5 +21,5 @@ export function mangaRouteParams(manga: Anime): RootStackParamList['Manga'] {
 }
 
 export function watchRouteParams(anime: Anime, episode = 1): RootStackParamList['Watch'] {
-  return { anime, episode };
+  return { anime, episode, autoPlay: true };
 }

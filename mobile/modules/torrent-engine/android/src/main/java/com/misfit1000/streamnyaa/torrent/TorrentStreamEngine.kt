@@ -5,16 +5,22 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.StatFs
 import org.libtorrent4j.AlertListener
+import org.libtorrent4j.AnnounceEntry
 import org.libtorrent4j.Priority
+import org.libtorrent4j.SessionParams
 import org.libtorrent4j.SessionManager
+import org.libtorrent4j.SettingsPack
 import org.libtorrent4j.TorrentFlags
 import org.libtorrent4j.TorrentHandle
+import org.libtorrent4j.TorrentInfo
 import org.libtorrent4j.alerts.AddTorrentAlert
 import org.libtorrent4j.alerts.Alert
 import org.libtorrent4j.alerts.AlertType
 import org.libtorrent4j.alerts.MetadataReceivedAlert
 import org.libtorrent4j.alerts.TorrentErrorAlert
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URI
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -80,6 +86,8 @@ class TorrentStreamEngine(
     error = null
     emit()
 
+    val metadataUrls = (options["metadataUrls"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+    val torrentInfo = fetchTorrentInfo(metadataUrls)
     val nextSession = try {
       SessionManager(false)
     } catch (throwable: Throwable) {
@@ -95,6 +103,7 @@ class TorrentStreamEngine(
             AlertType.ADD_TORRENT -> {
               val nextHandle = (alert as AddTorrentAlert).handle().also { it.resume() }
               handle = nextHandle
+              reinforcePeerDiscovery(nextHandle)
               if (nextHandle.torrentFile() != null) configureSelectedFile(nextHandle, runGeneration)
             }
             AlertType.METADATA_RECEIVED -> configureSelectedFile((alert as MetadataReceivedAlert).handle(), runGeneration)
@@ -107,12 +116,27 @@ class TorrentStreamEngine(
       }
     })
     try {
-      nextSession.start()
+      val settings = SettingsPack.defaultSettings().apply {
+        setEnableDht(true)
+        setEnableLsd(true)
+        setDhtBootstrapNodes(DHT_BOOTSTRAP_NODES)
+        activeDownloads(1)
+        activeSeeds(0)
+        activeDhtLimit(if (batterySaver) 40 else 80)
+        activeTrackerLimit(if (batterySaver) 24 else 48)
+        connectionsLimit(if (batterySaver) 64 else 112)
+        maxPeerlistSize(if (batterySaver) 160 else 320)
+        alertQueueSize(2_000)
+        tickInterval(if (batterySaver) 1_000 else 500)
+      }
+      nextSession.start(SessionParams(settings))
+      nextSession.startDht()
       nextSession.maxActiveDownloads(1)
       nextSession.maxActiveSeeds(0)
       nextSession.maxConnections(if (batterySaver) 48 else 80)
       nextSession.maxPeers(if (batterySaver) 40 else 70)
-      nextSession.download(magnet, sessionDir, TorrentFlags.SEQUENTIAL_DOWNLOAD)
+      if (torrentInfo != null) nextSession.download(torrentInfo, sessionDir)
+      else nextSession.download(magnet, sessionDir, TorrentFlags.SEQUENTIAL_DOWNLOAD)
     } catch (throwable: Throwable) {
       runCatching { nextSession.stop() }
       if (isCurrentSession(runGeneration, nextSession)) session = null
@@ -174,7 +198,9 @@ class TorrentStreamEngine(
     val priorities = Priority.array(Priority.IGNORE, info.numFiles())
     priorities[selectedFileIndex] = Priority.TOP_PRIORITY
     torrentHandle.prioritizeFiles(priorities)
+    runCatching { torrentHandle.setSequentialRange(selectedFirstPiece, selectedLastPiece) }
     prioritizePlaybackEdges(torrentHandle, files.fileName(selectedFileIndex))
+    reinforcePeerDiscovery(torrentHandle)
     torrentHandle.resume()
     handle = torrentHandle
     state = "buffering"
@@ -209,7 +235,10 @@ class TorrentStreamEngine(
       state = "ready"
       message = "Buffered and ready to play."
     }
-    if (state == "metadata" && now - startedAtMs >= METADATA_TIMEOUT_MS) {
+    val peers = torrentStatus?.numPeers() ?: 0
+    if ((state == "metadata" || state == "buffering") && peers <= 0 && now - startedAtMs >= NO_PEER_TIMEOUT_MS) {
+      transitionToError("No active peers responded for this release. StreamNyaa will try a healthier source.")
+    } else if (state == "metadata" && now - startedAtMs >= METADATA_TIMEOUT_MS) {
       transitionToError("This source did not return video metadata. Trying another source is recommended.")
     } else if (state == "buffering" && now - lastBufferAdvanceAtMs >= BUFFER_STALL_TIMEOUT_MS) {
       transitionToError("This source stopped sending video data. StreamNyaa will try another source.")
@@ -221,7 +250,7 @@ class TorrentStreamEngine(
       "message" to message,
       "progress" to ((torrentStatus?.progress() ?: 0f) * 100).roundToInt(),
       "bufferedPercent" to buffered,
-      "peers" to (torrentStatus?.numPeers() ?: 0),
+      "peers" to peers,
       "downloadRate" to (torrentStatus?.downloadPayloadRate() ?: 0),
       "waitSeconds" to if (startedAtMs > 0L) ((now - startedAtMs) / 1000L).coerceAtLeast(0L) else 0L,
       "fileName" to selectedFile?.name,
@@ -397,6 +426,60 @@ class TorrentStreamEngine(
     }
   }
 
+  private fun reinforcePeerDiscovery(torrentHandle: TorrentHandle) {
+    val existing = runCatching { torrentHandle.trackers().map { it.url() }.toSet() }.getOrDefault(emptySet())
+    FALLBACK_TRACKERS.filterNot(existing::contains).forEach { tracker ->
+      runCatching { torrentHandle.addTracker(AnnounceEntry(tracker)) }
+    }
+    runCatching { torrentHandle.forceReannounce() }
+    runCatching { torrentHandle.forceDHTAnnounce() }
+    runCatching { torrentHandle.forceLSDAnnounce() }
+  }
+
+  private fun fetchTorrentInfo(urls: List<String>): TorrentInfo? {
+    for (value in urls.distinct().take(2)) {
+      val uri = runCatching { URI(value) }.getOrNull() ?: continue
+      if (uri.scheme != "https" || !isAllowedMetadataHost(uri.host)) continue
+      val bytes = runCatching {
+        val connection = uri.toURL().openConnection() as HttpURLConnection
+        try {
+          connection.instanceFollowRedirects = true
+          connection.connectTimeout = METADATA_HTTP_TIMEOUT_MS
+          connection.readTimeout = METADATA_HTTP_TIMEOUT_MS
+          connection.setRequestProperty("Accept", "application/x-bittorrent, application/octet-stream;q=0.9, */*;q=0.5")
+          connection.setRequestProperty("User-Agent", "StreamNyaa Android/1.0")
+          connection.connect()
+          if (connection.responseCode !in 200..299) error("HTTP ${connection.responseCode}")
+          if (connection.url.protocol != "https" || !isAllowedMetadataHost(connection.url.host)) error("Unsafe metadata redirect")
+          val declared = connection.contentLengthLong
+          if (declared > MAX_TORRENT_METADATA_BYTES) error("Torrent metadata is too large")
+          connection.inputStream.use { input ->
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+              val count = input.read(buffer)
+              if (count < 0) break
+              output.write(buffer, 0, count)
+              if (output.size() > MAX_TORRENT_METADATA_BYTES) error("Torrent metadata is too large")
+            }
+            output.toByteArray()
+          }
+        } finally {
+          connection.disconnect()
+        }
+      }.getOrNull() ?: continue
+      if (bytes.isEmpty() || bytes.first() != 'd'.code.toByte()) continue
+      val info = runCatching { TorrentInfo(bytes) }.getOrNull()
+      if (info != null && info.isValid) return info
+    }
+    return null
+  }
+
+  private fun isAllowedMetadataHost(host: String?): Boolean {
+    val normalized = host?.lowercase() ?: return false
+    return normalized == "www.streamnyaa.xyz" || normalized == "streamnyaa.xyz" || normalized == "nyaa.si" || normalized.endsWith(".nyaa.si")
+  }
+
   private fun safeMessage(throwable: Throwable): String =
     throwable.message?.takeIf { it.isNotBlank() }?.take(180) ?: throwable.javaClass.simpleName
 
@@ -453,7 +536,18 @@ class TorrentStreamEngine(
     private const val TAIL_DEADLINE_PIECES = 6
     private const val MAX_READABLE_PIECE_SCAN = 64
     private const val METADATA_TIMEOUT_MS = 30_000L
-    private const val BUFFER_STALL_TIMEOUT_MS = 35_000L
-    private const val PLAYBACK_READY_TIMEOUT_MS = 60_000L
+    private const val NO_PEER_TIMEOUT_MS = 20_000L
+    private const val BUFFER_STALL_TIMEOUT_MS = 28_000L
+    private const val PLAYBACK_READY_TIMEOUT_MS = 48_000L
+    private const val METADATA_HTTP_TIMEOUT_MS = 8_000
+    private const val MAX_TORRENT_METADATA_BYTES = 5 * 1024 * 1024
+    private const val DHT_BOOTSTRAP_NODES = "dht.libtorrent.org:25401,router.bittorrent.com:6881,router.utorrent.com:6881,dht.transmissionbt.com:6881"
+    private val FALLBACK_TRACKERS = listOf(
+      "http://nyaa.tracker.wf:7777/announce",
+      "udp://open.stealth.si:80/announce",
+      "udp://tracker.opentrackr.org:1337/announce",
+      "udp://exodus.desync.com:6969/announce",
+      "udp://tracker.torrent.eu.org:451/announce",
+    )
   }
 }

@@ -8,7 +8,7 @@ import type { RootStackParamList } from '../types';
 import { tokens } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
-const logo = require('../../../desktop/src-tauri/icons/icon.png');
+const logo = require('../../assets/brand/streamnyaa-logo.png');
 
 export function SignInScreen({ navigation }: Props) {
   const theme = useTheme();

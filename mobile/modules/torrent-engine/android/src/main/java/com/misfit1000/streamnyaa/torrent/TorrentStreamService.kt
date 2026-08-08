@@ -71,6 +71,7 @@ class TorrentStreamService : Service() {
             "wifiOnly" to request.getBoolean("wifiOnly"),
             "maxCacheMiB" to request.getLong("maxCacheMiB"),
             "batterySaver" to request.getBoolean("batterySaver"),
+            "metadataUrls" to (request.getStringArrayList("metadataUrls") ?: arrayListOf<String>()),
           )
           engine.start(checkNotNull(request.getString("magnet")), request.getString("preferredFile"), options)
           response.putBundle(TorrentServiceProtocol.RESULT, TorrentServiceProtocol.mapToBundle(engine.status()))

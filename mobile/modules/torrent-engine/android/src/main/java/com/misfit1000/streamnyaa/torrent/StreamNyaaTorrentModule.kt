@@ -58,6 +58,7 @@ class StreamNyaaTorrentModule : Module() {
         putBoolean("wifiOnly", options["wifiOnly"] as? Boolean ?: false)
         putLong("maxCacheMiB", (options["maxCacheMiB"] as? Number)?.toLong() ?: 2048L)
         putBoolean("batterySaver", options["batterySaver"] as? Boolean ?: true)
+        putStringArrayList("metadataUrls", ArrayList((options["metadataUrls"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()))
       }, START_TIMEOUT_SECONDS))
     }
 
