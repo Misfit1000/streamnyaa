@@ -41,7 +41,7 @@ export function Screen({ title, subtitle, action, scroll = true, safeTop = true,
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { flexGrow: 1 },
-  content: { flex: 1, paddingHorizontal: tokens.spacing.lg, paddingBottom: tokens.spacing.xxl, gap: tokens.spacing.xl },
+  content: { flex: 1, paddingHorizontal: tokens.spacing.lg, paddingBottom: tokens.spacing.xxl, gap: tokens.spacing.lg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.md, paddingTop: tokens.spacing.sm, minHeight: 60 },
   headerCopy: { flex: 1, gap: tokens.spacing.xs },
   title: { fontWeight: '700', letterSpacing: -0.5 },

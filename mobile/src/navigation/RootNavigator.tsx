@@ -47,11 +47,10 @@ function MainTabs() {
       tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
       tabBarHideOnKeyboard: true,
       sceneStyle: { backgroundColor: theme.colors.background },
-      tabBarStyle: { backgroundColor: '#08080A', borderTopColor: theme.colors.outlineVariant, height: 72, paddingBottom: 7, paddingTop: 5 },
-      tabBarItemStyle: { minHeight: 56, marginHorizontal: 3, borderRadius: 12 },
-      tabBarActiveBackgroundColor: theme.colors.surfaceVariant,
+      tabBarStyle: { backgroundColor: '#08080A', borderTopColor: theme.colors.outlineVariant, height: 64, paddingBottom: 5, paddingTop: 3 },
+      tabBarItemStyle: { minHeight: 52, marginHorizontal: 2 },
       tabBarLabelStyle: { fontWeight: '600', fontSize: 12 },
-      tabBarIcon: ({ color, size, focused }) => <MaterialCommunityIcons name={tabIcons[route.name][focused ? 0 : 1] as any} size={focused ? size + 1 : size} color={color} />,
+      tabBarIcon: ({ color, size, focused }) => <MaterialCommunityIcons name={tabIcons[route.name][focused ? 0 : 1] as any} size={focused ? size + 1 : size - 1} color={color} />,
     })}>
       <Tabs.Screen name="Home" getComponent={screen.home} />
       <Tabs.Screen name="Explore" getComponent={screen.explore} options={{ title: 'Search' }} />

@@ -102,7 +102,7 @@ export function HomeScreen({ navigation }: Props) {
   if (query.isError || !query.data) return <Screen><StateView title="Home feed unavailable" message={query.error?.message} onRetry={() => void query.refetch()} /></Screen>;
 
   const contentWidth = width - tokens.spacing.lg * 2;
-  const heroHeight = Math.max(310, Math.min(390, height * 0.46));
+  const heroHeight = Math.max(238, Math.min(292, height * 0.36));
   return (
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: theme.colors.background }]}>
       <LinearGradient colors={['rgba(92,3,23,0.18)', theme.colors.background]} locations={[0, 0.22]} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -144,7 +144,7 @@ export function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   list: { paddingHorizontal: tokens.spacing.lg },
-  headerContent: { gap: tokens.spacing.xl, paddingBottom: tokens.spacing.md },
+  headerContent: { gap: tokens.spacing.lg, paddingBottom: tokens.spacing.sm },
   sectionHeading: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.md },
   heading: { fontWeight: '600', letterSpacing: -0.25 },
   divider: { height: StyleSheet.hairlineWidth },

@@ -114,6 +114,8 @@ export type TorrentStreamStatus = {
   progress: number;
   bufferedPercent: number;
   peers: number;
+  trackerCount?: number;
+  connectionStage?: 'idle' | 'engine-start' | 'peer-discovery' | 'buffering' | 'ready' | 'paused' | 'failed';
   downloadRate: number;
   waitSeconds?: number;
   fileName?: string;
@@ -125,7 +127,6 @@ export type TorrentStartOptions = {
   wifiOnly: boolean;
   maxCacheMiB: number;
   batterySaver: boolean;
-  metadataUrls?: string[];
 };
 
 export type TorrentCacheStats = {

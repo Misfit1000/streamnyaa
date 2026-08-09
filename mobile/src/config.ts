@@ -9,7 +9,8 @@ export const KITSU_URL = 'https://kitsu.io/api/edge';
 export const APP_SCHEME = 'streamnyaa';
 export const SOURCE_CATEGORY = '1_2';
 export const SOURCE_TRACKERS = [
-  'http://nyaa.tracker.wf:7777/announce',
+  'https://tracker.opentrackr.org:443/announce',
+  'https://tracker.opentrackr.org/announce',
   'udp://open.stealth.si:80/announce',
   'udp://tracker.opentrackr.org:1337/announce',
   'udp://exodus.desync.com:6969/announce',

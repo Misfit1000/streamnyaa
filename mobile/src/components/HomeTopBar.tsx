@@ -3,8 +3,7 @@ import { Image } from 'expo-image';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Text, useTheme } from 'react-native-paper';
 import { tokens } from '../theme';
-
-const logo = require('../../assets/brand/streamnyaa-logo.png');
+import { BrandMark } from './BrandMark';
 
 export type HomeFilter = 'for-you' | 'trending' | 'latest' | 'dubbed';
 
@@ -33,8 +32,8 @@ export function HomeTopBar({
     <View style={styles.root}>
       <View style={styles.bar}>
         <View style={styles.brand} accessibilityRole="header" accessibilityLabel="StreamNyaa home">
-          <Image source={logo} style={styles.logo} contentFit="contain" accessibilityIgnoresInvertColors />
-          <Text variant="headlineSmall" style={styles.wordmark}>StreamNyaa</Text>
+          <BrandMark size={32} />
+          <Text variant="titleLarge" style={styles.wordmark}>StreamNyaa</Text>
         </View>
         <View style={styles.actions}>
           <Pressable
@@ -86,15 +85,14 @@ export function HomeTopBar({
 }
 
 const styles = StyleSheet.create({
-  root: { gap: tokens.spacing.md },
-  bar: { minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.md },
+  root: { gap: tokens.spacing.sm },
+  bar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.md },
   brand: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
-  logo: { width: 38, height: 38 },
   wordmark: { fontWeight: '700', letterSpacing: -0.5 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  iconButton: { width: 48, height: 48, borderRadius: tokens.radius.pill, alignItems: 'center', justifyContent: 'center' },
-  profileButton: { width: 42, height: 42, borderRadius: tokens.radius.pill, borderWidth: 1.5, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  iconButton: { width: 44, height: 44, borderRadius: tokens.radius.pill, alignItems: 'center', justifyContent: 'center' },
+  profileButton: { width: 38, height: 38, borderRadius: tokens.radius.pill, borderWidth: 1.5, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   filters: { gap: tokens.spacing.sm, paddingRight: tokens.spacing.lg },
-  filter: { minHeight: 48, paddingHorizontal: tokens.spacing.lg, borderRadius: tokens.radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  filter: { minHeight: 40, paddingHorizontal: tokens.spacing.md, borderRadius: tokens.radius.pill, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   selectedFilterText: { fontWeight: '600' },
 });

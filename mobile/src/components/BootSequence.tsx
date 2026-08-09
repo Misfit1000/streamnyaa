@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { tokens } from '../theme';
-
-const logo = require('../../assets/brand/streamnyaa-logo.png');
+import { BrandMark } from './BrandMark';
 const MINIMUM_BOOT_MS = 850;
 
 export function BootSequence({ ready, onComplete }: { ready: boolean; onComplete: () => void }) {
@@ -51,8 +50,8 @@ export function BootSequence({ ready, onComplete }: { ready: boolean; onComplete
       style={[styles.root, { backgroundColor: theme.colors.background, opacity }]}
     >
       <View style={styles.center}>
-        <Animated.View style={[styles.markSurface, { backgroundColor: theme.colors.surfaceVariant, opacity: markOpacity, transform: [{ scale: markScale }] }]}>
-          <Animated.Image source={logo} resizeMode="contain" style={styles.logo} />
+        <Animated.View style={[styles.markSurface, { opacity: markOpacity, transform: [{ scale: markScale }] }]}>
+          <BrandMark size={82} />
         </Animated.View>
         <Animated.View style={[styles.copy, { transform: [{ translateY: copyOffset }] }]}>
           <Text variant="headlineMedium" style={styles.wordmark}>StreamNyaa</Text>
@@ -70,13 +69,11 @@ const styles = StyleSheet.create({
   root: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 100, alignItems: 'center', justifyContent: 'center', paddingHorizontal: tokens.spacing.xl },
   center: { alignItems: 'center', gap: tokens.spacing.xl },
   markSurface: {
-    width: Platform.select({ android: 112, default: 104 }),
-    height: Platform.select({ android: 112, default: 104 }),
-    borderRadius: tokens.radius.card,
+    width: Platform.select({ android: 96, default: 92 }),
+    height: Platform.select({ android: 96, default: 92 }),
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logo: { width: 78, height: 78 },
   copy: { alignItems: 'center', gap: tokens.spacing.xs },
   wordmark: { fontWeight: '700' },
   track: { position: 'absolute', bottom: 48, width: 104, height: 3, borderRadius: tokens.radius.pill, overflow: 'hidden' },

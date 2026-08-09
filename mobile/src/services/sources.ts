@@ -22,15 +22,6 @@ function magnetFor(item: any) {
   return magnet;
 }
 
-function metadataUrlsFor(item: any) {
-  const direct = String(item.link || '').trim();
-  const match = direct.match(/^https:\/\/(?:www\.)?nyaa\.si\/download\/(\d+)\.torrent(?:\?.*)?$/i);
-  const urls: string[] = [];
-  if (match?.[1]) urls.push(`${API_ORIGIN}/api/torrent?id=${encodeURIComponent(match[1])}`);
-  if (/^https:\/\//i.test(direct)) urls.push(direct);
-  return [...new Set(urls)];
-}
-
 export async function searchSources(query: string, options: SourceSearchOptions = {}) {
   const params = new URLSearchParams({
     q: query,
@@ -65,7 +56,6 @@ export async function searchSources(query: string, options: SourceSearchOptions 
     })),
     matchScore: Number(item.matchScore || 0),
     magnet: magnetFor(item),
-    metadataUrls: metadataUrlsFor(item),
   })).sort((a: TorrentSource, b: TorrentSource) =>
     (b.matchScore || 0) - (a.matchScore || 0)
       || (b.sourceScore || 0) - (a.sourceScore || 0)

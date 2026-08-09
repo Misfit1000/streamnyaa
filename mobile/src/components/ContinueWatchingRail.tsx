@@ -19,7 +19,7 @@ export const ContinueWatchingRail = memo(function ContinueWatchingRail({
 }) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
-  const cardWidth = Math.min(260, Math.max(216, width * 0.62));
+  const cardWidth = Math.min(224, Math.max(168, width * 0.49));
   const renderItem = useCallback(({ item }: { item: PlaybackHistoryItem }) => (
     <Pressable
       onPress={() => onPress(item)}
@@ -51,8 +51,8 @@ export const ContinueWatchingRail = memo(function ContinueWatchingRail({
 });
 
 const styles = StyleSheet.create({
-  root: { gap: tokens.spacing.md },
-  headingRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.md },
+  root: { gap: tokens.spacing.sm },
+  headingRow: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.md },
   heading: { fontWeight: '600', letterSpacing: -0.25 },
   seeAll: { minWidth: 56, minHeight: 48, alignItems: 'flex-end', justifyContent: 'center' },
   card: { gap: 5 },
@@ -61,5 +61,5 @@ const styles = StyleSheet.create({
   badgeText: { color: '#FFFFFF', fontWeight: '600' },
   progress: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 4 },
   title: { fontWeight: '600' },
-  separator: { width: tokens.spacing.md },
+  separator: { width: tokens.spacing.sm },
 });

@@ -23,7 +23,7 @@ type Props = {
 export function WatchHero({ anime, episode, bookmarked, liked, sourceLoading, canPlay, onBack, onPlay, onBookmark, onLike, onTrailer }: Props) {
   const theme = useTheme();
   const { height } = useWindowDimensions();
-  const heroHeight = Math.max(300, Math.min(380, height * 0.43));
+  const heroHeight = Math.max(248, Math.min(310, height * 0.36));
   const episodeLabel = anime.episodes ? `${anime.episodes} eps` : anime.status?.replaceAll('_', ' ');
   return (
     <View style={[styles.root, { height: heroHeight }]}>
@@ -40,7 +40,7 @@ export function WatchHero({ anime, episode, bookmarked, liked, sourceLoading, ca
       </View>
 
       <View style={styles.copy}>
-        <Text variant="headlineMedium" numberOfLines={2} style={styles.title}>{anime.title}</Text>
+        <Text variant="headlineSmall" numberOfLines={2} style={styles.title}>{anime.title}</Text>
         <View style={styles.metadata}>
           {anime.score ? <><MaterialCommunityIcons name="star" size={16} color={tokens.color.warning} /><Text variant="labelLarge" style={styles.metaText}>{anime.score.toFixed(1)}</Text></> : null}
           {[anime.year, anime.format?.replaceAll('_', ' '), episodeLabel].filter(Boolean).map((value) => <Text key={String(value)} variant="labelLarge" style={styles.metaText}>· {value}</Text>)}
@@ -58,8 +58,8 @@ const styles = StyleSheet.create({
   root: { marginHorizontal: -tokens.spacing.lg, overflow: 'hidden', justifyContent: 'space-between', backgroundColor: tokens.color.surface },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: tokens.spacing.sm, paddingTop: tokens.spacing.sm },
   topActions: { flexDirection: 'row' },
-  copy: { paddingHorizontal: tokens.spacing.lg, paddingBottom: tokens.spacing.lg, gap: tokens.spacing.sm, maxWidth: 580 },
-  title: { color: '#FFFFFF', fontWeight: '700', letterSpacing: -0.5, lineHeight: 33 },
+  copy: { paddingHorizontal: tokens.spacing.lg, paddingBottom: tokens.spacing.md, gap: 6, maxWidth: 580 },
+  title: { color: '#FFFFFF', fontWeight: '700', letterSpacing: -0.35, lineHeight: 27 },
   metadata: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   metaText: { color: '#E9E1E4' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm, marginTop: tokens.spacing.xs },

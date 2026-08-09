@@ -92,11 +92,23 @@ test('stalled torrent sources time out and return to the in-app recovery flow', 
   assert.match(engine, /BUFFER_STALL_TIMEOUT_MS/);
   assert.match(engine, /PLAYBACK_READY_TIMEOUT_MS/);
   assert.match(engine, /NO_PEER_TIMEOUT_MS/);
-  assert.match(engine, /fetchTorrentInfo/, 'torrent-file metadata should be tried before waiting on magnet metadata');
+  assert.doesNotMatch(engine, /fetchTorrentInfo/, 'network metadata must never block peer discovery');
+  assert.match(engine, /download\(magnet/, 'magnet discovery must start immediately');
   assert.match(engine, /forceDHTAnnounce/, 'peer discovery should explicitly announce over DHT');
-  assert.match(watch, /automaticRetries\.current >= 3/);
+  assert.match(engine, /https:\/\/tracker\.opentrackr\.org/, 'peer discovery needs an HTTPS tracker for networks that block UDP');
+  assert.match(watch, /automaticRetries\.current >= 1/, 'automatic fallback must be bounded to one backup');
   assert.match(watch, /<VideoView[\s\S]*nativeControls/, 'playback must remain embedded in the Android screen');
   assert.match(watch, />Advanced</, 'manual releases and diagnostics must remain available without cluttering default playback');
+});
+
+test('Android branding uses the exact logo in-app and padded launcher assets', () => {
+  const config = readFileSync(path.join(repoRoot, 'mobile/app.json'), 'utf8');
+  const brand = readFileSync(path.join(repoRoot, 'mobile/src/components/BrandMark.tsx'), 'utf8');
+  const navigator = readFileSync(path.join(repoRoot, 'mobile/src/navigation/RootNavigator.tsx'), 'utf8');
+  assert.match(config, /streamnyaa-app-icon\.png/);
+  assert.match(config, /streamnyaa-adaptive-foreground\.png/);
+  assert.match(brand, /streamnyaa-logo\.png/);
+  assert.doesNotMatch(navigator, /tabBarActiveBackgroundColor/, 'active tabs must not create an oversized home tile');
 });
 
 test('mobile authentication returns to the native app instead of rendering the website', () => {

@@ -9,7 +9,7 @@ import { tokens } from '../theme';
 export const TrendingAnimeRow = memo(function TrendingAnimeRow({ anime, onPress }: { anime: Anime; onPress: () => void }) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
-  const artworkWidth = width < 360 ? 116 : 136;
+  const artworkWidth = width < 360 ? 108 : 124;
   return (
     <Pressable
       onPress={onPress}
@@ -36,9 +36,9 @@ export const TrendingAnimeRow = memo(function TrendingAnimeRow({ anime, onPress 
 });
 
 const styles = StyleSheet.create({
-  root: { minHeight: 104, flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, paddingVertical: tokens.spacing.sm },
+  root: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, paddingVertical: 7 },
   artwork: { aspectRatio: 16 / 9, borderRadius: tokens.radius.card, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth },
-  play: { position: 'absolute', left: 8, bottom: 8, width: 32, height: 32, borderRadius: tokens.radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(3,3,4,0.78)' },
+  play: { position: 'absolute', left: 7, bottom: 7, width: 28, height: 28, borderRadius: tokens.radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(3,3,4,0.78)' },
   copy: { flex: 1, gap: 5 },
   title: { fontWeight: '600', lineHeight: 21 },
   metadata: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: tokens.spacing.sm },

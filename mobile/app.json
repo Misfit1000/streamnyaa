@@ -2,17 +2,19 @@
   "expo": {
     "name": "StreamNyaa",
     "slug": "streamnyaa-android",
-    "version": "0.8.0",
-    "icon": "./assets/brand/streamnyaa-logo.png",
+    "version": "0.9.0",
+    "icon": "./assets/brand/streamnyaa-app-icon.png",
     "orientation": "default",
     "userInterfaceStyle": "automatic",
     "scheme": "streamnyaa",
-    "platforms": ["android"],
+    "platforms": [
+      "android"
+    ],
     "android": {
       "package": "com.misfit1000.streamnyaa",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/brand/streamnyaa-logo.png",
+        "foregroundImage": "./assets/brand/streamnyaa-adaptive-foreground.png",
         "backgroundColor": "#030304"
       },
       "permissions": [
@@ -32,8 +34,15 @@
         {
           "action": "VIEW",
           "autoVerify": false,
-          "data": [{ "scheme": "streamnyaa" }],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": [
+            {
+              "scheme": "streamnyaa"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -42,19 +51,37 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#030304",
-          "image": "./assets/brand/streamnyaa-logo.png",
-          "imageWidth": 104,
+          "image": "./assets/brand/streamnyaa-adaptive-foreground.png",
+          "imageWidth": 168,
           "dark": {
             "backgroundColor": "#030304",
-            "image": "./assets/brand/streamnyaa-logo.png"
+            "image": "./assets/brand/streamnyaa-adaptive-foreground.png"
           }
         }
       ],
-      ["expo-navigation-bar", { "hidden": true, "style": "light", "enforceContrast": false }],
+      [
+        "expo-navigation-bar",
+        {
+          "hidden": true,
+          "style": "light",
+          "enforceContrast": false
+        }
+      ],
       "expo-secure-store",
-      ["expo-notifications", { "defaultChannel": "airing-reminders" }],
-      ["expo-video", { "supportsPictureInPicture": true }],
-      "./modules/torrent-engine/app.plugin.js"
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "airing-reminders"
+        }
+      ],
+      [
+        "expo-video",
+        {
+          "supportsPictureInPicture": true
+        }
+      ],
+      "./modules/torrent-engine/app.plugin.js",
+      "expo-image"
     ],
     "extra": {
       "apiOrigin": "https://www.streamnyaa.xyz"

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AppState, Image, Modal, Platform, StyleSheet, View } from 'react-native';
+import { AppState, Modal, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Button, Text, useTheme } from 'react-native-paper';
@@ -10,8 +10,7 @@ import {
   type NotificationPermissionState,
 } from '../services/permissions';
 import { tokens } from '../theme';
-
-const logo = require('../../assets/brand/streamnyaa-logo.png');
+import { BrandMark } from './BrandMark';
 
 export function PermissionOnboarding({ visible, onComplete }: { visible: boolean; onComplete: () => void }) {
   const theme = useTheme();
@@ -50,7 +49,7 @@ export function PermissionOnboarding({ visible, onComplete }: { visible: boolean
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.colors.background }]} accessibilityViewIsModal>
         <View style={styles.content}>
           <View style={styles.brand}>
-            <View style={[styles.logoSurface, { backgroundColor: theme.colors.surfaceVariant }]}><Image source={logo} resizeMode="contain" style={styles.logo} accessibilityIgnoresInvertColors /></View>
+            <BrandMark size={62} />
             <View style={styles.brandCopy}>
               <Text variant="headlineSmall" style={styles.title}>Before you start</Text>
               <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>StreamNyaa asks only for access needed by the feature you choose.</Text>
@@ -95,8 +94,6 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { flex: 1, paddingHorizontal: tokens.spacing.xl, paddingVertical: Platform.select({ android: tokens.spacing.xl, default: tokens.spacing.lg }), justifyContent: 'space-between', gap: tokens.spacing.xl },
   brand: { gap: tokens.spacing.xl, paddingTop: tokens.spacing.lg },
-  logoSurface: { width: 72, height: 72, borderRadius: tokens.radius.card, alignItems: 'center', justifyContent: 'center' },
-  logo: { width: 50, height: 50 },
   brandCopy: { gap: tokens.spacing.sm, maxWidth: 440 },
   title: { fontWeight: '700' },
   permissions: { gap: tokens.spacing.xl },

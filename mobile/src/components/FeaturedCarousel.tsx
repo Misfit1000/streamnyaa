@@ -71,7 +71,7 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch, onTogg
             <LinearGradient colors={['rgba(2,2,3,0.04)', 'rgba(2,2,3,0.34)', 'rgba(2,2,3,0.98)']} locations={[0.12, 0.48, 0.88]} style={StyleSheet.absoluteFill} />
             <LinearGradient colors={['rgba(105,4,28,0.08)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 0.8, y: 0 }} style={StyleSheet.absoluteFill} />
             <View style={styles.copy}>
-              <Text variant="headlineMedium" numberOfLines={2} style={styles.title}>{item.title}</Text>
+              <Text variant="headlineSmall" numberOfLines={2} style={styles.title}>{item.title}</Text>
               <View style={styles.metadata}>
                 {item.score ? <><MaterialCommunityIcons name="star" size={15} color={tokens.color.warning} /><Text variant="labelLarge" style={styles.metaText}>{item.score.toFixed(1)}</Text></> : null}
                 {[item.format?.replaceAll('_', ' '), item.year].filter(Boolean).map((value) => <Text key={String(value)} variant="labelLarge" style={styles.metaText}>· {value}</Text>)}
@@ -96,12 +96,12 @@ export function FeaturedCarousel({ items, width, height, onOpen, onWatch, onTogg
 const styles = StyleSheet.create({
   root: { overflow: 'hidden', borderRadius: tokens.radius.card, borderWidth: StyleSheet.hairlineWidth, backgroundColor: tokens.color.surface },
   slide: { justifyContent: 'flex-end' },
-  copy: { paddingHorizontal: tokens.spacing.lg, paddingBottom: 34, gap: tokens.spacing.sm, maxWidth: 430 },
-  title: { color: '#FFFFFF', fontWeight: '700', letterSpacing: -0.5, lineHeight: 33 },
+  copy: { paddingHorizontal: tokens.spacing.md, paddingBottom: 28, gap: 6, maxWidth: 430 },
+  title: { color: '#FFFFFF', fontWeight: '700', letterSpacing: -0.35, lineHeight: 27 },
   metadata: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   metaText: { color: '#E8E1E4' },
-  actions: { flexDirection: 'row', gap: tokens.spacing.sm, marginTop: tokens.spacing.xs },
-  buttonContent: { minHeight: 42 },
-  indicators: { position: 'absolute', left: tokens.spacing.lg, bottom: 14, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  actions: { flexDirection: 'row', gap: tokens.spacing.sm, marginTop: 2 },
+  buttonContent: { minHeight: 40 },
+  indicators: { position: 'absolute', left: tokens.spacing.md, bottom: 11, flexDirection: 'row', alignItems: 'center', gap: 6 },
   indicator: { height: 3, borderRadius: tokens.radius.pill },
 });

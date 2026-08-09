@@ -27,6 +27,13 @@ import { parseSizeBytes, selectBackupSource, sourceQualityBucket } from '../../.
 type Props = NativeStackScreenProps<RootStackParamList, 'Watch'>;
 const idleStatus: TorrentStreamStatus = { state: 'idle', message: 'Pick a release or play the best match.', progress: 0, bufferedPercent: 0, peers: 0, downloadRate: 0 };
 const sourceId = (source: TorrentSource) => source.infoHash || source.magnet;
+const connectionLabel = (status: TorrentStreamStatus) => {
+  if (status.connectionStage === 'peer-discovery') return 'Finding peers';
+  if (status.connectionStage === 'buffering') return 'Buffering video';
+  if (status.connectionStage === 'engine-start') return 'Starting engine';
+  if (status.connectionStage === 'ready') return 'Ready';
+  return status.state === 'metadata' ? 'Finding peers' : status.state === 'buffering' ? 'Buffering video' : 'Preparing';
+};
 
 export function WatchScreen({ route, navigation }: Props) {
   const theme = useTheme();
@@ -120,6 +127,7 @@ export function WatchScreen({ route, navigation }: Props) {
       return source.seeders > 0 && (!failure || Date.parse(failure.lastFailedAt) < recentCutoff);
     }) || visibleSources.find((source) => source.seeders > 0) || visibleSources[0];
   }, [sourceFailures, visibleSources]);
+  const alternateSource = useMemo(() => visibleSources.find((source) => source.seeders > 0 && sourceId(source) !== (selected ? sourceId(selected) : '')), [selected, visibleSources]);
   const player = useVideoPlayer(null, (instance) => { instance.timeUpdateEventInterval = resourcePolicy.batterySaver ? 8 : 5; });
 
   const persistProgress = useCallback(() => {
@@ -149,7 +157,7 @@ export function WatchScreen({ route, navigation }: Props) {
     const generation = ++playbackGeneration.current;
     if (!automatic) automaticRetries.current = 0;
     setSelected(source);
-    setStatus({ ...idleStatus, state: 'metadata', message: 'Connecting to peers and loading metadata...' });
+    setStatus({ ...idleStatus, state: 'metadata', connectionStage: 'engine-start', message: 'Starting the streaming engine...' });
     try {
       player.pause();
       await player.replaceAsync(null).catch(() => undefined);
@@ -159,7 +167,6 @@ export function WatchScreen({ route, navigation }: Props) {
         wifiOnly: resourcePolicy.wifiOnly,
         maxCacheMiB: resourcePolicy.maxCacheMiB,
         batterySaver: resourcePolicy.batterySaver,
-        metadataUrls: source.metadataUrls,
       });
       if (!mounted.current || generation !== playbackGeneration.current) {
         await TorrentEngine.stop(false).catch(() => undefined);
@@ -234,7 +241,7 @@ export function WatchScreen({ route, navigation }: Props) {
   }, [autoOpen, isStarting, pendingAutoNext, recommendedSource, route.params.autoPlay, selected, start]);
 
   useEffect(() => {
-    if (status.state !== 'error' || !visibleSources.length || automaticRetries.current >= 3) return;
+    if (status.state !== 'error' || !visibleSources.length || automaticRetries.current >= 1) return;
     if (selected) {
       const id = sourceId(selected);
       if (!failedSources.current.has(id)) recordSourceFailure(id, status.error || status.message || 'Playback failed.');
@@ -375,13 +382,13 @@ export function WatchScreen({ route, navigation }: Props) {
               <ImageBackground source={anime.banner || anime.cover} style={StyleSheet.absoluteFill} contentFit="cover" cachePolicy="memory-disk">
                 <LinearGradient colors={['rgba(3,3,4,0.52)', 'rgba(3,3,4,0.96)']} style={StyleSheet.absoluteFill} />
                 <View style={styles.playerState}>
-                  <StateView compact loading={preparingPlayback} title={status.state === 'error' ? 'Playback needs attention' : `Preparing episode ${episode}`} message={status.state === 'error' ? status.error || status.message : 'StreamNyaa is testing the fastest available playback path.'} />
+                  <StateView compact loading={preparingPlayback} title={status.state === 'error' ? 'Playback unavailable' : `Preparing episode ${episode}`} message={status.state === 'error' ? status.error || status.message : status.message} />
                 </View>
               </ImageBackground>
             )}
           </View>
-          {preparingPlayback ? <View style={styles.preparing}><View style={styles.preparingCopy}><Text variant="titleSmall" style={styles.semibold}>Preparing video</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>A healthier backup is selected automatically if this release stalls.</Text></View><ProgressBar indeterminate={status.bufferedPercent <= 0} progress={Math.max(status.bufferedPercent, status.progress) / 100} /></View> : null}
-          {status.state === 'error' ? <View style={[styles.playbackError, { borderColor: theme.colors.outlineVariant }]}><View style={styles.playbackErrorCopy}><Text variant="titleSmall" style={styles.semibold}>This release could not start</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{status.error || status.message}</Text></View><Button mode="contained-tonal" onPress={() => recommendedSource && void start(recommendedSource)}>Retry</Button><Button mode="text" onPress={() => setSourcePickerOpen(true)}>Advanced</Button></View> : null}
+          {preparingPlayback ? <View style={styles.preparing}><View style={styles.preparingHeading}><View style={styles.preparingCopy}><Text variant="titleSmall" style={styles.semibold}>{connectionLabel(status)}</Text><Text variant="bodySmall" numberOfLines={2} style={{ color: theme.colors.onSurfaceVariant }}>{status.message}</Text></View><Text variant="labelMedium" style={{ color: theme.colors.primary }}>{status.peers > 0 ? `${status.peers} peers` : `${status.waitSeconds || 0}s`}</Text></View><ProgressBar indeterminate={status.bufferedPercent <= 0} progress={Math.max(status.bufferedPercent, status.progress) / 100} /></View> : null}
+          {status.state === 'error' ? <View style={[styles.playbackError, { borderColor: theme.colors.outlineVariant }]}><View style={styles.playbackErrorCopy}><Text variant="titleSmall" style={styles.semibold}>This release could not start</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{status.error || status.message}</Text></View><Button mode="contained-tonal" onPress={() => { const retry = alternateSource || selected || recommendedSource; if (retry) void start(retry); }}>{alternateSource ? 'Try another' : 'Retry'}</Button><Button mode="text" onPress={() => setSourcePickerOpen(true)}>Playback options</Button></View> : null}
         </>
       ) : null}
 
@@ -435,7 +442,7 @@ export function WatchScreen({ route, navigation }: Props) {
                 {([['best', 'Best match'], ['seeders', 'Most seeders'], ['size', 'Smallest size']] as const).map(([value, label]) => <Menu.Item key={value} title={label} leadingIcon={sourceSort === value ? 'check' : undefined} onPress={() => { setSourceSort(value); setSortMenu(false); }} />)}
               </Menu>
             </View>
-            <View style={[styles.diagnostics, { borderColor: theme.colors.outlineVariant }]}><Text variant="labelLarge" style={styles.semibold}>Connection details</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{status.message}{status.waitSeconds ? ` · ${status.waitSeconds}s elapsed` : ''}</Text></View>
+            <View style={[styles.diagnostics, { borderColor: theme.colors.outlineVariant }]}><Text variant="labelLarge" style={styles.semibold}>Connection details</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{connectionLabel(status)} · {status.peers} peers · {status.trackerCount || 0} trackers{status.waitSeconds ? ` · ${status.waitSeconds}s` : ''}</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{status.message}</Text></View>
             <Button mode="outlined" icon="download-outline" onPress={() => { setSourcePickerOpen(false); navigation.navigate('Downloads', { anime, episode }); }}>Browse every release</Button>
             {sources.isLoading ? <StateView loading message="Checking compatible releases..." /> : sources.isError ? <StateView title="Release check failed" message={sources.error.message} onRetry={() => void sources.refetch()} /> : visibleSources.length ? visibleSources.slice(0, resourcePolicy.batterySaver ? 6 : 10).map((source) => <SourceRow key={`${source.infoHash}-${source.title}`} source={source} onPlay={() => { setSourcePickerOpen(false); void start(source); }} onShare={() => void Share.share({ message: source.magnet })} />) : <StateView title="No release found" message="Try Best quality or another audio mode." />}
           </ScrollView>
@@ -452,7 +459,8 @@ const styles = StyleSheet.create({
   playerToolbarCopy: { flex: 1 },
   playerState: { flex: 1, justifyContent: 'center' },
   preparing: { gap: tokens.spacing.sm, paddingVertical: tokens.spacing.md },
-  preparingCopy: { gap: 3 },
+  preparingHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: tokens.spacing.md },
+  preparingCopy: { flex: 1, gap: 3 },
   playbackError: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: tokens.spacing.sm, paddingVertical: tokens.spacing.md, borderBottomWidth: StyleSheet.hairlineWidth },
   playbackErrorCopy: { width: '100%', gap: 3 },
   sourceNotice: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: tokens.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: tokens.spacing.md },
