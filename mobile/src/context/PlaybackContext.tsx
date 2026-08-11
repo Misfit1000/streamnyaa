@@ -126,6 +126,8 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const pausedForBackgroundRef = useRef(false);
   const pausedForNetworkRef = useRef(false);
   const playbackDesiredRef = useRef(false);
+  const pausedSeekTargetRef = useRef<number | null>(null);
+  const pausedSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playerReadRetriesRef = useRef(0);
   const playerReadRecoveryRef = useRef(false);
   const requestedAudioTrackRef = useRef<AudioTrack | null | undefined>(undefined);
@@ -217,6 +219,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       return;
     }
     recoveryRef.current = true;
+    resumeSecondsRef.current = sessionRef.current.currentTime;
     setPhase('recovering');
     setStatus((previous) => ({ ...previous, message: `Trying another release after: ${reason}` }));
     const retryGeneration = generation.current;
@@ -236,6 +239,9 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     playbackDesiredRef.current = true;
     playerReadRetriesRef.current = 0;
     playerReadRecoveryRef.current = false;
+    pausedSeekTargetRef.current = null;
+    if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
+    pausedSeekTimerRef.current = null;
     requestedAudioTrackRef.current = undefined;
     requestedSubtitleTrackRef.current = undefined;
     setSource(candidate);
@@ -415,6 +421,9 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     generation.current += 1;
     playbackDesiredRef.current = false;
     playerReadRecoveryRef.current = false;
+    pausedSeekTargetRef.current = null;
+    if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
+    pausedSeekTimerRef.current = null;
     setPresentation('hidden');
     setPhase('idle');
     setPlaying(false);
@@ -447,7 +456,8 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
           player.pause();
         }
       } else if (next.state === 'buffering' || next.state === 'metadata' || next.state === 'ready') {
-        setPhase(next.state === 'ready' && player.playing ? (presentationRef.current === 'mini' ? 'minimized' : 'playing') : 'buffering');
+        const explicitlyPaused = !playbackDesiredRef.current && Boolean(loadedStreamRef.current);
+        setPhase(explicitlyPaused ? 'paused' : next.state === 'ready' && player.playing ? (presentationRef.current === 'mini' ? 'minimized' : 'playing') : 'buffering');
         if (pausedForNetworkRef.current && /restored|resumed/i.test(next.message)) {
           pausedForNetworkRef.current = false;
           player.play();
@@ -456,6 +466,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     });
     return () => {
       mountedRef.current = false;
+      if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
       persistProgress();
       subscription?.remove();
       void TorrentEngine.stop(false);
@@ -486,6 +497,13 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     setBufferedPosition(Math.max(0, nextBuffered));
     sessionRef.current.currentTime = nextTime;
     sessionRef.current.duration = nextDuration;
+    const pausedSeekTarget = pausedSeekTargetRef.current;
+    if (pausedSeekTarget !== null && nextBuffered >= pausedSeekTarget + 2) {
+      pausedSeekTargetRef.current = null;
+      if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
+      pausedSeekTimerRef.current = null;
+      if (!playbackDesiredRef.current) void TorrentEngine.pause();
+    }
     const saveEvery = resolvedProfile === 'constrained' || resourcePolicy.batterySaver ? 15_000 : 10_000;
     if (nextTime > 0 && Date.now() - lastProgressSaveRef.current >= saveEvery) persistProgress();
 
@@ -706,10 +724,45 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   }, [player, resourcePolicy.allowBackgroundPlayback]);
 
   const activeSkip = useMemo(() => skipIntervals.find((interval) => currentTime >= interval.startSeconds && currentTime < interval.endSeconds), [currentTime, skipIntervals]);
-  const play = useCallback(() => { playbackDesiredRef.current = true; player.play(); void TorrentEngine.resume(); }, [player]);
-  const pause = useCallback(() => { playbackDesiredRef.current = false; player.pause(); void TorrentEngine.pause(); }, [player]);
-  const seekBy = useCallback((seconds: number) => player.seekBy(seconds), [player]);
-  const seekTo = useCallback((seconds: number) => { player.currentTime = Math.max(0, Math.min(seconds, Number(player.duration || seconds))); }, [player]);
+  const play = useCallback(() => {
+    playbackDesiredRef.current = true;
+    pausedSeekTargetRef.current = null;
+    if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
+    pausedSeekTimerRef.current = null;
+    player.play();
+    void TorrentEngine.resume();
+  }, [player]);
+  const pause = useCallback(() => {
+    playbackDesiredRef.current = false;
+    pausedSeekTargetRef.current = null;
+    if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
+    pausedSeekTimerRef.current = null;
+    player.pause();
+    void TorrentEngine.pause();
+  }, [player]);
+  const schedulePausedSeek = useCallback((target: number, seek: () => void) => {
+    if (playbackDesiredRef.current || !loadedStreamRef.current) return false;
+    pausedSeekTargetRef.current = target;
+    if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
+    void TorrentEngine.resume().then(seek, seek);
+    pausedSeekTimerRef.current = setTimeout(() => {
+      pausedSeekTimerRef.current = null;
+      pausedSeekTargetRef.current = null;
+      if (!playbackDesiredRef.current) void TorrentEngine.pause();
+    }, 35_000);
+    setPhase('paused');
+    return true;
+  }, []);
+  const seekBy = useCallback((seconds: number) => {
+    const target = Math.max(0, Math.min(sessionRef.current.currentTime + seconds, Number(player.duration || sessionRef.current.currentTime + seconds)));
+    const seek = () => player.seekBy(seconds);
+    if (!schedulePausedSeek(target, seek)) seek();
+  }, [player, schedulePausedSeek]);
+  const seekTo = useCallback((seconds: number) => {
+    const target = Math.max(0, Math.min(seconds, Number(player.duration || seconds)));
+    const seek = () => { player.currentTime = target; };
+    if (!schedulePausedSeek(target, seek)) seek();
+  }, [player, schedulePausedSeek]);
   const selectSource = useCallback(async (candidate: TorrentSource) => {
     failedRef.current.delete(sourceId(candidate));
     attemptsRef.current = 0;

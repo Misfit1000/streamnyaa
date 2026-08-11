@@ -64,6 +64,10 @@ class TorrentStreamEngine(
   private var lastBufferAdvanceAtMs = 0L
   private var lastObservedContiguousBytes = 0L
   private var lastObservedDownloadedBytes = 0L
+  private var activeReadOffset = -1L
+  private var activeReadPiece = -1
+  private var lastObservedReadableBytes = 0L
+  private var rangeStartedAtMs = 0L
   private var lastPeerDiscoveryAtMs = 0L
   private var lastCacheMetadataWriteAtMs = 0L
   private var currentInfoHash = ""
@@ -308,15 +312,21 @@ class TorrentStreamEngine(
   fun status(): Map<String, Any?> {
     val torrentStatus = runCatching { handle?.status(true) }.getOrNull()
     val contiguousDownloaded = contiguousAvailableBytes()
+    val readableAtActiveOffset = if (activeReadOffset >= 0L) readableBytesFrom(activeReadOffset) else contiguousDownloaded
+    val requiredReadBuffer = minimumReadBufferBytes(activeReadOffset.coerceAtLeast(0L))
     val downloaded = (torrentStatus?.totalWantedDone() ?: contiguousDownloaded).coerceIn(0L, selectedFileSize.coerceAtLeast(contiguousDownloaded))
     val now = System.currentTimeMillis()
     if (contiguousDownloaded > lastObservedContiguousBytes) lastObservedContiguousBytes = contiguousDownloaded
-    if (downloaded > lastObservedDownloadedBytes) {
-      lastObservedDownloadedBytes = downloaded
+    if (readableAtActiveOffset > lastObservedReadableBytes) {
+      lastObservedReadableBytes = readableAtActiveOffset
       lastBufferAdvanceAtMs = now
     }
+    if (downloaded > lastObservedDownloadedBytes) {
+      lastObservedDownloadedBytes = downloaded
+      if (activeReadOffset < 0L) lastBufferAdvanceAtMs = now
+    }
     val buffered = if (selectedFileSize > 0) ((contiguousDownloaded.toDouble() / selectedFileSize) * 100).coerceIn(0.0, 100.0) else 0.0
-    if (state == "buffering" && contiguousDownloaded >= minimumBufferBytes()) {
+    if (state == "buffering" && readableAtActiveOffset >= requiredReadBuffer) {
       state = "ready"
       message = "Buffered and ready to play."
     }
@@ -336,10 +346,10 @@ class TorrentStreamEngine(
       transitionToError("No reachable peers were found for this release.")
     } else if (state == "metadata" && now - startedAtMs >= METADATA_TIMEOUT_MS) {
       transitionToError("This torrent did not return video metadata.")
-    } else if ((state == "buffering" || state == "ready") && downloaded < selectedFileSize && now - lastBufferAdvanceAtMs >= BUFFER_STALL_TIMEOUT_MS) {
-      transitionToError("This source stopped sending video data.")
-    } else if (state == "buffering" && now - startedAtMs >= PLAYBACK_READY_TIMEOUT_MS) {
-      transitionToError("This source is too slow to start reliably.")
+    } else if ((state == "buffering" || state == "ready") && readableAtActiveOffset < requiredReadBuffer && now - lastBufferAdvanceAtMs >= BUFFER_STALL_TIMEOUT_MS) {
+      transitionToError(if (activeReadOffset > 0L) "This source could not buffer the requested playback position." else "This source stopped sending video data.")
+    } else if (state == "buffering" && now - (rangeStartedAtMs.takeIf { it > 0L } ?: startedAtMs) >= PLAYBACK_READY_TIMEOUT_MS) {
+      transitionToError(if (activeReadOffset > 0L) "This source is too slow to seek reliably." else "This source is too slow to start reliably.")
     }
     return mapOf(
       "state" to state,
@@ -360,6 +370,9 @@ class TorrentStreamEngine(
       "downloadRate" to rate,
       "downloadedBytes" to downloaded,
       "totalBytes" to selectedFileSize,
+      "readOffsetBytes" to activeReadOffset.coerceAtLeast(0L),
+      "readableBytesAtOffset" to readableAtActiveOffset,
+      "rangeWaitSeconds" to if (rangeStartedAtMs > 0L) ((now - rangeStartedAtMs) / 1000L).coerceAtLeast(0L) else 0L,
       "etaSeconds" to if (rate > 0 && selectedFileSize > downloaded) (selectedFileSize - downloaded) / rate else 0L,
       "failureStage" to failureStage,
       "metadataFailure" to metadataFailure,
@@ -449,6 +462,9 @@ class TorrentStreamEngine(
   } else {
     minOf(selectedFileSize, maxOf(8L * 1024 * 1024, selectedFileSize / 200))
   }
+
+  private fun minimumReadBufferBytes(fileOffset: Long): Long =
+    minOf((selectedFileSize - fileOffset).coerceAtLeast(0L), minimumBufferBytes())
 
   @Synchronized
   fun pause() {
@@ -565,12 +581,23 @@ class TorrentStreamEngine(
     val info = current.torrentFile() ?: return
     if (selectedFileIndex < 0 || fileOffset !in 0L until selectedFileSize) return
     val piece = runCatching { info.mapFile(selectedFileIndex, fileOffset, 1).piece() }.getOrNull() ?: return
+    val now = System.currentTimeMillis()
+    val movedOutsideActiveWindow = activeReadPiece >= 0 && (piece < activeReadPiece || piece >= activeReadPiece + LEAD_DEADLINE_PIECES)
+    if (movedOutsideActiveWindow) runCatching { current.clearPieceDeadlines() }
+    activeReadOffset = fileOffset
+    activeReadPiece = piece
+    lastObservedReadableBytes = readableBytesFrom(fileOffset)
+    lastBufferAdvanceAtMs = now
+    rangeStartedAtMs = now
     val deadlineEnd = minOf(selectedLastPiece, piece + LEAD_DEADLINE_PIECES - 1)
     runCatching { current.setSequentialRange(piece, selectedLastPiece) }
     for (nextPiece in piece..deadlineEnd) {
       runCatching { current.setPieceDeadline(nextPiece, (nextPiece - piece) * 60) }
     }
-    reinforcePeerDiscovery(current)
+    state = if (lastObservedReadableBytes >= minimumReadBufferBytes(fileOffset)) "ready" else "buffering"
+    message = if (state == "ready") "Buffered and ready to play." else "Buffering the requested playback positionâ€¦"
+    val peers = runCatching { current.status(false).numPeers() }.getOrDefault(0)
+    if (peers <= 0) reinforcePeerDiscovery(current)
   }
 
   private fun reinforcePeerDiscovery(torrentHandle: TorrentHandle) {
@@ -696,6 +723,7 @@ class TorrentStreamEngine(
     selectedFirstPiece = -1; selectedLastPiece = -1; selectedFirstPieceOffset = 0L
     contiguousPieceCursor = -1; contiguousBytes = 0L
     startedAtMs = 0L; lastBufferAdvanceAtMs = 0L; lastObservedContiguousBytes = 0L; lastObservedDownloadedBytes = 0L
+    activeReadOffset = -1L; activeReadPiece = -1; lastObservedReadableBytes = 0L; rangeStartedAtMs = 0L
     lastPeerDiscoveryAtMs = 0L; lastCacheMetadataWriteAtMs = 0L
     pausedForNetwork = false
     sessionDir.setLastModified(System.currentTimeMillis())

@@ -128,6 +128,9 @@ export type TorrentStreamStatus = {
   downloadRate: number;
   downloadedBytes?: number;
   totalBytes?: number;
+  readOffsetBytes?: number;
+  readableBytesAtOffset?: number;
+  rangeWaitSeconds?: number;
   etaSeconds?: number;
   failureStage?: string;
   failureCode?: string;
