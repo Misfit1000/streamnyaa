@@ -78,8 +78,8 @@ export function RootNavigator() {
       <Root.Screen name="Manga" getComponent={screen.manga} options={({ route }) => ({ title: route.params.title || featureLabel('manga', 'Manga') })} />
       <Root.Screen name="Catalog" getComponent={screen.catalog} options={({ route }) => ({ title: route.params.title || featureLabel('catalog', 'Catalog') })} />
       <Root.Screen name="Watch" getComponent={screen.watch} options={{ headerShown: false, animation: 'fade_from_bottom', freezeOnBlur: false }} />
-      <Root.Screen name="Downloads" getComponent={screen.downloads} options={{ title: 'Release browser' }} />
-      <Root.Screen name="Sources" getComponent={screen.sources} options={{ title: 'Sources' }} />
+      <Root.Screen name="Downloads" getComponent={screen.downloads} options={({ route }) => ({ title: `${route.params.anime.title} releases` })} />
+      <Root.Screen name="Sources" getComponent={screen.sources} options={({ route }) => ({ title: route.params.anime?.title || 'Sources' })} />
       <Root.Screen name="History" getComponent={screen.history} options={{ title: 'History' }} />
       <Root.Screen name="Settings" getComponent={screen.settings} options={{ title: 'Settings' }} />
       <Root.Screen name="Compare" getComponent={screen.compare} options={{ title: 'Compare' }} />

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Button, Chip, Divider, Modal, Portal, Searchbar, SegmentedButtons, Text, useTheme } from 'react-native-paper';
+import { Button, Chip, Divider, Menu, Modal, Portal, Searchbar, SegmentedButtons, Text, useTheme } from 'react-native-paper';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -44,12 +44,21 @@ function matchesLocalFilters(item: Anime, minimumScore: number, episodeRange: Ep
   return true;
 }
 
+function readableSearch(value: string) {
+  try {
+    return decodeURIComponent(value.replace(/\+/g, ' ')).trim();
+  } catch {
+    return value.trim();
+  }
+}
+
 export function ExploreScreen({ navigation }: Props) {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const [text, setText] = useState('');
   const [queryText, setQueryText] = useState('');
   const [sort, setSort] = useState<SortMode>('TRENDING_DESC');
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [genre, setGenre] = useState('');
   const [mediaType, setMediaType] = useState<'ANIME' | 'MANGA'>('ANIME');
   const [format, setFormat] = useState('');
@@ -76,9 +85,12 @@ export function ExploreScreen({ navigation }: Props) {
   const items = useMemo(() => allItems.filter((item) => matchesLocalFilters(item, minimumScore, episodeRange)), [allItems, episodeRange, minimumScore]);
   const providerNames = useMemo(() => [...new Set((results.data?.pages || []).map((page) => page.provider))].join(' + '), [results.data?.pages]);
   const activeFilterCount = [genre, format, status, season, year, minimumScore, episodeRange].filter(Boolean).length;
+  const selectedSort = sortOptions.find((item) => item.value === sort) ?? { value: 'TRENDING_DESC' as const, label: 'Trending' };
+  const recentItems = useMemo(() => [...new Set(recentSearches.map(readableSearch).filter(Boolean))].slice(0, 4), [recentSearches]);
   const years = useMemo(() => Array.from({ length: 12 }, (_, index) => String(new Date().getFullYear() - index)), []);
+
   const submit = (value = text) => {
-    const next = value.trim();
+    const next = readableSearch(value);
     setText(next);
     setQueryText(next);
     if (next) addRecentSearch(next);
@@ -89,38 +101,43 @@ export function ExploreScreen({ navigation }: Props) {
 
   return (
     <>
-      <Screen
-        title="Search"
-        subtitle="Find anime and manga"
-        scroll={false}
-        action={<Button compact mode={activeFilterCount ? 'contained-tonal' : 'text'} icon="tune-variant" onPress={() => setFiltersOpen(true)}>Filters{activeFilterCount ? ` ${activeFilterCount}` : ''}</Button>}
-      >
-        <Searchbar value={text} onChangeText={setText} onSubmitEditing={() => submit()} onClearIconPress={() => { setText(''); setQueryText(''); }} placeholder={mediaType === 'ANIME' ? 'Search anime' : 'Search manga'} style={[styles.search, { backgroundColor: tokens.color.glass, borderColor: theme.colors.outlineVariant }]} inputStyle={styles.searchInput} />
-        <SegmentedButtons value={mediaType} onValueChange={(value) => { setMediaType(value as typeof mediaType); setFormat(''); setSeason(''); setEpisodeRange(''); }} buttons={[{ value: 'ANIME', label: 'Anime', icon: 'television-play' }, { value: 'MANGA', label: 'Manga', icon: 'book-open-page-variant-outline' }]} density="small" />
-        {!queryText && recentSearches.length ? <View style={styles.recent}><Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Recent</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>{recentSearches.map((item) => <Chip key={item} compact icon="history" onPress={() => submit(item)}>{item}</Chip>)}</ScrollView></View> : null}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>{sortOptions.map((item) => <Chip key={item.value} compact selected={sort === item.value} mode="outlined" onPress={() => setSort(item.value)}>{item.label}</Chip>)}</ScrollView>
-        {results.data ? <View style={styles.resultMeta}><Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>{items.length}{items.length !== allItems.length ? ` of ${allItems.length}` : ''} loaded · {providerNames} metadata</Text>{activeFilterCount ? <Button compact onPress={resetFilters}>Reset</Button> : null}</View> : null}
-        {results.isLoading ? <StateView loading message="Searching the catalog..." /> : results.isError ? <StateView title="Search unavailable" message={results.error.message} onRetry={() => void results.refetch()} /> : items.length ? (
-          <FlatList
-            data={items}
-            numColumns={columns}
-            key={`${mediaType}-${columns}`}
-            keyExtractor={(item) => `${item.metadataProvider}-${item.id}`}
-            renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => item.mediaType === 'MANGA' ? navigation.navigate('Manga', mangaRouteParams(item)) : navigation.navigate('Watch', watchRouteParams(item))} />}
-            columnWrapperStyle={styles.row}
-            contentContainerStyle={styles.results}
-            showsVerticalScrollIndicator={false}
-            initialNumToRender={columns * 2}
-            maxToRenderPerBatch={columns * 2}
-            updateCellsBatchingPeriod={40}
-            windowSize={5}
-            removeClippedSubviews
-            keyboardShouldPersistTaps="handled"
-            onEndReached={() => { if (results.hasNextPage && !results.isFetchingNextPage) void results.fetchNextPage(); }}
-            onEndReachedThreshold={0.65}
-            ListFooterComponent={results.isFetchingNextPage ? <ActivityIndicator color={theme.colors.primary} style={styles.footer} /> : results.hasNextPage ? <Button mode="text" onPress={() => void results.fetchNextPage()}>Load more</Button> : <Text variant="labelSmall" style={[styles.end, { color: theme.colors.onSurfaceVariant }]}>End of results</Text>}
-          />
-        ) : <StateView title={`No ${mediaType === 'ANIME' ? 'anime' : 'manga'} found`} message={allItems.length ? 'The loaded results do not match every filter. Reset filters or load another catalog.' : 'Try another title or clear a filter.'} onRetry={results.hasNextPage ? () => void results.fetchNextPage() : undefined} />}
+      <Screen scroll={false} contentContainerStyle={styles.screen}>
+        <FlatList
+          data={results.isLoading || results.isError ? [] : items}
+          numColumns={columns}
+          key={`${mediaType}-${columns}`}
+          keyExtractor={(item) => `${item.metadataProvider}-${item.id}`}
+          renderItem={({ item }) => <AnimeCard anime={item} width={cardWidth} onPress={() => item.mediaType === 'MANGA' ? navigation.navigate('Manga', mangaRouteParams(item)) : navigation.navigate('Watch', watchRouteParams(item))} />}
+          columnWrapperStyle={styles.row}
+          contentContainerStyle={styles.results}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={columns * 2}
+          maxToRenderPerBatch={columns * 2}
+          updateCellsBatchingPeriod={40}
+          windowSize={5}
+          removeClippedSubviews
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          onEndReached={() => { if (results.hasNextPage && !results.isFetchingNextPage) void results.fetchNextPage(); }}
+          onEndReachedThreshold={0.65}
+          ListHeaderComponent={<View style={styles.header}>
+            <View style={styles.toolbar}>
+              <Text variant="titleLarge" style={styles.title}>Search</Text>
+              <Button compact mode={activeFilterCount ? 'contained-tonal' : 'text'} icon="tune-variant" onPress={() => setFiltersOpen(true)} accessibilityLabel={`Open filters${activeFilterCount ? `, ${activeFilterCount} active` : ''}`}>Filters{activeFilterCount ? ` ${activeFilterCount}` : ''}</Button>
+            </View>
+            <Searchbar value={text} onChangeText={setText} onSubmitEditing={() => submit()} onClearIconPress={() => { setText(''); setQueryText(''); }} placeholder={mediaType === 'ANIME' ? 'Search anime' : 'Search manga'} style={[styles.search, { backgroundColor: tokens.color.glass, borderColor: theme.colors.outlineVariant }]} inputStyle={styles.searchInput} />
+            <View style={styles.toolsRow}>
+              <SegmentedButtons style={styles.typeControl} value={mediaType} onValueChange={(value) => { setMediaType(value as typeof mediaType); setFormat(''); setSeason(''); setEpisodeRange(''); }} buttons={[{ value: 'ANIME', label: 'Anime' }, { value: 'MANGA', label: 'Manga' }]} density="small" />
+              <Menu visible={sortMenuOpen} onDismiss={() => setSortMenuOpen(false)} anchor={<Button compact mode="outlined" icon="sort" onPress={() => setSortMenuOpen(true)} accessibilityLabel={`Sort by ${selectedSort.label}`}>{selectedSort.label}</Button>}>
+                {sortOptions.map((item) => <Menu.Item key={item.value} title={item.label} leadingIcon={sort === item.value ? 'check' : undefined} onPress={() => { setSort(item.value); setSortMenuOpen(false); }} />)}
+              </Menu>
+            </View>
+            {!queryText && recentItems.length ? <View style={styles.recent}><Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>Recent</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>{recentItems.map((item) => <Chip key={item} compact icon="history" onPress={() => submit(item)}>{item}</Chip>)}</ScrollView></View> : null}
+            {results.data ? <View style={styles.resultMeta}><Text variant="labelMedium" numberOfLines={1} style={[styles.metaText, { color: theme.colors.onSurfaceVariant }]}>{items.length}{items.length !== allItems.length ? ` of ${allItems.length}` : ''} titles{providerNames ? ` · ${providerNames}` : ''}</Text>{activeFilterCount ? <Button compact onPress={resetFilters}>Reset</Button> : null}</View> : null}
+          </View>}
+          ListEmptyComponent={results.isLoading ? <StateView loading message="Searching the catalog..." /> : results.isError ? <StateView title="Search unavailable" message={results.error.message} onRetry={() => void results.refetch()} /> : <StateView title={`No ${mediaType === 'ANIME' ? 'anime' : 'manga'} found`} message={allItems.length ? 'The loaded results do not match every filter. Reset filters or load another catalog.' : 'Try another title or clear a filter.'} onRetry={results.hasNextPage ? () => void results.fetchNextPage() : undefined} />}
+          ListFooterComponent={items.length ? results.isFetchingNextPage ? <ActivityIndicator color={theme.colors.primary} style={styles.footer} /> : results.hasNextPage ? <Button mode="text" onPress={() => void results.fetchNextPage()}>Load more</Button> : <Text variant="labelSmall" style={[styles.end, { color: theme.colors.onSurfaceVariant }]}>End of results</Text> : null}
+        />
       </Screen>
 
       <Portal>
@@ -148,11 +165,18 @@ function FilterChoices({ title, value, options, labelFor, onChange }: { title: s
 }
 
 const styles = StyleSheet.create({
+  screen: { paddingBottom: 0 },
+  header: { gap: tokens.spacing.md, marginBottom: tokens.spacing.lg },
+  toolbar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  title: { fontWeight: '700' },
   search: { borderRadius: tokens.radius.control, borderWidth: StyleSheet.hairlineWidth },
-  searchInput: { minHeight: 48 },
-  recent: { gap: tokens.spacing.sm },
+  searchInput: { minHeight: 44 },
+  toolsRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
+  typeControl: { flex: 1 },
+  recent: { gap: tokens.spacing.xs },
   choiceRow: { gap: tokens.spacing.sm, paddingRight: tokens.spacing.lg },
   resultMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 30 },
+  metaText: { flex: 1 },
   results: { paddingBottom: tokens.spacing.xxl, gap: tokens.spacing.xl },
   row: { gap: tokens.spacing.md },
   footer: { padding: tokens.spacing.xl },

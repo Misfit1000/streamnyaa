@@ -42,7 +42,7 @@ export function DownloadsScreen({ route, navigation }: Props) {
   const maxEpisode = Number(anime.episodes || 0);
 
   return (
-    <Screen title={`${anime.title} releases`} subtitle="Advanced source choices; automatic playback normally handles this for you" scroll={false} safeTop={false}>
+    <Screen scroll={false} safeTop={false}>
       <FlatList
         data={rows}
         keyExtractor={(source) => `${source.infoHash}-${source.title}`}

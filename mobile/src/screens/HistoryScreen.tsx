@@ -48,11 +48,11 @@ export function HistoryScreen({ navigation }: Props) {
   };
 
   return (
-    <Screen title="Watch history" subtitle="Progress syncs after sign-in" scroll={false} safeTop={false} action={history.length ? <Button compact onPress={() => Alert.alert('Clear history?', 'This removes playback progress on all synced devices after the next sync.', [{ text: 'Cancel' }, { text: 'Clear', style: 'destructive', onPress: clear }])}>Clear</Button> : null}>
+    <Screen scroll={false} safeTop={false}>
       {history.length ? <>
         <Searchbar value={query} onChangeText={setQuery} placeholder="Search title, source, or episode" style={styles.search} />
         <View style={styles.filterBar}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+          <ScrollView horizontal style={styles.filterScroll} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
             <Chip selected={filter === 'all'} mode="outlined" onPress={() => setFilter('all')}>All {history.length}</Chip>
             <Chip selected={filter === 'watching'} mode="outlined" onPress={() => setFilter('watching')}>Watching {history.length - completedCount}</Chip>
             <Chip selected={filter === 'completed'} mode="outlined" onPress={() => setFilter('completed')}>Done {completedCount}</Chip>
@@ -62,7 +62,10 @@ export function HistoryScreen({ navigation }: Props) {
             {([['recent', 'Recently watched'], ['progress', 'Progress'], ['title', 'Title'], ['episode', 'Episode']] as const).map(([value, label]) => <Menu.Item key={value} title={label} leadingIcon={sort === value ? 'check' : undefined} onPress={() => { setSort(value); setSortMenu(false); }} />)}
           </Menu>
         </View>
-        {completedCount ? <Button compact mode="text" onPress={() => Alert.alert('Clear completed history?', `Remove ${completedCount} completed ${completedCount === 1 ? 'episode' : 'episodes'} from every synced device?`, [{ text: 'Cancel' }, { text: 'Clear completed', style: 'destructive', onPress: clearCompleted }])}>Clear completed</Button> : null}
+        <View style={styles.maintenance}>
+          {completedCount ? <Button compact mode="text" onPress={() => Alert.alert('Clear completed history?', `Remove ${completedCount} completed ${completedCount === 1 ? 'episode' : 'episodes'} from every synced device?`, [{ text: 'Cancel' }, { text: 'Clear completed', style: 'destructive', onPress: clearCompleted }])}>Clear completed</Button> : null}
+          <Button compact mode="text" onPress={() => Alert.alert('Clear history?', 'This removes playback progress on all synced devices after the next sync.', [{ text: 'Cancel' }, { text: 'Clear', style: 'destructive', onPress: clear }])}>Clear all</Button>
+        </View>
         {visibleHistory.length ? <FlatList data={visibleHistory} keyExtractor={(item) => item.key} contentContainerStyle={styles.list} ItemSeparatorComponent={() => <View style={[styles.divider, { backgroundColor: theme.colors.outline }]} />} renderItem={({ item }) => (
         <View style={styles.row}>
           <Image source={item.image} style={styles.poster} contentFit="cover" cachePolicy="memory-disk" recyclingKey={`${item.key}-${item.image}`} />
@@ -83,8 +86,10 @@ export function HistoryScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   list: { paddingBottom: tokens.spacing.xxl },
   search: { borderRadius: tokens.radius.control },
-  filterBar: { gap: tokens.spacing.sm },
+  filterBar: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
+  filterScroll: { flex: 1 },
   filters: { gap: tokens.spacing.sm, paddingRight: tokens.spacing.lg },
+  maintenance: { minHeight: 36, flexDirection: 'row', justifyContent: 'flex-end', gap: tokens.spacing.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, paddingVertical: tokens.spacing.md },
   poster: { width: 62, height: 88, borderRadius: tokens.radius.control },
   copy: { flex: 1, gap: 5 },

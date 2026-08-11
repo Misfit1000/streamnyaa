@@ -99,7 +99,7 @@ export function SettingsScreen(_props: Props) {
     ],
   );
   return (
-    <Screen title="Settings" subtitle="Android playback and app preferences" safeTop={false}>
+    <Screen safeTop={false}>
       <List.Section title="Appearance">
         <RadioButton.Group value={store.themeMode} onValueChange={(value) => store.setThemeMode(value as typeof store.themeMode)}>
           <RadioButton.Item label="Use device theme" value="system" />

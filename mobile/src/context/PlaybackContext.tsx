@@ -126,6 +126,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const pausedForBackgroundRef = useRef(false);
   const pausedForNetworkRef = useRef(false);
   const playbackDesiredRef = useRef(false);
+  const recoveryPlaybackDesiredRef = useRef(true);
   const pausedSeekTargetRef = useRef<number | null>(null);
   const pausedSeekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const playerReadRetriesRef = useRef(0);
@@ -182,6 +183,20 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     lastProgressSaveRef.current = Date.now();
   }, [saveProgress]);
 
+  const schedulePausedSeek = useCallback((target: number, seek: () => void) => {
+    if (playbackDesiredRef.current || !loadedStreamRef.current) return false;
+    pausedSeekTargetRef.current = target;
+    if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
+    void TorrentEngine.resume().then(seek, seek);
+    pausedSeekTimerRef.current = setTimeout(() => {
+      pausedSeekTimerRef.current = null;
+      pausedSeekTargetRef.current = null;
+      if (!playbackDesiredRef.current) void TorrentEngine.pause();
+    }, 35_000);
+    setPhase('paused');
+    return true;
+  }, []);
+
   const failCurrentSource = useCallback((reason: string, failureStage?: string, failureCode?: string) => {
     if (recoveryRef.current) return;
     const active = sessionRef.current.source;
@@ -218,6 +233,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       }));
       return;
     }
+    recoveryPlaybackDesiredRef.current = playbackDesiredRef.current;
     recoveryRef.current = true;
     resumeSecondsRef.current = sessionRef.current.currentTime;
     setPhase('recovering');
@@ -236,7 +252,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     if (!activeAnime) return;
     const requestGeneration = generation.current;
     attemptsRef.current += 1;
-    playbackDesiredRef.current = true;
+    playbackDesiredRef.current = automatic ? recoveryPlaybackDesiredRef.current : true;
     playerReadRetriesRef.current = 0;
     playerReadRecoveryRef.current = false;
     pausedSeekTargetRef.current = null;
@@ -474,7 +490,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   }, [failCurrentSource, persistProgress, player]);
 
   useEffect(() => {
-    if (!status.streamUrl || loadedStreamRef.current === status.streamUrl || !anime || !source) return;
+    if (playerReadRecoveryRef.current || !status.streamUrl || loadedStreamRef.current === status.streamUrl || !anime || !source) return;
     loadedStreamRef.current = status.streamUrl;
     const streamGeneration = generation.current;
     void player.replaceAsync({
@@ -486,7 +502,8 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       player.playbackRate = playerPreferences.playbackSpeed;
       player.volume = Math.min(1, playerPreferences.volume / 100);
       player.muted = playerPreferences.muted;
-      player.play();
+      if (playbackDesiredRef.current) player.play();
+      else player.pause();
     }).catch((error) => failCurrentSource(error instanceof Error ? error.message : 'Android could not decode this release.'));
   }, [anime, episode, failCurrentSource, player, playerPreferences.muted, playerPreferences.playbackSpeed, playerPreferences.volume, source, status.streamUrl]);
 
@@ -563,7 +580,11 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     });
     const resume = resumeSecondsRef.current;
     resumeSecondsRef.current = 0;
-    if (resume > 0 && player.currentTime < 2) player.currentTime = Math.min(resume, Math.max(0, loadedDuration - 5));
+    if (resume > 0 && player.currentTime < 2) {
+      const target = Math.min(resume, Math.max(0, loadedDuration - 5));
+      const seek = () => { player.currentTime = target; };
+      if (!schedulePausedSeek(target, seek)) seek();
+    }
     const activeSource = sessionRef.current.source;
     if (activeSource) clearSourceFailure(sourceId(activeSource));
     const malId = Number(sessionRef.current.anime?.malId || 0);
@@ -624,9 +645,9 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
 
     playerReadRetriesRef.current += 1;
     playerReadRecoveryRef.current = true;
-    playbackDesiredRef.current = true;
+    const recoveryShouldPlay = playbackDesiredRef.current;
     resumeSecondsRef.current = sessionRef.current.currentTime;
-    loadedStreamRef.current = '';
+    loadedStreamRef.current = streamUrl;
     setPhase('recovering');
     setStatus((previous) => ({ ...previous, message: 'Restoring the local video connection…' }));
     void TorrentEngine.resume();
@@ -643,7 +664,8 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       .then(() => {
         loadedStreamRef.current = streamUrl;
         playerReadRecoveryRef.current = false;
-        player.play();
+        if (recoveryShouldPlay) player.play();
+        else player.pause();
       })
       .catch((recoveryError) => {
         playerReadRecoveryRef.current = false;
@@ -740,19 +762,6 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     player.pause();
     void TorrentEngine.pause();
   }, [player]);
-  const schedulePausedSeek = useCallback((target: number, seek: () => void) => {
-    if (playbackDesiredRef.current || !loadedStreamRef.current) return false;
-    pausedSeekTargetRef.current = target;
-    if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
-    void TorrentEngine.resume().then(seek, seek);
-    pausedSeekTimerRef.current = setTimeout(() => {
-      pausedSeekTimerRef.current = null;
-      pausedSeekTargetRef.current = null;
-      if (!playbackDesiredRef.current) void TorrentEngine.pause();
-    }, 35_000);
-    setPhase('paused');
-    return true;
-  }, []);
   const seekBy = useCallback((seconds: number) => {
     const target = Math.max(0, Math.min(sessionRef.current.currentTime + seconds, Number(player.duration || sessionRef.current.currentTime + seconds)));
     const seek = () => player.seekBy(seconds);
@@ -798,8 +807,9 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const skipActiveSegment = useCallback(() => {
     if (!activeSkip) return;
     skippedIntervalsRef.current.add(`${activeSkip.type}:${activeSkip.startSeconds}:${activeSkip.endSeconds}`);
-    player.currentTime = activeSkip.endSeconds;
-  }, [activeSkip, player]);
+    const seek = () => { player.currentTime = activeSkip.endSeconds; };
+    if (!schedulePausedSeek(activeSkip.endSeconds, seek)) seek();
+  }, [activeSkip, player, schedulePausedSeek]);
   const setSleepTimer = useCallback((value: number | null | 'episode') => {
     if (value === 'episode') {
       setSleepEndsAt(null);

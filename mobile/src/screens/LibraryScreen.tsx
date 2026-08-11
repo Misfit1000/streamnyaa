@@ -67,7 +67,7 @@ export function LibraryScreen({ navigation }: Props) {
   };
 
   return (
-    <Screen title="Library" subtitle="Saved titles and playback progress in one mobile hub" scroll={false}>
+    <Screen title="Library" scroll={false}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sections}>
         {([
           { id: 'watching', label: 'Watching', count: counts.watching, icon: 'play-circle-outline' },

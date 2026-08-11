@@ -30,7 +30,7 @@ export function CompareScreen({ navigation }: Props) {
   const scoreWinner = left && right && Number(left.score || 0) !== Number(right.score || 0) ? (Number(left.score || 0) > Number(right.score || 0) ? left.title : right.title) : '';
 
   return (
-    <Screen title="Compare anime" subtitle="Choose two titles for a side-by-side view" safeTop={false}>
+    <Screen safeTop={false}>
       <View style={styles.picks}><Pick anime={left} label="Anime A" onPress={() => left && navigation.navigate('Watch', watchRouteParams(left))} /><Pick anime={right} label="Anime B" onPress={() => right && navigation.navigate('Watch', watchRouteParams(right))} /></View>
       <View style={styles.slotButtons}><Button mode={slot === 'left' ? 'contained' : 'outlined'} onPress={() => setSlot('left')}>Choose A</Button><Button mode={slot === 'right' ? 'contained' : 'outlined'} onPress={() => setSlot('right')}>Choose B</Button></View>
       <Searchbar value={text} onChangeText={setText} onSubmitEditing={() => setQuery(text.trim())} placeholder={`Search for anime ${slot === 'left' ? 'A' : 'B'}`} style={styles.search} />

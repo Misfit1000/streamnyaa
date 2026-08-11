@@ -32,7 +32,7 @@ export function CatalogScreen({ route, navigation }: Props) {
   });
 
   return (
-    <Screen title={route.params.title} subtitle="Live catalog with automatic metadata backup" scroll={false} safeTop={false}>
+    <Screen scroll={false} safeTop={false}>
       <SegmentedButtons
         value={sort}
         onValueChange={(value) => setSort(value as typeof sort)}
