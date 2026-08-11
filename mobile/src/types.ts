@@ -177,8 +177,16 @@ export type EngineHealthReport = {
   serviceConnected: boolean;
   nativeLibraryLoaded: boolean;
   abi: string;
+  supportedAbis?: string[];
   androidApi: number;
+  manufacturer?: string;
+  model?: string;
+  appVersion?: string;
+  appVersionCode?: number;
+  lowRam?: boolean;
+  memoryClassMiB?: number;
   cacheWritable: boolean;
+  cacheFreeBytes?: number;
   loopbackReachable: boolean;
   details?: string;
 };
@@ -214,6 +222,11 @@ export type RuntimeDeviceProfile = {
   resolvedProfile: 'standard' | 'constrained';
   lowRam: boolean;
   memoryClassMiB: number;
+  manufacturer?: string;
+  model?: string;
+  device?: string;
+  androidApi?: number;
+  supportedAbis?: string[];
 };
 
 export type SkipInterval = {

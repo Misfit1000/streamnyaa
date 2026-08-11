@@ -42,9 +42,12 @@ function metadataUrlsFor(item: any) {
   const link = String(item.link || '');
   const torrentId = String(item.id || link.match(/(?:view|download)\/(\d+)/i)?.[1] || '').trim();
   const urls: string[] = [];
-  if (/^\d+$/.test(torrentId)) urls.push(`${API_ORIGIN}/api/torrent?id=${encodeURIComponent(torrentId)}`);
   if (/^https:\/\//i.test(link) && /\.(torrent)(?:$|\?)/i.test(link)) urls.push(link);
   else if (/^\d+$/.test(torrentId)) urls.push(`https://nyaa.si/download/${torrentId}.torrent`);
+  // The same-origin proxy is retained as a network fallback, but production
+  // deployments can temporarily lag this mobile branch. A missing route must
+  // not delay the known-good indexed metadata URL or magnet peer discovery.
+  if (/^\d+$/.test(torrentId)) urls.push(`${API_ORIGIN}/api/torrent?id=${encodeURIComponent(torrentId)}`);
   return [...new Set(urls)].slice(0, 3);
 }
 

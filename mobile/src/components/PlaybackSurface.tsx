@@ -9,6 +9,7 @@ import { ActivityIndicator, Button, IconButton, Text, useTheme } from 'react-nat
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayback } from '../context/PlaybackContext';
 import { TorrentEngine } from '../native/TorrentEngine';
+import { buildSupportReport } from '../services/supportDiagnostics';
 import { sourceQualityBucket } from '../../../shared/sources';
 import { playerLayoutForViewport } from '../lib/playerLayout';
 import { tokens } from '../theme';
@@ -300,6 +301,7 @@ function SleepSheet({ playback, onClose }: { playback: Playback; onClose: () => 
 function DiagnosticsSheet({ playback, onClose }: { playback: Playback; onClose: () => void }) {
   const [health, setHealth] = useState<EngineHealthReport>();
   const [diagnostics, setDiagnostics] = useState<EngineDiagnostic[]>([]);
+  const [sharing, setSharing] = useState(false);
   useEffect(() => {
     let active = true;
     void Promise.all([TorrentEngine.getEngineHealth(), TorrentEngine.getDiagnostics()]).then(([nextHealth, nextDiagnostics]) => {
@@ -309,10 +311,24 @@ function DiagnosticsSheet({ playback, onClose }: { playback: Playback; onClose: 
     });
     return () => { active = false; };
   }, []);
-  const report = {
-    status: playback.status,
-    health,
-    diagnostics: diagnostics.slice(-20),
+  const shareReport = async () => {
+    setSharing(true);
+    try {
+      const report = await buildSupportReport({
+        playback: {
+          animeId: playback.anime?.id,
+          episode: playback.episode,
+          source: playback.source,
+          phase: playback.phase,
+          currentTime: playback.currentTime,
+          duration: playback.duration,
+          status: playback.status,
+        },
+      });
+      await Share.share({ title: 'StreamNyaa playback diagnostics', message: JSON.stringify(report, null, 2) });
+    } finally {
+      setSharing(false);
+    }
   };
   return <>
     <View style={styles.sheetTitleRow}>
@@ -329,7 +345,7 @@ function DiagnosticsSheet({ playback, onClose }: { playback: Playback; onClose: 
       <DiagnosticValue label="Loopback" value={health?.loopbackReachable ? 'Available' : health ? 'Unavailable' : 'Checking'} />
     </View>
     {diagnostics.slice(-6).reverse().map((entry) => <View key={`${entry.at}-${entry.code}`} style={styles.diagnosticRow}><Text variant="labelMedium" style={styles.semibold}>{entry.code}</Text><Text variant="bodySmall" style={styles.muted}>{entry.stage} · {entry.message}</Text></View>)}
-    <Button mode="contained" icon="share-variant-outline" onPress={() => void Share.share({ title: 'StreamNyaa playback diagnostics', message: JSON.stringify(report, null, 2) })}>Share diagnostics</Button>
+    <Button mode="contained" icon="share-variant-outline" loading={sharing} disabled={sharing} onPress={() => void shareReport()}>Share diagnostics</Button>
   </>;
 }
 

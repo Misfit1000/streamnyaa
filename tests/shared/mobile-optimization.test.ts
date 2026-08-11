@@ -141,6 +141,28 @@ test('player controls scale to the viewport and fullscreen owns the entire modal
   assert.match(layout, /showAdjacentEpisodes: fullscreen && width >= 600/, 'secondary controls should only appear when landscape width can accommodate them');
 });
 
+test('mobile diagnostics survive restarts and keep support reports free of credentials', () => {
+  const nativeModule = readFileSync(path.join(repoRoot, 'mobile/modules/torrent-engine/android/src/main/java/com/misfit1000/streamnyaa/torrent/StreamNyaaTorrentModule.kt'), 'utf8');
+  const support = readFileSync(path.join(repoRoot, 'mobile/src/services/supportDiagnostics.ts'), 'utf8');
+  const sanitizer = readFileSync(path.join(repoRoot, 'mobile/src/lib/diagnosticSanitizer.ts'), 'utf8');
+  const serviceProbe = readFileSync(path.join(repoRoot, 'scripts/check-mobile-services.mjs'), 'utf8');
+  const deviceCapture = readFileSync(path.join(repoRoot, 'scripts/capture-mobile-diagnostics.ps1'), 'utf8');
+  assert.match(nativeModule, /DIAGNOSTIC_FILE/, 'native engine failures must be persisted across process restarts');
+  assert.match(nativeModule, /loadDiagnostics\(\)/, 'native diagnostic history must be restored at launch');
+  assert.match(support, /streamnyaa\.support-diagnostics\.v1/, 'playback state transitions need a bounded persistent history');
+  assert.match(sanitizer, /\[magnet redacted\]/);
+  assert.match(sanitizer, /\[jwt redacted\]/);
+  assert.doesNotMatch(support, /access_token|refresh_token/, 'support reports must never read account tokens');
+  assert.match(serviceProbe, /torrent-metadata-direct/, 'source and metadata health must be reproducible without a phone');
+  assert.match(deviceCapture, /--uid=/, 'future logcat captures must remain scoped to StreamNyaa\'s Android UID');
+  assert.doesNotMatch(deviceCapture, /adb[^\r\n]*(?:install|push|pull)/i, 'diagnostic capture must not install or alter phone content');
+});
+
+test('mobile metadata discovery prioritizes the available direct torrent path while retaining proxy fallback', () => {
+  const sources = readFileSync(path.join(repoRoot, 'mobile/src/services/sources.ts'), 'utf8');
+  assert.ok(sources.indexOf('https://nyaa.si/download/') < sources.indexOf('/api/torrent?id='));
+});
+
 test('automatic playback waits for enriched anime metadata before source discovery', () => {
   const watch = readFileSync(path.join(repoRoot, 'mobile/src/screens/WatchScreen.tsx'), 'utf8');
   assert.match(watch, /playbackMetadataReady = !details\.isPending/);

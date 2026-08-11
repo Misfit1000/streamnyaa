@@ -21,6 +21,8 @@
     "prepare:desktop-binaries": "node scripts/prepare-desktop-binaries.mjs",
     "test:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\desktop\\run.ps1",
     "test:shared": "tsx --test tests/shared/*.test.ts",
+    "check:mobile-services": "node scripts/check-mobile-services.mjs",
+    "capture:mobile-diagnostics": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/capture-mobile-diagnostics.ps1",
     "verify:shared": "npm run lint && npm run test:shared",
     "verify:mobile": "npm --prefix mobile run typecheck && npm --prefix mobile run doctor && npm --prefix mobile run export",
     "verify:desktop": "npm run lint && npm run test:desktop && cargo test --manifest-path .\\desktop\\src-tauri\\Cargo.toml",

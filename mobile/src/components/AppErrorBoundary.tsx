@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type PropsWithChildren } from 'react';
 import { StyleSheet, View } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { Button, Text } from 'react-native-paper';
+import { recordSupportEvent } from '../services/supportDiagnostics';
 import { tokens } from '../theme';
 
 type State = { error?: Error; recoveryKey: number };
@@ -15,6 +16,13 @@ export class AppErrorBoundary extends Component<PropsWithChildren, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('StreamNyaa recovered from a UI error', error, info.componentStack);
+    recordSupportEvent({
+      level: 'error',
+      stage: 'react-ui',
+      code: 'REACT_ERROR_BOUNDARY',
+      message: error.message || error.name,
+      context: { componentStack: info.componentStack?.slice(0, 160) },
+    });
   }
 
   private recover = () => this.setState((state) => ({ error: undefined, recoveryKey: state.recoveryKey + 1 }));

@@ -6,6 +6,7 @@ import { Screen } from '../components/Screen';
 import { TorrentEngine } from '../native/TorrentEngine';
 import { getNotificationPermissionState, openAppPermissionSettings, requestNotificationPermission, type NotificationPermissionState } from '../services/permissions';
 import { runConnectionDiagnostics, type ConnectionDiagnostic } from '../services/diagnostics';
+import { buildSupportReport, clearSupportDiagnostics, getSupportEvents, recordSupportEvent } from '../services/supportDiagnostics';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList, TorrentCacheEntry } from '../types';
 import { tokens } from '../theme';
@@ -20,6 +21,8 @@ export function SettingsScreen(_props: Props) {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState | null>(null);
   const [diagnostics, setDiagnostics] = useState<ConnectionDiagnostic[]>([]);
   const [checkingConnections, setCheckingConnections] = useState(false);
+  const [exportingSupport, setExportingSupport] = useState(false);
+  const [supportEventCount, setSupportEventCount] = useState(0);
   const clearHistory = useAppStore((state) => state.clearHistory);
   const refreshCache = () => void Promise.all([TorrentEngine.getCacheStats(), TorrentEngine.listCacheEntries()])
     .then(([stats, entries]) => { setCacheBytes(stats.bytes); setCacheEntries(entries); })
@@ -30,6 +33,7 @@ export function SettingsScreen(_props: Props) {
   useEffect(() => {
     refreshCache();
     refreshPermission();
+    void getSupportEvents().then((events) => setSupportEventCount(events.length));
     const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') refreshPermission(); });
     return () => subscription.remove();
   }, []);
@@ -47,10 +51,53 @@ export function SettingsScreen(_props: Props) {
     setCheckingConnections(true);
     const next = await runConnectionDiagnostics();
     setDiagnostics(next);
+    next.forEach((item) => recordSupportEvent({
+      level: item.ok ? 'info' : 'warning',
+      stage: 'connection-check',
+      code: `${item.id.toUpperCase()}_${item.ok ? 'AVAILABLE' : 'FAILED'}`,
+      message: item.message,
+      context: { latencyMs: item.latencyMs },
+    }));
     setCheckingConnections(false);
     const failed = next.filter((item) => !item.ok).length;
     setMessage(failed ? `${failed} connection ${failed === 1 ? 'check needs' : 'checks need'} attention.` : 'Metadata, source, and account services are reachable.');
   };
+  const exportSupportReport = async () => {
+    setExportingSupport(true);
+    try {
+      const connections = diagnostics.length ? diagnostics : await runConnectionDiagnostics();
+      if (!diagnostics.length) setDiagnostics(connections);
+      const report = await buildSupportReport({
+        connections,
+        preferences: {
+          audioPreference: store.audioPreference,
+          autoOpenBestSource: store.autoOpenBestSource,
+          balancedFileSize: store.resourcePolicy.balancedFileSize,
+          batterySaver: store.resourcePolicy.batterySaver,
+          wifiOnly: store.resourcePolicy.wifiOnly,
+          performanceProfile: store.resourcePolicy.performanceProfile,
+          maxCacheMiB: store.resourcePolicy.maxCacheMiB,
+          autoSkipIntro: store.playerPreferences.autoSkipIntro,
+          autoSkipOutro: store.playerPreferences.autoSkipOutro,
+          playbackSpeed: store.playerPreferences.playbackSpeed,
+        },
+      });
+      await Share.share({ title: 'StreamNyaa Android support report', message: JSON.stringify(report, null, 2) });
+      setSupportEventCount((await getSupportEvents()).length);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'The support report could not be created.');
+    } finally {
+      setExportingSupport(false);
+    }
+  };
+  const clearDiagnosticHistory = () => Alert.alert(
+    'Clear diagnostic history?',
+    'This removes only local engine and playback troubleshooting events.',
+    [
+      { text: 'Cancel' },
+      { text: 'Clear', style: 'destructive', onPress: () => void clearSupportDiagnostics().then(() => { setSupportEventCount(0); setMessage('Diagnostic history cleared.'); }) },
+    ],
+  );
   return (
     <Screen title="Settings" subtitle="Android playback and app preferences" safeTop={false}>
       <List.Section title="Appearance">
@@ -127,11 +174,13 @@ export function SettingsScreen(_props: Props) {
       <Divider />
       <List.Section title="App health">
         <List.Item title="Native streaming engine" description={TorrentEngine.isSupported() ? 'Loaded and available' : 'Use an Android development or release build'} left={(props) => <List.Icon {...props} icon={TorrentEngine.isSupported() ? 'check-circle-outline' : 'alert-circle-outline'} />} />
+        <List.Item title="Diagnostic history" description={`${supportEventCount} recent playback events saved locally · no account data`} left={(props) => <List.Icon {...props} icon="clipboard-pulse-outline" />} />
         {diagnostics.map((item) => <List.Item key={item.id} title={item.label} description={item.message} left={(props) => <List.Icon {...props} icon={item.ok ? 'check-circle-outline' : 'alert-circle-outline'} color={item.ok ? undefined : '#FF6B82'} />} />)}
         <Button mode="outlined" icon="lan-check" loading={checkingConnections} disabled={checkingConnections} onPress={() => void checkConnections()}>Run connection check</Button>
+        <Button mode="contained" icon="share-variant-outline" loading={exportingSupport} disabled={exportingSupport} onPress={() => void exportSupportReport()}>Export support report</Button>
+        <Button mode="text" icon="delete-outline" disabled={!supportEventCount} onPress={clearDiagnosticHistory}>Clear diagnostic history</Button>
       </List.Section>
       <Text variant="bodySmall">Streaming caches only the selected media file in private app storage. Old inactive source caches are removed automatically when the limit is reached.</Text>
-      <Button mode="text" icon="share-variant" onPress={() => void Share.share({ message: JSON.stringify({ audioPreference: store.audioPreference, autoOpenBestSource: store.autoOpenBestSource, playerPreferences: store.playerPreferences, resourcePolicy: store.resourcePolicy }, null, 2), title: 'StreamNyaa Android settings' })}>Export settings</Button>
       <Snackbar visible={Boolean(message)} onDismiss={() => setMessage('')}>{message}</Snackbar>
     </Screen>
   );

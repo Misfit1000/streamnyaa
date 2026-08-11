@@ -60,7 +60,10 @@ class StreamNyaaTorrentModule : Module() {
     Name("StreamNyaaTorrent")
     Events("onStatus")
 
-    OnCreate { connect() }
+    OnCreate {
+      loadDiagnostics()
+      connect()
+    }
 
     Function("isSupported") { supportedAbi() }
 
@@ -73,6 +76,11 @@ class StreamNyaaTorrentModule : Module() {
         "resolvedProfile" to if (lowRam || memoryClassMiB <= 192) "constrained" else "standard",
         "lowRam" to lowRam,
         "memoryClassMiB" to memoryClassMiB,
+        "manufacturer" to Build.MANUFACTURER,
+        "model" to Build.MODEL,
+        "device" to Build.DEVICE,
+        "androidApi" to Build.VERSION.SDK_INT,
+        "supportedAbis" to Build.SUPPORTED_ABIS.toList(),
       )
     }
 
@@ -95,7 +103,12 @@ class StreamNyaaTorrentModule : Module() {
 
     AsyncFunction("getEngineHealth") { engineHealth().toString() }
     AsyncFunction("getDiagnostics") { synchronized(diagnostics) { JSONArray(diagnostics.toList()).toString() } }
-    Function("clearDiagnostics") { synchronized(diagnostics) { diagnostics.clear() } }
+    Function("clearDiagnostics") {
+      synchronized(diagnostics) {
+        diagnostics.clear()
+        diagnosticFile()?.delete()
+      }
+    }
     AsyncFunction("getStatus") { statusFrom(rpc(TorrentServiceProtocol.STATUS)) }
     AsyncFunction("pause") { rpc(TorrentServiceProtocol.PAUSE); Unit }
     AsyncFunction("resume") { rpc(TorrentServiceProtocol.RESUME); Unit }
@@ -256,6 +269,10 @@ class StreamNyaaTorrentModule : Module() {
 
   private fun engineHealth(): JSONObject {
     val context = appContext.reactContext?.applicationContext
+    val manager = context?.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+    val packageInfo = runCatching { checkNotNull(context).packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
+    @Suppress("DEPRECATION")
+    val appVersionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) packageInfo?.longVersionCode ?: 0L else packageInfo?.versionCode?.toLong() ?: 0L
     val cacheWritable = runCatching {
       val marker = File(checkNotNull(context).cacheDir, ".streamnyaa-health")
       marker.writeText("ok")
@@ -271,8 +288,16 @@ class StreamNyaaTorrentModule : Module() {
       put("serviceConnected", service != null)
       put("nativeLibraryLoaded", nativeLoaded)
       put("abi", Build.SUPPORTED_ABIS.firstOrNull().orEmpty())
+      put("supportedAbis", JSONArray(Build.SUPPORTED_ABIS.toList()))
       put("androidApi", Build.VERSION.SDK_INT)
+      put("manufacturer", Build.MANUFACTURER)
+      put("model", Build.MODEL)
+      put("appVersion", packageInfo?.versionName.orEmpty())
+      put("appVersionCode", appVersionCode)
+      put("lowRam", manager?.isLowRamDevice ?: false)
+      put("memoryClassMiB", manager?.memoryClass ?: 0)
       put("cacheWritable", cacheWritable)
+      put("cacheFreeBytes", context?.cacheDir?.usableSpace ?: 0L)
       put("loopbackReachable", loopback)
       if (!nativeLoaded) put("details", "libtorrent4j JNI could not be loaded.")
     }
@@ -304,7 +329,11 @@ class StreamNyaaTorrentModule : Module() {
   }
 
   private fun diagnostic(level: String, stage: String, code: String, message: String) {
-    val safeMessage = message.replace(Regex("magnet:\\?[^\\s]+", RegexOption.IGNORE_CASE), "[magnet redacted]").take(240)
+    val safeMessage = message
+      .replace(Regex("magnet:\\?[^\\s]+", RegexOption.IGNORE_CASE), "[magnet redacted]")
+      .replace(Regex("(?i)(bearer\\s+)[a-z0-9._~-]+"), "$1[token redacted]")
+      .replace(Regex("(?i)(access_token|refresh_token)=?[:\\s\"]+[a-z0-9._~-]+"), "$1=[token redacted]")
+      .take(240)
     Log.println(if (level == "error") Log.ERROR else if (level == "warning") Log.WARN else Log.INFO, TAG, "$stage/$code: $safeMessage")
     synchronized(diagnostics) {
       diagnostics.addLast(JSONObject().apply {
@@ -315,6 +344,31 @@ class StreamNyaaTorrentModule : Module() {
         put("message", safeMessage)
       })
       while (diagnostics.size > MAX_DIAGNOSTICS) diagnostics.removeFirst()
+      persistDiagnosticsLocked()
+    }
+  }
+
+  private fun diagnosticFile(): File? = appContext.reactContext?.applicationContext?.filesDir?.let { File(it, DIAGNOSTIC_FILE) }
+
+  private fun loadDiagnostics() {
+    val file = diagnosticFile() ?: return
+    val stored = runCatching { JSONArray(file.readText()) }.getOrNull() ?: return
+    synchronized(diagnostics) {
+      diagnostics.clear()
+      val start = (stored.length() - MAX_DIAGNOSTICS).coerceAtLeast(0)
+      for (index in start until stored.length()) stored.optJSONObject(index)?.let(diagnostics::addLast)
+    }
+  }
+
+  private fun persistDiagnosticsLocked() {
+    val file = diagnosticFile() ?: return
+    runCatching {
+      val temporary = File(file.parentFile, "$DIAGNOSTIC_FILE.tmp")
+      temporary.writeText(JSONArray(diagnostics.toList()).toString())
+      if (!temporary.renameTo(file)) {
+        file.writeText(temporary.readText())
+        temporary.delete()
+      }
     }
   }
 
@@ -324,6 +378,7 @@ class StreamNyaaTorrentModule : Module() {
     private const val TAG = "StreamNyaaTorrent"
     private const val PROTOCOL_VERSION = 1
     private const val MAX_DIAGNOSTICS = 80
+    private const val DIAGNOSTIC_FILE = "streamnyaa-engine-diagnostics-v1.json"
     private const val CONNECTION_TIMEOUT_SECONDS = 8L
     private const val DEFAULT_TIMEOUT_SECONDS = 15L
     private const val START_TIMEOUT_SECONDS = 45L

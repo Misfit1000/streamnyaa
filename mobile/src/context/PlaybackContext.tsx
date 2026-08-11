@@ -9,6 +9,7 @@ import { equivalentTrack, preferredTrackIndexes } from '../lib/trackSelection';
 import { TorrentEngine } from '../native/TorrentEngine';
 import { fetchSkipIntervals } from '../services/aniskip';
 import { searchAnimeSources } from '../services/sources';
+import { recordPlaybackStatus, recordSupportEvent } from '../services/supportDiagnostics';
 import { useAppStore } from '../store/useAppStore';
 import type { Anime, SkipInterval, TorrentSource, TorrentStreamStatus } from '../types';
 
@@ -130,7 +131,11 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const requestedAudioTrackRef = useRef<AudioTrack | null | undefined>(undefined);
   const requestedSubtitleTrackRef = useRef<SubtitleTrack | null | undefined>(undefined);
   const startCandidateRef = useRef<(candidate: TorrentSource, automatic?: boolean) => Promise<void>>(async () => undefined);
+  const statusRef = useRef<TorrentStreamStatus>(idleStatus);
+  const phaseRef = useRef<PlaybackPhase>('idle');
   presentationRef.current = presentation;
+  statusRef.current = status;
+  phaseRef.current = phase;
 
   useEffect(() => {
     player.timeUpdateEventInterval = resolvedProfile === 'constrained' ? 1 : 0.5;
@@ -140,6 +145,21 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     player.staysActiveInBackground = resourcePolicy.allowBackgroundPlayback;
     player.showNowPlayingNotification = Boolean(anime);
   }, [anime, player, resolvedProfile, resourcePolicy.allowBackgroundPlayback]);
+
+  useEffect(() => {
+    recordSupportEvent({
+      stage: 'app',
+      code: 'PLAYBACK_RUNTIME_READY',
+      message: 'Playback runtime initialized.',
+      context: {
+        resolvedProfile,
+        lowRam: nativeProfile.lowRam,
+        memoryClassMiB: nativeProfile.memoryClassMiB,
+        androidApi: nativeProfile.androidApi,
+        model: nativeProfile.model,
+      },
+    });
+  }, [nativeProfile, resolvedProfile]);
 
   const persistProgress = useCallback(() => {
     const snapshot = sessionRef.current;
@@ -163,6 +183,21 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const failCurrentSource = useCallback((reason: string, failureStage?: string, failureCode?: string) => {
     if (recoveryRef.current) return;
     const active = sessionRef.current.source;
+    recordSupportEvent({
+      level: 'error',
+      stage: failureStage || 'playback-recovery',
+      code: failureCode || 'SOURCE_FAILED',
+      message: reason,
+      context: {
+        animeId: sessionRef.current.anime?.id,
+        episode: sessionRef.current.episode,
+        sourceId: active?.infoHash ? `${active.infoHash.slice(0, 8)}…${active.infoHash.slice(-4)}` : '',
+        attempts: attemptsRef.current,
+        peers: statusRef.current.peers,
+        seeds: statusRef.current.seeds || 0,
+        bufferedPercent: statusRef.current.bufferedPercent,
+      },
+    });
     if (active) {
       failedRef.current.add(sourceId(active));
       recordSourceFailure(sourceId(active), reason);
@@ -209,6 +244,19 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     setSelectedAudioTrack(null);
     setSelectedSubtitleTrack(null);
     sessionRef.current.source = candidate;
+    recordSupportEvent({
+      stage: 'engine-start',
+      code: automatic ? 'SOURCE_FAILOVER_STARTED' : 'SOURCE_STARTED',
+      message: automatic ? 'Starting the next ranked release.' : 'Starting the selected release.',
+      context: {
+        animeId: activeAnime.id,
+        episode: activeEpisode,
+        sourceId: candidate.infoHash ? `${candidate.infoHash.slice(0, 8)}…${candidate.infoHash.slice(-4)}` : '',
+        seeders: candidate.seeders,
+        sizeBytes: candidate.sizeBytes || 0,
+        attempt: attemptsRef.current,
+      },
+    });
     setPhase(automatic ? 'recovering' : 'connecting');
     setStatus({ ...idleStatus, state: 'metadata', connectionStage: 'engine-start', message: automatic ? `Trying release ${attemptsRef.current} of 3…` : 'Starting peer discovery…' });
     loadedStreamRef.current = '';
@@ -303,6 +351,12 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     setPhase('discovering');
     setStatus({ ...idleStatus, state: 'metadata', connectionStage: 'engine-start', message: 'Finding the best mobile release…' });
     sessionRef.current = { anime: request.anime, episode: targetEpisode, source: undefined, currentTime: 0, duration: 0 };
+    recordSupportEvent({
+      stage: 'source-discovery',
+      code: 'PLAY_REQUESTED',
+      message: 'Playback source discovery started.',
+      context: { animeId: request.anime.id, episode: targetEpisode, manualSource: Boolean(request.source), resolvedProfile },
+    });
     try {
       const ranked = await discoverSources(request.anime, targetEpisode);
       if (!mountedRef.current || requestGeneration !== generation.current) return;
@@ -312,6 +366,13 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       candidatesRef.current = candidates;
       setSources(candidates);
       if (!candidates.length) {
+        recordSupportEvent({
+          level: 'warning',
+          stage: 'source-discovery',
+          code: 'SOURCE_DISCOVERY_EMPTY',
+          message: 'No compatible release was found for the requested episode.',
+          context: { animeId: request.anime.id, episode: targetEpisode },
+        });
         setPhase('failed');
         setStatus({ ...idleStatus, state: 'error', connectionStage: 'failed', message: 'No compatible release was found for this episode.', error: 'No compatible release was found for this episode.' });
         return;
@@ -326,10 +387,17 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
         return;
       }
       const message = error instanceof Error ? error.message : 'Source discovery failed.';
+      recordSupportEvent({
+        level: 'error',
+        stage: 'source-discovery',
+        code: 'SOURCE_DISCOVERY_FAILED',
+        message,
+        context: { animeId: request.anime.id, episode: targetEpisode },
+      });
       setPhase('failed');
       setStatus({ ...idleStatus, state: 'error', connectionStage: 'failed', message, error: message });
     }
-  }, [discoverSources, persistProgress, startCandidate]);
+  }, [discoverSources, persistProgress, resolvedProfile, startCandidate]);
 
   const changeEpisode = useCallback(async (nextEpisode: number, automatic = false) => {
     const activeAnime = sessionRef.current.anime;
@@ -365,6 +433,12 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     const subscription = TorrentEngine.addStatusListener((next) => {
       if (!mountedRef.current) return;
       setStatus(next);
+      recordPlaybackStatus(next, {
+        animeId: sessionRef.current.anime?.id,
+        episode: sessionRef.current.episode,
+        source: sessionRef.current.source,
+        phase: phaseRef.current,
+      });
       if (next.state === 'error') failCurrentSource(next.error || next.message, next.failureStage, next.failureCode);
       else if (next.state === 'paused') {
         setPhase('paused');
@@ -457,6 +531,18 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     player.subtitleTrack = nextSubtitle;
     setSelectedAudioTrack(nextAudio);
     setSelectedSubtitleTrack(nextSubtitle);
+    recordSupportEvent({
+      stage: 'decoder',
+      code: 'VIDEO_SOURCE_LOADED',
+      message: 'Android loaded the local video stream.',
+      context: {
+        animeId: sessionRef.current.anime?.id,
+        episode: sessionRef.current.episode,
+        duration: Math.round(loadedDuration),
+        audioTracks: audioTracks.length,
+        subtitleTracks: subtitleTracks.length,
+      },
+    });
     const resume = resumeSecondsRef.current;
     resumeSecondsRef.current = 0;
     if (resume > 0 && player.currentTime < 2) player.currentTime = Math.min(resume, Math.max(0, loadedDuration - 5));
@@ -499,6 +585,18 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   useEventListener(player, 'statusChange', ({ status: playerStatus, error }) => {
     if (playerStatus !== 'error' || !loadedStreamRef.current || playerReadRecoveryRef.current) return;
     const reason = error?.message || 'Android could not decode this release.';
+    recordSupportEvent({
+      level: 'error',
+      stage: 'decoder',
+      code: 'VIDEO_PLAYER_ERROR',
+      message: reason,
+      context: {
+        animeId: sessionRef.current.anime?.id,
+        episode: sessionRef.current.episode,
+        currentTime: Math.round(sessionRef.current.currentTime),
+        readRetry: playerReadRetriesRef.current,
+      },
+    });
     const streamUrl = loadedStreamRef.current;
     const transientReadFailure = /socket|timeout|connection reset|source error|unexpected end/i.test(reason);
     if (!transientReadFailure || playerReadRetriesRef.current >= 1 || !sessionRef.current.anime || !sessionRef.current.source) {
