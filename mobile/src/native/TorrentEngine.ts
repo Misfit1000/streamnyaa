@@ -2,6 +2,8 @@ import { NativeModule, requireNativeModule } from 'expo';
 import type { EventSubscription } from 'expo-modules-core';
 import { API_ORIGIN } from '../config';
 import { normalizeEngineException } from '../lib/engineErrors';
+import { nativeSubtitleStyle } from '../lib/subtitleStyle';
+import type { SubtitleStylePreferences } from '../../../shared/preferences';
 import type {
   EngineCommandResult,
   EngineDiagnostic,
@@ -32,6 +34,7 @@ declare class TorrentEngineNative extends NativeModule<TorrentEvents> {
   listCacheEntries(): Promise<TorrentCacheEntry[]>;
   removeCacheEntry(infoHash: string): Promise<number>;
   getRuntimeProfile(): RuntimeDeviceProfile;
+  applyPlayerSubtitleStyle(requestJson: string): Promise<number>;
 }
 
 let nativeModule: TorrentEngineNative | null = null;
@@ -130,6 +133,7 @@ export const TorrentEngine = {
   listCacheEntries: () => nativeModule?.listCacheEntries() ?? Promise.resolve([]),
   removeCacheEntry: (infoHash: string) => nativeModule?.removeCacheEntry(infoHash) ?? Promise.resolve(0),
   getRuntimeProfile: () => nativeModule?.getRuntimeProfile() ?? ({ resolvedProfile: 'standard', lowRam: false, memoryClassMiB: 256 }),
+  applyPlayerSubtitleStyle: (style: SubtitleStylePreferences) => nativeModule?.applyPlayerSubtitleStyle(JSON.stringify(nativeSubtitleStyle(style))) ?? Promise.resolve(0),
   addStatusListener: (listener: (status: TorrentStreamStatus) => void): EventSubscription | null =>
     nativeModule?.addListener('onStatus', listener) ?? null,
 };

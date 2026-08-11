@@ -5,18 +5,22 @@ import { StatusBar } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { VideoView } from 'expo-video';
-import { ActivityIndicator, Button, IconButton, Text, useTheme } from 'react-native-paper';
+import { ActivityIndicator, Button, IconButton, Switch, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayback } from '../context/PlaybackContext';
 import { TorrentEngine } from '../native/TorrentEngine';
 import { buildSupportReport } from '../services/supportDiagnostics';
 import { sourceQualityBucket } from '../../../shared/sources';
 import { playerLayoutForViewport } from '../lib/playerLayout';
+import { STREAMNYAA_SUBTITLE_DEFAULT, effectiveSubtitleStyle } from '../lib/subtitleStyle';
+import { useAppStore } from '../store/useAppStore';
 import { tokens } from '../theme';
 import type { EngineDiagnostic, EngineHealthReport } from '../types';
+import type { SubtitleStylePreferences } from '../../../shared/preferences';
 
 type Playback = ReturnType<typeof usePlayback>;
-type Sheet = 'settings' | 'episodes' | 'sources' | 'tracks' | 'sleep' | 'diagnostics' | null;
+type Sheet = 'settings' | 'episodes' | 'sources' | 'tracks' | 'subtitleAppearance' | 'speed' | 'video' | 'sleep' | 'diagnostics' | null;
+type VideoFit = 'contain' | 'cover';
 
 function formatTime(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -27,15 +31,21 @@ function formatTime(seconds: number) {
   return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}` : `${minutes}:${String(remainder).padStart(2, '0')}`;
 }
 
+function titleCase(value: string) {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSources?: () => void; onMinimize?: () => void }) {
   const theme = useTheme();
   const playback = usePlayback();
   const { width, height, fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const subtitleStyle = useAppStore((state) => state.playerPreferences.subtitleStyle);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [locked, setLocked] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [videoFit, setVideoFit] = useState<VideoFit>('contain');
   const [seekWidth, setSeekWidth] = useState(1);
   const tapState = useRef<{ side: 'left' | 'right'; at: number } | undefined>(undefined);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -65,6 +75,16 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
     void ScreenOrientation.unlockAsync().catch(() => undefined);
     void NavigationBar.setVisibilityAsync('hidden').catch(() => undefined);
   }, []);
+
+  const applySubtitleStyle = useCallback(() => {
+    void TorrentEngine.applyPlayerSubtitleStyle(subtitleStyle).catch(() => undefined);
+  }, [subtitleStyle]);
+
+  useEffect(() => {
+    if (!playback.status.streamUrl) return;
+    const timers = [0, 250, 900].map((delay) => setTimeout(applySubtitleStyle, delay));
+    return () => timers.forEach(clearTimeout);
+  }, [applySubtitleStyle, fullscreen, playback.selectedSubtitleTrack?.id, playback.status.streamUrl]);
 
   const toggleFullscreen = async () => {
     if (fullscreenTransition.current) return;
@@ -131,10 +151,11 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
           style={StyleSheet.absoluteFill}
           player={playback.player}
           nativeControls={false}
-          contentFit="contain"
+          contentFit={videoFit}
           surfaceType="surfaceView"
           allowsPictureInPicture
           startsPictureInPictureAutomatically={playback.playing}
+          onFirstFrameRender={applySubtitleStyle}
           onPictureInPictureStart={() => playback.setPipActive(true)}
           onPictureInPictureStop={() => playback.setPipActive(false)}
         />
@@ -252,10 +273,13 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setSheet(null)} accessibilityLabel="Close playback settings" />
           <View style={[styles.sheet, sideSheet && styles.sideSheet, { backgroundColor: theme.colors.surface, paddingBottom: Math.max(12, insets.bottom) }]}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.sheetContent, sideSheet && { paddingTop: Math.max(18, insets.top + 8), paddingRight: Math.max(18, insets.right + 10) }]}>
-            {sheet === 'settings' ? <SettingsSheet playback={playback} onOpen={setSheet} /> : null}
+            {sheet === 'settings' ? <SettingsSheet playback={playback} videoFit={videoFit} onOpen={setSheet} /> : null}
             {sheet === 'episodes' ? <EpisodesSheet playback={playback} onClose={() => setSheet(null)} /> : null}
             {sheet === 'sources' ? <SourcesSheet playback={playback} onClose={() => setSheet(null)} /> : null}
             {sheet === 'tracks' ? <TracksSheet playback={playback} onClose={() => setSheet(null)} /> : null}
+            {sheet === 'subtitleAppearance' ? <SubtitleAppearanceSheet onClose={() => setSheet('settings')} /> : null}
+            {sheet === 'speed' ? <SpeedSheet playback={playback} onClose={() => setSheet('settings')} /> : null}
+            {sheet === 'video' ? <VideoSheet value={videoFit} onChange={setVideoFit} onClose={() => setSheet('settings')} /> : null}
             {sheet === 'sleep' ? <SleepSheet playback={playback} onClose={() => setSheet(null)} /> : null}
             {sheet === 'diagnostics' ? <DiagnosticsSheet playback={playback} onClose={() => setSheet(null)} /> : null}
           </ScrollView>
@@ -266,15 +290,62 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
   );
 }
 
-function SettingsSheet({ playback, onOpen }: { playback: Playback; onOpen: (sheet: Sheet) => void }) {
+function SettingsSheet({ playback, videoFit, onOpen }: { playback: Playback; videoFit: VideoFit; onOpen: (sheet: Sheet) => void }) {
+  const preferences = useAppStore((state) => state.playerPreferences);
+  const setPlayerPreferences = useAppStore((state) => state.setPlayerPreferences);
+  const selectedSubtitle = playback.selectedSubtitleTrack?.label || playback.selectedSubtitleTrack?.name || playback.selectedSubtitleTrack?.language || 'Off';
+  const selectedAudio = playback.selectedAudioTrack?.label || playback.selectedAudioTrack?.name || playback.selectedAudioTrack?.language || 'Default';
   return <>
-    <Text variant="titleLarge" style={styles.semibold}>Playback</Text>
+    <Text variant="titleLarge" style={styles.semibold}>Player settings</Text>
     <SheetAction icon="tune-variant" title="Release" detail={playback.source ? `${sourceQualityBucket(playback.source.title).replace('other', 'Auto')} · ${playback.source.seeders} seeders` : 'Automatic'} onPress={() => onOpen('sources')} />
-    <SheetAction icon="translate" title="Audio and subtitles" detail={`${playback.availableAudioTracks.length} audio · ${playback.availableSubtitleTracks.length} subtitle tracks`} onPress={() => onOpen('tracks')} />
-    <View style={styles.rateRow}>{[0.75, 1, 1.25, 1.5, 2].map((rate) => <Button key={rate} compact mode={playback.player.playbackRate === rate ? 'contained' : 'outlined'} onPress={() => playback.setPlaybackRate(rate)}>{rate}×</Button>)}</View>
+    <SheetAction icon="subtitles-outline" title="Subtitles / CC" detail={selectedSubtitle} onPress={() => onOpen('tracks')} />
+    <SheetAction icon="format-font" title="Subtitle appearance" detail={preferences.subtitleStyle.custom ? `${titleCase(preferences.subtitleStyle.fontSize)} · ${titleCase(preferences.subtitleStyle.position)}` : 'StreamNyaa default'} onPress={() => onOpen('subtitleAppearance')} />
+    <SheetAction icon="volume-high" title="Audio" detail={selectedAudio} onPress={() => onOpen('tracks')} />
+    <SheetAction icon="aspect-ratio" title="Video fit" detail={videoFit === 'contain' ? 'Fit · no crop' : 'Fill screen · cropped'} onPress={() => onOpen('video')} />
+    <SheetAction icon="speedometer" title="Playback speed" detail={`${playback.player.playbackRate}×`} onPress={() => onOpen('speed')} />
+    <SheetToggle icon="skip-next-circle-outline" title="Auto next episode" value={preferences.autoNextEpisode} onValueChange={(autoNextEpisode) => setPlayerPreferences({ autoNextEpisode })} />
+    <SheetToggle icon="skip-forward-outline" title="Auto skip intro" value={preferences.autoSkipIntro} onValueChange={(autoSkipIntro) => setPlayerPreferences({ autoSkipIntro })} />
+    <SheetToggle icon="skip-forward" title="Auto skip outro" value={preferences.autoSkipOutro} onValueChange={(autoSkipOutro) => setPlayerPreferences({ autoSkipOutro })} />
     <SheetAction icon="timer-outline" title="Sleep timer" detail={playback.sleepAtEpisodeEnd ? 'End of episode' : playback.sleepEndsAt ? 'Timer active' : 'Off'} onPress={() => onOpen('sleep')} />
     <SheetAction icon="information-outline" title="Connection" detail={`${playback.status.peers} peers · ${playback.status.seeds || 0} seeds · ${(playback.status.downloadRate / 1024 / 1024).toFixed(1)} MB/s`} />
     <SheetAction icon="stethoscope" title="Diagnostics" detail={playback.status.failureStage || playback.status.connectionStage || 'Engine status'} onPress={() => onOpen('diagnostics')} />
+  </>;
+}
+
+function SpeedSheet({ playback, onClose }: { playback: Playback; onClose: () => void }) {
+  return <>
+    <SheetTitle title="Playback speed" onBack={onClose} />
+    {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => <TrackButton key={rate} selected={Math.abs(playback.player.playbackRate - rate) < 0.01} label={`${rate}×`} onPress={() => playback.setPlaybackRate(rate)} />)}
+  </>;
+}
+
+function VideoSheet({ value, onChange, onClose }: { value: VideoFit; onChange: (value: VideoFit) => void; onClose: () => void }) {
+  return <>
+    <SheetTitle title="Video fit" onBack={onClose} />
+    <TrackButton selected={value === 'contain'} label="Fit · show the whole picture" onPress={() => onChange('contain')} />
+    <TrackButton selected={value === 'cover'} label="Fill · crop the edges" onPress={() => onChange('cover')} />
+    <Text variant="bodySmall" style={styles.muted}>Fit preserves subtitles and the original aspect ratio. Fill removes side bars on wider phones by cropping the top and bottom.</Text>
+  </>;
+}
+
+function SubtitleAppearanceSheet({ onClose }: { onClose: () => void }) {
+  const style = useAppStore((state) => state.playerPreferences.subtitleStyle);
+  const setPlayerPreferences = useAppStore((state) => state.setPlayerPreferences);
+  const effective = effectiveSubtitleStyle(style);
+  const update = (patch: Partial<SubtitleStylePreferences>) => setPlayerPreferences({ subtitleStyle: { ...patch, custom: true } });
+  const reset = () => setPlayerPreferences({ subtitleStyle: STREAMNYAA_SUBTITLE_DEFAULT });
+  return <>
+    <SheetTitle title="Subtitle appearance" onBack={onClose} />
+    <View style={styles.subtitlePreset}>
+      <MaterialCommunityIcons name="format-font" size={24} color={tokens.color.brandBright} />
+      <View style={styles.sheetActionCopy}><Text variant="labelLarge" style={styles.semibold}>StreamNyaa default</Text><Text variant="bodySmall" style={styles.muted}>Semibold, warm white text and a dark readability outline</Text></View>
+    </View>
+    <ChoiceGroup title="Size" value={effective.fontSize} choices={[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['extra_large', 'XL']]} onChange={(fontSize) => update({ fontSize })} />
+    <ChoiceGroup title="Position" value={effective.position} choices={[['low', 'Low'], ['normal', 'Normal'], ['high', 'High']]} onChange={(position) => update({ position })} />
+    <ChoiceGroup title="Text" value={effective.textColor} choices={[['white', 'White'], ['yellow', 'Yellow'], ['red', 'Red'], ['cyan', 'Cyan']]} onChange={(textColor) => update({ textColor })} />
+    <ChoiceGroup title="Outline" value={effective.outline} choices={[['none', 'Off'], ['medium', 'Default outline']]} onChange={(outline) => update({ outline })} />
+    <ChoiceGroup title="Background" value={effective.background} choices={[['off', 'Off'], ['light', 'Light'], ['dark', 'Dark']]} onChange={(background) => update({ background })} />
+    <Button mode="outlined" icon="restore" contentStyle={styles.choiceButtonContent} onPress={reset}>Reset StreamNyaa default</Button>
   </>;
 }
 
@@ -353,8 +424,20 @@ function DiagnosticValue({ label, value }: { label: string; value: string }) {
   return <View style={styles.diagnosticValue}><Text variant="labelSmall" style={styles.muted}>{label}</Text><Text variant="labelLarge" numberOfLines={1} style={styles.semibold}>{value}</Text></View>;
 }
 
+function SheetTitle({ title, onBack }: { title: string; onBack: () => void }) {
+  return <View style={styles.sheetTitleRow}><IconButton icon="arrow-left" size={22} onPress={onBack} accessibilityLabel={`Back from ${title}`} /><Text variant="titleLarge" style={[styles.semibold, styles.sheetTitle]}>{title}</Text></View>;
+}
+
+function ChoiceGroup({ title, value, choices, onChange }: { title: string; value: string; choices: ReadonlyArray<readonly [string, string]>; onChange: (value: string) => void }) {
+  return <View style={styles.choiceGroup}><Text variant="labelLarge" style={styles.semibold}>{title}</Text><View style={styles.choiceRow}>{choices.map(([choice, label]) => <Button key={choice} compact mode={value === choice ? 'contained' : 'outlined'} style={styles.choiceButton} contentStyle={styles.choiceButtonContent} onPress={() => onChange(choice)}>{label}</Button>)}</View></View>;
+}
+
 function SheetAction({ icon, title, detail, onPress }: { icon: string; title: string; detail?: string; onPress?: () => void }) {
   return <Pressable style={styles.sheetAction} onPress={onPress} disabled={!onPress} accessibilityRole={onPress ? 'button' : undefined}><MaterialCommunityIcons name={icon as any} size={24} color="#E11D48" /><View style={styles.sheetActionCopy}><Text variant="labelLarge" style={styles.semibold}>{title}</Text>{detail ? <Text variant="bodySmall" style={styles.muted}>{detail}</Text> : null}</View>{onPress ? <MaterialCommunityIcons name="chevron-right" size={23} color="#A9A2A6" /> : null}</Pressable>;
+}
+
+function SheetToggle({ icon, title, detail, value, onValueChange }: { icon: string; title: string; detail?: string; value: boolean; onValueChange: (value: boolean) => void }) {
+  return <Pressable style={styles.sheetAction} onPress={() => onValueChange(!value)} accessibilityRole="switch" accessibilityState={{ checked: value }}><MaterialCommunityIcons name={icon as any} size={24} color="#E11D48" /><View style={styles.sheetActionCopy}><Text variant="labelLarge" style={styles.semibold}>{title}</Text>{detail ? <Text variant="bodySmall" style={styles.muted}>{detail}</Text> : null}</View><View pointerEvents="none"><Switch value={value} /></View></Pressable>;
 }
 
 function TrackButton({ selected, label, onPress }: { selected: boolean; label: string; onPress: () => void }) {
@@ -465,9 +548,15 @@ const styles = StyleSheet.create({
   sideSheet: { width: '46%', maxWidth: 440, height: '100%', maxHeight: '100%', borderTopRightRadius: 0, borderBottomLeftRadius: tokens.radius.card },
   sheetContent: { padding: 18, gap: 10 },
   sheetTitleRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetTitle: { flex: 1 },
   sheetAction: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 7 },
   sheetActionCopy: { flex: 1, gap: 2 },
   rateRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 4 },
+  subtitlePreset: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, borderRadius: tokens.radius.control, backgroundColor: 'rgba(225,29,72,0.08)' },
+  choiceGroup: { gap: 8, paddingVertical: 3 },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  choiceButton: { minWidth: 72 },
+  choiceButtonContent: { minHeight: 48 },
   episodeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   episodeButton: { minWidth: 56 },
   sourceRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.outline },

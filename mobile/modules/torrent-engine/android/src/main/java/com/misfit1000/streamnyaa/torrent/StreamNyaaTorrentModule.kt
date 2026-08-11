@@ -84,6 +84,17 @@ class StreamNyaaTorrentModule : Module() {
       )
     }
 
+    AsyncFunction("applyPlayerSubtitleStyle") { requestJson: String ->
+      val activity = checkNotNull(appContext.currentActivity) { "The StreamNyaa player is not visible." }
+      val result = CompletableFuture<Int>()
+      activity.runOnUiThread {
+        runCatching { PlayerSubtitleStyler.apply(activity, JSONObject(requestJson)) }
+          .onSuccess(result::complete)
+          .onFailure(result::completeExceptionally)
+      }
+      result.get(2, TimeUnit.SECONDS)
+    }
+
     AsyncFunction("startStream") { requestJson: String ->
       try {
         val request = JSONObject(requestJson)
