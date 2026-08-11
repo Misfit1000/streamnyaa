@@ -30,7 +30,11 @@ $packageDump = (& $adb shell dumpsys package $PackageName 2>&1 | Out-String)
 if ($packageDump -notmatch [regex]::Escape($PackageName)) { throw "$PackageName is not installed on the connected device." }
 Set-Content -LiteralPath (Join-Path $outputDirectory 'package.txt') -Value $packageDump -Encoding utf8
 
-$uidMatch = [regex]::Match($packageDump, 'userId=(\d+)')
+$packageUidOutput = (& $adb shell cmd package list packages --user 0 -U $PackageName 2>&1 | Out-String)
+$uidMatch = [regex]::Match($packageUidOutput, '(?m)^package:' + [regex]::Escape($PackageName) + '\s+uid:(\d+)\s*$')
+if (-not $uidMatch.Success) {
+  $uidMatch = [regex]::Match($packageDump, '(?:userId|appId)=(\d+)')
+}
 Save-AdbOutput 'device.txt' @('shell', 'sh', '-c', 'getprop ro.product.manufacturer; getprop ro.product.model; getprop ro.build.version.sdk; getprop ro.product.cpu.abilist; wm size; wm density')
 Save-AdbOutput 'exit-info.txt' @('shell', 'dumpsys', 'activity', 'exit-info', $PackageName)
 Save-AdbOutput 'memory.txt' @('shell', 'dumpsys', 'meminfo', $PackageName)
@@ -46,6 +50,7 @@ $manifest = [ordered]@{
   capturedAt = (Get-Date).ToUniversalTime().ToString('o')
   packageName = $PackageName
   appScopedLogcat = $uidMatch.Success
+  packageUid = if ($uidMatch.Success) { [int]$uidMatch.Groups[1].Value } else { $null }
   installedAnything = $false
   outputDirectory = $outputDirectory
 }
