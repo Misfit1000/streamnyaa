@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal as NativeModal, Pressable, ScrollView, Share, StatusBar as NativeStatusBar, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type NativeSyntheticEvent, type NativeTouchEvent } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Modal as NativeModal, Pressable, ScrollView, Share, StatusBar as NativeStatusBar, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type NativeSyntheticEvent, type NativeTouchEvent, type StyleProp, type ViewStyle } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { StatusBar } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { VideoView } from 'expo-video';
 import { ActivityIndicator, Button, IconButton, Text, useTheme } from 'react-native-paper';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayback } from '../context/PlaybackContext';
 import { TorrentEngine } from '../native/TorrentEngine';
 import { sourceQualityBucket } from '../../../shared/sources';
+import { playerLayoutForViewport } from '../lib/playerLayout';
 import { tokens } from '../theme';
 import type { EngineDiagnostic, EngineHealthReport } from '../types';
 
@@ -27,7 +29,8 @@ function formatTime(seconds: number) {
 export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSources?: () => void; onMinimize?: () => void }) {
   const theme = useTheme();
   const playback = usePlayback();
-  const { height } = useWindowDimensions();
+  const { width, height, fontScale } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [controlsVisible, setControlsVisible] = useState(true);
   const [locked, setLocked] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -35,6 +38,15 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
   const [seekWidth, setSeekWidth] = useState(1);
   const tapState = useRef<{ side: 'left' | 'right'; at: number } | undefined>(undefined);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const fullscreenTransition = useRef(false);
+  const layout = useMemo(
+    () => playerLayoutForViewport({ width, height, fontScale, fullscreen }),
+    [fontScale, fullscreen, height, width],
+  );
+  const horizontalInset = fullscreen ? Math.max(layout.edgePadding, insets.left, insets.right) : layout.edgePadding;
+  const topInset = fullscreen ? insets.top : 0;
+  const bottomInset = fullscreen ? insets.bottom : 0;
+  const sideSheet = width > height;
 
   const reveal = useCallback(() => {
     setControlsVisible(true);
@@ -54,16 +66,23 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
   }, []);
 
   const toggleFullscreen = async () => {
+    if (fullscreenTransition.current) return;
+    fullscreenTransition.current = true;
     const next = !fullscreen;
     setFullscreen(next);
-    if (next) {
-      NativeStatusBar.setHidden(true, 'fade');
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
-      await NavigationBar.setVisibilityAsync('hidden').catch(() => undefined);
-    } else {
-      NativeStatusBar.setHidden(false, 'fade');
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
-      await NavigationBar.setVisibilityAsync('hidden').catch(() => undefined);
+    try {
+      if (next) {
+        NativeStatusBar.setHidden(true, 'fade');
+        await NavigationBar.setVisibilityAsync('hidden').catch(() => undefined);
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
+      } else {
+        setLocked(false);
+        NativeStatusBar.setHidden(false, 'fade');
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => undefined);
+        await NavigationBar.setVisibilityAsync('hidden').catch(() => undefined);
+      }
+    } finally {
+      fullscreenTransition.current = false;
     }
     reveal();
   };
@@ -104,7 +123,7 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
     && (playback.duration <= 0 || ['connecting', 'buffering', 'recovering'].includes(playback.phase)));
 
   const surface = (
-    <View style={[styles.root, fullscreen && { height, flex: 1 }]}>
+    <View style={[styles.playerRoot, fullscreen ? styles.fullscreenPlayer : styles.embeddedPlayer]}>
       <StatusBar hidden={fullscreen} style="light" />
       {playback.status.streamUrl ? (
         <VideoView
@@ -149,14 +168,14 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
       {playback.status.streamUrl && controlsVisible ? (
         <View style={styles.controls} pointerEvents="box-none">
           {locked ? (
-            <IconButton icon="lock-open-variant-outline" mode="contained" size={24} style={styles.unlock} onPress={() => { setLocked(false); reveal(); }} accessibilityLabel="Unlock player controls" />
+            <PlayerIconButton icon="lock-open-variant-outline" iconSize={layout.controlIconSize} containerSize={layout.controlSize} filled style={[styles.unlock, { left: Math.max(12, insets.left + 8) }]} onPress={() => { setLocked(false); reveal(); }} accessibilityLabel="Unlock player controls" />
           ) : (
             <>
-              <View style={styles.topBar}>
-                <IconButton icon="chevron-down" iconColor="#FFFFFF" size={28} onPress={fullscreen ? () => void toggleFullscreen() : (onMinimize || playback.minimize)} accessibilityLabel={fullscreen ? 'Exit fullscreen' : 'Minimize player'} />
-                <View style={styles.titleCopy}><Text variant="titleSmall" numberOfLines={1} style={styles.playerTitle}>{playback.anime?.title || 'StreamNyaa'}</Text><Text variant="labelSmall" style={styles.playerMeta}>Episode {playback.episode}{playback.source ? ` · ${sourceQualityBucket(playback.source.title).replace('other', 'Auto')}` : ''}</Text></View>
-                <IconButton icon="lock-outline" iconColor="#FFFFFF" size={23} onPress={() => { setLocked(true); setControlsVisible(false); }} accessibilityLabel="Lock player controls" />
-                <IconButton icon="dots-vertical" iconColor="#FFFFFF" size={24} onPress={() => setSheet('settings')} accessibilityLabel="Playback settings" />
+              <View style={[styles.topBar, { minHeight: 48 + topInset, paddingTop: topInset, paddingHorizontal: horizontalInset }]}>
+                <PlayerIconButton icon="chevron-down" iconSize={layout.controlIconSize + 2} containerSize={layout.controlSize} onPress={fullscreen ? () => void toggleFullscreen() : (onMinimize || playback.minimize)} accessibilityLabel={fullscreen ? 'Exit fullscreen' : 'Minimize player'} />
+                <View style={styles.titleCopy}><Text variant="titleSmall" numberOfLines={1} maxFontSizeMultiplier={1.2} style={styles.playerTitle}>{playback.anime?.title || 'StreamNyaa'}</Text><Text variant="labelSmall" numberOfLines={1} maxFontSizeMultiplier={1.2} style={styles.playerMeta}>Episode {playback.episode}{playback.source ? ` · ${sourceQualityBucket(playback.source.title).replace('other', 'Auto')}` : ''}</Text></View>
+                {fullscreen ? <PlayerIconButton icon="lock-outline" iconSize={layout.controlIconSize} containerSize={layout.controlSize} onPress={() => { setLocked(true); setControlsVisible(false); }} accessibilityLabel="Lock player controls" /> : null}
+                <PlayerIconButton icon="dots-vertical" iconSize={layout.controlIconSize} containerSize={layout.controlSize} onPress={() => setSheet('settings')} accessibilityLabel="Playback settings" />
               </View>
 
               {streamPreparing ? (
@@ -166,14 +185,16 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
                   <Text variant="labelSmall" style={styles.preparingDetail}>{playback.status.peers} peers · {playback.status.seeds || 0} seeds</Text>
                 </View>
               ) : (
-                <View style={styles.centerControls}>
-                  <IconButton icon="rewind-10" iconColor="#FFFFFF" size={32} onPress={() => playback.seekBy(-10)} accessibilityLabel="Rewind ten seconds" />
-                  <IconButton icon={playback.playing ? 'pause' : 'play'} mode="contained" containerColor="rgba(225,29,72,0.94)" iconColor="#FFFFFF" size={38} style={styles.playButton} onPress={playback.playing ? playback.pause : playback.play} accessibilityLabel={playback.playing ? 'Pause' : 'Play'} />
-                  <IconButton icon="fast-forward-10" iconColor="#FFFFFF" size={32} onPress={() => playback.seekBy(10)} accessibilityLabel="Skip ten seconds" />
+                <View pointerEvents="box-none" style={[styles.centerControls, { gap: layout.centerGap }]}>
+                  {layout.showAdjacentEpisodes ? <PlayerIconButton icon="skip-previous" iconSize={layout.controlIconSize} containerSize={layout.controlSize} disabled={!canPrevious} onPress={() => void playback.changeEpisode(playback.episode - 1)} accessibilityLabel="Previous episode" /> : null}
+                  <PlayerIconButton icon="rewind-10" iconSize={layout.controlIconSize + 2} containerSize={layout.controlSize} onPress={() => playback.seekBy(-10)} accessibilityLabel="Rewind ten seconds" />
+                  <PlayerIconButton icon={playback.playing ? 'pause' : 'play'} iconSize={layout.playIconSize} containerSize={layout.playControlSize} filled onPress={playback.playing ? playback.pause : playback.play} accessibilityLabel={playback.playing ? 'Pause' : 'Play'} />
+                  <PlayerIconButton icon="fast-forward-10" iconSize={layout.controlIconSize + 2} containerSize={layout.controlSize} onPress={() => playback.seekBy(10)} accessibilityLabel="Skip ten seconds" />
+                  {layout.showAdjacentEpisodes ? <PlayerIconButton icon="skip-next" iconSize={layout.controlIconSize} containerSize={layout.controlSize} disabled={!canNext} onPress={() => void playback.changeEpisode(playback.episode + 1)} accessibilityLabel="Next episode" /> : null}
                 </View>
               )}
 
-              <View style={styles.bottomControls}>
+              <View style={[styles.bottomControls, { paddingHorizontal: horizontalInset, paddingBottom: Math.max(4, bottomInset) }]}>
                 <Pressable style={styles.seekTouch} onLayout={onSeekLayout} onPress={seekFromTouch} accessibilityRole="adjustable" accessibilityLabel={`Playback position ${formatTime(playback.currentTime)} of ${formatTime(playback.duration)}`}>
                   <View style={styles.seekTrack}>
                     <View style={[styles.seekBuffered, { width: `${visibleBuffer * 100}%` }]} />
@@ -182,13 +203,11 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
                   </View>
                 </Pressable>
                 <View style={styles.controlRow}>
-                  <Text variant="labelMedium" style={styles.time}>{formatTime(playback.currentTime)} / {formatTime(playback.duration)}</Text>
+                  <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={[styles.time, { fontSize: layout.timeFontSize }]}>{formatTime(playback.currentTime)} / {formatTime(playback.duration)}</Text>
                   <View style={styles.rowActions}>
-                    {fullscreen ? <IconButton icon="skip-previous" iconColor="#FFFFFF" size={23} disabled={!canPrevious} onPress={() => void playback.changeEpisode(playback.episode - 1)} accessibilityLabel="Previous episode" /> : null}
-                    <Button compact textColor="#FFFFFF" icon="format-list-numbered" onPress={() => setSheet('episodes')}>{fullscreen ? `Episode ${playback.episode}` : `E${playback.episode}`}</Button>
-                    {fullscreen ? <IconButton icon="skip-next" iconColor="#FFFFFF" size={23} disabled={!canNext} onPress={() => void playback.changeEpisode(playback.episode + 1)} accessibilityLabel="Next episode" /> : null}
-                    <IconButton icon="subtitles-outline" iconColor="#FFFFFF" size={23} onPress={() => setSheet('tracks')} accessibilityLabel="Audio and subtitles" />
-                    <IconButton icon={fullscreen ? 'fullscreen-exit' : 'fullscreen'} iconColor="#FFFFFF" size={25} onPress={() => void toggleFullscreen()} accessibilityLabel={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} />
+                    <PlayerLabelButton label={layout.showEpisodeLabel ? `Episode ${playback.episode}` : `E${playback.episode}`} compact={!layout.showEpisodeLabel} onPress={() => setSheet('episodes')} />
+                    <PlayerIconButton icon="subtitles-outline" iconSize={layout.controlIconSize} containerSize={layout.controlSize} onPress={() => setSheet('tracks')} accessibilityLabel="Audio and subtitles" />
+                    <PlayerIconButton icon={fullscreen ? 'fullscreen-exit' : 'fullscreen'} iconSize={layout.controlIconSize + 1} containerSize={layout.controlSize} onPress={() => void toggleFullscreen()} accessibilityLabel={fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} />
                   </View>
                 </View>
               </View>
@@ -197,9 +216,9 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
         </View>
       ) : null}
 
-      {playback.activeSkip ? <Button compact mode="contained" icon="skip-forward" style={styles.skipButton} contentStyle={styles.skipContent} labelStyle={styles.skipLabel} onPress={playback.skipActiveSegment}>Skip {playback.activeSkip.type === 'op' ? 'intro' : 'outro'}</Button> : null}
+      {playback.activeSkip ? <Button compact mode="contained" icon="skip-forward" style={[styles.skipButton, { right: Math.max(12, horizontalInset), bottom: 58 + bottomInset }]} contentStyle={styles.skipContent} labelStyle={styles.skipLabel} onPress={playback.skipActiveSegment}>Skip {playback.activeSkip.type === 'op' ? 'intro' : 'outro'}</Button> : null}
       {playback.nextEpisodeCountdown !== null ? (
-        <View style={styles.nextEpisode}>
+        <View style={[styles.nextEpisode, { right: Math.max(12, horizontalInset), bottom: 58 + bottomInset }]}>
           <Text variant="titleSmall" style={styles.semibold}>Next episode in {playback.nextEpisodeCountdown}</Text>
           <Button compact onPress={playback.cancelNextEpisode}>Cancel</Button>
         </View>
@@ -210,15 +229,28 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
   return (
     <>
       {fullscreen ? (
-        <NativeModal visible animationType="fade" presentationStyle="fullScreen" onRequestClose={() => void toggleFullscreen()} statusBarTranslucent navigationBarTranslucent>
+        <NativeModal
+          visible
+          animationType="fade"
+          presentationStyle="fullScreen"
+          hardwareAccelerated
+          statusBarTranslucent
+          navigationBarTranslucent
+          supportedOrientations={['landscape', 'landscape-left', 'landscape-right']}
+          onShow={() => {
+            NativeStatusBar.setHidden(true, 'none');
+            void NavigationBar.setVisibilityAsync('hidden').catch(() => undefined);
+          }}
+          onRequestClose={() => void toggleFullscreen()}
+        >
           <View style={styles.fullscreen}>{surface}</View>
         </NativeModal>
       ) : surface}
       <NativeModal visible={Boolean(sheet)} transparent animationType="slide" onRequestClose={() => setSheet(null)} statusBarTranslucent>
-        <View style={styles.sheetBackdrop}>
+        <View style={[styles.sheetBackdrop, sideSheet && styles.sideSheetBackdrop]}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setSheet(null)} accessibilityLabel="Close playback settings" />
-          <View style={[styles.sheet, { backgroundColor: theme.colors.surface }]}>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetContent}>
+          <View style={[styles.sheet, sideSheet && styles.sideSheet, { backgroundColor: theme.colors.surface, paddingBottom: Math.max(12, insets.bottom) }]}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.sheetContent, sideSheet && { paddingTop: Math.max(18, insets.top + 8), paddingRight: Math.max(18, insets.right + 10) }]}>
             {sheet === 'settings' ? <SettingsSheet playback={playback} onOpen={setSheet} /> : null}
             {sheet === 'episodes' ? <EpisodesSheet playback={playback} onClose={() => setSheet(null)} /> : null}
             {sheet === 'sources' ? <SourcesSheet playback={playback} onClose={() => setSheet(null)} /> : null}
@@ -313,42 +345,108 @@ function TrackButton({ selected, label, onPress }: { selected: boolean; label: s
   return <Pressable style={styles.trackButton} onPress={onPress} accessibilityRole="radio" accessibilityState={{ selected }}><MaterialCommunityIcons name={selected ? 'radiobox-marked' : 'radiobox-blank'} size={22} color={selected ? tokens.color.brandBright : tokens.color.textMuted} /><Text variant="bodyLarge" style={styles.trackLabel}>{label}</Text></Pressable>;
 }
 
+function PlayerIconButton({
+  icon,
+  iconSize,
+  containerSize,
+  accessibilityLabel,
+  onPress,
+  filled = false,
+  disabled = false,
+  style,
+}: {
+  icon: string;
+  iconSize: number;
+  containerSize: number;
+  accessibilityLabel: string;
+  onPress: () => void;
+  filled?: boolean;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.playerIconButton,
+        { width: containerSize, height: containerSize, borderRadius: containerSize / 2 },
+        filled && styles.playerIconButtonFilled,
+        disabled && styles.playerControlDisabled,
+        pressed && !disabled && styles.playerControlPressed,
+        style,
+      ]}
+    >
+      <MaterialCommunityIcons name={icon as any} size={iconSize} color="#FFFFFF" />
+    </Pressable>
+  );
+}
+
+function PlayerLabelButton({ label, compact, onPress }: { label: string; compact: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Choose episode, current ${label}`}
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => [styles.playerLabelButton, compact && styles.playerLabelButtonCompact, pressed && styles.playerControlPressed]}
+    >
+      <MaterialCommunityIcons name="format-list-numbered" size={20} color="#FFFFFF" />
+      <Text numberOfLines={1} maxFontSizeMultiplier={1.2} style={styles.playerLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  root: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000000', overflow: 'hidden' },
-  fullscreen: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: '#000000', zIndex: 1000 },
+  playerRoot: { width: '100%', backgroundColor: '#000000', overflow: 'hidden' },
+  embeddedPlayer: { aspectRatio: 16 / 9 },
+  fullscreenPlayer: { flex: 1, width: '100%', height: '100%' },
+  fullscreen: { flex: 1, width: '100%', height: '100%', backgroundColor: '#000000' },
   tapZone: { flex: 1 },
   tapLayer: { flexDirection: 'row' },
   loading: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, gap: 9, backgroundColor: '#070708' },
   loadingMark: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: tokens.color.brand },
   loadingTitle: { color: '#F7F4F5', fontWeight: '600', textAlign: 'center' },
   loadingDetail: { color: '#AAA4A7', textAlign: 'center' },
-  loadingActions: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  loadingActions: { minHeight: 48, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 2 },
   controls: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.46)', justifyContent: 'space-between' },
-  topBar: { minHeight: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2, backgroundColor: 'rgba(0,0,0,0.34)' },
+  topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.32)' },
   titleCopy: { flex: 1, minWidth: 0 },
   playerTitle: { color: '#FFFFFF', fontWeight: '600' },
   playerMeta: { color: '#C7C1C4', marginTop: 2 },
-  centerControls: { position: 'absolute', left: 0, right: 0, top: '35%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18 },
-  preparingOverlay: { position: 'absolute', alignSelf: 'center', top: '31%', minWidth: 168, maxWidth: '72%', alignItems: 'center', gap: 4, paddingHorizontal: 18, paddingVertical: 12, borderRadius: tokens.radius.control, backgroundColor: 'rgba(5,5,6,0.82)' },
+  centerControls: { position: 'absolute', left: 0, right: 0, top: 48, bottom: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  preparingOverlay: { position: 'absolute', alignSelf: 'center', top: '35%', minWidth: 148, maxWidth: '68%', alignItems: 'center', gap: 3, paddingHorizontal: 14, paddingVertical: 9, borderRadius: tokens.radius.control, backgroundColor: 'rgba(5,5,6,0.84)' },
   preparingTitle: { color: '#FFFFFF', fontWeight: '600' },
   preparingDetail: { color: '#C7C1C4' },
-  playButton: { width: 64, height: 64 },
-  bottomControls: { marginTop: 'auto', paddingHorizontal: 12, paddingBottom: 6, backgroundColor: 'rgba(0,0,0,0.34)' },
-  seekTouch: { height: 30, justifyContent: 'center' },
+  bottomControls: { marginTop: 'auto', backgroundColor: 'rgba(0,0,0,0.32)' },
+  seekTouch: { height: 22, justifyContent: 'center' },
   seekTrack: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)' },
   seekBuffered: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: 'rgba(255,255,255,0.45)', borderRadius: 2 },
   seekProgress: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: tokens.color.brandBright, borderRadius: 2 },
   seekThumb: { position: 'absolute', top: -4, width: 12, height: 12, marginLeft: -6, borderRadius: 6, backgroundColor: tokens.color.brandBright },
-  controlRow: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  rowActions: { flexDirection: 'row', alignItems: 'center' },
-  time: { color: '#FFFFFF', fontVariant: ['tabular-nums'] },
-  unlock: { position: 'absolute', left: 14, top: '42%' },
-  skipButton: { position: 'absolute', right: 12, bottom: 68, borderRadius: tokens.radius.control },
+  controlRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  rowActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 4 },
+  time: { flexShrink: 1, color: '#FFFFFF', fontVariant: ['tabular-nums'], lineHeight: 16 },
+  playerIconButton: { flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  playerIconButtonFilled: { backgroundColor: 'rgba(225,29,72,0.94)' },
+  playerControlPressed: { backgroundColor: 'rgba(255,255,255,0.16)' },
+  playerControlDisabled: { opacity: 0.34 },
+  playerLabelButton: { minWidth: 48, maxWidth: 116, height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 8, borderRadius: tokens.radius.control },
+  playerLabelButtonCompact: { width: 48, paddingHorizontal: 3, gap: 2 },
+  playerLabel: { flexShrink: 1, color: '#FFFFFF', fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  unlock: { position: 'absolute', top: '50%', marginTop: -24 },
+  skipButton: { position: 'absolute', borderRadius: tokens.radius.control },
   skipContent: { minHeight: 38 },
   skipLabel: { fontSize: 13, lineHeight: 17 },
-  nextEpisode: { position: 'absolute', right: 14, bottom: 64, minWidth: 180, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 12, borderRadius: tokens.radius.card, backgroundColor: 'rgba(12,12,14,0.94)' },
+  nextEpisode: { position: 'absolute', minWidth: 180, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 12, borderRadius: tokens.radius.card, backgroundColor: 'rgba(12,12,14,0.94)' },
   sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.58)' },
+  sideSheetBackdrop: { alignItems: 'flex-end', justifyContent: 'center' },
   sheet: { maxHeight: '78%', marginHorizontal: 0, borderTopLeftRadius: tokens.radius.card, borderTopRightRadius: tokens.radius.card, paddingBottom: 12 },
+  sideSheet: { width: '46%', maxWidth: 440, height: '100%', maxHeight: '100%', borderTopRightRadius: 0, borderBottomLeftRadius: tokens.radius.card },
   sheetContent: { padding: 18, gap: 10 },
   sheetTitleRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetAction: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 7 },

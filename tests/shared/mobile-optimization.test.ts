@@ -130,6 +130,17 @@ test('stalled torrent sources time out and return to the in-app recovery flow', 
   assert.match(surface, /SourcesSheet/, 'manual releases and diagnostics must remain available without cluttering default playback');
 });
 
+test('player controls scale to the viewport and fullscreen owns the entire modal', () => {
+  const surface = readFileSync(path.join(repoRoot, 'mobile/src/components/PlaybackSurface.tsx'), 'utf8');
+  const layout = readFileSync(path.join(repoRoot, 'mobile/src/lib/playerLayout.ts'), 'utf8');
+  assert.match(surface, /useSafeAreaInsets/, 'fullscreen controls must stay clear of cutouts and gesture insets');
+  assert.match(surface, /fullscreenPlayer: \{ flex: 1, width: '100%', height: '100%'/, 'fullscreen video must fill its modal instead of retaining portrait aspect-ratio sizing');
+  assert.doesNotMatch(surface, /fullscreen && \{ height/, 'fullscreen must not reuse a stale portrait height');
+  assert.match(surface, /navigationBarTranslucent/, 'fullscreen must draw through the Android navigation-bar area');
+  assert.match(layout, /controlSize: 48/, 'responsive icons must retain accessible touch targets');
+  assert.match(layout, /showAdjacentEpisodes: fullscreen && width >= 600/, 'secondary controls should only appear when landscape width can accommodate them');
+});
+
 test('automatic playback waits for enriched anime metadata before source discovery', () => {
   const watch = readFileSync(path.join(repoRoot, 'mobile/src/screens/WatchScreen.tsx'), 'utf8');
   assert.match(watch, /playbackMetadataReady = !details\.isPending/);
