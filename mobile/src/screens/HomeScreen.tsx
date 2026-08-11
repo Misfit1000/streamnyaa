@@ -3,6 +3,7 @@ import { FlatList, RefreshControl, StyleSheet, View, useWindowDimensions } from 
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -14,13 +15,13 @@ import { StateView } from '../components/StateView';
 import { TrendingAnimeRow } from '../components/TrendingAnimeRow';
 import { Screen } from '../components/Screen';
 import { useAuth } from '../context/AuthContext';
-import { sourceQueriesForAnime } from '../lib/sourceDiscovery';
 import { watchRouteParams } from '../lib/mediaNavigation';
 import { fetchHomeFeed } from '../services/anilist';
 import { searchAnimeSources } from '../services/sources';
 import { useAppStore } from '../store/useAppStore';
 import type { Anime, MainTabParamList, PlaybackHistoryItem, RootStackParamList } from '../types';
 import { tokens } from '../theme';
+import { TorrentEngine } from '../native/TorrentEngine';
 
 type Props = CompositeScreenProps<BottomTabScreenProps<MainTabParamList, 'Home'>, NativeStackScreenProps<RootStackParamList>>;
 
@@ -30,14 +31,36 @@ export function HomeScreen({ navigation }: Props) {
   const auth = useAuth();
   const { height, width } = useWindowDimensions();
   const [filter, setFilter] = useState<HomeFilter>('for-you');
+  const [cacheReady, setCacheReady] = useState(false);
   const nsfwMode = useAppStore((state) => state.nsfwMode);
   const history = useAppStore((state) => state.history);
   const library = useAppStore((state) => state.library);
   const audio = useAppStore((state) => state.audioPreference);
   const setAudio = useAppStore((state) => state.setAudioPreference);
   const resourcePolicy = useAppStore((state) => state.resourcePolicy);
+  const runtimeProfile = useMemo(() => TorrentEngine.getRuntimeProfile(), []);
+  const resolvedProfile = resourcePolicy.performanceProfile === 'auto' ? runtimeProfile.resolvedProfile : resourcePolicy.performanceProfile;
   const toggleBookmark = useAppStore((state) => state.toggleBookmark);
-  const query = useQuery({ queryKey: ['home', nsfwMode], queryFn: ({ signal }) => fetchHomeFeed(nsfwMode, signal), staleTime: 15 * 60 * 1000 });
+  const homeCacheKey = `streamnyaa.home.v1.${nsfwMode ? 'all' : 'safe'}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    setCacheReady(false);
+    void AsyncStorage.getItem(homeCacheKey).then((raw) => {
+      if (!raw || cancelled) return;
+      const cached = JSON.parse(raw) as { savedAt?: number; data?: unknown };
+      if (!cached.data || !cached.savedAt || Date.now() - cached.savedAt > 24 * 60 * 60 * 1000) return;
+      queryClient.setQueryData(['home', nsfwMode], cached.data, { updatedAt: cached.savedAt });
+    }).catch(() => undefined).finally(() => { if (!cancelled) setCacheReady(true); });
+    return () => { cancelled = true; };
+  }, [homeCacheKey, nsfwMode, queryClient]);
+
+  const query = useQuery({ queryKey: ['home', nsfwMode], queryFn: ({ signal }) => fetchHomeFeed(nsfwMode, signal), staleTime: 15 * 60 * 1000, enabled: cacheReady });
+
+  useEffect(() => {
+    if (!query.data || query.isFetching) return;
+    void AsyncStorage.setItem(homeCacheKey, JSON.stringify({ savedAt: Date.now(), data: query.data })).catch(() => undefined);
+  }, [homeCacheKey, query.data, query.isFetching]);
 
   const openAnime = useCallback((anime: Anime) => navigation.navigate('Watch', { ...watchRouteParams(anime), autoPlay: true }), [navigation]);
   const openHistory = useCallback((item: PlaybackHistoryItem) => navigation.navigate('Watch', {
@@ -82,16 +105,15 @@ export function HomeScreen({ navigation }: Props) {
   useEffect(() => {
     const candidate = heroItems[0];
     if (!candidate) return undefined;
-    const sourceQueries = sourceQueriesForAnime(candidate, 1, audio);
     const timer = setTimeout(() => {
       void queryClient.prefetchQuery({
-        queryKey: ['watch-sources', sourceQueries, resourcePolicy.batterySaver],
+        queryKey: ['playback-sources', candidate.id, 1, audio, resolvedProfile, resourcePolicy.balancedFileSize],
         queryFn: ({ signal }) => searchAnimeSources(candidate, 1, audio, { signal, pages: 1, wide: false }),
         staleTime: 5 * 60 * 1000,
       });
     }, 450);
     return () => clearTimeout(timer);
-  }, [audio, heroItems, queryClient, resourcePolicy.batterySaver]);
+  }, [audio, heroItems, queryClient, resolvedProfile, resourcePolicy.balancedFileSize, resourcePolicy.batterySaver]);
 
   const chooseFilter = useCallback((next: HomeFilter) => {
     setFilter(next);
@@ -102,12 +124,13 @@ export function HomeScreen({ navigation }: Props) {
   if (query.isError || !query.data) return <Screen><StateView title="Home feed unavailable" message={query.error?.message} onRetry={() => void query.refetch()} /></Screen>;
 
   const contentWidth = width - tokens.spacing.lg * 2;
-  const heroHeight = Math.max(238, Math.min(292, height * 0.36));
+  const constrained = resolvedProfile === 'constrained';
+  const heroHeight = Math.max(constrained ? 220 : 238, Math.min(constrained ? 260 : 292, height * 0.36));
   return (
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: theme.colors.background }]}>
       <LinearGradient colors={['rgba(92,3,23,0.18)', theme.colors.background]} locations={[0, 0.22]} style={StyleSheet.absoluteFill} pointerEvents="none" />
       <FlatList
-        data={feedItems.slice(0, 14)}
+        data={feedItems.slice(0, constrained ? 10 : 14)}
         keyExtractor={(item) => `home-feed-${item.metadataProvider || 'media'}-${item.id}`}
         renderItem={({ item }) => <TrendingAnimeRow anime={item} onPress={() => openAnime(item)} />}
         ItemSeparatorComponent={() => <View style={[styles.divider, { backgroundColor: theme.colors.outlineVariant }]} />}
@@ -131,10 +154,10 @@ export function HomeScreen({ navigation }: Props) {
         contentContainerStyle={styles.list}
         refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} tintColor={theme.colors.primary} colors={[theme.colors.primary]} progressBackgroundColor={theme.colors.surfaceVariant} />}
         showsVerticalScrollIndicator={false}
-        initialNumToRender={5}
-        maxToRenderPerBatch={5}
-        updateCellsBatchingPeriod={32}
-        windowSize={7}
+        initialNumToRender={constrained ? 4 : 5}
+        maxToRenderPerBatch={constrained ? 3 : 5}
+        updateCellsBatchingPeriod={constrained ? 48 : 32}
+        windowSize={constrained ? 5 : 7}
         removeClippedSubviews
       />
     </SafeAreaView>

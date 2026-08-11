@@ -30,6 +30,8 @@ export type MobileResourcePolicy = {
   allowBackgroundPlayback: boolean;
   wifiOnly: boolean;
   maxCacheMiB: number;
+  balancedFileSize: boolean;
+  performanceProfile: 'auto' | 'standard' | 'constrained';
 };
 
 export type SyncedPreferences = {
@@ -65,6 +67,8 @@ export const DEFAULT_MOBILE_RESOURCE_POLICY: MobileResourcePolicy = {
   allowBackgroundPlayback: false,
   wifiOnly: false,
   maxCacheMiB: 2048,
+  balancedFileSize: true,
+  performanceProfile: 'auto',
 };
 
 export const DEFAULT_SYNCED_PREFERENCES: SyncedPreferences = {
@@ -114,11 +118,16 @@ export function normalizePlayerPreferences(value: PlayerPreferencesPatch = {}): 
 }
 
 export function normalizeMobileResourcePolicy(value: Partial<MobileResourcePolicy> = {}): MobileResourcePolicy {
+  const performanceProfile = String(value.performanceProfile || DEFAULT_MOBILE_RESOURCE_POLICY.performanceProfile);
   return {
     batterySaver: asBooleanPreference(value.batterySaver, DEFAULT_MOBILE_RESOURCE_POLICY.batterySaver),
     allowBackgroundPlayback: asBooleanPreference(value.allowBackgroundPlayback, DEFAULT_MOBILE_RESOURCE_POLICY.allowBackgroundPlayback),
     wifiOnly: asBooleanPreference(value.wifiOnly, DEFAULT_MOBILE_RESOURCE_POLICY.wifiOnly),
     maxCacheMiB: Math.round(asNumberPreference(value.maxCacheMiB, DEFAULT_MOBILE_RESOURCE_POLICY.maxCacheMiB, 512, 8192)),
+    balancedFileSize: asBooleanPreference(value.balancedFileSize, DEFAULT_MOBILE_RESOURCE_POLICY.balancedFileSize),
+    performanceProfile: ['auto', 'standard', 'constrained'].includes(performanceProfile)
+      ? performanceProfile as MobileResourcePolicy['performanceProfile']
+      : DEFAULT_MOBILE_RESOURCE_POLICY.performanceProfile,
   };
 }
 

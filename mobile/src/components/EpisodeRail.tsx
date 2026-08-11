@@ -19,18 +19,20 @@ export function EpisodeRail({ current, total, details = [], onSelect }: Props) {
   }, [current, total]);
   const selectedIndex = Math.max(0, episodes.indexOf(current));
   const detailsByNumber = useMemo(() => new Map(details.map((item) => [item.number, item])), [details]);
-  const detailed = details.length > 0;
-  const itemLength = detailed ? 136 : 72;
+  const itemLength = 54 + tokens.spacing.sm;
 
   useEffect(() => {
-    const timer = setTimeout(() => list.current?.scrollToIndex({ index: selectedIndex, animated: true, viewPosition: 0.45 }), 80);
+    const timer = setTimeout(() => {
+      if (selectedIndex < 3) list.current?.scrollToOffset({ offset: 0, animated: true });
+      else list.current?.scrollToIndex({ index: selectedIndex, animated: true, viewPosition: 0.35 });
+    }, 80);
     return () => clearTimeout(timer);
   }, [selectedIndex]);
 
   return (
     <View style={styles.root}>
       <View style={styles.heading}>
-        <Text variant="titleLarge" style={styles.semibold}>Episodes</Text>
+        <Text variant="titleMedium" style={styles.semibold}>Episodes</Text>
         <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>{total ? `${total} available` : `Episode ${current}`}</Text>
       </View>
       <FlatList
@@ -45,17 +47,21 @@ export function EpisodeRail({ current, total, details = [], onSelect }: Props) {
         renderItem={({ item }) => {
           const active = item === current;
           const detail = detailsByNumber.get(item);
+          const kind = detail?.filler ? 'filler' : detail?.recap ? 'recap' : '';
           return (
             <Pressable
               onPress={() => onSelect(item)}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
-              accessibilityLabel={`Episode ${item}`}
-              style={({ pressed }) => [styles.episode, detailed && styles.detailedEpisode, { backgroundColor: active ? theme.colors.primaryContainer : tokens.color.surfaceRaised, borderColor: active ? tokens.color.outlineBrand : theme.colors.outlineVariant, opacity: pressed ? 0.72 : 1 }]}
+              accessibilityLabel={`Episode ${item}${kind ? `, ${kind}` : ''}`}
+              style={({ pressed }) => [styles.episode, {
+                backgroundColor: active ? theme.colors.primary : tokens.color.surfaceRaised,
+                borderColor: active ? theme.colors.primary : theme.colors.outlineVariant,
+                opacity: pressed ? 0.72 : 1,
+              }]}
             >
-              <Text variant="labelSmall" style={{ color: active ? theme.colors.primary : theme.colors.onSurfaceVariant }}>Episode {item}{detail?.filler ? ' · Filler' : detail?.recap ? ' · Recap' : ''}</Text>
-              {detail ? <Text variant="labelLarge" numberOfLines={2} style={[styles.detailTitle, { color: active ? theme.colors.onPrimaryContainer : theme.colors.onSurface }]}>{detail.title}</Text> : <Text variant="titleLarge" style={[styles.number, { color: active ? theme.colors.primary : theme.colors.onSurface }]}>{item}</Text>}
-              <View style={[styles.indicator, { backgroundColor: active ? theme.colors.primary : 'transparent' }]} />
+              <Text variant="labelLarge" style={[styles.number, { color: active ? '#FFFFFF' : theme.colors.onSurface }]}>{item}</Text>
+              {kind ? <View style={[styles.kindDot, { backgroundColor: active ? '#FFFFFF' : theme.colors.primary }]} /> : null}
             </Pressable>
           );
         }}
@@ -65,13 +71,11 @@ export function EpisodeRail({ current, total, details = [], onSelect }: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: { gap: tokens.spacing.md },
-  heading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: tokens.spacing.md },
-  list: { gap: tokens.spacing.sm, paddingRight: tokens.spacing.lg },
-  episode: { width: 64, height: 78, borderWidth: StyleSheet.hairlineWidth, borderRadius: tokens.radius.card, alignItems: 'center', justifyContent: 'center', gap: 2, overflow: 'hidden' },
-  detailedEpisode: { width: 128, alignItems: 'flex-start', paddingHorizontal: tokens.spacing.sm },
-  detailTitle: { fontWeight: '600', lineHeight: 17 },
-  number: { fontWeight: '700' },
-  indicator: { position: 'absolute', height: 3, bottom: 0, left: 10, right: 10, borderRadius: tokens.radius.pill },
+  root: { gap: tokens.spacing.sm },
+  heading: { minHeight: 38, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: tokens.spacing.md, paddingHorizontal: tokens.spacing.lg },
+  list: { gap: tokens.spacing.sm, paddingHorizontal: tokens.spacing.lg },
+  episode: { width: 54, height: 54, borderWidth: StyleSheet.hairlineWidth, borderRadius: tokens.radius.control, alignItems: 'center', justifyContent: 'center' },
+  number: { fontWeight: '600' },
+  kindDot: { position: 'absolute', width: 4, height: 4, bottom: 6, borderRadius: 2 },
   semibold: { fontWeight: '600' },
 });

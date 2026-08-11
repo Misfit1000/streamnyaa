@@ -180,7 +180,7 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'streamnyaa.mobile.v1',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => AsyncStorage),
       migrate: (persisted: unknown, version) => {
         const state = (persisted || {}) as Partial<AppState>;

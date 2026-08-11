@@ -12,6 +12,7 @@ class LocalTorrentHttpServer(
   private val fileProvider: () -> File?,
   private val sizeProvider: () -> Long,
   private val readableBytesProvider: (Long) -> Long,
+  private val onRangeRequested: (Long) -> Unit,
   private val mimeProvider: () -> String,
 ) : NanoHTTPD("127.0.0.1", 0) {
   override fun serve(session: IHTTPSession): Response {
@@ -28,6 +29,7 @@ class LocalTorrentHttpServer(
       }
     }
     val start = requestedStart.coerceAtMost(total - 1)
+    onRangeRequested(start)
     val requestedEnd = range?.substringAfter('-', "")?.toLongOrNull()?.coerceIn(start, maxOf(start, total - 1)) ?: (total - 1)
     val length = requestedEnd - start + 1
     val input = GrowingFileInputStream(file, start, length, readableBytesProvider)

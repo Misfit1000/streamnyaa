@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, AppState, Share, StyleSheet } from 'react-native';
+import { Alert, AppState, Share, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Button, Divider, List, RadioButton, SegmentedButtons, Snackbar, Switch, Text } from 'react-native-paper';
 import { Screen } from '../components/Screen';
@@ -7,7 +7,8 @@ import { TorrentEngine } from '../native/TorrentEngine';
 import { getNotificationPermissionState, openAppPermissionSettings, requestNotificationPermission, type NotificationPermissionState } from '../services/permissions';
 import { runConnectionDiagnostics, type ConnectionDiagnostic } from '../services/diagnostics';
 import { useAppStore } from '../store/useAppStore';
-import type { RootStackParamList } from '../types';
+import type { RootStackParamList, TorrentCacheEntry } from '../types';
+import { tokens } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -15,13 +16,14 @@ export function SettingsScreen(_props: Props) {
   const store = useAppStore();
   const [message, setMessage] = useState('');
   const [cacheBytes, setCacheBytes] = useState(0);
+  const [cacheEntries, setCacheEntries] = useState<TorrentCacheEntry[]>([]);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState | null>(null);
   const [diagnostics, setDiagnostics] = useState<ConnectionDiagnostic[]>([]);
   const [checkingConnections, setCheckingConnections] = useState(false);
   const clearHistory = useAppStore((state) => state.clearHistory);
-  const refreshCache = () => void TorrentEngine.getCacheStats()
-    .then((stats) => setCacheBytes(stats.bytes))
-    .catch(() => setCacheBytes(0));
+  const refreshCache = () => void Promise.all([TorrentEngine.getCacheStats(), TorrentEngine.listCacheEntries()])
+    .then(([stats, entries]) => { setCacheBytes(stats.bytes); setCacheEntries(entries); })
+    .catch(() => { setCacheBytes(0); setCacheEntries([]); });
   const refreshPermission = () => void getNotificationPermissionState()
     .then(setNotificationPermission)
     .catch(() => setNotificationPermission(null));
@@ -82,6 +84,8 @@ export function SettingsScreen(_props: Props) {
         </RadioButton.Group>
         <List.Item title="Auto-play next episode" right={() => <Switch value={store.autoPlayNext} onValueChange={store.setAutoPlayNext} />} />
         <List.Item title="Open best source automatically" description="Starts the highest-ranked source when a watch page opens" right={() => <Switch value={store.autoOpenBestSource} onValueChange={store.setAutoOpenBestSource} />} />
+        <List.Item title="Auto-skip intros" description="Uses verified episode timing when available" right={() => <Switch value={store.playerPreferences.autoSkipIntro} onValueChange={(autoSkipIntro) => store.setPlayerPreferences({ autoSkipIntro })} />} />
+        <List.Item title="Auto-skip outros" description="Manual skip buttons remain available when this is off" right={() => <Switch value={store.playerPreferences.autoSkipOutro} onValueChange={(autoSkipOutro) => store.setPlayerPreferences({ autoSkipOutro })} />} />
         <Text variant="labelLarge" style={styles.label}>Playback speed</Text>
         <SegmentedButtons
           value={String(store.playerPreferences.playbackSpeed)}
@@ -97,9 +101,13 @@ export function SettingsScreen(_props: Props) {
       </List.Section>
       <Divider />
       <List.Section title="Battery and data">
+        <List.Item title="Balanced file size" description="Prefer high-quality, well-seeded releases from 300 MB to 1 GB" right={() => <Switch value={store.resourcePolicy.balancedFileSize} onValueChange={(balancedFileSize) => store.setResourcePolicy({ balancedFileSize })} />} />
         <List.Item title="Battery saver" description="Polls torrent status less often and writes progress every 15 seconds" right={() => <Switch value={store.resourcePolicy.batterySaver} onValueChange={(batterySaver) => store.setResourcePolicy({ batterySaver })} />} />
         <List.Item title="Stream on Wi-Fi only" description="Blocks new torrent sessions on cellular data" right={() => <Switch value={store.resourcePolicy.wifiOnly} onValueChange={(wifiOnly) => store.setResourcePolicy({ wifiOnly })} />} />
         <List.Item title="Background playback" description="Continue streaming when StreamNyaa is not visible; picture-in-picture always remains supported" right={() => <Switch value={store.resourcePolicy.allowBackgroundPlayback} onValueChange={(allowBackgroundPlayback) => store.setResourcePolicy({ allowBackgroundPlayback })} />} />
+        <Text variant="labelLarge" style={styles.label}>Performance profile</Text>
+        <SegmentedButtons value={store.resourcePolicy.performanceProfile} onValueChange={(value) => store.setResourcePolicy({ performanceProfile: value as typeof store.resourcePolicy.performanceProfile })} buttons={[{ value: 'auto', label: 'Auto' }, { value: 'standard', label: 'Standard' }, { value: 'constrained', label: 'Low RAM' }]} density="small" />
+        <Text variant="bodySmall" style={styles.helper}>Auto detects Android low-RAM devices. Low RAM mode reduces image memory, torrent connections, and player buffering.</Text>
         <Text variant="labelLarge" style={styles.label}>Maximum streaming cache</Text>
         <RadioButton.Group value={String(store.resourcePolicy.maxCacheMiB)} onValueChange={(value) => store.setResourcePolicy({ maxCacheMiB: Number(value) })}>
           <RadioButton.Item label="1 GB" value="1024" />
@@ -109,7 +117,11 @@ export function SettingsScreen(_props: Props) {
       </List.Section>
       <List.Section title="Storage and local data">
         <List.Item title="Streaming cache" description={`${(cacheBytes / 1024 / 1024).toFixed(1)} MB used · ${store.resourcePolicy.maxCacheMiB} MB limit`} left={(props) => <List.Icon {...props} icon="harddisk" />} />
-        <Button mode="outlined" icon="delete-sweep-outline" onPress={() => void TorrentEngine.clearCache().then((bytes) => { setCacheBytes(0); setMessage(`Cleared ${(bytes / 1024 / 1024).toFixed(1)} MB of cached source data.`); }).catch((error) => setMessage(error.message))}>Clear streaming cache</Button>
+        {cacheEntries.slice(0, 8).map((entry) => <View key={entry.infoHash} style={styles.cacheEntry}>
+          <View style={styles.cacheCopy}><Text variant="labelLarge" numberOfLines={1} style={styles.semibold}>{entry.animeTitle || entry.fileName || 'Cached release'}</Text><Text variant="labelSmall" numberOfLines={1}>{entry.episode ? `Episode ${entry.episode} · ` : ''}{(entry.bytes / 1024 / 1024).toFixed(0)} MB{entry.active ? ' · Playing' : ''}</Text></View>
+          <Button compact disabled={entry.active} onPress={() => void TorrentEngine.removeCacheEntry(entry.infoHash).then((bytes) => { setMessage(`Removed ${(bytes / 1024 / 1024).toFixed(1)} MB.`); refreshCache(); })}>{entry.active ? 'Active' : 'Remove'}</Button>
+        </View>)}
+        <Button mode="outlined" icon="delete-sweep-outline" onPress={() => void TorrentEngine.clearCache().then((bytes) => { refreshCache(); setMessage(`Cleared ${(bytes / 1024 / 1024).toFixed(1)} MB of inactive cached source data.`); }).catch((error) => setMessage(error.message))}>Clear streaming cache</Button>
         <Button mode="text" icon="history" onPress={() => Alert.alert('Clear watch history?', 'This removes progress from all synced clients after the next account sync.', [{ text: 'Cancel' }, { text: 'Clear', style: 'destructive', onPress: clearHistory }])}>Clear watch history</Button>
       </List.Section>
       <Divider />
@@ -118,11 +130,17 @@ export function SettingsScreen(_props: Props) {
         {diagnostics.map((item) => <List.Item key={item.id} title={item.label} description={item.message} left={(props) => <List.Icon {...props} icon={item.ok ? 'check-circle-outline' : 'alert-circle-outline'} color={item.ok ? undefined : '#FF6B82'} />} />)}
         <Button mode="outlined" icon="lan-check" loading={checkingConnections} disabled={checkingConnections} onPress={() => void checkConnections()}>Run connection check</Button>
       </List.Section>
-      <Text variant="bodySmall">Streaming downloads only the selected media file into private app storage. Old source caches are removed automatically when the limit is reached.</Text>
+      <Text variant="bodySmall">Streaming caches only the selected media file in private app storage. Old inactive source caches are removed automatically when the limit is reached.</Text>
       <Button mode="text" icon="share-variant" onPress={() => void Share.share({ message: JSON.stringify({ audioPreference: store.audioPreference, autoOpenBestSource: store.autoOpenBestSource, playerPreferences: store.playerPreferences, resourcePolicy: store.resourcePolicy }, null, 2), title: 'StreamNyaa Android settings' })}>Export settings</Button>
       <Snackbar visible={Boolean(message)} onDismiss={() => setMessage('')}>{message}</Snackbar>
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({ label: { paddingHorizontal: 16, paddingTop: 8 } });
+const styles = StyleSheet.create({
+  label: { paddingHorizontal: 16, paddingTop: 8 },
+  helper: { paddingHorizontal: 16, color: tokens.color.textMuted },
+  cacheEntry: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 16, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.color.outline },
+  cacheCopy: { flex: 1, minWidth: 0, gap: 3 },
+  semibold: { fontWeight: '600' },
+});

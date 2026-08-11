@@ -63,6 +63,7 @@ export type TorrentSource = {
   infoHash: string;
   category?: string;
   size?: string;
+  sizeBytes?: number;
   trusted?: boolean;
   remake?: boolean;
   sourceScore?: number;
@@ -114,9 +115,24 @@ export type TorrentStreamStatus = {
   progress: number;
   bufferedPercent: number;
   peers: number;
+  seeds?: number;
+  connectCandidates?: number;
   trackerCount?: number;
+  dhtNodes?: number;
+  dhtRunning?: boolean;
+  firewalled?: boolean;
+  announcingToTrackers?: boolean;
+  announcingToDht?: boolean;
+  announcingToLsd?: boolean;
   connectionStage?: 'idle' | 'engine-start' | 'peer-discovery' | 'buffering' | 'ready' | 'paused' | 'failed';
   downloadRate: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  etaSeconds?: number;
+  failureStage?: string;
+  failureCode?: string;
+  metadataFailure?: string;
+  cached?: boolean;
   waitSeconds?: number;
   fileName?: string;
   streamUrl?: string;
@@ -127,12 +143,84 @@ export type TorrentStartOptions = {
   wifiOnly: boolean;
   maxCacheMiB: number;
   batterySaver: boolean;
+  performanceProfile: 'standard' | 'constrained';
+  animeId?: string;
+  animeTitle?: string;
+  episode?: number;
+  sourceTitle?: string;
+  infoHash?: string;
+  torrentUrl?: string;
+  metadataUrls?: string[];
+};
+
+export type TorrentStartRequest = {
+  protocolVersion: 1;
+  magnet: string;
+  preferredFile?: string;
+  options: TorrentStartOptions;
+};
+
+export type EngineFailure = {
+  errorCode: string;
+  message: string;
+  stage: string;
+  retryable: boolean;
+};
+
+export type EngineCommandResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: EngineFailure };
+
+export type EngineHealthReport = {
+  protocolVersion: number;
+  supported: boolean;
+  serviceConnected: boolean;
+  nativeLibraryLoaded: boolean;
+  abi: string;
+  androidApi: number;
+  cacheWritable: boolean;
+  loopbackReachable: boolean;
+  details?: string;
+};
+
+export type EngineDiagnostic = {
+  at: number;
+  level: 'info' | 'warning' | 'error';
+  stage: string;
+  code: string;
+  message: string;
 };
 
 export type TorrentCacheStats = {
   bytes: number;
   freeBytes: number;
   maxBytes: number;
+};
+
+export type TorrentCacheEntry = {
+  infoHash: string;
+  animeId?: string;
+  animeTitle?: string;
+  episode?: number;
+  sourceTitle?: string;
+  fileName?: string;
+  bytes: number;
+  totalBytes: number;
+  lastAccessedAt: number;
+  active: boolean;
+};
+
+export type RuntimeDeviceProfile = {
+  resolvedProfile: 'standard' | 'constrained';
+  lowRam: boolean;
+  memoryClassMiB: number;
+};
+
+export type SkipInterval = {
+  type: 'op' | 'ed';
+  startSeconds: number;
+  endSeconds: number;
+  episodeLength: number;
 };
 
 export type RootStackParamList = {

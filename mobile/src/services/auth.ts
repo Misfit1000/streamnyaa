@@ -1,4 +1,3 @@
-import * as Linking from 'expo-linking';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { API_ORIGIN } from '../config';
@@ -8,8 +7,7 @@ import { requestJson } from '../lib/network';
 const SESSION_KEY = 'streamnyaa.auth.session.v1';
 export type SupabasePublicConfig = { supabaseUrl: string; supabaseAnonKey: string };
 let configPromise: Promise<SupabasePublicConfig> | null = null;
-const APP_REDIRECT_URL = Linking.createURL('auth');
-const MOBILE_AUTH_CALLBACK_URL = `${API_ORIGIN}/api/auth/mobile-callback`;
+export const APP_REDIRECT_URL = 'streamnyaa://auth';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -82,7 +80,7 @@ export async function signInWithPassword(email: string, password: string) {
 }
 
 export async function signUpWithPassword(email: string, password: string) {
-  const session = normalizeSession(await authFetch(`signup?redirect_to=${encodeURIComponent(MOBILE_AUTH_CALLBACK_URL)}`, {
+  const session = normalizeSession(await authFetch(`signup?redirect_to=${encodeURIComponent(APP_REDIRECT_URL)}`, {
     method: 'POST', body: JSON.stringify({ email, password }),
   }));
   if (session.access_token) await storeSession(session);
@@ -91,7 +89,7 @@ export async function signUpWithPassword(email: string, password: string) {
 
 export async function signInWithGoogle() {
   const config = await authConfig();
-  const url = `${config.supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(MOBILE_AUTH_CALLBACK_URL)}`;
+  const url = `${config.supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(APP_REDIRECT_URL)}`;
   const result = await WebBrowser.openAuthSessionAsync(url, APP_REDIRECT_URL);
   if (result.type !== 'success') throw new Error('Google sign-in was cancelled.');
   const session = await sessionFromAuthUrl(result.url);

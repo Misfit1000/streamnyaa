@@ -32,7 +32,7 @@ test('Android parity covers the desktop workflows inside each route', () => {
     'ExploreScreen.tsx': ['useInfiniteQuery', 'recentExploreSearches', 'Refine results', 'Minimum score', 'Episode count'],
     'ScheduleScreen.tsx': ['Saved (', 'airingReminders', 'cancelAiringReminder', 'toggleBookmark'],
     'LibraryScreen.tsx': ["'watching'", "'completed'", "'saved'", "'liked'", 'ProgressBar'],
-    'WatchScreen.tsx': ['episodeDraft', 'sourceFilter', 'sourceSort', 'selectBackupSource', 'allowsPictureInPicture'],
+    'WatchScreen.tsx': ['EpisodeRail', 'AnimeShelf', 'playback.startPlayback', "navigation.navigate('Downloads'"],
     'DownloadsScreen.tsx': ['sourceQualityLabel', 'Trusted', 'No remakes', 'Most seeders'],
     'HistoryScreen.tsx': ["'recent'", "'progress'", "'title'", "'episode'", 'Last 7 days'],
     'CompareScreen.tsx': ['Popularity', 'Quick read', 'sharedGenres', 'A releases'],
@@ -42,6 +42,10 @@ test('Android parity covers the desktop workflows inside each route', () => {
     const source = readFileSync(path.join(repoRoot, 'mobile/src/screens', file), 'utf8');
     signals.forEach((signal) => assert.ok(source.includes(signal), `${file} is missing ${signal}`));
   });
+  const playback = readFileSync(path.join(repoRoot, 'mobile/src/context/PlaybackContext.tsx'), 'utf8');
+  ['rankMobileSources', 'nextRecoverySource', 'changeEpisode', 'fetchSkipIntervals'].forEach((signal) => assert.ok(playback.includes(signal), `PlaybackContext is missing ${signal}`));
+  const surface = readFileSync(path.join(repoRoot, 'mobile/src/components/PlaybackSurface.tsx'), 'utf8');
+  ['allowsPictureInPicture', 'SourcesSheet', 'TracksSheet', 'SleepSheet'].forEach((signal) => assert.ok(surface.includes(signal), `PlaybackSurface is missing ${signal}`));
 });
 
 test('Android anime discovery enters the integrated cinema instead of a web details flow', () => {
@@ -51,5 +55,5 @@ test('Android anime discovery enters the integrated cinema instead of a web deta
     assert.ok(!source.includes("navigate('Anime'"), `${file} still opens the legacy details route`);
   });
   const watch = readFileSync(path.join(repoRoot, 'mobile/src/screens/WatchScreen.tsx'), 'utf8');
-  ['WatchHero', 'EpisodeRail', 'AnimeShelf', 'selectBackupSource'].forEach((signal) => assert.ok(watch.includes(signal), `WatchScreen is missing ${signal}`));
+  ['PlaybackSurface', 'EpisodeRail', 'AnimeShelf', 'playback.startPlayback'].forEach((signal) => assert.ok(watch.includes(signal), `WatchScreen is missing ${signal}`));
 });

@@ -43,13 +43,21 @@ test('network retries only transient failures and caps attempts', () => {
 });
 
 test('streaming lifecycle detaches the player and isolates native sessions', () => {
-  const watch = readFileSync(path.join(repoRoot, 'mobile/src/screens/WatchScreen.tsx'), 'utf8');
+  const playback = readFileSync(path.join(repoRoot, 'mobile/src/context/PlaybackContext.tsx'), 'utf8');
   const engine = readFileSync(path.join(repoRoot, 'mobile/modules/torrent-engine/android/src/main/java/com/misfit1000/streamnyaa/torrent/TorrentStreamEngine.kt'), 'utf8');
   const server = readFileSync(path.join(repoRoot, 'mobile/modules/torrent-engine/android/src/main/java/com/misfit1000/streamnyaa/torrent/LocalTorrentHttpServer.kt'), 'utf8');
-  assert.match(watch, /replaceAsync\(null\)/, 'ExoPlayer must detach before its localhost source is stopped');
-  assert.match(watch, /playbackGeneration/, 'stale asynchronous player replacements must be ignored');
+  assert.match(playback, /replaceAsync\(null\)/, 'ExoPlayer must detach before its localhost source is stopped');
+  assert.match(playback, /generation\.current/, 'stale asynchronous player replacements must be ignored');
   assert.match(engine, /sessionGeneration/, 'stale libtorrent alerts must be ignored');
+  assert.match(engine, /synchronized\(this@TorrentStreamEngine\)/, 'libtorrent alerts must share the engine lifecycle lock');
+  assert.doesNotMatch(engine, /remove\(existing\)/, 'metadata recovery must not invalidate the active native handle');
+  assert.match(engine, /persistentHandle\(alertHandle, nextSession\)/, 'non-owning alert handles must be replaced with session-owned handles');
+  assert.match(engine, /expectedSession\.find\(infoHash\)/, 'persistent handles must come from the live libtorrent session');
+  assert.doesNotMatch(engine, /configureSelectedFile\(\(alert as MetadataReceivedAlert\)\.handle\(\)/, 'alert-owned handles must never escape their callback');
+  assert.match(engine, /val previousHandle = handle[\s\S]*handle = null[\s\S]*remove\(torrentHandle\)/, 'removed handles must stop being observable before native disposal');
   assert.match(engine, /havePiece/, 'playback readiness must use completed torrent pieces');
+  assert.match(engine, /playbackPort = server\?\.listeningPort\?\.takeIf \{ it > 0 \}/, 'cached streams must wait for a real localhost port');
+  assert.doesNotMatch(engine, /server\?\.listeningPort\}\/video/, 'a missing server must never produce a malformed null-port URL');
   assert.match(server, /readableBytesProvider/, 'the HTTP server must only expose readable contiguous ranges');
 });
 
@@ -61,6 +69,9 @@ test('native torrent work runs outside the React Native process', () => {
   assert.ok(!module.includes('SessionManager'), 'the UI process must not load libtorrent sessions');
   assert.match(service, /TorrentStreamEngine/);
   assert.match(module, /handleWorkerExit/);
+  assert.match(service, /val request = Bundle\(message\.data\)/, 'IPC requests must be copied before Handler recycles Message');
+  assert.match(service, /processRequest\(messageType, request, replyTo\)/, 'the worker must receive the immutable IPC snapshot');
+  assert.doesNotMatch(service, /executor\.execute \{ processRequest\(message\) \}/, 'a recycled Handler Message must never cross executor threads');
 });
 
 test('mobile source ranking avoids expensive codecs on battery saver', () => {
@@ -81,24 +92,49 @@ test('mobile source discovery prefers index-friendly title aliases', () => {
     title: "Frieren: Beyond Journey's End",
     titles: { english: "Frieren: Beyond Journey's End", romaji: 'Sousou no Frieren', native: 'Japanese title' },
   };
-  assert.deepEqual(sourceTitleCandidates(anime).slice(0, 2), ['Sousou no Frieren', "Frieren: Beyond Journey's End"]);
-  assert.match(sourceQueriesForAnime(anime, 1, 'sub-preferred')[0] || '', /Sousou no Frieren 01/);
+  assert.deepEqual(sourceTitleCandidates(anime).slice(0, 2), ["Frieren: Beyond Journey's End", 'Sousou no Frieren']);
+  assert.match(sourceQueriesForAnime(anime, 1, 'sub-preferred')[0] || '', /Frieren: Beyond Journey's End 01/);
+  assert.ok(sourceQueriesForAnime(anime, 1, 'sub-preferred').some((query) => /Sousou no Frieren 01/.test(query)));
+
+  const sequelQueries = sourceQueriesForAnime({
+    title: 'Mushoku Tensei: Jobless Reincarnation Season 2',
+    titles: { romaji: 'Mushoku Tensei II: Isekai Ittara Honki Dasu' },
+  }, 2, 'sub-preferred');
+  assert.ok(sequelQueries.some((query) => /Mushoku Tensei S2 02/i.test(query)), 'season aliases should match compact torrent naming');
+  assert.ok(sequelQueries.some((query) => /^Mushoku Tensei II 02$/i.test(query)), 'subtitle-free aliases should keep focused searches fast');
+
+  const ordinalQueries = sourceQueriesForAnime({
+    title: "Frieren: Beyond Journey's End Season 2",
+    titles: { romaji: 'Sousou no Frieren 2nd Season' },
+  }, 1, 'sub-preferred');
+  assert.ok(ordinalQueries.some((query) => /^Sousou no Frieren S2 01$/i.test(query)), 'ordinal sequel names should produce index-friendly S2 aliases');
 });
 
 test('stalled torrent sources time out and return to the in-app recovery flow', () => {
   const engine = readFileSync(path.join(repoRoot, 'mobile/modules/torrent-engine/android/src/main/java/com/misfit1000/streamnyaa/torrent/TorrentStreamEngine.kt'), 'utf8');
-  const watch = readFileSync(path.join(repoRoot, 'mobile/src/screens/WatchScreen.tsx'), 'utf8');
+  const playback = readFileSync(path.join(repoRoot, 'mobile/src/context/PlaybackContext.tsx'), 'utf8');
+  const surface = readFileSync(path.join(repoRoot, 'mobile/src/components/PlaybackSurface.tsx'), 'utf8');
+  const recovery = readFileSync(path.join(repoRoot, 'mobile/src/lib/playbackRecovery.ts'), 'utf8');
   assert.match(engine, /METADATA_TIMEOUT_MS/);
   assert.match(engine, /BUFFER_STALL_TIMEOUT_MS/);
   assert.match(engine, /PLAYBACK_READY_TIMEOUT_MS/);
   assert.match(engine, /NO_PEER_TIMEOUT_MS/);
   assert.doesNotMatch(engine, /fetchTorrentInfo/, 'network metadata must never block peer discovery');
   assert.match(engine, /download\(magnet/, 'magnet discovery must start immediately');
+  assert.match(engine, /fetchTorrentMetadata/, 'indexed torrent metadata should bypass DHT-only file discovery');
   assert.match(engine, /forceDHTAnnounce/, 'peer discovery should explicitly announce over DHT');
   assert.match(engine, /https:\/\/tracker\.opentrackr\.org/, 'peer discovery needs an HTTPS tracker for networks that block UDP');
-  assert.match(watch, /automaticRetries\.current >= 1/, 'automatic fallback must be bounded to one backup');
-  assert.match(watch, /<VideoView[\s\S]*nativeControls/, 'playback must remain embedded in the Android screen');
-  assert.match(watch, />Advanced</, 'manual releases and diagnostics must remain available without cluttering default playback');
+  assert.match(playback, /nextRecoverySource/, 'automatic fallback must use the bounded recovery policy');
+  assert.match(recovery, /maximumAttempts = 3/, 'automatic fallback must be bounded to three ranked releases');
+  assert.match(surface, /<VideoView[\s\S]*nativeControls/, 'playback must remain embedded in the Android screen');
+  assert.match(surface, /SourcesSheet/, 'manual releases and diagnostics must remain available without cluttering default playback');
+});
+
+test('automatic playback waits for enriched anime metadata before source discovery', () => {
+  const watch = readFileSync(path.join(repoRoot, 'mobile/src/screens/WatchScreen.tsx'), 'utf8');
+  assert.match(watch, /playbackMetadataReady = !details\.isPending/);
+  assert.match(watch, /shouldAutoStart && playbackMetadataReady && !requestedSessionActive/);
+  assert.match(watch, /disabled=\{!playbackMetadataReady\}/, 'manual Play must not start a weak title-only lookup while metadata is pending');
 });
 
 test('Android branding uses the exact logo in-app and padded launcher assets', () => {
@@ -111,13 +147,20 @@ test('Android branding uses the exact logo in-app and padded launcher assets', (
   assert.doesNotMatch(navigator, /tabBarActiveBackgroundColor/, 'active tabs must not create an oversized home tile');
 });
 
+test('release size policy is reproducible after Expo regenerates Android', () => {
+  const plugin = readFileSync(path.join(repoRoot, 'mobile/modules/torrent-engine/app.plugin.js'), 'utf8');
+  assert.match(plugin, /reactNativeArchitectures', 'armeabi-v7a,arm64-v8a'/, 'release builds should package phone ABIs, not emulator ABIs');
+  assert.match(plugin, /expo\.gif\.enabled', 'false'/, 'unused animated GIF native support should stay disabled');
+  assert.match(plugin, /android\.enableMinifyInReleaseBuilds', 'true'/);
+  assert.match(plugin, /android\.enableShrinkResourcesInReleaseBuilds', 'true'/);
+});
+
 test('mobile authentication returns to the native app instead of rendering the website', () => {
   const auth = readFileSync(path.join(repoRoot, 'mobile/src/services/auth.ts'), 'utf8');
-  const callback = readFileSync(path.join(repoRoot, 'api/auth/mobile-callback.ts'), 'utf8');
-  assert.match(auth, /MOBILE_AUTH_CALLBACK_URL/);
+  assert.match(auth, /APP_REDIRECT_URL = 'streamnyaa:\/\/auth'/);
+  assert.doesNotMatch(auth, /mobile-callback/, 'native Google authentication must not depend on the hosted web callback');
   assert.match(auth, /sessionFromAuthUrl/);
-  assert.match(callback, /streamnyaa:\/\/auth/);
-  assert.match(callback, /location\.replace\(target\)/);
+  assert.match(auth, /openAuthSessionAsync\(url, APP_REDIRECT_URL\)/);
 });
 
 test('account sync accepts mobile and web history shapes without losing zero progress', () => {

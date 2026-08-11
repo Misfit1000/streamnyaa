@@ -12,13 +12,17 @@ internal object TorrentServiceProtocol {
   const val STOP = 7
   const val CLEAR_CACHE = 8
   const val CACHE_STATS = 9
+  const val CACHE_ENTRIES = 10
+  const val REMOVE_CACHE_ENTRY = 11
   const val RESPONSE = 100
   const val STATUS_EVENT = 101
 
   const val REQUEST_ID = "requestId"
+  const val MESSAGE_TYPE = "messageType"
   const val RESULT = "result"
   const val ERROR = "error"
   const val VALUE = "value"
+  const val JSON = "json"
 
   fun mapToBundle(values: Map<String, Any?>): Bundle = Bundle().apply {
     values.forEach { (key, value) ->

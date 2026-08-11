@@ -6,7 +6,7 @@ import { Chip, IconButton, Searchbar, SegmentedButtons, Text } from 'react-nativ
 import { Screen } from '../components/Screen';
 import { SourceRow } from '../components/SourceRow';
 import { StateView } from '../components/StateView';
-import { searchSources, sourceQuery } from '../services/sources';
+import { searchAnimeSources, searchSources, sourceQuery } from '../services/sources';
 import { useAppStore } from '../store/useAppStore';
 import type { Anime, RootStackParamList, TorrentSource } from '../types';
 import { tokens } from '../theme';
@@ -27,7 +27,15 @@ export function SourcesScreen({ route, navigation }: Props) {
   const [filter, setFilter] = useState('0');
   const [quality, setQuality] = useState('auto');
   const [sort, setSort] = useState<'best' | 'seeders' | 'size'>('best');
-  const query = useQuery({ queryKey: ['sources', queryText, filter], queryFn: ({ signal }) => searchSources(queryText, { filter, signal }), enabled: Boolean(queryText.trim()) });
+  const automaticQuery = anime ? sourceQuery(anime.title, episode, audio) : '';
+  const useAnimeAliases = Boolean(anime && queryText === automaticQuery);
+  const query = useQuery({
+    queryKey: ['sources', queryText, filter, useAnimeAliases, episode, audio],
+    queryFn: ({ signal }) => useAnimeAliases
+      ? searchAnimeSources(anime!, episode, audio, { filter, signal, timeoutMs: 8_000 })
+      : searchSources(queryText, { filter, signal, timeoutMs: 8_000 }),
+    enabled: Boolean(queryText.trim()),
+  });
   const rows = useMemo(() => (query.data || [])
     .filter((source) => quality === 'auto' || sourceQualityBucket(source.title) === quality)
     .sort((left, right) => sort === 'seeders'

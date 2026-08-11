@@ -48,7 +48,7 @@ export function CompareScreen({ navigation }: Props) {
             <Text variant="labelLarge" style={styles.semibold}>Quick read</Text>
             <Text style={{ color: theme.colors.onSurfaceVariant }}>{scoreWinner ? `${scoreWinner} has the higher audience score.` : 'The listed audience scores are tied or unavailable.'} {sharedGenres.length ? `Both share ${sharedGenres.slice(0, 3).join(', ')}.` : 'No shared genres are listed.'}</Text>
           </View>
-          <View style={styles.releaseActions}><Button style={styles.releaseButton} mode="outlined" icon="download" onPress={() => navigation.navigate('Downloads', { anime: left })}>A releases</Button><Button style={styles.releaseButton} mode="outlined" icon="download" onPress={() => navigation.navigate('Downloads', { anime: right })}>B releases</Button></View>
+          <View style={styles.releaseActions}><Button style={styles.releaseButton} mode="outlined" icon="database-search-outline" onPress={() => navigation.navigate('Downloads', { anime: left })}>A releases</Button><Button style={styles.releaseButton} mode="outlined" icon="database-search-outline" onPress={() => navigation.navigate('Downloads', { anime: right })}>B releases</Button></View>
         </View>
       ) : null}
     </Screen>

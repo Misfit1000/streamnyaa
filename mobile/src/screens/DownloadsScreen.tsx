@@ -6,11 +6,12 @@ import { Button, Chip, Menu, SegmentedButtons, Text, useTheme } from 'react-nati
 import { SourceRow } from '../components/SourceRow';
 import { Screen } from '../components/Screen';
 import { StateView } from '../components/StateView';
-import { searchSources, sourceQuery } from '../services/sources';
+import { searchAnimeSources } from '../services/sources';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
 import { parseSizeBytes, sourceQualityBucket, sourceQualityLabel, sourceQualityScore } from '../../../shared/sources';
 import { tokens } from '../theme';
+import { compareMobileSources } from '../lib/mobileSourcePolicy';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Downloads'>;
 
@@ -22,10 +23,14 @@ export function DownloadsScreen({ route, navigation }: Props) {
   const [sourceFilter, setSourceFilter] = useState<'all' | 'trusted' | 'no-remakes'>('all');
   const [sort, setSort] = useState<'best' | 'seeders' | 'size'>('best');
   const [sortMenu, setSortMenu] = useState(false);
+  const [filtersVisible, setFiltersVisible] = useState(false);
   const audio = useAppStore((state) => state.audioPreference);
   const setAudio = useAppStore((state) => state.setAudioPreference);
-  const queryText = useMemo(() => sourceQuery(anime.title, episode, audio), [anime.title, audio, episode]);
-  const query = useQuery({ queryKey: ['downloads', queryText], queryFn: ({ signal }) => searchSources(queryText, { signal }) });
+  const resourcePolicy = useAppStore((state) => state.resourcePolicy);
+  const query = useQuery({
+    queryKey: ['release-browser', anime.id, episode, audio],
+    queryFn: ({ signal }) => searchAnimeSources(anime, episode, audio, { signal, timeoutMs: 8_000 }),
+  });
   const rows = useMemo(() => (query.data || [])
     .filter((source) => quality === 'auto' || sourceQualityBucket(source.title) === quality)
     .filter((source) => sourceFilter === 'all' || (sourceFilter === 'trusted' ? source.trusted : !source.remake))
@@ -33,13 +38,11 @@ export function DownloadsScreen({ route, navigation }: Props) {
       ? right.seeders - left.seeders
       : sort === 'size'
         ? parseSizeBytes(left.size) - parseSizeBytes(right.size)
-        : Number(right.sourceScore || 0) - Number(left.sourceScore || 0)), [quality, query.data, sort, sourceFilter]);
-  const totalSeeders = useMemo(() => rows.reduce((sum, source) => sum + source.seeders, 0), [rows]);
-  const bestScore = rows.length ? sourceQualityScore(rows[0]!) : 0;
+        : compareMobileSources(left, right, { batterySaver: resourcePolicy.batterySaver, constrained: resourcePolicy.performanceProfile === 'constrained', balancedFileSize: resourcePolicy.balancedFileSize, anime })), [anime, quality, query.data, resourcePolicy.balancedFileSize, resourcePolicy.batterySaver, resourcePolicy.performanceProfile, sort, sourceFilter]);
   const maxEpisode = Number(anime.episodes || 0);
 
   return (
-    <Screen title={`${anime.title} releases`} subtitle="Ranked Android streaming sources with release controls" scroll={false} safeTop={false}>
+    <Screen title={`${anime.title} releases`} subtitle="Advanced source choices; automatic playback normally handles this for you" scroll={false} safeTop={false}>
       <FlatList
         data={rows}
         keyExtractor={(source) => `${source.infoHash}-${source.title}`}
@@ -51,19 +54,20 @@ export function DownloadsScreen({ route, navigation }: Props) {
             <View style={styles.episodeCopy}><Text variant="titleMedium" style={styles.semibold}>Episode {episode}</Text>{maxEpisode ? <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>of {maxEpisode}</Text> : null}</View>
             <Button mode="outlined" disabled={Boolean(maxEpisode && episode >= maxEpisode)} onPress={() => setEpisode((value) => value + 1)}>Next</Button>
           </View>
-          <SegmentedButtons value={audio} onValueChange={(value) => setAudio(value as typeof audio)} buttons={[{ value: 'sub-preferred', label: 'Sub' }, { value: 'dual-preferred', label: 'Dual' }, { value: 'dub-only', label: 'Dub' }]} density="small" />
-          <SegmentedButtons value={quality} onValueChange={setQuality} buttons={[{ value: 'auto', label: 'Best' }, { value: '1080p', label: '1080p' }, { value: '720p', label: '720p' }, { value: '2160p', label: '4K' }]} density="small" />
-          <View style={styles.sourceTools}>
-            <Chip selected={sourceFilter === 'trusted'} mode="outlined" icon="check-decagram-outline" onPress={() => setSourceFilter(sourceFilter === 'trusted' ? 'all' : 'trusted')}>Trusted</Chip>
-            <Chip selected={sourceFilter === 'no-remakes'} mode="outlined" icon="shield-check-outline" onPress={() => setSourceFilter(sourceFilter === 'no-remakes' ? 'all' : 'no-remakes')}>No remakes</Chip>
-            <Menu visible={sortMenu} onDismiss={() => setSortMenu(false)} anchor={<Button compact mode="text" icon="sort" onPress={() => setSortMenu(true)}>{sort === 'best' ? 'Best match' : sort === 'seeders' ? 'Seeders' : 'Smallest'}</Button>}>
-              {([['best', 'Best match'], ['seeders', 'Most seeders'], ['size', 'Smallest size']] as const).map(([value, label]) => <Menu.Item key={value} title={label} leadingIcon={sort === value ? 'check' : undefined} onPress={() => { setSort(value); setSortMenu(false); }} />)}
-            </Menu>
+          <View style={styles.releaseTools}>
+            <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant }}>{query.isFetching ? 'Updating releases…' : `${rows.length} releases${rows[0] ? ` · ${sourceQualityLabel(sourceQualityScore(rows[0]))} best match` : ''}`}</Text>
+            <Button compact mode="text" icon={filtersVisible ? 'tune-variant' : 'tune'} onPress={() => setFiltersVisible((visible) => !visible)}>{filtersVisible ? 'Hide filters' : 'Filters'}</Button>
           </View>
-          {query.data ? <View style={[styles.summary, { backgroundColor: theme.colors.surfaceVariant }]}>
-            <Summary value={String(rows.length)} label="Sources" />
-            <Summary value={String(totalSeeders)} label="Seeders" />
-            <Summary value={bestScore ? sourceQualityLabel(bestScore) : 'None'} label="Best health" />
+          {filtersVisible ? <View style={styles.filters}>
+            <SegmentedButtons value={audio} onValueChange={(value) => setAudio(value as typeof audio)} buttons={[{ value: 'sub-preferred', label: 'Sub' }, { value: 'dual-preferred', label: 'Dual' }, { value: 'dub-only', label: 'Dub' }]} density="small" />
+            <SegmentedButtons value={quality} onValueChange={setQuality} buttons={[{ value: 'auto', label: 'Best' }, { value: '1080p', label: '1080p' }, { value: '720p', label: '720p' }, { value: '2160p', label: '4K' }]} density="small" />
+            <View style={styles.sourceTools}>
+              <Chip selected={sourceFilter === 'trusted'} mode="outlined" icon="check-decagram-outline" onPress={() => setSourceFilter(sourceFilter === 'trusted' ? 'all' : 'trusted')}>Trusted</Chip>
+              <Chip selected={sourceFilter === 'no-remakes'} mode="outlined" icon="shield-check-outline" onPress={() => setSourceFilter(sourceFilter === 'no-remakes' ? 'all' : 'no-remakes')}>No remakes</Chip>
+              <Menu visible={sortMenu} onDismiss={() => setSortMenu(false)} anchor={<Button compact mode="text" icon="sort" onPress={() => setSortMenu(true)}>{sort === 'best' ? 'Best match' : sort === 'seeders' ? 'Seeders' : 'Smallest'}</Button>}>
+                {([['best', 'Best match'], ['seeders', 'Most seeders'], ['size', 'Smallest size']] as const).map(([value, label]) => <Menu.Item key={value} title={label} leadingIcon={sort === value ? 'check' : undefined} onPress={() => { setSort(value); setSortMenu(false); }} />)}
+              </Menu>
+            </View>
           </View> : null}
         </View>}
         ListEmptyComponent={query.isLoading ? <StateView loading message="Finding matching releases..." /> : query.isError ? <StateView title="Releases unavailable" message={query.error.message} onRetry={() => void query.refetch()} /> : <StateView title="No matching release" message="Try Best quality, All sources, or another episode." />}
@@ -78,18 +82,13 @@ export function DownloadsScreen({ route, navigation }: Props) {
   );
 }
 
-function Summary({ value, label }: { value: string; label: string }) {
-  const theme = useTheme();
-  return <View style={styles.summaryItem}><Text variant="titleSmall" style={styles.semibold} numberOfLines={1}>{value}</Text><Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>{label}</Text></View>;
-}
-
 const styles = StyleSheet.create({
   episodeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: tokens.spacing.sm },
   episodeCopy: { alignItems: 'center' },
   controls: { gap: tokens.spacing.md, paddingBottom: tokens.spacing.lg },
+  releaseTools: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  filters: { gap: tokens.spacing.sm },
   sourceTools: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: tokens.spacing.sm },
-  summary: { flexDirection: 'row', paddingVertical: tokens.spacing.md, borderRadius: tokens.radius.card },
-  summaryItem: { flex: 1, alignItems: 'center', gap: 2, paddingHorizontal: tokens.spacing.xs },
   list: { paddingBottom: tokens.spacing.xxl },
   separator: { height: tokens.spacing.md },
   semibold: { fontWeight: '600' },

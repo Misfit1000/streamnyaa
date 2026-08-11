@@ -35,7 +35,7 @@ export const PRODUCT_FEATURES = [
   { id: 'anime', label: 'Anime details', desktopPaths: ['/anime/:id'], mobileRoute: 'Anime' },
   { id: 'manga', label: 'Manga details', desktopPaths: ['/manga/:id'], mobileRoute: 'Manga' },
   { id: 'watch', label: 'Watch', desktopPaths: ['/watch/:id'], mobileRoute: 'Watch' },
-  { id: 'downloads', label: 'Downloads', desktopPaths: ['/anime/:id/downloads'], mobileRoute: 'Downloads' },
+  { id: 'downloads', label: 'Release browser', desktopPaths: ['/anime/:id/downloads'], mobileRoute: 'Downloads' },
   { id: 'sources', label: 'Source search', desktopPaths: ['/nyaa'], mobileRoute: 'Sources' },
   { id: 'library', label: 'Library', desktopPaths: ['/my-list'], mobileRoute: 'Library', requiresAccount: true },
   { id: 'compare', label: 'Compare', desktopPaths: ['/compare'], mobileRoute: 'Compare' },

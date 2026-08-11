@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 import { tokens } from '../theme';
 import { BrandMark } from './BrandMark';
@@ -8,6 +8,7 @@ const MINIMUM_BOOT_MS = 850;
 export function BootSequence({ ready, onComplete }: { ready: boolean; onComplete: () => void }) {
   const theme = useTheme();
   const [fallbackReady, setFallbackReady] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
   const mountedAt = useRef(Date.now());
   const opacity = useRef(new Animated.Value(1)).current;
   const markOpacity = useRef(new Animated.Value(0)).current;
@@ -17,13 +18,27 @@ export function BootSequence({ ready, onComplete }: { ready: boolean; onComplete
   const completing = useRef(false);
 
   useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => setReduceMotion(false));
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion === null) return;
+    if (reduceMotion) {
+      markOpacity.setValue(1);
+      markScale.setValue(1);
+      copyOffset.setValue(0);
+      progress.setValue(0.82);
+      return;
+    }
     Animated.parallel([
       Animated.timing(markOpacity, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.spring(markScale, { toValue: 1, damping: 17, stiffness: 170, mass: 0.8, useNativeDriver: true }),
       Animated.timing(copyOffset, { toValue: 0, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.timing(progress, { toValue: 0.82, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
-  }, [copyOffset, markOpacity, markScale, progress]);
+  }, [copyOffset, markOpacity, markScale, progress, reduceMotion]);
 
   useEffect(() => {
     const timer = setTimeout(() => setFallbackReady(true), 2_500);
@@ -31,17 +46,23 @@ export function BootSequence({ ready, onComplete }: { ready: boolean; onComplete
   }, []);
 
   useEffect(() => {
-    if ((!ready && !fallbackReady) || completing.current) return undefined;
+    if (reduceMotion === null || (!ready && !fallbackReady) || completing.current) return undefined;
     completing.current = true;
     const remaining = Math.max(0, MINIMUM_BOOT_MS - (Date.now() - mountedAt.current));
     const timer = setTimeout(() => {
+      if (reduceMotion) {
+        progress.setValue(1);
+        opacity.setValue(0);
+        onComplete();
+        return;
+      }
       Animated.sequence([
         Animated.timing(progress, { toValue: 1, duration: 170, easing: Easing.out(Easing.quad), useNativeDriver: true }),
         Animated.timing(opacity, { toValue: 0, duration: 220, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ]).start(({ finished }) => { if (finished) onComplete(); });
     }, remaining);
     return () => clearTimeout(timer);
-  }, [fallbackReady, onComplete, opacity, progress, ready]);
+  }, [fallbackReady, onComplete, opacity, progress, ready, reduceMotion]);
 
   return (
     <Animated.View

@@ -11,7 +11,9 @@ import * as SplashScreen from 'expo-splash-screen';
 import { BootSequence } from './components/BootSequence';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { PermissionOnboarding } from './components/PermissionOnboarding';
+import { PlayerHost } from './components/PlayerHost';
 import { AuthProvider } from './context/AuthContext';
+import { PlaybackProvider } from './context/PlaybackContext';
 import { RootNavigator } from './navigation/RootNavigator';
 import { queryClient } from './lib/queryClient';
 import { useAppStore } from './store/useAppStore';
@@ -59,10 +61,14 @@ export default function App() {
               <View style={styles.root} onLayout={hideNativeSplash}>
                 <NavigationBar hidden style={dark ? 'light' : 'dark'} />
                 <AuthProvider>
-                  <NavigationContainer theme={navigationTheme} onReady={() => setNavigationReady(true)}>
-                    <StatusBar style={dark ? 'light' : 'dark'} />
-                    <RootNavigator />
-                  </NavigationContainer>
+                  <PlaybackProvider>
+                    <PlayerHost>
+                      <NavigationContainer theme={navigationTheme} onReady={() => setNavigationReady(true)}>
+                        <StatusBar style={dark ? 'light' : 'dark'} />
+                        <RootNavigator />
+                      </NavigationContainer>
+                    </PlayerHost>
+                  </PlaybackProvider>
                 </AuthProvider>
                 {!bootComplete ? <BootSequence ready={hydrated && navigationReady} onComplete={completeBoot} /> : null}
                 <PermissionOnboarding visible={bootComplete && hydrated && !permissionsOnboardingCompleted} onComplete={completePermissionsOnboarding} />
