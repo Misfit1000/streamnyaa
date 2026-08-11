@@ -11,7 +11,7 @@ import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
 import { parseSizeBytes, sourceQualityBucket, sourceQualityLabel, sourceQualityScore } from '../../../shared/sources';
 import { tokens } from '../theme';
-import { compareMobileSources } from '../lib/mobileSourcePolicy';
+import { compareMobileSources, compatibleMobileSources } from '../lib/mobileSourcePolicy';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Downloads'>;
 
@@ -31,14 +31,18 @@ export function DownloadsScreen({ route, navigation }: Props) {
     queryKey: ['release-browser', anime.id, episode, audio],
     queryFn: ({ signal }) => searchAnimeSources(anime, episode, audio, { signal, timeoutMs: 8_000 }),
   });
-  const rows = useMemo(() => (query.data || [])
+  const rows = useMemo(() => compatibleMobileSources(query.data || [], {
+    constrained: resourcePolicy.performanceProfile === 'constrained',
+    anime,
+    episode,
+  })
     .filter((source) => quality === 'auto' || sourceQualityBucket(source.title) === quality)
     .filter((source) => sourceFilter === 'all' || (sourceFilter === 'trusted' ? source.trusted : !source.remake))
     .sort((left, right) => sort === 'seeders'
       ? right.seeders - left.seeders
       : sort === 'size'
         ? parseSizeBytes(left.size) - parseSizeBytes(right.size)
-        : compareMobileSources(left, right, { batterySaver: resourcePolicy.batterySaver, constrained: resourcePolicy.performanceProfile === 'constrained', balancedFileSize: resourcePolicy.balancedFileSize, anime })), [anime, quality, query.data, resourcePolicy.balancedFileSize, resourcePolicy.batterySaver, resourcePolicy.performanceProfile, sort, sourceFilter]);
+        : compareMobileSources(left, right, { batterySaver: resourcePolicy.batterySaver, constrained: resourcePolicy.performanceProfile === 'constrained', balancedFileSize: resourcePolicy.balancedFileSize, anime })), [anime, episode, quality, query.data, resourcePolicy.balancedFileSize, resourcePolicy.batterySaver, resourcePolicy.performanceProfile, sort, sourceFilter]);
   const maxEpisode = Number(anime.episodes || 0);
 
   return (

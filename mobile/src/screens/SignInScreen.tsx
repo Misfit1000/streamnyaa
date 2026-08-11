@@ -30,6 +30,15 @@ export function SignInScreen({ navigation }: Props) {
     finally { setBusy(false); }
   };
 
+  const submitGoogle = async () => {
+    setBusy(true); setMessage('');
+    try {
+      await auth.signInGoogle();
+      navigation.goBack();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Google sign-in failed.'); }
+    finally { setBusy(false); }
+  };
+
   return (
     <Screen safeTop={false}>
       <KeyboardAvoidingView behavior="padding" style={styles.form}>
@@ -40,7 +49,7 @@ export function SignInScreen({ navigation }: Props) {
         {message || auth.error ? <Text style={{ color: theme.colors.error }}>{message || auth.error}</Text> : null}
         <Button mode="contained" loading={busy} disabled={busy} onPress={() => void submit()}>{mode === 'signin' ? 'Sign in' : 'Create account'}</Button>
         <View style={styles.divider}><View style={[styles.line, { backgroundColor: theme.colors.outline }]} /><Text>or</Text><View style={[styles.line, { backgroundColor: theme.colors.outline }]} /></View>
-        <Button mode="outlined" icon="google" disabled={busy} onPress={() => void auth.signInGoogle().then(() => navigation.goBack()).catch((error) => setMessage(error.message))}>Continue with Google</Button>
+        <Button mode="outlined" icon="google" loading={busy} disabled={busy} onPress={() => void submitGoogle()}>Continue with Google</Button>
       </KeyboardAvoidingView>
     </Screen>
   );

@@ -69,6 +69,12 @@
       ],
       "expo-secure-store",
       [
+        "expo-web-browser",
+        {
+          "experimentalLauncherActivity": false
+        }
+      ],
+      [
         "expo-notifications",
         {
           "defaultChannel": "airing-reminders"

@@ -6,7 +6,8 @@ import { Button, Chip, IconButton, Searchbar, SegmentedButtons, Text } from 'rea
 import { Screen } from '../components/Screen';
 import { SourceRow } from '../components/SourceRow';
 import { StateView } from '../components/StateView';
-import { searchAnimeSources, searchSources, sourceQuery } from '../services/sources';
+import { searchAnimeSources, searchManualSources, sourceQuery } from '../services/sources';
+import { manualSourceIntent } from '../lib/manualSourceSearch';
 import { useAppStore } from '../store/useAppStore';
 import type { Anime, RootStackParamList, TorrentSource } from '../types';
 import { tokens } from '../theme';
@@ -34,7 +35,7 @@ export function SourcesScreen({ route, navigation }: Props) {
     queryKey: ['sources', queryText, filter, useAnimeAliases, episode, audio],
     queryFn: ({ signal }) => useAnimeAliases
       ? searchAnimeSources(anime!, episode, audio, { filter, signal, timeoutMs: 8_000 })
-      : searchSources(queryText, { filter, signal, timeoutMs: 8_000 }),
+      : searchManualSources(queryText, { filter, signal, timeoutMs: 8_000 }),
     enabled: Boolean(queryText.trim()),
   });
   const rows = useMemo(() => (query.data || [])
@@ -65,11 +66,12 @@ export function SourcesScreen({ route, navigation }: Props) {
   };
 
   const streamSource = (source: TorrentSource) => {
+    const manualIntent = manualSourceIntent(text);
     const fallbackAnime: Anime = {
       id: -Number.parseInt((source.infoHash || '1').slice(0, 7), 16),
-      title: text.trim() || source.title,
+      title: manualIntent.title || source.title,
     };
-    navigation.navigate('Watch', { anime: anime || fallbackAnime, episode, source });
+    navigation.navigate('Watch', { anime: anime || fallbackAnime, episode: anime ? episode : manualIntent.episode || episode, source });
   };
 
   return (

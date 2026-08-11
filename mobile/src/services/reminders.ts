@@ -1,8 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import type { ScheduleEntry } from '../types';
-import { requestNotificationPermission } from './permissions';
+import { prepareNotificationChannel, requestNotificationPermission } from './permissions';
 
 export async function ensureReminderPermission() {
+  await prepareNotificationChannel();
   const current = await Notifications.getPermissionsAsync();
   if (current.granted) return true;
   return (await requestNotificationPermission()).granted;
@@ -18,7 +19,7 @@ export async function scheduleAiringReminder(entry: ScheduleEntry, minutesBefore
       body: `${entry.episode ? `Episode ${entry.episode}` : 'A new episode'} starts in about ${minutesBefore} minutes.`,
       data: { animeId: entry.anime.id, episode: entry.episode },
     },
-    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate, channelId: 'airing-reminders' },
   });
 }
 

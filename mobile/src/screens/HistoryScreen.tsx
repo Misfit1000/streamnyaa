@@ -58,11 +58,12 @@ export function HistoryScreen({ navigation }: Props) {
             <Chip selected={filter === 'completed'} mode="outlined" onPress={() => setFilter('completed')}>Done {completedCount}</Chip>
             <Chip selected={filter === 'recent'} mode="outlined" icon="calendar-clock" onPress={() => setFilter('recent')}>Last 7 days</Chip>
           </ScrollView>
+        </View>
+        <View style={styles.maintenance}>
           <Menu visible={sortMenu} onDismiss={() => setSortMenu(false)} anchor={<Button compact mode="text" icon="sort" onPress={() => setSortMenu(true)}>{sort === 'recent' ? 'Recent' : sort === 'progress' ? 'Progress' : sort === 'title' ? 'Title' : 'Episode'}</Button>}>
             {([['recent', 'Recently watched'], ['progress', 'Progress'], ['title', 'Title'], ['episode', 'Episode']] as const).map(([value, label]) => <Menu.Item key={value} title={label} leadingIcon={sort === value ? 'check' : undefined} onPress={() => { setSort(value); setSortMenu(false); }} />)}
           </Menu>
-        </View>
-        <View style={styles.maintenance}>
+          <View style={styles.maintenanceSpacer} />
           {completedCount ? <Button compact mode="text" onPress={() => Alert.alert('Clear completed history?', `Remove ${completedCount} completed ${completedCount === 1 ? 'episode' : 'episodes'} from every synced device?`, [{ text: 'Cancel' }, { text: 'Clear completed', style: 'destructive', onPress: clearCompleted }])}>Clear completed</Button> : null}
           <Button compact mode="text" onPress={() => Alert.alert('Clear history?', 'This removes playback progress on all synced devices after the next sync.', [{ text: 'Cancel' }, { text: 'Clear', style: 'destructive', onPress: clear }])}>Clear all</Button>
         </View>
@@ -86,10 +87,11 @@ export function HistoryScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   list: { paddingBottom: tokens.spacing.xxl },
   search: { borderRadius: tokens.radius.control },
-  filterBar: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.sm },
+  filterBar: { minHeight: 48, justifyContent: 'center' },
   filterScroll: { flex: 1 },
   filters: { gap: tokens.spacing.sm, paddingRight: tokens.spacing.lg },
-  maintenance: { minHeight: 36, flexDirection: 'row', justifyContent: 'flex-end', gap: tokens.spacing.sm },
+  maintenance: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.xs },
+  maintenanceSpacer: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: tokens.spacing.md, paddingVertical: tokens.spacing.md },
   poster: { width: 62, height: 88, borderRadius: tokens.radius.control },
   copy: { flex: 1, gap: 5 },

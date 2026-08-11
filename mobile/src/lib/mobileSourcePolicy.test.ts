@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { minimumRequiredCacheMiB, rankMobileSources, sourcesWithinCacheLimit } from './mobileSourcePolicy';
+import { compatibleMobileSources, minimumRequiredCacheMiB, rankMobileSources, sourcesWithinCacheLimit } from './mobileSourcePolicy';
 import type { TorrentSource } from '../types';
 
 const source = (title: string, seeders: number, sizeMiB: number, extras: Partial<TorrentSource> = {}): TorrentSource => ({
@@ -67,6 +67,20 @@ describe('rankMobileSources', () => {
     ], { ...options, anime: { title: 'Re:ZERO -Starting Life in Another World-' }, episode: 1 });
     expect(ranked).toHaveLength(1);
     expect(ranked[0]?.title).toBe('Re Zero - 01 1080p x264');
+  });
+
+  it('keeps the manual release browser on the requested season and episode', () => {
+    const compatible = compatibleMobileSources([
+      source('[SubsPlease] Sousou no Frieren - 03 (720p)', 32, 729),
+      source('[Erai-raws] Sousou no Frieren 2nd Season - 03 (1080p)', 80, 865),
+      source('[SubsPlease] Sousou no Frieren - 04 (1080p)', 120, 850),
+    ], {
+      constrained: false,
+      anime: { title: 'Frieren: Beyond Journey\'s End', titles: { romaji: 'Sousou no Frieren' }, format: 'TV' },
+      episode: 3,
+    });
+
+    expect(compatible.map((item) => item.title)).toEqual(['[SubsPlease] Sousou no Frieren - 03 (720p)']);
   });
 
   it('rejects final-season releases for a franchise base season', () => {

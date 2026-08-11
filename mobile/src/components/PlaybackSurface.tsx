@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal as NativeModal, Pressable, ScrollView, Share, StatusBar as NativeStatusBar, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type NativeSyntheticEvent, type NativeTouchEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { AppState, Modal as NativeModal, Pressable, ScrollView, Share, StatusBar as NativeStatusBar, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type NativeSyntheticEvent, type NativeTouchEvent, type StyleProp, type ViewStyle } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { StatusBar } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
@@ -48,6 +48,9 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
   const [videoFit, setVideoFit] = useState<VideoFit>('contain');
   const [seekWidth, setSeekWidth] = useState(1);
   const tapState = useRef<{ side: 'left' | 'right'; at: number } | undefined>(undefined);
+  const videoViewRef = useRef<VideoView>(null);
+  const pipActive = useRef(false);
+  const pipRequestPending = useRef(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fullscreenTransition = useRef(false);
   const layout = useMemo(
@@ -85,6 +88,32 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
     const timers = [0, 250, 900].map((delay) => setTimeout(applySubtitleStyle, delay));
     return () => timers.forEach(clearTimeout);
   }, [applySubtitleStyle, fullscreen, playback.selectedSubtitleTrack?.id, playback.status.streamUrl]);
+
+  const enterPictureInPicture = useCallback(async () => {
+    if (!videoViewRef.current || !playback.status.streamUrl || pipActive.current || pipRequestPending.current) return;
+    pipRequestPending.current = true;
+    setSheet(null);
+    setControlsVisible(false);
+    try {
+      await videoViewRef.current.startPictureInPicture();
+    } catch {
+      pipRequestPending.current = false;
+      setControlsVisible(true);
+    }
+  }, [playback.status.streamUrl]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        pipRequestPending.current = false;
+        return;
+      }
+      if (nextState === 'background' && playback.playing && playback.status.streamUrl && !pipActive.current) {
+        void enterPictureInPicture();
+      }
+    });
+    return () => subscription.remove();
+  }, [enterPictureInPicture, playback.playing, playback.status.streamUrl]);
 
   const toggleFullscreen = async () => {
     if (fullscreenTransition.current) return;
@@ -148,6 +177,7 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
       <StatusBar hidden={fullscreen} style="light" />
       {playback.status.streamUrl ? (
         <VideoView
+          ref={videoViewRef}
           style={StyleSheet.absoluteFill}
           player={playback.player}
           nativeControls={false}
@@ -156,8 +186,16 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
           allowsPictureInPicture
           startsPictureInPictureAutomatically={playback.playing}
           onFirstFrameRender={applySubtitleStyle}
-          onPictureInPictureStart={() => playback.setPipActive(true)}
-          onPictureInPictureStop={() => playback.setPipActive(false)}
+          onPictureInPictureStart={() => {
+            pipActive.current = true;
+            pipRequestPending.current = false;
+            playback.setPipActive(true);
+          }}
+          onPictureInPictureStop={() => {
+            pipActive.current = false;
+            pipRequestPending.current = false;
+            playback.setPipActive(false);
+          }}
         />
       ) : null}
 
@@ -273,7 +311,7 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setSheet(null)} accessibilityLabel="Close playback settings" />
           <View style={[styles.sheet, sideSheet && styles.sideSheet, { backgroundColor: theme.colors.surface, paddingBottom: Math.max(12, insets.bottom) }]}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.sheetContent, sideSheet && { paddingTop: Math.max(18, insets.top + 8), paddingRight: Math.max(18, insets.right + 10) }]}>
-            {sheet === 'settings' ? <SettingsSheet playback={playback} videoFit={videoFit} onOpen={setSheet} /> : null}
+            {sheet === 'settings' ? <SettingsSheet playback={playback} videoFit={videoFit} onOpen={setSheet} onEnterPictureInPicture={() => void enterPictureInPicture()} /> : null}
             {sheet === 'episodes' ? <EpisodesSheet playback={playback} onClose={() => setSheet(null)} /> : null}
             {sheet === 'sources' ? <SourcesSheet playback={playback} onClose={() => setSheet(null)} /> : null}
             {sheet === 'tracks' ? <TracksSheet playback={playback} onClose={() => setSheet(null)} /> : null}
@@ -290,7 +328,7 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
   );
 }
 
-function SettingsSheet({ playback, videoFit, onOpen }: { playback: Playback; videoFit: VideoFit; onOpen: (sheet: Sheet) => void }) {
+function SettingsSheet({ playback, videoFit, onOpen, onEnterPictureInPicture }: { playback: Playback; videoFit: VideoFit; onOpen: (sheet: Sheet) => void; onEnterPictureInPicture: () => void }) {
   const preferences = useAppStore((state) => state.playerPreferences);
   const setPlayerPreferences = useAppStore((state) => state.setPlayerPreferences);
   const selectedSubtitle = playback.selectedSubtitleTrack?.label || playback.selectedSubtitleTrack?.name || playback.selectedSubtitleTrack?.language || 'Off';
@@ -302,6 +340,7 @@ function SettingsSheet({ playback, videoFit, onOpen }: { playback: Playback; vid
     <SheetAction icon="format-font" title="Subtitle appearance" detail={preferences.subtitleStyle.custom ? `${titleCase(preferences.subtitleStyle.fontSize)} · ${titleCase(preferences.subtitleStyle.position)}` : 'StreamNyaa default'} onPress={() => onOpen('subtitleAppearance')} />
     <SheetAction icon="volume-high" title="Audio" detail={selectedAudio} onPress={() => onOpen('tracks')} />
     <SheetAction icon="aspect-ratio" title="Video fit" detail={videoFit === 'contain' ? 'Fit · no crop' : 'Fill screen · cropped'} onPress={() => onOpen('video')} />
+    <SheetAction icon="picture-in-picture-bottom-right-outline" title="Picture in picture" detail="Continue in a floating Android player" onPress={onEnterPictureInPicture} />
     <SheetAction icon="speedometer" title="Playback speed" detail={`${playback.player.playbackRate}×`} onPress={() => onOpen('speed')} />
     <SheetToggle icon="skip-next-circle-outline" title="Auto next episode" value={preferences.autoNextEpisode} onValueChange={(autoNextEpisode) => setPlayerPreferences({ autoNextEpisode })} />
     <SheetToggle icon="skip-forward-outline" title="Auto skip intro" value={preferences.autoSkipIntro} onValueChange={(autoSkipIntro) => setPlayerPreferences({ autoSkipIntro })} />
@@ -429,7 +468,10 @@ function SheetTitle({ title, onBack }: { title: string; onBack: () => void }) {
 }
 
 function ChoiceGroup({ title, value, choices, onChange }: { title: string; value: string; choices: ReadonlyArray<readonly [string, string]>; onChange: (value: string) => void }) {
-  return <View style={styles.choiceGroup}><Text variant="labelLarge" style={styles.semibold}>{title}</Text><View style={styles.choiceRow}>{choices.map(([choice, label]) => <Button key={choice} compact mode={value === choice ? 'contained' : 'outlined'} style={styles.choiceButton} contentStyle={styles.choiceButtonContent} onPress={() => onChange(choice)}>{label}</Button>)}</View></View>;
+  return <View style={styles.choiceGroup}><Text variant="labelLarge" style={styles.semibold}>{title}</Text><View style={styles.choiceRow}>{choices.map(([choice, label]) => {
+    const selected = value === choice;
+    return <Pressable key={choice} accessibilityRole="radio" accessibilityLabel={`${title}: ${label}`} accessibilityState={{ selected }} onPress={() => onChange(choice)} style={({ pressed }) => [styles.choiceButton, selected ? styles.choiceButtonSelected : styles.choiceButtonUnselected, pressed && styles.playerControlPressed]}><Text variant="labelLarge" style={[styles.choiceButtonLabel, selected && styles.choiceButtonLabelSelected]}>{label}</Text></Pressable>;
+  })}</View></View>;
 }
 
 function SheetAction({ icon, title, detail, onPress }: { icon: string; title: string; detail?: string; onPress?: () => void }) {
@@ -555,7 +597,11 @@ const styles = StyleSheet.create({
   subtitlePreset: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, borderRadius: tokens.radius.control, backgroundColor: 'rgba(225,29,72,0.08)' },
   choiceGroup: { gap: 8, paddingVertical: 3 },
   choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  choiceButton: { minWidth: 72 },
+  choiceButton: { minWidth: 72, minHeight: 48, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, borderRadius: tokens.radius.control, borderWidth: StyleSheet.hairlineWidth },
+  choiceButtonSelected: { backgroundColor: tokens.color.brandDeep, borderColor: tokens.color.brandBright },
+  choiceButtonUnselected: { backgroundColor: 'transparent', borderColor: tokens.color.outline },
+  choiceButtonLabel: { color: tokens.color.textMuted },
+  choiceButtonLabelSelected: { color: '#FFFFFF', fontWeight: '600' },
   choiceButtonContent: { minHeight: 48 },
   episodeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   episodeButton: { minWidth: 56 },

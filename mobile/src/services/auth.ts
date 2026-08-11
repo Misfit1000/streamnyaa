@@ -1,13 +1,15 @@
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { API_ORIGIN } from '../config';
 import type { AccountUser, AuthSession } from '../types';
 import { requestJson } from '../lib/network';
+import { APP_AUTH_REDIRECT_URL, authCallbackParams, googleOAuthUrl, isAppAuthCallback } from '../lib/authCallback';
 
 const SESSION_KEY = 'streamnyaa.auth.session.v1';
 export type SupabasePublicConfig = { supabaseUrl: string; supabaseAnonKey: string };
 let configPromise: Promise<SupabasePublicConfig> | null = null;
-export const APP_REDIRECT_URL = 'streamnyaa://auth';
+export const APP_REDIRECT_URL = APP_AUTH_REDIRECT_URL;
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -43,10 +45,8 @@ function normalizeSession(data: any): AuthSession {
 }
 
 export async function sessionFromAuthUrl(url?: string | null) {
-  if (!url || !/^streamnyaa:\/\/auth(?:[/?#]|$)/i.test(url)) return null;
-  const fragment = url.includes('#') ? url.slice(url.indexOf('#') + 1) : '';
-  const query = url.includes('?') ? url.slice(url.indexOf('?') + 1).split('#')[0] : '';
-  const params = new URLSearchParams(fragment || query);
+  const params = authCallbackParams(url);
+  if (!params) return null;
   const authError = params.get('error_description') || params.get('error');
   if (authError) throw new Error(authError);
   const accessToken = params.get('access_token');
@@ -89,10 +89,42 @@ export async function signUpWithPassword(email: string, password: string) {
 
 export async function signInWithGoogle() {
   const config = await authConfig();
-  const url = `${config.supabaseUrl}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(APP_REDIRECT_URL)}`;
-  const result = await WebBrowser.openAuthSessionAsync(url, APP_REDIRECT_URL);
-  if (result.type !== 'success') throw new Error('Google sign-in was cancelled.');
-  const session = await sessionFromAuthUrl(result.url);
+  const authorizeUrl = googleOAuthUrl(config.supabaseUrl);
+  let resolveLink: (url: string) => void = () => undefined;
+  const linkResult = new Promise<string>((resolve) => { resolveLink = resolve; });
+  const subscription = Linking.addEventListener('url', ({ url }) => {
+    if (isAppAuthCallback(url)) resolveLink(url);
+  });
+  let callbackUrl: string | null = null;
+  try {
+    const outcome = await Promise.race([
+      linkResult.then((url) => ({ source: 'link' as const, url })),
+      WebBrowser.openAuthSessionAsync(authorizeUrl, APP_REDIRECT_URL, {
+        createTask: false,
+        useProxyActivity: false,
+        showInRecents: false,
+        showTitle: false,
+        enableDefaultShareMenuItem: false,
+        toolbarColor: '#08080A',
+        secondaryToolbarColor: '#08080A',
+      }).then((result) => ({ source: 'browser' as const, result })),
+    ]);
+    if (outcome.source === 'link') {
+      callbackUrl = outcome.url;
+      try { WebBrowser.dismissAuthSession(); } catch { /* The Android tab may already be closed. */ }
+    } else if (outcome.result.type === 'success') {
+      callbackUrl = outcome.result.url;
+    } else {
+      callbackUrl = await Promise.race([
+        linkResult,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1_200)),
+      ]);
+    }
+  } finally {
+    subscription.remove();
+  }
+  if (!callbackUrl) throw new Error('Google sign-in was cancelled.');
+  const session = await sessionFromAuthUrl(callbackUrl);
   if (!session) throw new Error('Google sign-in did not return to the Android app.');
   return session;
 }

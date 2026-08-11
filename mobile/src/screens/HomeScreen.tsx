@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,7 +9,7 @@ import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Text, useTheme } from 'react-native-paper';
 import { ContinueWatchingRail } from '../components/ContinueWatchingRail';
-import { FeaturedCarousel } from '../components/FeaturedCarousel';
+import { HomeDiscoveryRail } from '../components/HomeDiscoveryRail';
 import { HomeTopBar, type HomeFilter } from '../components/HomeTopBar';
 import { StateView } from '../components/StateView';
 import { TrendingAnimeRow } from '../components/TrendingAnimeRow';
@@ -29,18 +29,15 @@ export function HomeScreen({ navigation }: Props) {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const auth = useAuth();
-  const { height, width } = useWindowDimensions();
   const [filter, setFilter] = useState<HomeFilter>('for-you');
   const [cacheReady, setCacheReady] = useState(false);
   const nsfwMode = useAppStore((state) => state.nsfwMode);
   const history = useAppStore((state) => state.history);
-  const library = useAppStore((state) => state.library);
   const audio = useAppStore((state) => state.audioPreference);
   const setAudio = useAppStore((state) => state.setAudioPreference);
   const resourcePolicy = useAppStore((state) => state.resourcePolicy);
   const runtimeProfile = useMemo(() => TorrentEngine.getRuntimeProfile(), []);
   const resolvedProfile = resourcePolicy.performanceProfile === 'auto' ? runtimeProfile.resolvedProfile : resourcePolicy.performanceProfile;
-  const toggleBookmark = useAppStore((state) => state.toggleBookmark);
   const homeCacheKey = `streamnyaa.home.v1.${nsfwMode ? 'all' : 'safe'}`;
 
   useEffect(() => {
@@ -71,7 +68,7 @@ export function HomeScreen({ navigation }: Props) {
     source: { title: item.sourceTitle, magnet: item.magnet, infoHash: '', seeders: 0, leechers: 0 },
   }), [navigation]);
 
-  const heroItems = useMemo(() => {
+  const discoveryItems = useMemo(() => {
     if (!query.data) return [];
     if (filter === 'latest') return query.data.latest;
     if (filter === 'trending') return query.data.trending;
@@ -89,7 +86,6 @@ export function HomeScreen({ navigation }: Props) {
 
   const sectionTitle = filter === 'latest' ? 'Latest releases' : filter === 'dubbed' ? 'Popular with dub preference' : 'Trending now';
   const avatarUrl = String(auth.user?.user_metadata?.avatar_url || auth.user?.user_metadata?.picture || '') || undefined;
-  const savedIds = useMemo(() => new Set(library.filter((item) => item.bookmarked).map((item) => item.animeId)), [library]);
   const artworkById = useMemo(() => {
     const map = new Map<string, string>();
     if (!query.data) return map;
@@ -103,7 +99,7 @@ export function HomeScreen({ navigation }: Props) {
   }, [query.data]);
 
   useEffect(() => {
-    const candidate = heroItems[0];
+    const candidate = discoveryItems[0];
     if (!candidate) return undefined;
     const timer = setTimeout(() => {
       void queryClient.prefetchQuery({
@@ -113,7 +109,7 @@ export function HomeScreen({ navigation }: Props) {
       });
     }, 450);
     return () => clearTimeout(timer);
-  }, [audio, heroItems, queryClient, resolvedProfile, resourcePolicy.balancedFileSize, resourcePolicy.batterySaver]);
+  }, [audio, discoveryItems, queryClient, resolvedProfile, resourcePolicy.balancedFileSize, resourcePolicy.batterySaver]);
 
   const chooseFilter = useCallback((next: HomeFilter) => {
     setFilter(next);
@@ -123,9 +119,8 @@ export function HomeScreen({ navigation }: Props) {
   if (query.isLoading) return <Screen><StateView loading message="Loading your home feed…" /></Screen>;
   if (query.isError || !query.data) return <Screen><StateView title="Home feed unavailable" message={query.error?.message} onRetry={() => void query.refetch()} /></Screen>;
 
-  const contentWidth = width - tokens.spacing.lg * 2;
   const constrained = resolvedProfile === 'constrained';
-  const heroHeight = Math.max(constrained ? 220 : 238, Math.min(constrained ? 260 : 292, height * 0.36));
+  const discoveryTitle = filter === 'trending' ? 'Rising today' : filter === 'latest' ? 'New this week' : filter === 'dubbed' ? 'Dub-ready picks' : 'Quick picks';
   return (
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: theme.colors.background }]}>
       <LinearGradient colors={['rgba(92,3,23,0.18)', theme.colors.background]} locations={[0, 0.22]} style={StyleSheet.absoluteFill} pointerEvents="none" />
@@ -136,17 +131,17 @@ export function HomeScreen({ navigation }: Props) {
         ItemSeparatorComponent={() => <View style={[styles.divider, { backgroundColor: theme.colors.outlineVariant }]} />}
         ListHeaderComponent={(
           <View style={styles.headerContent}>
-            <HomeTopBar activeFilter={filter} avatarUrl={avatarUrl} onFilter={chooseFilter} onOpenSchedule={() => navigation.navigate('Schedule')} onOpenProfile={() => navigation.navigate('Profile')} />
-            <FeaturedCarousel
-              items={heroItems}
-              width={contentWidth}
-              height={heroHeight}
-              onOpen={openAnime}
-              onWatch={openAnime}
-              onToggleSave={toggleBookmark}
-              isSaved={(anime) => savedIds.has(String(anime.malId || anime.id))}
+            <HomeTopBar
+              activeFilter={filter}
+              avatarUrl={avatarUrl}
+              onFilter={chooseFilter}
+              onOpenSearch={() => navigation.navigate('Explore')}
+              onOpenHistory={() => navigation.navigate('History')}
+              onOpenSchedule={() => navigation.navigate('Schedule')}
+              onOpenProfile={() => navigation.navigate('Profile')}
             />
             <ContinueWatchingRail items={history} imageFor={(item) => artworkById.get(item.animeId) || item.image} onPress={openHistory} onSeeAll={() => navigation.navigate('History')} />
+            <HomeDiscoveryRail title={discoveryTitle} items={discoveryItems} onPress={openAnime} />
             <View style={styles.sectionHeading}><Text variant="titleLarge" style={styles.heading}>{sectionTitle}</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{feedItems.length} titles</Text></View>
           </View>
         )}

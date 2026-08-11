@@ -5,6 +5,8 @@ import { requestJson } from '../lib/network';
 import { sourceQueriesForAnime } from '../lib/sourceDiscovery';
 import type { Anime } from '../types';
 import type { AudioPreference } from '../../../shared/preferences';
+import { manualSourceIntent } from '../lib/manualSourceSearch';
+import { sourceMatchesAnimeSeason, sourceMatchesEpisode } from '../lib/mobileSourcePolicy';
 
 export type SourceSearchOptions = { category?: string; filter?: string; page?: number; deep?: boolean; pages?: number; wide?: boolean; timeoutMs?: number; signal?: AbortSignal };
 
@@ -150,6 +152,32 @@ export async function searchAnimeSources(
   );
   if (!result.length && lastError) throw lastError;
   return result;
+}
+
+export async function searchManualSources(query: string, options: SourceSearchOptions = {}): Promise<TorrentSource[]> {
+  const intent = manualSourceIntent(query);
+  const sources = new Map<string, TorrentSource>();
+  let lastError: unknown;
+  const results = await Promise.allSettled(intent.queries.slice(0, 2).map((candidate) => searchSources(candidate, options)));
+  results.forEach((result) => {
+    if (result.status === 'rejected') {
+      lastError = result.reason;
+      return;
+    }
+    result.value.forEach((source) => {
+      const key = source.infoHash?.toLowerCase() || source.magnet;
+      const previous = sources.get(key);
+      if (!previous || Number(source.sourceScore || 0) > Number(previous.sourceScore || 0)) sources.set(key, source);
+    });
+  });
+  const matches = [...sources.values()]
+    .filter((source) => !intent.episode || (sourceMatchesEpisode(source, intent.episode)
+      && sourceMatchesAnimeSeason(source, { title: intent.title })))
+    .sort((left, right) => (right.matchScore || 0) - (left.matchScore || 0)
+      || (right.sourceScore || 0) - (left.sourceScore || 0)
+      || right.seeders - left.seeders);
+  if (!matches.length && lastError) throw lastError;
+  return matches;
 }
 
 export function sourceQuery(title: string, episode?: number, audio = 'sub-preferred') {

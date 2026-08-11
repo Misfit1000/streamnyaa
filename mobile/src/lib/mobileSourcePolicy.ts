@@ -122,12 +122,19 @@ export function rankMobileSources(
   sources: TorrentSource[],
   options: { batterySaver: boolean; constrained: boolean; balancedFileSize: boolean; anime?: Pick<Anime, 'title' | 'titles' | 'format'>; episode?: number },
 ) {
-  const compatible = sources.filter((source) => sourceMatchesAnimeSeason(source, options.anime)
+  const compatible = compatibleMobileSources(sources, options);
+  const seeded = compatible.filter((source) => source.seeders > 0);
+  return [...(seeded.length ? seeded : compatible)].sort((left, right) => compareMobileSources(left, right, options));
+}
+
+export function compatibleMobileSources(
+  sources: TorrentSource[],
+  options: { constrained: boolean; anime?: Pick<Anime, 'title' | 'titles' | 'format'>; episode?: number },
+) {
+  return sources.filter((source) => sourceMatchesAnimeSeason(source, options.anime)
     && sourceMatchesAnimeFormat(source, options.anime)
     && sourceMatchesEpisode(source, options.episode)
     && sourceSupportedForProfile(source, options.constrained));
-  const seeded = compatible.filter((source) => source.seeders > 0);
-  return [...(seeded.length ? seeded : compatible)].sort((left, right) => compareMobileSources(left, right, options));
 }
 
 export function sourcesWithinCacheLimit(sources: TorrentSource[], maxCacheMiB: number) {
