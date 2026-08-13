@@ -5,6 +5,7 @@ import { useVideoPlayer, type AudioTrack, type SubtitleTrack, type VideoPlayer }
 import { queryClient } from '../lib/queryClient';
 import { minimumRequiredCacheMiB, rankMobileSources, sourcesWithinCacheLimit } from '../lib/mobileSourcePolicy';
 import { nextRecoverySource } from '../lib/playbackRecovery';
+import { backgroundPauseDelay, shouldPauseAfterPipStop, shouldPreservePlaybackForPip, type PipLifecycleState } from '../lib/pipLifecycle';
 import { equivalentTrack, preferredTrackIndexes } from '../lib/trackSelection';
 import { TorrentEngine } from '../native/TorrentEngine';
 import { fetchSkipIntervals } from '../services/aniskip';
@@ -45,6 +46,7 @@ type PlaybackContextValue = {
   nextEpisodeCountdown: number | null;
   sleepEndsAt: number | null;
   sleepAtEpisodeEnd: boolean;
+  pipState: PipLifecycleState;
   resolvedProfile: 'standard' | 'constrained';
   startPlayback: (request: StartPlaybackRequest) => Promise<void>;
   selectSource: (source: TorrentSource) => Promise<void>;
@@ -57,7 +59,8 @@ type PlaybackContextValue = {
   expand: () => void;
   close: () => Promise<void>;
   retry: () => Promise<void>;
-  setPipActive: (active: boolean) => void;
+  setPipState: (state: PipLifecycleState) => void;
+  finishPip: (eligible: boolean) => void;
   setPlaybackRate: (rate: number) => void;
   setAudioTrack: (track: AudioTrack | null) => void;
   setSubtitleTrack: (track: SubtitleTrack | null) => void;
@@ -109,6 +112,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const [nextEpisodeCountdown, setNextEpisodeCountdown] = useState<number | null>(null);
   const [sleepEndsAt, setSleepEndsAt] = useState<number | null>(null);
   const [sleepAtEpisodeEnd, setSleepAtEpisodeEnd] = useState(false);
+  const [pipState, setPipStateValue] = useState<PipLifecycleState>('idle');
   const presentationRef = useRef<PlaybackPresentation>('hidden');
   const generation = useRef(0);
   const sessionRef = useRef<{ anime?: Anime; episode: number; source?: TorrentSource; currentTime: number; duration: number }>({ episode: 1, currentTime: 0, duration: 0 });
@@ -122,7 +126,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const lastProgressSaveRef = useRef(0);
   const prefetchKeyRef = useRef('');
   const skippedIntervalsRef = useRef(new Set<string>());
-  const pipActiveRef = useRef(false);
+  const pipStateRef = useRef<PipLifecycleState>('idle');
   const pausedForBackgroundRef = useRef(false);
   const pausedForNetworkRef = useRef(false);
   const playbackDesiredRef = useRef(false);
@@ -145,9 +149,24 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     player.bufferOptions = resolvedProfile === 'constrained'
       ? { preferredForwardBufferDuration: 10, minBufferForPlayback: 2, maxBufferBytes: 16 * 1024 * 1024, prioritizeTimeOverSizeThreshold: true }
       : { preferredForwardBufferDuration: 20, minBufferForPlayback: 2, maxBufferBytes: 32 * 1024 * 1024, prioritizeTimeOverSizeThreshold: true };
-    player.staysActiveInBackground = resourcePolicy.allowBackgroundPlayback;
+    player.staysActiveInBackground = resourcePolicy.allowBackgroundPlayback || pipState === 'entering' || pipState === 'active';
     player.showNowPlayingNotification = Boolean(anime);
-  }, [anime, player, resolvedProfile, resourcePolicy.allowBackgroundPlayback]);
+  }, [anime, pipState, player, resolvedProfile, resourcePolicy.allowBackgroundPlayback]);
+
+  const setPipState = useCallback((nextState: PipLifecycleState) => {
+    pipStateRef.current = nextState;
+    setPipStateValue(nextState);
+  }, []);
+
+  const finishPip = useCallback((eligible: boolean) => {
+    const pauseHiddenPlayback = shouldPauseAfterPipStop(AppState.currentState, resourcePolicy.allowBackgroundPlayback);
+    setPipState(pauseHiddenPlayback ? 'idle' : eligible ? 'eligible' : 'idle');
+    if (!pauseHiddenPlayback) return;
+    pausedForBackgroundRef.current = true;
+    playbackDesiredRef.current = false;
+    player.pause();
+    void TorrentEngine.pause();
+  }, [player, resourcePolicy.allowBackgroundPlayback, setPipState]);
 
   useEffect(() => {
     recordSupportEvent({
@@ -353,6 +372,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     persistProgress();
     generation.current += 1;
     playbackDesiredRef.current = true;
+    setPipState('idle');
     const requestGeneration = generation.current;
     attemptsRef.current = 0;
     failedRef.current.clear();
@@ -419,7 +439,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       setPhase('failed');
       setStatus({ ...idleStatus, state: 'error', connectionStage: 'failed', message, error: message });
     }
-  }, [discoverSources, persistProgress, resolvedProfile, startCandidate]);
+  }, [discoverSources, persistProgress, resolvedProfile, setPipState, startCandidate]);
 
   const changeEpisode = useCallback(async (nextEpisode: number, automatic = false) => {
     const activeAnime = sessionRef.current.anime;
@@ -436,6 +456,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     persistProgress();
     generation.current += 1;
     playbackDesiredRef.current = false;
+    setPipState('idle');
     playerReadRecoveryRef.current = false;
     pausedSeekTargetRef.current = null;
     if (pausedSeekTimerRef.current) clearTimeout(pausedSeekTimerRef.current);
@@ -451,7 +472,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     player.pause();
     await player.replaceAsync(null).catch(() => undefined);
     await TorrentEngine.stop(false).catch(() => undefined);
-  }, [persistProgress, player]);
+  }, [persistProgress, player, setPipState]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -607,7 +628,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       if (!wasDesired) void TorrentEngine.resume();
     } else if (!wasDesired) {
       setPhase('paused');
-    } else if (AppState.currentState !== 'active' && !pipActiveRef.current) {
+    } else if (AppState.currentState !== 'active' && !shouldPreservePlaybackForPip(pipStateRef.current)) {
       playbackDesiredRef.current = false;
       setPhase('paused');
       if (loadedStreamRef.current && !pausedForNetworkRef.current) void TorrentEngine.pause();
@@ -722,6 +743,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
         if (backgroundTimer) clearTimeout(backgroundTimer);
+        if (pipStateRef.current !== 'active') setPipState('idle');
         if (pausedForBackgroundRef.current) {
           pausedForBackgroundRef.current = false;
           playbackDesiredRef.current = true;
@@ -730,20 +752,22 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
         }
         return;
       }
-      if (resourcePolicy.allowBackgroundPlayback || pipActiveRef.current) return;
+      if (resourcePolicy.allowBackgroundPlayback || pipStateRef.current === 'active') return;
+      const pauseDelay = backgroundPauseDelay(pipStateRef.current);
       backgroundTimer = setTimeout(() => {
-        if (pipActiveRef.current || !player.playing) return;
+        if (pipStateRef.current === 'active') return;
+        setPipState('idle');
         pausedForBackgroundRef.current = true;
         playbackDesiredRef.current = false;
         player.pause();
         void TorrentEngine.pause();
-      }, 1_500);
+      }, pauseDelay);
     });
     return () => {
       if (backgroundTimer) clearTimeout(backgroundTimer);
       subscription.remove();
     };
-  }, [player, resourcePolicy.allowBackgroundPlayback]);
+  }, [player, resourcePolicy.allowBackgroundPlayback, setPipState]);
 
   const activeSkip = useMemo(() => skipIntervals.find((interval) => currentTime >= interval.startSeconds && currentTime < interval.endSeconds), [currentTime, skipIntervals]);
   const play = useCallback(() => {
@@ -831,16 +855,17 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const value = useMemo<PlaybackContextValue>(() => ({
     player, anime, episode, source, sources, status, phase, presentation, currentTime, duration, bufferedPosition, playing,
     availableAudioTracks, availableSubtitleTracks, selectedAudioTrack, selectedSubtitleTrack, activeSkip,
-    nextEpisodeCountdown, sleepEndsAt, sleepAtEpisodeEnd, resolvedProfile, startPlayback, selectSource, changeEpisode,
+    nextEpisodeCountdown, sleepEndsAt, sleepAtEpisodeEnd, pipState, resolvedProfile, startPlayback, selectSource, changeEpisode,
     play, pause, seekBy, seekTo,
     minimize,
     expand,
     close, retry,
-    setPipActive: (active) => { pipActiveRef.current = active; },
+    setPipState,
+    finishPip,
     setPlaybackRate, setAudioTrack, setSubtitleTrack, skipActiveSegment,
     cancelNextEpisode: () => setNextEpisodeCountdown(null),
     setSleepTimer,
-  }), [activeSkip, anime, availableAudioTracks, availableSubtitleTracks, bufferedPosition, changeEpisode, close, currentTime, duration, episode, expand, minimize, nextEpisodeCountdown, pause, phase, play, player, playing, presentation, resolvedProfile, retry, seekBy, seekTo, selectSource, selectedAudioTrack, selectedSubtitleTrack, setAudioTrack, setPlaybackRate, setSleepTimer, setSubtitleTrack, skipActiveSegment, sleepAtEpisodeEnd, sleepEndsAt, source, sources, startPlayback, status]);
+  }), [activeSkip, anime, availableAudioTracks, availableSubtitleTracks, bufferedPosition, changeEpisode, close, currentTime, duration, episode, expand, finishPip, minimize, nextEpisodeCountdown, pause, phase, pipState, play, player, playing, presentation, resolvedProfile, retry, seekBy, seekTo, selectSource, selectedAudioTrack, selectedSubtitleTrack, setAudioTrack, setPipState, setPlaybackRate, setSleepTimer, setSubtitleTrack, skipActiveSegment, sleepAtEpisodeEnd, sleepEndsAt, source, sources, startPlayback, status]);
 
   return <PlaybackContext.Provider value={value}>{children}</PlaybackContext.Provider>;
 }

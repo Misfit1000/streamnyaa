@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Modal as NativeModal, Pressable, ScrollView, Share, StatusBar as NativeStatusBar, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type NativeSyntheticEvent, type NativeTouchEvent, type StyleProp, type ViewStyle } from 'react-native';
+import { AppState, Modal as NativeModal, Platform, Pressable, ScrollView, Share, StatusBar as NativeStatusBar, StyleSheet, View, useWindowDimensions, type LayoutChangeEvent, type NativeSyntheticEvent, type NativeTouchEvent, type StyleProp, type ViewStyle } from 'react-native';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { StatusBar } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { VideoView } from 'expo-video';
+import { isPictureInPictureSupported, VideoView } from 'expo-video';
 import { ActivityIndicator, Button, IconButton, Switch, Text, useTheme } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePlayback } from '../context/PlaybackContext';
@@ -12,6 +12,7 @@ import { TorrentEngine } from '../native/TorrentEngine';
 import { buildSupportReport } from '../services/supportDiagnostics';
 import { sourceQualityBucket } from '../../../shared/sources';
 import { playerLayoutForViewport } from '../lib/playerLayout';
+import { canEnterPictureInPicture, supportsAutomaticPictureInPicture } from '../lib/pipLifecycle';
 import { STREAMNYAA_SUBTITLE_DEFAULT, effectiveSubtitleStyle } from '../lib/subtitleStyle';
 import { useAppStore } from '../store/useAppStore';
 import { tokens } from '../theme';
@@ -47,9 +48,10 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
   const [sheet, setSheet] = useState<Sheet>(null);
   const [videoFit, setVideoFit] = useState<VideoFit>('contain');
   const [seekWidth, setSeekWidth] = useState(1);
+  const [firstFrameRendered, setFirstFrameRendered] = useState(false);
+  const [pipError, setPipError] = useState('');
   const tapState = useRef<{ side: 'left' | 'right'; at: number } | undefined>(undefined);
   const videoViewRef = useRef<VideoView>(null);
-  const pipActive = useRef(false);
   const pipRequestPending = useRef(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fullscreenTransition = useRef(false);
@@ -89,31 +91,51 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
     return () => timers.forEach(clearTimeout);
   }, [applySubtitleStyle, fullscreen, playback.selectedSubtitleTrack?.id, playback.status.streamUrl]);
 
-  const enterPictureInPicture = useCallback(async () => {
-    if (!videoViewRef.current || !playback.status.streamUrl || pipActive.current || pipRequestPending.current) return;
-    pipRequestPending.current = true;
-    setSheet(null);
-    setControlsVisible(false);
-    try {
-      await videoViewRef.current.startPictureInPicture();
-    } catch {
-      pipRequestPending.current = false;
-      setControlsVisible(true);
-    }
+  const pipSupported = useMemo(() => {
+    try { return Platform.OS === 'android' && isPictureInPictureSupported(); }
+    catch { return false; }
+  }, []);
+  const pipReady = pipSupported && canEnterPictureInPicture({ streamUrl: playback.status.streamUrl, playing: playback.playing, firstFrameRendered });
+  const automaticPip = supportsAutomaticPictureInPicture(Platform.OS, Platform.Version);
+
+  useEffect(() => {
+    setFirstFrameRendered(false);
+    if (playback.pipState !== 'active') playback.setPipState('idle');
   }, [playback.status.streamUrl]);
 
   useEffect(() => {
+    if (playback.pipState === 'active' || playback.pipState === 'entering') return;
+    playback.setPipState(pipReady ? 'eligible' : 'idle');
+  }, [pipReady, playback.pipState, playback.setPipState]);
+
+  const enterPictureInPicture = useCallback(async (waitForSheetDismiss = false) => {
+    if (!videoViewRef.current || !pipReady || playback.pipState === 'active' || pipRequestPending.current) return;
+    pipRequestPending.current = true;
+    setPipError('');
+    playback.setPipState('entering');
+    setSheet(null);
+    setControlsVisible(false);
+    try {
+      if (waitForSheetDismiss) await new Promise<void>((resolve) => setTimeout(resolve, 320));
+      await videoViewRef.current.startPictureInPicture();
+    } catch (error) {
+      pipRequestPending.current = false;
+      playback.setPipState(pipReady ? 'eligible' : 'idle');
+      setControlsVisible(true);
+      setPipError(error instanceof Error ? error.message : 'Android could not open picture in picture.');
+      if (waitForSheetDismiss) setSheet('settings');
+    }
+  }, [pipReady, playback.pipState, playback.setPipState]);
+
+  useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') {
-        pipRequestPending.current = false;
-        return;
-      }
-      if (nextState === 'background' && playback.playing && playback.status.streamUrl && !pipActive.current) {
+      if (nextState === 'active') pipRequestPending.current = false;
+      if (nextState === 'background' && !automaticPip && pipReady && playback.pipState !== 'active') {
         void enterPictureInPicture();
       }
     });
     return () => subscription.remove();
-  }, [enterPictureInPicture, playback.playing, playback.status.streamUrl]);
+  }, [automaticPip, enterPictureInPicture, pipReady, playback.pipState]);
 
   const toggleFullscreen = async () => {
     if (fullscreenTransition.current) return;
@@ -182,19 +204,24 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
           player={playback.player}
           nativeControls={false}
           contentFit={videoFit}
-          surfaceType="surfaceView"
+          surfaceType="textureView"
+          useExoShutter={false}
           allowsPictureInPicture
-          startsPictureInPictureAutomatically={playback.playing}
-          onFirstFrameRender={applySubtitleStyle}
+          startsPictureInPictureAutomatically={automaticPip && pipReady}
+          onFirstFrameRender={() => {
+            setFirstFrameRendered(true);
+            applySubtitleStyle();
+          }}
           onPictureInPictureStart={() => {
-            pipActive.current = true;
             pipRequestPending.current = false;
-            playback.setPipActive(true);
+            setPipError('');
+            playback.setPipState('active');
+            if (!playback.player.playing) playback.play();
           }}
           onPictureInPictureStop={() => {
-            pipActive.current = false;
             pipRequestPending.current = false;
-            playback.setPipActive(false);
+            playback.finishPip(pipReady);
+            setControlsVisible(true);
           }}
         />
       ) : null}
@@ -311,7 +338,7 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setSheet(null)} accessibilityLabel="Close playback settings" />
           <View style={[styles.sheet, sideSheet && styles.sideSheet, { backgroundColor: theme.colors.surface, paddingBottom: Math.max(12, insets.bottom) }]}>
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.sheetContent, sideSheet && { paddingTop: Math.max(18, insets.top + 8), paddingRight: Math.max(18, insets.right + 10) }]}>
-            {sheet === 'settings' ? <SettingsSheet playback={playback} videoFit={videoFit} onOpen={setSheet} onEnterPictureInPicture={() => void enterPictureInPicture()} /> : null}
+            {sheet === 'settings' ? <SettingsSheet playback={playback} videoFit={videoFit} pipSupported={pipSupported} pipReady={pipReady} pipError={pipError} onOpen={setSheet} onEnterPictureInPicture={() => void enterPictureInPicture(true)} /> : null}
             {sheet === 'episodes' ? <EpisodesSheet playback={playback} onClose={() => setSheet(null)} /> : null}
             {sheet === 'sources' ? <SourcesSheet playback={playback} onClose={() => setSheet(null)} /> : null}
             {sheet === 'tracks' ? <TracksSheet playback={playback} onClose={() => setSheet(null)} /> : null}
@@ -328,7 +355,7 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
   );
 }
 
-function SettingsSheet({ playback, videoFit, onOpen, onEnterPictureInPicture }: { playback: Playback; videoFit: VideoFit; onOpen: (sheet: Sheet) => void; onEnterPictureInPicture: () => void }) {
+function SettingsSheet({ playback, videoFit, pipSupported, pipReady, pipError, onOpen, onEnterPictureInPicture }: { playback: Playback; videoFit: VideoFit; pipSupported: boolean; pipReady: boolean; pipError: string; onOpen: (sheet: Sheet) => void; onEnterPictureInPicture: () => void }) {
   const preferences = useAppStore((state) => state.playerPreferences);
   const setPlayerPreferences = useAppStore((state) => state.setPlayerPreferences);
   const selectedSubtitle = playback.selectedSubtitleTrack?.label || playback.selectedSubtitleTrack?.name || playback.selectedSubtitleTrack?.language || 'Off';
@@ -340,7 +367,8 @@ function SettingsSheet({ playback, videoFit, onOpen, onEnterPictureInPicture }: 
     <SheetAction icon="format-font" title="Subtitle appearance" detail={preferences.subtitleStyle.custom ? `${titleCase(preferences.subtitleStyle.fontSize)} · ${titleCase(preferences.subtitleStyle.position)}` : 'StreamNyaa default'} onPress={() => onOpen('subtitleAppearance')} />
     <SheetAction icon="volume-high" title="Audio" detail={selectedAudio} onPress={() => onOpen('tracks')} />
     <SheetAction icon="aspect-ratio" title="Video fit" detail={videoFit === 'contain' ? 'Fit · no crop' : 'Fill screen · cropped'} onPress={() => onOpen('video')} />
-    <SheetAction icon="picture-in-picture-bottom-right-outline" title="Picture in picture" detail="Continue in a floating Android player" onPress={onEnterPictureInPicture} />
+    <SheetAction icon="picture-in-picture-bottom-right-outline" title="Picture in picture" detail={!pipSupported ? 'Not supported on this device' : pipReady ? 'Continue in a floating Android player' : 'Available after video starts'} onPress={pipReady ? onEnterPictureInPicture : undefined} />
+    {pipError ? <Text variant="bodySmall" accessibilityLiveRegion="polite" style={styles.playerSettingError}>{pipError}</Text> : null}
     <SheetAction icon="speedometer" title="Playback speed" detail={`${playback.player.playbackRate}×`} onPress={() => onOpen('speed')} />
     <SheetToggle icon="skip-next-circle-outline" title="Auto next episode" value={preferences.autoNextEpisode} onValueChange={(autoNextEpisode) => setPlayerPreferences({ autoNextEpisode })} />
     <SheetToggle icon="skip-forward-outline" title="Auto skip intro" value={preferences.autoSkipIntro} onValueChange={(autoSkipIntro) => setPlayerPreferences({ autoSkipIntro })} />
@@ -593,6 +621,7 @@ const styles = StyleSheet.create({
   sheetTitle: { flex: 1 },
   sheetAction: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 7 },
   sheetActionCopy: { flex: 1, gap: 2 },
+  playerSettingError: { color: tokens.color.brandBright, marginTop: -6, paddingHorizontal: 4 },
   rateRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 4 },
   subtitlePreset: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, borderRadius: tokens.radius.control, backgroundColor: 'rgba(225,29,72,0.08)' },
   choiceGroup: { gap: 8, paddingVertical: 3 },
