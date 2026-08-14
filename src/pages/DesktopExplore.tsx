@@ -855,17 +855,6 @@ function SpotlightArtwork({ anime, title }: { anime: any | null; title: string }
           }
         }}
       />
-      {!anime?.banner_image && !anime?.bannerImage ? (
-        <img
-          src={currentImage}
-          alt=""
-          className="absolute inset-0 h-full w-full scale-110 object-cover object-center opacity-55 blur-2xl"
-          loading="eager"
-          decoding="async"
-          referrerPolicy="no-referrer"
-          aria-hidden="true"
-        />
-      ) : null}
     </>
   );
 }

@@ -1313,10 +1313,19 @@ export async function beginDesktopGoogleOAuth(authorizeUrl: string) {
 export async function listenDesktopOAuthCallback(listener: (event: DesktopOAuthCallbackEvent) => void) {
   if (typeof window === 'undefined') return () => {};
   const listen = window.__TAURI__?.event?.listen;
-  if (!listen) return () => {};
-  return listen<DesktopOAuthCallbackEvent>('streamnyaa-desktop-oauth-callback', (event) => {
-    listener(event.payload || {});
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!listen || !invoke) return () => {};
+  const takePending = () => invoke<DesktopOAuthCallbackEvent | null>('take_pending_desktop_oauth_callback');
+  const unlisten = await listen<DesktopOAuthCallbackEvent>('streamnyaa-desktop-oauth-callback', (event) => {
+    void takePending().then((pending) => {
+      if (pending?.url || pending?.error) listener(pending);
+    }).catch(() => {
+      if (event.payload?.url || event.payload?.error) listener(event.payload);
+    });
   });
+  const pending = await takePending();
+  if (pending?.url || pending?.error) queueMicrotask(() => listener(pending));
+  return unlisten;
 }
 
 export async function listenDesktopPlayerRecoveryRequest(listener: (event: DesktopPlayerRecoveryRequestEvent) => void) {

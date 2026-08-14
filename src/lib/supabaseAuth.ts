@@ -3,7 +3,7 @@ import { accountApiFetch, accountApiUrl } from './accountApi';
 const STORAGE_KEY = 'streamnyaa.auth.session';
 const FALLBACK_SUPABASE_URL = 'https://opteiijnvuwstpdjxwlk.supabase.co';
 const FALLBACK_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_oHAwXtg1wXcPybVYfLBUuQ_GiYz3Fxv';
-const DESKTOP_AUTH_CALLBACK_ORIGIN = 'https://www.streamnyaa.xyz';
+const DESKTOP_AUTH_CALLBACK_URL = 'streamnyaa://auth';
 
 export interface AuthUser {
   id: string;
@@ -181,11 +181,8 @@ function siteRedirectUrl(path = '/login') {
   return `${origin}${safePath}`;
 }
 
-function desktopAuthRedirectUrl(path = '/login') {
-  const safePath = safeAuthRedirectPath(path);
-  const callbackUrl = new URL(safePath, DESKTOP_AUTH_CALLBACK_ORIGIN);
-  callbackUrl.searchParams.set('desktop_oauth', '1');
-  return callbackUrl.toString();
+function desktopAuthRedirectUrl(_path = '/login') {
+  return DESKTOP_AUTH_CALLBACK_URL;
 }
 
 export function normalizeOAuthSessionFromHash(hash: string): AuthSession | null {

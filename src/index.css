@@ -179,6 +179,25 @@ select:focus-visible {
     #060607;
 }
 
+/* WebView2 can corrupt clipped media layers when a backdrop-filter is composed
+   over animated images. Keep media surfaces isolated and use their opaque
+   gradients instead of sampling the window behind them. */
+.desktop-app-shell .sn-hero-panel,
+.desktop-app-shell .sn-poster-card,
+.desktop-app-shell .sn-landscape-card {
+  isolation: isolate;
+  contain: paint;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.desktop-app-shell .sn-poster-card [class*='backdrop-blur'],
+.desktop-app-shell .sn-landscape-card [class*='backdrop-blur'],
+.desktop-app-shell .sn-hero-panel [class*='backdrop-blur'] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 .sn-primary-action,
 .sn-secondary-action,
 .sn-ghost-action,

@@ -20,8 +20,9 @@ use std::{
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
+use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_opener::OpenerExt;
 
-const DESKTOP_OAUTH_WINDOW_LABEL: &str = "streamnyaa-oauth";
 const DESKTOP_OAUTH_EVENT: &str = "streamnyaa-desktop-oauth-callback";
 const DESKTOP_OAUTH_SUPABASE_HOST: &str = "opteiijnvuwstpdjxwlk.supabase.co";
 
@@ -56,29 +57,16 @@ struct DesktopOAuthCallback {
     url: String,
 }
 
-fn is_streamnyaa_auth_callback(url: &tauri::Url) -> bool {
-    matches!(
-        url.host_str(),
-        Some("www.streamnyaa.xyz") | Some("streamnyaa.xyz")
-    ) && url.path().trim_end_matches('/') == "/login"
-        && url
-            .query_pairs()
-            .any(|(key, value)| key == "desktop_oauth" && value == "1")
+static DESKTOP_OAUTH_PENDING: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+fn pending_desktop_oauth_callback() -> &'static Mutex<Option<String>> {
+    DESKTOP_OAUTH_PENDING.get_or_init(|| Mutex::new(None))
 }
 
-fn is_allowed_oauth_navigation(url: &tauri::Url) -> bool {
-    if url.scheme() == "about" {
-        return true;
-    }
-    if url.scheme() != "https" {
-        return false;
-    }
-
-    let host = url.host_str().unwrap_or_default();
-    host == DESKTOP_OAUTH_SUPABASE_HOST
-        || host == "accounts.google.com"
-        || host.ends_with(".google.com")
-        || host.ends_with(".googleusercontent.com")
+fn is_streamnyaa_auth_callback(url: &tauri::Url) -> bool {
+    url.scheme() == "streamnyaa"
+        && url.host_str() == Some("auth")
+        && (url.path().is_empty() || url.path() == "/")
 }
 
 fn validate_google_oauth_authorize_url(url: &tauri::Url) -> Result<(), String> {
@@ -113,46 +101,36 @@ fn begin_desktop_google_oauth(app: tauri::AppHandle, authorize_url: String) -> R
         .map_err(|_| "The desktop sign-in URL is invalid.".to_string())?;
     validate_google_oauth_authorize_url(&authorize_url)?;
 
-    if let Some(window) = app.get_webview_window(DESKTOP_OAUTH_WINDOW_LABEL) {
-        window
-            .navigate(authorize_url)
-            .map_err(|error| format!("Google sign-in could not reopen: {error}"))?;
-        let _ = window.set_focus();
-        return Ok(());
+    app.opener()
+        .open_url(authorize_url.as_str(), None::<&str>)
+        .map_err(|error| format!("Google sign-in could not open in your browser: {error}"))
+}
+
+fn publish_desktop_oauth_callback(app: &tauri::AppHandle, url: &tauri::Url) -> bool {
+    if !is_streamnyaa_auth_callback(url) {
+        return false;
     }
 
-    let navigation_app = app.clone();
-    tauri::webview::WebviewWindowBuilder::new(
-        &app,
-        DESKTOP_OAUTH_WINDOW_LABEL,
-        tauri::WebviewUrl::External(authorize_url),
-    )
-    .title("Sign in to StreamNyaa")
-    .inner_size(520.0, 720.0)
-    .min_inner_size(420.0, 560.0)
-    .resizable(true)
-    .center()
-    .focused(true)
-    .on_navigation(move |url| {
-        if is_streamnyaa_auth_callback(url) {
-            log_info("Desktop Google OAuth callback received");
-            let _ = navigation_app.emit(
-                DESKTOP_OAUTH_EVENT,
-                DesktopOAuthCallback {
-                    url: url.to_string(),
-                },
-            );
-            if let Some(window) = navigation_app.get_webview_window(DESKTOP_OAUTH_WINDOW_LABEL) {
-                let _ = window.close();
-            }
-            return false;
-        }
-        is_allowed_oauth_navigation(url)
-    })
-    .build()
-    .map_err(|error| format!("Google sign-in window could not open: {error}"))?;
+    let callback_url = url.to_string();
+    if let Ok(mut pending) = pending_desktop_oauth_callback().lock() {
+        *pending = Some(callback_url.clone());
+    }
+    log_info("Desktop Google OAuth callback received from system browser");
+    let _ = app.emit(
+        DESKTOP_OAUTH_EVENT,
+        DesktopOAuthCallback { url: callback_url },
+    );
+    show_main_window(app);
+    true
+}
 
-    Ok(())
+#[tauri::command]
+fn take_pending_desktop_oauth_callback() -> Option<DesktopOAuthCallback> {
+    pending_desktop_oauth_callback()
+        .lock()
+        .ok()
+        .and_then(|mut pending| pending.take())
+        .map(|url| DesktopOAuthCallback { url })
 }
 
 #[derive(Serialize)]
@@ -5876,10 +5854,28 @@ fn install_system_tray(app: &tauri::App) -> tauri::Result<()> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            show_main_window(app);
+        }))
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             log_info("StreamNyaa desktop app starting");
             let _ = APP_HANDLE.set(app.handle().clone());
+            #[cfg(any(windows, target_os = "linux"))]
+            app.deep_link().register_all()?;
+            let deep_link_app = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    publish_desktop_oauth_callback(&deep_link_app, &url);
+                }
+            });
+            if let Some(urls) = app.deep_link().get_current()? {
+                for url in urls {
+                    publish_desktop_oauth_callback(app.handle(), &url);
+                }
+            }
             if let (Some(window), Some(icon)) = (
                 app.get_webview_window("main"),
                 app.default_window_icon().cloned(),
@@ -5910,6 +5906,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             begin_desktop_google_oauth,
+            take_pending_desktop_oauth_callback,
             fetch_desktop_metadata_api,
             fetch_desktop_source_api,
             clear_playback_cache,
@@ -5932,7 +5929,7 @@ mod tests {
     #[test]
     fn desktop_google_oauth_accepts_only_the_streamnyaa_callback() {
         let valid = tauri::Url::parse(
-            "https://opteiijnvuwstpdjxwlk.supabase.co/auth/v1/authorize?provider=google&redirect_to=https%3A%2F%2Fwww.streamnyaa.xyz%2Flogin%3Fdesktop_oauth%3D1",
+            "https://opteiijnvuwstpdjxwlk.supabase.co/auth/v1/authorize?provider=google&redirect_to=streamnyaa%3A%2F%2Fauth",
         )
         .expect("valid OAuth URL");
         assert!(validate_google_oauth_authorize_url(&valid).is_ok());
@@ -5947,13 +5944,12 @@ mod tests {
     #[test]
     fn desktop_oauth_callback_requires_the_desktop_marker() {
         let callback =
-            tauri::Url::parse("https://www.streamnyaa.xyz/login?desktop_oauth=1#access_token=test")
-                .expect("valid callback URL");
+            tauri::Url::parse("streamnyaa://auth#access_token=test").expect("valid callback URL");
         assert!(is_streamnyaa_auth_callback(&callback));
 
-        let normal_web_login =
-            tauri::Url::parse("https://www.streamnyaa.xyz/login").expect("valid normal login URL");
-        assert!(!is_streamnyaa_auth_callback(&normal_web_login));
+        let foreign_callback =
+            tauri::Url::parse("streamnyaa://profile#access_token=test").expect("valid foreign URL");
+        assert!(!is_streamnyaa_auth_callback(&foreign_callback));
     }
 
     #[test]

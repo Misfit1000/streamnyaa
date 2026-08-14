@@ -980,7 +980,7 @@ export default function DesktopHome() {
               <DesktopImage
                 candidates={heroImageCandidates(item)}
                 alt={item.title}
-                className={`absolute inset-y-0 right-0 h-full w-[82%] object-cover object-[68%_center] saturate-[1.06] contrast-[1.03] transition-transform duration-700 ease-out [mask-image:linear-gradient(90deg,transparent_0%,black_18%,black_100%)] ${index === heroIndex ? 'scale-100' : 'scale-[1.012]'}`}
+                className={`absolute inset-y-0 right-0 h-full w-[82%] object-cover object-[68%_center] saturate-[1.06] contrast-[1.03] transition-transform duration-700 ease-out ${index === heroIndex ? 'scale-100' : 'scale-[1.012]'}`}
                 loading={index === heroIndex || index === (heroIndex + 1) % Math.max(heroCount, 1) ? 'eager' : 'lazy'}
                 forceKey={`${item?.mal_id || item?.id || item?.title || index}-${index}`}
               />

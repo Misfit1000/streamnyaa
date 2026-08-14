@@ -123,7 +123,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
       await signInGoogle(loginRedirect);
       if (isDesktopRuntime()) {
         setSubmitting(false);
-        setMessage('Complete sign-in in the secure Google window. StreamNyaa will return here automatically.');
+        setMessage('Complete sign-in in your browser. StreamNyaa will return here automatically.');
       }
     } catch (authError) {
       setSubmitting(false);
