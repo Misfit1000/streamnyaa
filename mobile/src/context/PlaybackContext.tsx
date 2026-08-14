@@ -7,6 +7,7 @@ import { minimumRequiredCacheMiB, rankMobileSources, sourcesWithinCacheLimit } f
 import { MAX_AUTOMATIC_SOURCE_ATTEMPTS, nextRecoverySource } from '../lib/playbackRecovery';
 import { backgroundPauseDelay, shouldCloseTaskAfterPipStop, shouldPauseAfterPipStop, shouldPreservePlaybackForPip, type PipLifecycleState } from '../lib/pipLifecycle';
 import { equivalentTrack, preferredTrackIndexes } from '../lib/trackSelection';
+import { selectSourceRaceCandidates, shouldStartSourceRace } from '../lib/sourceRace';
 import { TorrentEngine } from '../native/TorrentEngine';
 import { fetchSkipIntervals } from '../services/aniskip';
 import { searchAnimeSources } from '../services/sources';
@@ -127,6 +128,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const prefetchKeyRef = useRef('');
   const skippedIntervalsRef = useRef(new Set<string>());
   const skipRequestKeyRef = useRef('');
+  const raceWinnerRef = useRef('');
   const pipStateRef = useRef<PipLifecycleState>('idle');
   const pausedForBackgroundRef = useRef(false);
   const pausedForNetworkRef = useRef(false);
@@ -138,7 +140,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const playerReadRecoveryRef = useRef(false);
   const requestedAudioTrackRef = useRef<AudioTrack | null | undefined>(undefined);
   const requestedSubtitleTrackRef = useRef<SubtitleTrack | null | undefined>(undefined);
-  const startCandidateRef = useRef<(candidate: TorrentSource, automatic?: boolean) => Promise<void>>(async () => undefined);
+  const startCandidateRef = useRef<(candidate: TorrentSource, automatic?: boolean, allowRace?: boolean) => Promise<void>>(async () => undefined);
   const statusRef = useRef<TorrentStreamStatus>(idleStatus);
   const phaseRef = useRef<PlaybackPhase>('idle');
   presentationRef.current = presentation;
@@ -299,12 +301,16 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     }, 650);
   }, [recordSourceFailure]);
 
-  const startCandidate = useCallback(async (candidate: TorrentSource, automatic = false) => {
+  const startCandidate = useCallback(async (candidate: TorrentSource, automatic = false, allowRace = true) => {
     const activeAnime = sessionRef.current.anime;
     const activeEpisode = sessionRef.current.episode;
     if (!activeAnime) return;
     const requestGeneration = generation.current;
-    attemptsRef.current += 1;
+    const raceCandidates = shouldStartSourceRace(resourcePolicy.raceHighQualitySources, automatic, allowRace, attemptsRef.current)
+      ? selectSourceRaceCandidates(candidatesRef.current, candidate, resolvedProfile === 'constrained' ? 2 : 3)
+      : [candidate];
+    const racing = raceCandidates.length > 1;
+    attemptsRef.current += raceCandidates.length;
     playbackDesiredRef.current = automatic ? recoveryPlaybackDesiredRef.current : true;
     playerReadRetriesRef.current = 0;
     playerReadRecoveryRef.current = false;
@@ -330,15 +336,25 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
         seeders: candidate.seeders,
         sizeBytes: candidate.sizeBytes || 0,
         attempt: attemptsRef.current,
+        raceCandidates: raceCandidates.length,
       },
     });
     setPhase(automatic ? 'recovering' : 'connecting');
-    setStatus({ ...idleStatus, state: 'metadata', connectionStage: 'engine-start', message: automatic ? `Trying release ${attemptsRef.current} of ${MAX_AUTOMATIC_SOURCE_ATTEMPTS}…` : 'Starting peer discovery…' });
+    setStatus({
+      ...idleStatus,
+      state: 'metadata',
+      connectionStage: 'engine-start',
+      raceActive: racing,
+      raceCandidateCount: racing ? raceCandidates.length : undefined,
+      message: automatic
+        ? `Trying release ${attemptsRef.current} of ${MAX_AUTOMATIC_SOURCE_ATTEMPTS}…`
+        : racing ? `Racing ${raceCandidates.length} similar-quality releases…` : 'Starting peer discovery…',
+    });
     loadedStreamRef.current = '';
     player.pause();
     await player.replaceAsync(null).catch(() => undefined);
     try {
-      const result = await TorrentEngine.startStream(candidate.magnet, `episode:${activeEpisode}`, {
+      const optionsFor = (nextSource: TorrentSource) => ({
         wifiOnly: resourcePolicy.wifiOnly,
         maxCacheMiB: resourcePolicy.maxCacheMiB,
         batterySaver: resourcePolicy.batterySaver || resolvedProfile === 'constrained',
@@ -346,11 +362,18 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
         animeId: String(activeAnime.id),
         animeTitle: activeAnime.title,
         episode: activeEpisode,
-        sourceTitle: candidate.title,
-        infoHash: candidate.infoHash,
-        torrentUrl: candidate.link,
-        metadataUrls: candidate.metadataUrls,
+        sourceTitle: nextSource.title,
+        infoHash: nextSource.infoHash,
+        torrentUrl: nextSource.link,
+        metadataUrls: nextSource.metadataUrls,
       });
+      const result = racing
+        ? await TorrentEngine.startSourceRace(raceCandidates.map((nextSource) => ({
+          magnet: nextSource.magnet,
+          preferredFile: `episode:${activeEpisode}`,
+          options: optionsFor(nextSource),
+        })))
+        : await TorrentEngine.startStream(candidate.magnet, `episode:${activeEpisode}`, optionsFor(candidate));
       if (!mountedRef.current || requestGeneration !== generation.current) return;
       if (!result.ok) {
         failCurrentSource(result.error.message, result.error.stage, result.error.errorCode);
@@ -366,7 +389,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       if (requestGeneration !== generation.current) return;
       failCurrentSource(error instanceof Error ? error.message : 'The release could not start.', 'native-bridge', 'START_EXCEPTION');
     }
-  }, [failCurrentSource, player, resolvedProfile, resourcePolicy.batterySaver, resourcePolicy.maxCacheMiB, resourcePolicy.wifiOnly]);
+  }, [failCurrentSource, player, resolvedProfile, resourcePolicy.batterySaver, resourcePolicy.maxCacheMiB, resourcePolicy.raceHighQualitySources, resourcePolicy.wifiOnly]);
   startCandidateRef.current = startCandidate;
 
   const discoverSources = useCallback(async (targetAnime: Anime, targetEpisode: number) => {
@@ -415,6 +438,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     prefetchKeyRef.current = '';
     skippedIntervalsRef.current.clear();
     skipRequestKeyRef.current = '';
+    raceWinnerRef.current = '';
     resumeSecondsRef.current = Number(request.resumeSeconds || 0);
     setAnime(request.anime);
     setEpisode(targetEpisode);
@@ -455,7 +479,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
         setStatus({ ...idleStatus, state: 'error', connectionStage: 'failed', message: 'No compatible release was found for this episode.', error: 'No compatible release was found for this episode.' });
         return;
       }
-      await startCandidate(candidates[0]!);
+      await startCandidate(candidates[0]!, false, !request.source);
       if (candidates.length < 8) {
         void queryClient.fetchQuery({
           queryKey: ['playback-sources-expanded', request.anime.id, targetEpisode, audioPreference],
@@ -491,7 +515,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       if (request.source) {
         candidatesRef.current = [request.source];
         setSources([request.source]);
-        await startCandidate(request.source);
+        await startCandidate(request.source, false, false);
         return;
       }
       const message = error instanceof Error ? error.message : 'Source discovery failed.';
@@ -544,6 +568,26 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     mountedRef.current = true;
     const subscription = TorrentEngine.addStatusListener((next) => {
       if (!mountedRef.current) return;
+      if (next.raceWinnerInfoHash) {
+        const winner = candidatesRef.current.find((candidate) => candidate.infoHash.toLowerCase() === next.raceWinnerInfoHash?.toLowerCase());
+        if (winner && raceWinnerRef.current !== next.raceWinnerInfoHash) {
+          raceWinnerRef.current = next.raceWinnerInfoHash;
+          recordSupportEvent({
+            stage: 'source-race',
+            code: 'SOURCE_RACE_WON',
+            message: 'The first playable same-quality release was promoted.',
+            context: {
+              sourceId: winner.infoHash ? `${winner.infoHash.slice(0, 8)}…${winner.infoHash.slice(-4)}` : '',
+              candidates: next.raceCandidateCount || 0,
+              seeders: winner.seeders,
+            },
+          });
+        }
+        if (winner && sourceId(sessionRef.current.source || winner) !== sourceId(winner)) {
+          sessionRef.current.source = winner;
+          setSource(winner);
+        }
+      }
       setStatus(next);
       recordPlaybackStatus(next, {
         animeId: sessionRef.current.anime?.id,
@@ -551,7 +595,15 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
         source: sessionRef.current.source,
         phase: phaseRef.current,
       });
-      if (next.state === 'error') failCurrentSource(next.error || next.message, next.failureStage, next.failureCode);
+      if (next.state === 'error') {
+        if (next.failureStage === 'source-race' && next.racedSourceIds) {
+          next.racedSourceIds.split(',').map((value) => value.trim()).filter(Boolean).forEach((id) => {
+            failedRef.current.add(id);
+            recordSourceFailure(id, next.error || next.message);
+          });
+        }
+        failCurrentSource(next.error || next.message, next.failureStage, next.failureCode);
+      }
       else if (next.state === 'paused') {
         setPhase('paused');
         if (/connection|wi-fi/i.test(next.message) && player.playing) {
@@ -574,7 +626,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       subscription?.remove();
       void TorrentEngine.stop(false);
     };
-  }, [failCurrentSource, persistProgress, player]);
+  }, [failCurrentSource, persistProgress, player, recordSourceFailure]);
 
   useEffect(() => {
     if (playerReadRecoveryRef.current || !status.streamUrl || loadedStreamRef.current === status.streamUrl || !anime || !source) return;
@@ -860,7 +912,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     attemptsRef.current = 0;
     candidatesRef.current = [candidate, ...candidatesRef.current.filter((item) => sourceId(item) !== sourceId(candidate))];
     resumeSecondsRef.current = currentTime;
-    await startCandidate(candidate);
+    await startCandidate(candidate, false, false);
   }, [currentTime, startCandidate]);
   const retry = useCallback(async () => {
     const active = sessionRef.current.source || candidatesRef.current[0];
@@ -871,7 +923,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     }
     failedRef.current.delete(sourceId(active));
     attemptsRef.current = 0;
-    await startCandidate(active);
+    await startCandidate(active, false, false);
   }, [startCandidate, startPlayback]);
   const setPlaybackRate = useCallback((rate: number) => {
     player.playbackRate = rate;

@@ -140,6 +140,12 @@ export type TorrentStreamStatus = {
   fileName?: string;
   streamUrl?: string;
   error?: string;
+  raceActive?: boolean;
+  raceCandidateCount?: number;
+  raceReadyCount?: number;
+  raceWinnerIndex?: number;
+  raceWinnerInfoHash?: string;
+  racedSourceIds?: string;
 };
 
 export type TorrentStartOptions = {
@@ -161,6 +167,11 @@ export type TorrentStartRequest = {
   magnet: string;
   preferredFile?: string;
   options: TorrentStartOptions;
+};
+
+export type TorrentSourceRaceRequest = {
+  protocolVersion: 1;
+  candidates: TorrentStartRequest[];
 };
 
 export type EngineFailure = {

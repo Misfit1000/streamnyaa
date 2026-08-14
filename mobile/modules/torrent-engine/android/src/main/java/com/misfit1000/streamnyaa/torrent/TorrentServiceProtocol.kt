@@ -14,6 +14,7 @@ internal object TorrentServiceProtocol {
   const val CACHE_STATS = 9
   const val CACHE_ENTRIES = 10
   const val REMOVE_CACHE_ENTRY = 11
+  const val START_RACE = 12
   const val RESPONSE = 100
   const val STATUS_EVENT = 101
 

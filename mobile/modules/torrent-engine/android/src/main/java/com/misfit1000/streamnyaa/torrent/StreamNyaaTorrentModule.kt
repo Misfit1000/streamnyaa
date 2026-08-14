@@ -112,6 +112,22 @@ class StreamNyaaTorrentModule : Module() {
       }
     }
 
+    AsyncFunction("startSourceRace") { requestJson: String ->
+      try {
+        val request = JSONObject(requestJson)
+        require(request.optInt("protocolVersion", 0) == PROTOCOL_VERSION) { "Unsupported torrent bridge protocol." }
+        val candidates = checkNotNull(request.optJSONArray("candidates")) { "The source race has no candidates." }
+        require(candidates.length() in 2..3) { "A source race requires two or three candidates." }
+        (0 until candidates.length()).forEach { index ->
+          require(candidates.getJSONObject(index).optString("magnet").startsWith("magnet:?")) { "Every race candidate requires a valid magnet URI." }
+        }
+        successJson(statusFrom(rpc(TorrentServiceProtocol.START_RACE, Bundle().apply { putString(TorrentServiceProtocol.JSON, requestJson) })))
+      } catch (throwable: Throwable) {
+        diagnostic("error", "engine-race", "SOURCE_RACE_REJECTED", throwable.message ?: "Source race rejected")
+        failureJson(throwable, "engine-race")
+      }
+    }
+
     AsyncFunction("getEngineHealth") { engineHealth().toString() }
     AsyncFunction("getDiagnostics") { synchronized(diagnostics) { JSONArray(diagnostics.toList()).toString() } }
     Function("clearDiagnostics") {

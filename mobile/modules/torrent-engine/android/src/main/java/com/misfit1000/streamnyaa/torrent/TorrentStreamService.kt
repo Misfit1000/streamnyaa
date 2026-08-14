@@ -24,11 +24,11 @@ class TorrentStreamService : Service() {
   private val clients = CopyOnWriteArrayList<Messenger>()
   private val executor = Executors.newSingleThreadExecutor()
   private val messenger = Messenger(IncomingHandler(Looper.getMainLooper()))
-  private lateinit var engine: TorrentStreamEngine
+  private lateinit var engine: TorrentEngineCoordinator
 
   override fun onCreate() {
     super.onCreate()
-    engine = TorrentStreamEngine(applicationContext) { status -> broadcastStatus(status) }
+    engine = TorrentEngineCoordinator(applicationContext) { status -> broadcastStatus(status) }
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -85,29 +85,15 @@ class TorrentStreamService : Service() {
       when (messageType) {
         TorrentServiceProtocol.START -> {
           val startRequest = JSONObject(checkNotNull(request.getString(TorrentServiceProtocol.JSON)) { "The stream request is missing." })
-          require(startRequest.optInt("protocolVersion", 0) == 1) { "Unsupported torrent bridge protocol." }
-          val requestOptions = startRequest.optJSONObject("options") ?: JSONObject()
-          val metadataUrls = requestOptions.optJSONArray("metadataUrls")?.let { urls ->
-            (0 until urls.length()).mapNotNull { index -> urls.optString(index).takeIf(String::isNotBlank) }
-          } ?: emptyList()
-          val options = mapOf(
-            "wifiOnly" to requestOptions.optBoolean("wifiOnly", false),
-            "maxCacheMiB" to requestOptions.optLong("maxCacheMiB", 2048L),
-            "batterySaver" to requestOptions.optBoolean("batterySaver", true),
-            "performanceProfile" to requestOptions.optString("performanceProfile", "standard"),
-            "animeId" to requestOptions.optString("animeId").takeIf(String::isNotBlank),
-            "animeTitle" to requestOptions.optString("animeTitle").takeIf(String::isNotBlank),
-            "episode" to requestOptions.optInt("episode", 0),
-            "sourceTitle" to requestOptions.optString("sourceTitle").takeIf(String::isNotBlank),
-            "infoHash" to requestOptions.optString("infoHash").takeIf(String::isNotBlank),
-            "torrentUrl" to requestOptions.optString("torrentUrl").takeIf(String::isNotBlank),
-            "metadataUrls" to metadataUrls,
-          )
-          engine.start(
-            checkNotNull(startRequest.optString("magnet").takeIf(String::isNotBlank)) { "A magnet URI is required." },
-            startRequest.optString("preferredFile").takeIf(String::isNotBlank),
-            options,
-          )
+          engine.start(parseStartSpec(startRequest))
+          response.putBundle(TorrentServiceProtocol.RESULT, TorrentServiceProtocol.mapToBundle(engine.status()))
+        }
+        TorrentServiceProtocol.START_RACE -> {
+          val raceRequest = JSONObject(checkNotNull(request.getString(TorrentServiceProtocol.JSON)) { "The source race request is missing." })
+          require(raceRequest.optInt("protocolVersion", 0) == 1) { "Unsupported torrent bridge protocol." }
+          val candidates = checkNotNull(raceRequest.optJSONArray("candidates")) { "The source race has no candidates." }
+          require(candidates.length() in 2..3) { "A source race requires two or three candidates." }
+          engine.startRace((0 until candidates.length()).map { index -> parseStartSpec(candidates.getJSONObject(index)) })
           response.putBundle(TorrentServiceProtocol.RESULT, TorrentServiceProtocol.mapToBundle(engine.status()))
         }
         TorrentServiceProtocol.STATUS -> response.putBundle(TorrentServiceProtocol.RESULT, TorrentServiceProtocol.mapToBundle(engine.status()))
@@ -157,6 +143,32 @@ class TorrentStreamService : Service() {
       putInt(TorrentServiceProtocol.MESSAGE_TYPE, TorrentServiceProtocol.STATUS_EVENT)
       putBundle(TorrentServiceProtocol.RESULT, TorrentServiceProtocol.mapToBundle(status))
     }
+  }
+
+  private fun parseStartSpec(startRequest: JSONObject): TorrentEngineStartSpec {
+    require(startRequest.optInt("protocolVersion", 0) == 1) { "Unsupported torrent bridge protocol." }
+    val requestOptions = startRequest.optJSONObject("options") ?: JSONObject()
+    val metadataUrls = requestOptions.optJSONArray("metadataUrls")?.let { urls ->
+      (0 until urls.length()).mapNotNull { index -> urls.optString(index).takeIf(String::isNotBlank) }
+    } ?: emptyList()
+    val options = mapOf(
+      "wifiOnly" to requestOptions.optBoolean("wifiOnly", false),
+      "maxCacheMiB" to requestOptions.optLong("maxCacheMiB", 2048L),
+      "batterySaver" to requestOptions.optBoolean("batterySaver", true),
+      "performanceProfile" to requestOptions.optString("performanceProfile", "standard"),
+      "animeId" to requestOptions.optString("animeId").takeIf(String::isNotBlank),
+      "animeTitle" to requestOptions.optString("animeTitle").takeIf(String::isNotBlank),
+      "episode" to requestOptions.optInt("episode", 0),
+      "sourceTitle" to requestOptions.optString("sourceTitle").takeIf(String::isNotBlank),
+      "infoHash" to requestOptions.optString("infoHash").takeIf(String::isNotBlank),
+      "torrentUrl" to requestOptions.optString("torrentUrl").takeIf(String::isNotBlank),
+      "metadataUrls" to metadataUrls,
+    )
+    return TorrentEngineStartSpec(
+      magnet = checkNotNull(startRequest.optString("magnet").takeIf(String::isNotBlank)) { "A magnet URI is required." },
+      preferredFile = startRequest.optString("preferredFile").takeIf(String::isNotBlank),
+      options = options,
+    )
   }
 
   private fun broadcastStatus(status: Map<String, Any?>) {

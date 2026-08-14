@@ -31,6 +31,7 @@ export type MobileResourcePolicy = {
   wifiOnly: boolean;
   maxCacheMiB: number;
   balancedFileSize: boolean;
+  raceHighQualitySources: boolean;
   performanceProfile: 'auto' | 'standard' | 'constrained';
 };
 
@@ -68,6 +69,7 @@ export const DEFAULT_MOBILE_RESOURCE_POLICY: MobileResourcePolicy = {
   wifiOnly: false,
   maxCacheMiB: 2048,
   balancedFileSize: true,
+  raceHighQualitySources: false,
   performanceProfile: 'auto',
 };
 
@@ -125,6 +127,7 @@ export function normalizeMobileResourcePolicy(value: Partial<MobileResourcePolic
     wifiOnly: asBooleanPreference(value.wifiOnly, DEFAULT_MOBILE_RESOURCE_POLICY.wifiOnly),
     maxCacheMiB: Math.round(asNumberPreference(value.maxCacheMiB, DEFAULT_MOBILE_RESOURCE_POLICY.maxCacheMiB, 512, 8192)),
     balancedFileSize: asBooleanPreference(value.balancedFileSize, DEFAULT_MOBILE_RESOURCE_POLICY.balancedFileSize),
+    raceHighQualitySources: asBooleanPreference(value.raceHighQualitySources, DEFAULT_MOBILE_RESOURCE_POLICY.raceHighQualitySources),
     performanceProfile: ['auto', 'standard', 'constrained'].includes(performanceProfile)
       ? performanceProfile as MobileResourcePolicy['performanceProfile']
       : DEFAULT_MOBILE_RESOURCE_POLICY.performanceProfile,

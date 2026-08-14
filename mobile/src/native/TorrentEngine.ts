@@ -14,6 +14,7 @@ import type {
   TorrentCacheStats,
   TorrentStartOptions,
   TorrentStartRequest,
+  TorrentSourceRaceRequest,
   TorrentStreamStatus,
 } from '../types';
 
@@ -22,6 +23,7 @@ type TorrentEvents = { onStatus: (status: TorrentStreamStatus) => void };
 declare class TorrentEngineNative extends NativeModule<TorrentEvents> {
   isSupported(): boolean;
   startStream(requestJson: string): Promise<string>;
+  startSourceRace(requestJson: string): Promise<string>;
   getEngineHealth(): Promise<string>;
   getDiagnostics(): Promise<string>;
   clearDiagnostics(): void;
@@ -63,6 +65,15 @@ function torrentMetadataUrls(options: TorrentStartOptions) {
   return [...urls].slice(0, 4);
 }
 
+function startRequest(magnet: string, preferredFile: string | undefined, options: TorrentStartOptions): TorrentStartRequest {
+  return {
+    protocolVersion: 1,
+    magnet,
+    preferredFile,
+    options: { ...options, metadataUrls: torrentMetadataUrls(options) },
+  };
+}
+
 function safeFailure(value: unknown, fallback: EngineFailure): EngineFailure {
   if (!value || typeof value !== 'object') return fallback;
   const candidate = value as Partial<EngineFailure>;
@@ -87,16 +98,28 @@ export const TorrentEngine = {
   isSupported: () => nativeModule?.isSupported() ?? false,
   startStream: async (magnet: string, preferredFile: string | undefined, options: TorrentStartOptions): Promise<EngineCommandResult<TorrentStreamStatus>> => {
     if (!nativeModule) return { ok: false, error: unsupportedFailure };
-    const request: TorrentStartRequest = {
-      protocolVersion: 1,
-      magnet,
-      preferredFile,
-      options: { ...options, metadataUrls: torrentMetadataUrls(options) },
-    };
+    const request = startRequest(magnet, preferredFile, options);
     try {
       return parseResult<TorrentStreamStatus>(await nativeModule.startStream(JSON.stringify(request)), {
         errorCode: 'INVALID_NATIVE_RESPONSE',
         message: 'The Android streaming engine returned an invalid response.',
+        stage: 'native-bridge',
+        retryable: true,
+      });
+    } catch (error) {
+      return { ok: false, error: normalizeEngineException(error) };
+    }
+  },
+  startSourceRace: async (candidates: Array<{ magnet: string; preferredFile?: string; options: TorrentStartOptions }>): Promise<EngineCommandResult<TorrentStreamStatus>> => {
+    if (!nativeModule) return { ok: false, error: unsupportedFailure };
+    const request: TorrentSourceRaceRequest = {
+      protocolVersion: 1,
+      candidates: candidates.map((candidate) => startRequest(candidate.magnet, candidate.preferredFile, candidate.options)),
+    };
+    try {
+      return parseResult<TorrentStreamStatus>(await nativeModule.startSourceRace(JSON.stringify(request)), {
+        errorCode: 'INVALID_NATIVE_RACE_RESPONSE',
+        message: 'The Android source race returned an invalid response.',
         stage: 'native-bridge',
         retryable: true,
       });

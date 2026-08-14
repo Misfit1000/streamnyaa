@@ -131,6 +131,7 @@ export function SettingsScreen(_props: Props) {
         </RadioButton.Group>
         <List.Item title="Auto-play next episode" right={() => <Switch value={store.autoPlayNext} onValueChange={store.setAutoPlayNext} />} />
         <List.Item title="Open best source automatically" description="Starts the highest-ranked source when a watch page opens" right={() => <Switch value={store.autoOpenBestSource} onValueChange={store.setAutoOpenBestSource} />} />
+        <List.Item title="Race similar sources" description="Connect to up to three same-quality releases; the first ready source wins. Uses extra data and battery." right={() => <Switch value={store.resourcePolicy.raceHighQualitySources} onValueChange={(raceHighQualitySources) => store.setResourcePolicy({ raceHighQualitySources })} />} />
         <List.Item title="Auto-skip intros" description="Uses verified episode timing when available" right={() => <Switch value={store.playerPreferences.autoSkipIntro} onValueChange={(autoSkipIntro) => store.setPlayerPreferences({ autoSkipIntro })} />} />
         <List.Item title="Auto-skip outros" description="Manual skip buttons remain available when this is off" right={() => <Switch value={store.playerPreferences.autoSkipOutro} onValueChange={(autoSkipOutro) => store.setPlayerPreferences({ autoSkipOutro })} />} />
         <Text variant="labelLarge" style={styles.label}>Playback speed</Text>

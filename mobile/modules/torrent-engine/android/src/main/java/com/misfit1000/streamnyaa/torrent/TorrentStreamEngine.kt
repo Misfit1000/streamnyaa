@@ -58,6 +58,7 @@ class TorrentStreamEngine(
   private var batterySaver = true
   private var wifiOnly = false
   private var performanceProfile = "standard"
+  private var raceMode = false
   private var pausedForNetwork = false
   private var sessionGeneration = 0L
   private var startedAtMs = 0L
@@ -86,6 +87,7 @@ class TorrentStreamEngine(
     batterySaver = options["batterySaver"] as? Boolean ?: true
     wifiOnly = options["wifiOnly"] as? Boolean ?: false
     performanceProfile = options["performanceProfile"] as? String ?: "standard"
+    raceMode = options["raceMode"] as? Boolean ?: false
     currentInfoHash = (options["infoHash"] as? String)?.lowercase()?.takeIf(String::isNotBlank) ?: torrentKey(magnet)
     currentMetadata = options
     pausedForNetwork = false
@@ -99,7 +101,7 @@ class TorrentStreamEngine(
       return fail("Not enough free storage to buffer safely. Clear the streaming cache and try again.")
     }
     sessionDir = cacheRoot
-    trimCache(maxCacheBytes)
+    if (!raceMode) trimCache(maxCacheBytes)
     sessionDir = File(cacheRoot, torrentKey(magnet)).apply { mkdirs(); setLastModified(System.currentTimeMillis()) }
     reusedCache = readCacheMetadata(sessionDir)?.optLong("downloadedBytes", 0L)?.let { it > 0L } ?: false
     this.preferredFile = preferredFile
@@ -268,7 +270,7 @@ class TorrentStreamEngine(
     if (StatFs(cacheRoot.absolutePath).availableBytes < remainingBytes + STORAGE_HEADROOM_BYTES) {
       return fail("Not enough free storage for this video. Clear the streaming cache or choose a smaller source.")
     }
-    trimCache((maxCacheBytes - selectedFileSize).coerceAtLeast(0L))
+    if (!raceMode) trimCache((maxCacheBytes - selectedFileSize).coerceAtLeast(0L))
     selectedFile = candidateFile
     writeCacheMetadata(force = true)
     val firstRequest = info.mapFile(selectedFileIndex, 0L, 1)
