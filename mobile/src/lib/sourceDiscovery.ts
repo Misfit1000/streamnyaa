@@ -73,8 +73,10 @@ export function sourceQueriesForAnime(anime: Pick<Anime, 'title' | 'titles'>, ep
   // dual-audio and sub releases before moving to provider aliases.
   return titleAliases.flatMap((title) => audioPasses.flatMap((pass) => {
     const query = buildSourceQuery(title, episode, pass);
-    return [query].filter(() => {
-      const key = query.normalize('NFKC').toLocaleLowerCase();
+    // Ask the index for 1080p first, then retain the desktop-style broad query
+    // so unusual release names and lower-resolution recovery sources remain usable.
+    return [`${query} 1080p`, query].filter((candidate) => {
+      const key = candidate.normalize('NFKC').toLocaleLowerCase();
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

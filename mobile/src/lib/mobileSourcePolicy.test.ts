@@ -27,6 +27,28 @@ describe('rankMobileSources', () => {
     expect(ranked.map((item) => item.sizeBytes)).toEqual([700, 1400, 220].map((value) => value * 1024 * 1024));
   });
 
+  it('always starts a viable 1080p release before a healthier 720p fallback', () => {
+    const ranked = rankMobileSources([
+      source('Show 01 720p x264 tiny and popular', 900, 420),
+      source('Show 01 1080p x264', 4, 1250),
+    ], options);
+    expect(ranked[0]?.title).toContain('1080p');
+    expect(ranked[1]?.title).toContain('720p');
+  });
+
+  it('keeps automatic 4K behind 1080p and 720p candidates', () => {
+    const ranked = rankMobileSources([
+      source('Show 01 2160p HEVC', 500, 900),
+      source('Show 01 720p x264', 5, 700),
+      source('Show 01 1080p x264', 2, 800),
+    ], options);
+    expect(ranked.map((item) => item.title)).toEqual([
+      'Show 01 1080p x264',
+      'Show 01 720p x264',
+      'Show 01 2160p HEVC',
+    ]);
+  });
+
   it('uses compatibility and seeder health when size balancing is disabled', () => {
     const ranked = rankMobileSources([
       source('Show 01 1080p x264', 8, 700),

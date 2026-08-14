@@ -5,12 +5,15 @@ import { Text, useTheme } from 'react-native-paper';
 import { tokens } from '../theme';
 import { BrandMark } from './BrandMark';
 
-export type HomeFilter = 'for-you' | 'trending' | 'latest' | 'dubbed';
+export type HomeFilter = 'for-you' | 'seasonal' | 'latest' | 'airing' | 'trending' | 'upcoming' | 'dubbed';
 
 const filters: Array<{ value: HomeFilter; label: string; hint: string }> = [
   { value: 'for-you', label: 'For You', hint: 'Shows a balanced home feed' },
+  { value: 'seasonal', label: 'This Season', hint: 'Shows anime from the current season' },
+  { value: 'latest', label: 'New Episodes', hint: 'Shows recently updated anime' },
+  { value: 'airing', label: 'Top Airing', hint: 'Shows the highest-rated anime currently airing' },
   { value: 'trending', label: 'Trending', hint: 'Shows anime gaining attention now' },
-  { value: 'latest', label: 'Latest', hint: 'Shows recently updated anime' },
+  { value: 'upcoming', label: 'Coming Soon', hint: 'Shows announced anime that have not aired yet' },
   { value: 'dubbed', label: 'Dubbed', hint: 'Prioritizes dubbed and dual-audio releases during playback' },
 ];
 

@@ -82,12 +82,13 @@ export function mobileSourceCompatibilityScore(source: TorrentSource, batterySav
   return score;
 }
 
-function qualityRank(source: TorrentSource, constrained: boolean) {
+function automaticQualityTier(source: TorrentSource) {
   const title = source.title || '';
-  if (/\b(2160p|4k)\b/i.test(title)) return constrained ? 1 : 3;
-  if (/\b1080p\b/i.test(title)) return 4;
-  if (/\b720p\b/i.test(title)) return 2;
-  return 0;
+  if (/\b1080p\b/i.test(title)) return 0;
+  if (/\b720p\b/i.test(title)) return 1;
+  if (/\b(480p|576p)\b/i.test(title)) return 2;
+  if (/\b(2160p|4k)\b/i.test(title)) return 4;
+  return 3;
 }
 
 export function mobileSourceSizeTier(source: TorrentSource, balancedFileSize: boolean) {
@@ -105,14 +106,18 @@ export function compareMobileSources(
   right: TorrentSource,
   options: { batterySaver: boolean; constrained: boolean; balancedFileSize: boolean; anime?: Pick<Anime, 'title' | 'titles' | 'format'> },
 ) {
+  // Automatic playback is deliberately 1080p-first. File size, codec and
+  // popularity decide between 1080p releases; lower resolutions are recovery
+  // candidates only after every viable 1080p release has been exhausted.
+  const leftQuality = automaticQualityTier(left);
+  const rightQuality = automaticQualityTier(right);
+  if (leftQuality !== rightQuality) return leftQuality - rightQuality;
   const leftTier = mobileSourceSizeTier(left, options.balancedFileSize);
   const rightTier = mobileSourceSizeTier(right, options.balancedFileSize);
   if (leftTier !== rightTier) return leftTier - rightTier;
   const compatibility = mobileSourceCompatibilityScore(right, options.batterySaver, options.anime)
     - mobileSourceCompatibilityScore(left, options.batterySaver, options.anime);
   if (compatibility) return compatibility;
-  const quality = qualityRank(right, options.constrained) - qualityRank(left, options.constrained);
-  if (quality) return quality;
   if (right.seeders !== left.seeders) return right.seeders - left.seeders;
   if (Boolean(right.trusted) !== Boolean(left.trusted)) return right.trusted ? 1 : -1;
   return Number(right.sizeBytes || 0) - Number(left.sizeBytes || 0);

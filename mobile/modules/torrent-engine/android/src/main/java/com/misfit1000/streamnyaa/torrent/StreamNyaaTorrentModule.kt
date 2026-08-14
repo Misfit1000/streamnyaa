@@ -124,6 +124,17 @@ class StreamNyaaTorrentModule : Module() {
     AsyncFunction("pause") { rpc(TorrentServiceProtocol.PAUSE); Unit }
     AsyncFunction("resume") { rpc(TorrentServiceProtocol.RESUME); Unit }
     AsyncFunction("stop") { removeFiles: Boolean -> rpc(TorrentServiceProtocol.STOP, Bundle().apply { putBoolean("removeFiles", removeFiles) }); Unit }
+    AsyncFunction("finishPlaybackTask") {
+      val activity = appContext.currentActivity ?: return@AsyncFunction false
+      val result = CompletableFuture<Boolean>()
+      activity.runOnUiThread {
+        runCatching {
+          activity.finishAndRemoveTask()
+          true
+        }.onSuccess(result::complete).onFailure(result::completeExceptionally)
+      }
+      result.get(2, TimeUnit.SECONDS)
+    }
     AsyncFunction("clearCache") { rpc(TorrentServiceProtocol.CLEAR_CACHE).getLong(TorrentServiceProtocol.VALUE) }
     AsyncFunction("getCacheStats") { statusFrom(rpc(TorrentServiceProtocol.CACHE_STATS)) }
     AsyncFunction("listCacheEntries") {

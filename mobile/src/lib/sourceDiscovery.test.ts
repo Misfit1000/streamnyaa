@@ -15,12 +15,12 @@ describe('sourceQueriesForAnime', () => {
     const queries = sourceQueriesForAnime(fullmetal, 1, 'dual-preferred');
 
     expect(queries.slice(0, 6)).toEqual([
+      'Fullmetal Alchemist: Brotherhood 01 dual audio 1080p',
       'Fullmetal Alchemist: Brotherhood 01 dual audio',
+      'Fullmetal Alchemist: Brotherhood 01 1080p',
       'Fullmetal Alchemist: Brotherhood 01',
+      'Fullmetal Alchemist 01 dual audio 1080p',
       'Fullmetal Alchemist 01 dual audio',
-      'Fullmetal Alchemist 01',
-      'Hagane no Renkinjutsushi: Fullmetal Alchemist 01 dual audio',
-      'Hagane no Renkinjutsushi: Fullmetal Alchemist 01',
     ]);
   });
 

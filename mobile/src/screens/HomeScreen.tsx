@@ -59,7 +59,7 @@ export function HomeScreen({ navigation }: Props) {
     void AsyncStorage.setItem(homeCacheKey, JSON.stringify({ savedAt: Date.now(), data: query.data })).catch(() => undefined);
   }, [homeCacheKey, query.data, query.isFetching]);
 
-  const openAnime = useCallback((anime: Anime) => navigation.navigate('Watch', { ...watchRouteParams(anime), autoPlay: true }), [navigation]);
+  const openAnime = useCallback((anime: Anime, autoPlay = true) => navigation.navigate('Watch', { ...watchRouteParams(anime), autoPlay }), [navigation]);
   const openHistory = useCallback((item: PlaybackHistoryItem) => navigation.navigate('Watch', {
     anime: { id: Number(item.animeId), title: item.animeTitle, cover: item.image },
     episode: item.episode,
@@ -70,26 +70,37 @@ export function HomeScreen({ navigation }: Props) {
 
   const discoveryItems = useMemo(() => {
     if (!query.data) return [];
+    if (filter === 'seasonal') return query.data.seasonal;
     if (filter === 'latest') return query.data.latest;
+    if (filter === 'airing') return query.data.airing;
     if (filter === 'trending') return query.data.trending;
+    if (filter === 'upcoming') return query.data.upcoming;
     if (filter === 'dubbed') return query.data.popular;
     return [...query.data.trending.slice(0, 3), ...query.data.popular].filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index);
   }, [filter, query.data]);
 
   const feedItems = useMemo(() => {
     if (!query.data) return [];
+    if (filter === 'seasonal') return query.data.seasonal;
     if (filter === 'latest') return query.data.latest;
+    if (filter === 'airing') return query.data.airing;
     if (filter === 'trending') return query.data.trending;
+    if (filter === 'upcoming') return query.data.upcoming;
     if (filter === 'dubbed') return query.data.popular;
     return query.data.airing.length ? query.data.airing : query.data.trending;
   }, [filter, query.data]);
 
-  const sectionTitle = filter === 'latest' ? 'Latest releases' : filter === 'dubbed' ? 'Popular with dub preference' : 'Trending now';
+  const sectionTitle = filter === 'seasonal' ? 'Current season'
+    : filter === 'latest' ? 'Recently updated'
+      : filter === 'airing' ? 'Top airing anime'
+        : filter === 'upcoming' ? 'Coming soon'
+          : filter === 'dubbed' ? 'Popular with dub preference'
+            : filter === 'trending' ? 'Trending now' : 'Airing for you';
   const avatarUrl = String(auth.user?.user_metadata?.avatar_url || auth.user?.user_metadata?.picture || '') || undefined;
   const artworkById = useMemo(() => {
     const map = new Map<string, string>();
     if (!query.data) return map;
-    [...query.data.latest, ...query.data.trending, ...query.data.popular, ...query.data.airing].forEach((anime) => {
+    [...query.data.latest, ...query.data.trending, ...query.data.popular, ...query.data.airing, ...query.data.seasonal, ...query.data.upcoming].forEach((anime) => {
       const artwork = anime.banner || anime.cover;
       if (!artwork) return;
       map.set(String(anime.id), artwork);
@@ -99,6 +110,7 @@ export function HomeScreen({ navigation }: Props) {
   }, [query.data]);
 
   useEffect(() => {
+    if (filter === 'upcoming') return undefined;
     const candidate = discoveryItems[0];
     if (!candidate) return undefined;
     const timer = setTimeout(() => {
@@ -109,25 +121,39 @@ export function HomeScreen({ navigation }: Props) {
       });
     }, 450);
     return () => clearTimeout(timer);
-  }, [audio, discoveryItems, queryClient, resolvedProfile, resourcePolicy.balancedFileSize, resourcePolicy.batterySaver]);
+  }, [audio, discoveryItems, filter, queryClient, resolvedProfile, resourcePolicy.balancedFileSize, resourcePolicy.batterySaver]);
 
   const chooseFilter = useCallback((next: HomeFilter) => {
     setFilter(next);
     if (next === 'dubbed' && audio !== 'dual-preferred') setAudio('dual-preferred');
   }, [audio, setAudio]);
 
+  const openSelectedAnime = useCallback((anime: Anime) => {
+    openAnime(anime, filter !== 'upcoming');
+  }, [filter, openAnime]);
+
   if (query.isLoading) return <Screen><StateView loading message="Loading your home feed…" /></Screen>;
   if (query.isError || !query.data) return <Screen><StateView title="Home feed unavailable" message={query.error?.message} onRetry={() => void query.refetch()} /></Screen>;
 
   const constrained = resolvedProfile === 'constrained';
-  const discoveryTitle = filter === 'trending' ? 'Rising today' : filter === 'latest' ? 'New this week' : filter === 'dubbed' ? 'Dub-ready picks' : 'Quick picks';
+  const discoveryTitle = filter === 'seasonal' ? 'Fresh this season'
+    : filter === 'trending' ? 'Rising today'
+      : filter === 'latest' ? 'New episodes'
+        : filter === 'airing' ? 'Best currently airing'
+          : filter === 'upcoming' ? 'On the horizon'
+            : filter === 'dubbed' ? 'Dub-ready picks' : 'Quick picks';
+  const discoverySubtitle = filter === 'upcoming'
+    ? 'Preview announced titles before they air'
+    : filter === 'seasonal'
+      ? 'Current-season anime, ready in one tap'
+      : 'Tap a title to find a 1080p stream automatically';
   return (
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: theme.colors.background }]}>
       <LinearGradient colors={['rgba(92,3,23,0.18)', theme.colors.background]} locations={[0, 0.22]} style={StyleSheet.absoluteFill} pointerEvents="none" />
       <FlatList
         data={feedItems.slice(0, constrained ? 10 : 14)}
         keyExtractor={(item) => `home-feed-${item.metadataProvider || 'media'}-${item.id}`}
-        renderItem={({ item }) => <TrendingAnimeRow anime={item} onPress={() => openAnime(item)} />}
+        renderItem={({ item }) => <TrendingAnimeRow anime={item} onPress={() => openSelectedAnime(item)} />}
         ItemSeparatorComponent={() => <View style={[styles.divider, { backgroundColor: theme.colors.outlineVariant }]} />}
         ListHeaderComponent={(
           <View style={styles.headerContent}>
@@ -141,7 +167,7 @@ export function HomeScreen({ navigation }: Props) {
               onOpenProfile={() => navigation.navigate('Profile')}
             />
             <ContinueWatchingRail items={history} imageFor={(item) => artworkById.get(item.animeId) || item.image} onPress={openHistory} onSeeAll={() => navigation.navigate('History')} />
-            <HomeDiscoveryRail title={discoveryTitle} items={discoveryItems} onPress={openAnime} />
+            <HomeDiscoveryRail title={discoveryTitle} subtitle={discoverySubtitle} items={discoveryItems} onPress={openSelectedAnime} />
             <View style={styles.sectionHeading}><Text variant="titleLarge" style={styles.heading}>{sectionTitle}</Text><Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{feedItems.length} titles</Text></View>
           </View>
         )}

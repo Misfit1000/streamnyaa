@@ -303,7 +303,26 @@ export function PlaybackSurface({ onBrowseSources, onMinimize }: { onBrowseSourc
         </View>
       ) : null}
 
-      {playback.activeSkip ? <Button compact mode="contained" icon="skip-forward" style={[styles.skipButton, { right: Math.max(12, horizontalInset), bottom: 58 + bottomInset }]} contentStyle={styles.skipContent} labelStyle={styles.skipLabel} onPress={playback.skipActiveSegment}>Skip {playback.activeSkip.type === 'op' ? 'intro' : 'outro'}</Button> : null}
+      {playback.activeSkip ? (
+        <Pressable
+          onPress={playback.skipActiveSegment}
+          accessibilityRole="button"
+          accessibilityLabel={`Skip ${playback.activeSkip.type === 'op' ? 'intro' : 'outro'}`}
+          style={({ pressed }) => [
+            styles.skipButton,
+            {
+              right: Math.max(12, horizontalInset),
+              bottom: (playback.nextEpisodeCountdown !== null ? 126 : 58) + bottomInset,
+              borderColor: theme.colors.primary,
+              opacity: pressed ? 0.72 : 1,
+            },
+          ]}
+        >
+          <View style={[styles.skipAccent, { backgroundColor: theme.colors.primary }]} />
+          <Text style={styles.skipLabel}>Skip {playback.activeSkip.type === 'op' ? 'intro' : 'outro'}</Text>
+          <MaterialCommunityIcons name="chevron-right" size={19} color="#FFFFFF" />
+        </Pressable>
+      ) : null}
       {playback.nextEpisodeCountdown !== null ? (
         <View style={[styles.nextEpisode, { right: Math.max(12, horizontalInset), bottom: 58 + bottomInset }]}>
           <Text variant="titleSmall" style={styles.semibold}>Next episode in {playback.nextEpisodeCountdown}</Text>
@@ -608,9 +627,9 @@ const styles = StyleSheet.create({
   playerLabelButtonCompact: { width: 48, paddingHorizontal: 3, gap: 2 },
   playerLabel: { flexShrink: 1, color: '#FFFFFF', fontSize: 12, lineHeight: 16, fontWeight: '600' },
   unlock: { position: 'absolute', top: '50%', marginTop: -24 },
-  skipButton: { position: 'absolute', borderRadius: tokens.radius.control },
-  skipContent: { minHeight: 38 },
-  skipLabel: { fontSize: 13, lineHeight: 17 },
+  skipButton: { position: 'absolute', minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 13, borderRadius: tokens.radius.pill, borderWidth: StyleSheet.hairlineWidth, backgroundColor: 'rgba(5,5,6,0.92)' },
+  skipAccent: { width: 3, height: 18, borderRadius: 2 },
+  skipLabel: { color: '#FFFFFF', fontSize: 13, lineHeight: 17, fontWeight: '600', letterSpacing: 0.1 },
   nextEpisode: { position: 'absolute', minWidth: 180, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 12, borderRadius: tokens.radius.card, backgroundColor: 'rgba(12,12,14,0.94)' },
   sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.58)' },
   sideSheetBackdrop: { alignItems: 'flex-end', justifyContent: 'center' },

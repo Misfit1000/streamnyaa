@@ -4,7 +4,9 @@ import type { SkipInterval } from '../types';
 import { normalizeSkipIntervals, type RawSkipIntervalResponse } from '../lib/skipIntervals';
 
 const API_ORIGIN = 'https://api.aniskip.com';
-const CACHE_PREFIX = 'streamnyaa.aniskip.v2';
+// v3 invalidates empty entries produced when early progressive streams
+// reported a shorter duration than AniSkip's reference episode length.
+const CACHE_PREFIX = 'streamnyaa.aniskip.v3';
 const FOUND_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const EMPTY_TTL_MS = 24 * 60 * 60 * 1000;
 

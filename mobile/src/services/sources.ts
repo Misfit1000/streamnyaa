@@ -8,7 +8,7 @@ import type { AudioPreference } from '../../../shared/preferences';
 import { manualSourceIntent } from '../lib/manualSourceSearch';
 import { sourceMatchesAnimeSeason, sourceMatchesEpisode } from '../lib/mobileSourcePolicy';
 
-export type SourceSearchOptions = { category?: string; filter?: string; page?: number; deep?: boolean; pages?: number; wide?: boolean; timeoutMs?: number; signal?: AbortSignal };
+export type SourceSearchOptions = { category?: string; filter?: string; page?: number; deep?: boolean; pages?: number; wide?: boolean; timeoutMs?: number; minimumSeededCandidates?: number; signal?: AbortSignal };
 
 function sourceItems(data: any): any[] {
   if (Array.isArray(data)) return data;
@@ -127,17 +127,18 @@ export async function searchAnimeSources(
     else lastError = result.reason;
   });
 
-  // A broad server expansion is a recovery path, not part of normal startup.
-  // Waiting for it whenever fewer than three releases exist made a healthy
-  // first result feel broken even though it could already begin connecting.
-  if (![...sources.values()].some((source) => source.seeders > 0) && queries[0]) {
+  // Broad server expansion is normally a recovery path. Playback can opt into
+  // a larger background pool after its first healthy result starts connecting.
+  const minimumSeededCandidates = Math.max(1, options.minimumSeededCandidates || 1);
+  const seededCandidates = [...sources.values()].filter((source) => source.seeders > 0).length;
+  if (seededCandidates < minimumSeededCandidates && queries[0]) {
     try {
       merge(await searchSources(queries[0], {
         ...options,
         deep: true,
-        pages: 1,
+        pages: Math.max(1, options.pages || 1),
         wide: true,
-        timeoutMs: Math.min(options.timeoutMs || 4_000, 4_000),
+        timeoutMs: Math.min(options.timeoutMs || 4_000, minimumSeededCandidates > 1 ? 8_000 : 4_000),
       }));
     } catch (error) {
       if (options.signal?.aborted) throw error;

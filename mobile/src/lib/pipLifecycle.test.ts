@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   backgroundPauseDelay,
   canEnterPictureInPicture,
+  shouldCloseTaskAfterPipStop,
   shouldPreservePlaybackForPip,
   shouldPauseAfterPipStop,
   supportsAutomaticPictureInPicture,
@@ -35,5 +36,7 @@ describe('picture-in-picture lifecycle', () => {
     expect(shouldPauseAfterPipStop('background', false)).toBe(true);
     expect(shouldPauseAfterPipStop('active', false)).toBe(false);
     expect(shouldPauseAfterPipStop('background', true)).toBe(false);
+    expect(shouldCloseTaskAfterPipStop('background')).toBe(true);
+    expect(shouldCloseTaskAfterPipStop('active')).toBe(false);
   });
 });

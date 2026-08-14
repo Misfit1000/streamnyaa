@@ -19,4 +19,12 @@ describe('normalizeSkipIntervals', () => {
     ] }, 1440);
     expect(intervals).toEqual([]);
   });
+
+  it('accepts a verified ending when the progressive duration is initially short', () => {
+    const intervals = normalizeSkipIntervals({ results: [
+      { skipType: 'ed', interval: { startTime: 1330, endTime: 1421 }, episodeLength: 1426 },
+    ] }, 1414);
+    expect(intervals).toHaveLength(1);
+    expect(intervals[0]?.type).toBe('ed');
+  });
 });

@@ -13,10 +13,15 @@ export function normalizeSkipIntervals(payload: RawSkipIntervalResponse, duratio
     const type = result.skipType === 'op' ? 'op' : result.skipType === 'ed' ? 'ed' : null;
     const startSeconds = Number(result.interval?.startTime);
     const endSeconds = Number(result.interval?.endTime);
-    const episodeLength = Number(result.episodeLength || durationSeconds);
+    const reportedEpisodeLength = Number(result.episodeLength || 0);
+    const episodeLength = reportedEpisodeLength > 0 ? reportedEpisodeLength : durationSeconds;
     if (!type || !Number.isFinite(startSeconds) || !Number.isFinite(endSeconds)) return [];
     if (startSeconds < 0 || endSeconds <= startSeconds || endSeconds - startSeconds > 180) return [];
-    if (endSeconds > durationSeconds + 5) return [];
+    // Progressive torrent streams can initially report a duration a few
+    // seconds shorter than the finalized container. AniSkip's own measured
+    // episode length is verified metadata, so accept that bounded reference
+    // instead of silently dropping a valid ending interval.
+    if (endSeconds > Math.max(durationSeconds + 5, episodeLength + 5)) return [];
     return [{ type, startSeconds, endSeconds, episodeLength } satisfies SkipInterval];
   }).sort((left, right) => left.startSeconds - right.startSeconds);
 }

@@ -4,8 +4,8 @@ import { useEventListener } from 'expo';
 import { useVideoPlayer, type AudioTrack, type SubtitleTrack, type VideoPlayer } from 'expo-video';
 import { queryClient } from '../lib/queryClient';
 import { minimumRequiredCacheMiB, rankMobileSources, sourcesWithinCacheLimit } from '../lib/mobileSourcePolicy';
-import { nextRecoverySource } from '../lib/playbackRecovery';
-import { backgroundPauseDelay, shouldPauseAfterPipStop, shouldPreservePlaybackForPip, type PipLifecycleState } from '../lib/pipLifecycle';
+import { MAX_AUTOMATIC_SOURCE_ATTEMPTS, nextRecoverySource } from '../lib/playbackRecovery';
+import { backgroundPauseDelay, shouldCloseTaskAfterPipStop, shouldPauseAfterPipStop, shouldPreservePlaybackForPip, type PipLifecycleState } from '../lib/pipLifecycle';
 import { equivalentTrack, preferredTrackIndexes } from '../lib/trackSelection';
 import { TorrentEngine } from '../native/TorrentEngine';
 import { fetchSkipIntervals } from '../services/aniskip';
@@ -126,6 +126,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const lastProgressSaveRef = useRef(0);
   const prefetchKeyRef = useRef('');
   const skippedIntervalsRef = useRef(new Set<string>());
+  const skipRequestKeyRef = useRef('');
   const pipStateRef = useRef<PipLifecycleState>('idle');
   const pausedForBackgroundRef = useRef(false);
   const pausedForNetworkRef = useRef(false);
@@ -157,16 +158,6 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     pipStateRef.current = nextState;
     setPipStateValue(nextState);
   }, []);
-
-  const finishPip = useCallback((eligible: boolean) => {
-    const pauseHiddenPlayback = shouldPauseAfterPipStop(AppState.currentState, resourcePolicy.allowBackgroundPlayback);
-    setPipState(pauseHiddenPlayback ? 'idle' : eligible ? 'eligible' : 'idle');
-    if (!pauseHiddenPlayback) return;
-    pausedForBackgroundRef.current = true;
-    playbackDesiredRef.current = false;
-    player.pause();
-    void TorrentEngine.pause();
-  }, [player, resourcePolicy.allowBackgroundPlayback, setPipState]);
 
   useEffect(() => {
     recordSupportEvent({
@@ -201,6 +192,49 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     });
     lastProgressSaveRef.current = Date.now();
   }, [saveProgress]);
+
+  const finishPip = useCallback((eligible: boolean) => {
+    setPipState('idle');
+    // Android reports PiP stopped for both expansion and dismissal. Give the
+    // activity a moment to become active; if it remains backgrounded, the user
+    // dismissed PiP and explicitly expects the playback task to end.
+    setTimeout(() => {
+      if (!shouldCloseTaskAfterPipStop(AppState.currentState)) {
+        setPipState(eligible ? 'eligible' : 'idle');
+        return;
+      }
+      persistProgress();
+      pausedForBackgroundRef.current = true;
+      playbackDesiredRef.current = false;
+      player.pause();
+      void TorrentEngine.stop(false)
+        .catch(() => undefined)
+        .then(() => TorrentEngine.finishPlaybackTask())
+        .catch(() => false);
+    }, 350);
+  }, [persistProgress, player, setPipState]);
+
+  const requestSkipIntervals = useCallback((durationHint = 0) => {
+    const snapshot = sessionRef.current;
+    const malId = Number(snapshot.anime?.malId || 0);
+    const expectedDuration = Number(snapshot.anime?.duration || 0) * 60;
+    const usableDuration = Math.max(Number(durationHint || 0), Number(snapshot.duration || 0), expectedDuration);
+    if (malId <= 0 || snapshot.episode <= 0 || usableDuration <= 0) return;
+    const requestKey = `${malId}:${snapshot.episode}`;
+    if (skipRequestKeyRef.current === requestKey) return;
+    skipRequestKeyRef.current = requestKey;
+    const requestGeneration = generation.current;
+    void queryClient.fetchQuery({
+      queryKey: ['aniskip', malId, snapshot.episode],
+      queryFn: ({ signal }) => fetchSkipIntervals(malId, snapshot.episode, usableDuration, signal),
+      staleTime: 24 * 60 * 60 * 1000,
+    }).then((intervals) => {
+      if (requestGeneration === generation.current) setSkipIntervals(intervals);
+    }).catch(() => {
+      if (requestGeneration === generation.current) setSkipIntervals([]);
+      skipRequestKeyRef.current = '';
+    });
+  }, []);
 
   const schedulePausedSeek = useCallback((target: number, seek: () => void) => {
     if (playbackDesiredRef.current || !loadedStreamRef.current) return false;
@@ -299,7 +333,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       },
     });
     setPhase(automatic ? 'recovering' : 'connecting');
-    setStatus({ ...idleStatus, state: 'metadata', connectionStage: 'engine-start', message: automatic ? `Trying release ${attemptsRef.current} of 3…` : 'Starting peer discovery…' });
+    setStatus({ ...idleStatus, state: 'metadata', connectionStage: 'engine-start', message: automatic ? `Trying release ${attemptsRef.current} of ${MAX_AUTOMATIC_SOURCE_ATTEMPTS}…` : 'Starting peer discovery…' });
     loadedStreamRef.current = '';
     player.pause();
     await player.replaceAsync(null).catch(() => undefined);
@@ -380,6 +414,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     loadedStreamRef.current = '';
     prefetchKeyRef.current = '';
     skippedIntervalsRef.current.clear();
+    skipRequestKeyRef.current = '';
     resumeSecondsRef.current = Number(request.resumeSeconds || 0);
     setAnime(request.anime);
     setEpisode(targetEpisode);
@@ -393,6 +428,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     setPhase('discovering');
     setStatus({ ...idleStatus, state: 'metadata', connectionStage: 'engine-start', message: 'Finding the best mobile release…' });
     sessionRef.current = { anime: request.anime, episode: targetEpisode, source: undefined, currentTime: 0, duration: 0 };
+    requestSkipIntervals(Number(request.anime.duration || 0) * 60);
     recordSupportEvent({
       stage: 'source-discovery',
       code: 'PLAY_REQUESTED',
@@ -420,6 +456,36 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
         return;
       }
       await startCandidate(candidates[0]!);
+      if (candidates.length < 8) {
+        void queryClient.fetchQuery({
+          queryKey: ['playback-sources-expanded', request.anime.id, targetEpisode, audioPreference],
+          queryFn: ({ signal }) => searchAnimeSources(request.anime, targetEpisode, audioPreference, {
+            signal,
+            pages: 2,
+            wide: true,
+            timeoutMs: 8_000,
+            minimumSeededCandidates: 5,
+          }),
+          staleTime: 10 * 60 * 1000,
+        }).then((expanded) => {
+          if (!mountedRef.current || requestGeneration !== generation.current) return;
+          const merged = new Map<string, TorrentSource>();
+          [...candidatesRef.current, ...sourcesWithinCacheLimit(expanded, resourcePolicy.maxCacheMiB)].forEach((candidate) => {
+            const key = sourceId(candidate);
+            const previous = merged.get(key);
+            if (!previous || Number(candidate.sourceScore || 0) > Number(previous.sourceScore || 0)) merged.set(key, candidate);
+          });
+          const reranked = rankMobileSources([...merged.values()], {
+            batterySaver: resourcePolicy.batterySaver,
+            constrained: resolvedProfile === 'constrained',
+            balancedFileSize: resourcePolicy.balancedFileSize,
+            anime: request.anime,
+            episode: targetEpisode,
+          });
+          candidatesRef.current = reranked;
+          setSources(reranked);
+        }).catch(() => undefined);
+      }
     } catch (error) {
       if (requestGeneration !== generation.current) return;
       if (request.source) {
@@ -439,7 +505,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
       setPhase('failed');
       setStatus({ ...idleStatus, state: 'error', connectionStage: 'failed', message, error: message });
     }
-  }, [discoverSources, persistProgress, resolvedProfile, setPipState, startCandidate]);
+  }, [audioPreference, discoverSources, persistProgress, requestSkipIntervals, resolvedProfile, resourcePolicy.balancedFileSize, resourcePolicy.batterySaver, resourcePolicy.maxCacheMiB, setPipState, startCandidate]);
 
   const changeEpisode = useCallback(async (nextEpisode: number, automatic = false) => {
     const activeAnime = sessionRef.current.anime;
@@ -535,6 +601,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     setBufferedPosition(Math.max(0, nextBuffered));
     sessionRef.current.currentTime = nextTime;
     sessionRef.current.duration = nextDuration;
+    requestSkipIntervals(nextDuration);
     const pausedSeekTarget = pausedSeekTargetRef.current;
     if (pausedSeekTarget !== null && nextBuffered >= pausedSeekTarget + 2) {
       pausedSeekTargetRef.current = null;
@@ -608,15 +675,7 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     }
     const activeSource = sessionRef.current.source;
     if (activeSource) clearSourceFailure(sourceId(activeSource));
-    const malId = Number(sessionRef.current.anime?.malId || 0);
-    const currentEpisode = sessionRef.current.episode;
-    if (malId > 0 && loadedDuration > 0) {
-      void queryClient.fetchQuery({
-        queryKey: ['aniskip', malId, currentEpisode, Math.round(loadedDuration)],
-        queryFn: ({ signal }) => fetchSkipIntervals(malId, currentEpisode, loadedDuration, signal),
-        staleTime: 24 * 60 * 60 * 1000,
-      }).then(setSkipIntervals).catch(() => setSkipIntervals([]));
-    }
+    requestSkipIntervals(loadedDuration);
   });
 
   useEventListener(player, 'playingChange', ({ isPlaying }) => {

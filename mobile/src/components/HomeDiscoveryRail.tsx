@@ -8,10 +8,12 @@ import { tokens } from '../theme';
 
 export const HomeDiscoveryRail = memo(function HomeDiscoveryRail({
   title,
+  subtitle = 'Tap any title to start automatically',
   items,
   onPress,
 }: {
   title: string;
+  subtitle?: string;
   items: Anime[];
   onPress: (anime: Anime) => void;
 }) {
@@ -24,7 +26,7 @@ export const HomeDiscoveryRail = memo(function HomeDiscoveryRail({
       onPress={() => onPress(item)}
       accessibilityRole="button"
       accessibilityLabel={`${item.title}, pick ${index + 1}${item.score ? `, rated ${item.score.toFixed(1)} out of 10` : ''}`}
-      accessibilityHint="Starts the watch experience"
+      accessibilityHint="Opens this anime"
       style={({ pressed }) => [styles.card, { width: cardWidth, opacity: pressed ? 0.76 : 1 }]}
     >
       <View style={[styles.artwork, { width: cardWidth, height: cardWidth * 1.42, backgroundColor: theme.colors.surfaceVariant, borderColor: theme.colors.outlineVariant }]}>
@@ -53,7 +55,7 @@ export const HomeDiscoveryRail = memo(function HomeDiscoveryRail({
       <View style={styles.headingRow}>
         <View style={styles.headingCopy}>
           <Text variant="titleLarge" style={styles.heading}>{title}</Text>
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>Tap any title to start automatically</Text>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{subtitle}</Text>
         </View>
         <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>{visibleItems.length} picks</Text>
       </View>

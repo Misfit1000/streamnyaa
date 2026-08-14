@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextRecoverySource } from './playbackRecovery';
+import { MAX_AUTOMATIC_SOURCE_ATTEMPTS, nextRecoverySource } from './playbackRecovery';
 import type { TorrentSource } from '../types';
 
 const candidates: TorrentSource[] = [
@@ -13,7 +13,7 @@ describe('nextRecoverySource', () => {
     expect(nextRecoverySource(candidates, new Set(['failed']), 1)?.infoHash).toBe('healthy');
   });
 
-  it('stops after the third attempted release', () => {
-    expect(nextRecoverySource(candidates, new Set(), 3)).toBeUndefined();
+  it('allows five bounded release attempts and then stops', () => {
+    expect(nextRecoverySource(candidates, new Set(), MAX_AUTOMATIC_SOURCE_ATTEMPTS)).toBeUndefined();
   });
 });

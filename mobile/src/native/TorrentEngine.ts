@@ -29,6 +29,7 @@ declare class TorrentEngineNative extends NativeModule<TorrentEvents> {
   pause(): Promise<void>;
   resume(): Promise<void>;
   stop(removeFiles?: boolean): Promise<void>;
+  finishPlaybackTask(): Promise<boolean>;
   clearCache(): Promise<number>;
   getCacheStats(): Promise<TorrentCacheStats>;
   listCacheEntries(): Promise<TorrentCacheEntry[]>;
@@ -128,6 +129,7 @@ export const TorrentEngine = {
   pause: () => nativeModule?.pause() ?? Promise.resolve(),
   resume: () => nativeModule?.resume() ?? Promise.resolve(),
   stop: (removeFiles = false) => nativeModule?.stop(removeFiles) ?? Promise.resolve(),
+  finishPlaybackTask: () => nativeModule?.finishPlaybackTask() ?? Promise.resolve(false),
   clearCache: () => nativeModule?.clearCache() ?? Promise.resolve(0),
   getCacheStats: () => nativeModule?.getCacheStats() ?? Promise.resolve({ bytes: 0, freeBytes: 0, maxBytes: 0 }),
   listCacheEntries: () => nativeModule?.listCacheEntries() ?? Promise.resolve([]),

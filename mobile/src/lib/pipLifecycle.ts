@@ -26,3 +26,7 @@ export function backgroundPauseDelay(state: PipLifecycleState) {
 export function shouldPauseAfterPipStop(appState: string, allowBackgroundPlayback: boolean) {
   return appState !== 'active' && !allowBackgroundPlayback;
 }
+
+export function shouldCloseTaskAfterPipStop(appState: string) {
+  return appState !== 'active';
+}
