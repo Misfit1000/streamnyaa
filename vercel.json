@@ -82,6 +82,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/season/:seasonSlug",
+      "destination": "/index.html"
+    },
+    {
       "source": "/anime/:id",
       "destination": "/index.html"
     },
@@ -99,6 +103,18 @@
     },
     {
       "source": "/nyaa",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/compare",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/local-player",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/desktop-settings",
       "destination": "/index.html"
     },
     {

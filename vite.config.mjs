@@ -32,17 +32,31 @@ export default defineConfig({
   server: {
     hmr: process.env.DISABLE_HMR !== 'true',
   },
-  build: isDesktopTarget ? {
-    target: 'es2022',
-    modulePreload: false,
-    cssCodeSplit: true,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'desktop-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'desktop-query': ['@tanstack/react-query'],
+  build: isDesktopTarget
+    ? {
+        target: 'es2022',
+        modulePreload: false,
+        cssCodeSplit: true,
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'desktop-vendor': ['react', 'react-dom', 'react-router-dom'],
+              'desktop-query': ['@tanstack/react-query'],
+            },
+          },
+        },
+      }
+    : {
+        target: 'es2022',
+        cssCodeSplit: true,
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'web-vendor': ['react', 'react-dom', 'react-router-dom'],
+              'web-query': ['@tanstack/react-query'],
+              'web-motion': ['motion'],
+            },
+          },
         },
       },
-    },
-  } : undefined,
 });

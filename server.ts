@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { XMLParser } from "fast-xml-parser";
 import { getCachedBlogPost } from "./api/blog";
@@ -50,7 +49,8 @@ function refreshCachedSource(cacheKey: string, cached: SourceCacheEntry) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const configuredPort = Number.parseInt(process.env.PORT || '3000', 10);
+  const port = Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : 3000;
 
   // --- NYAA API ---
   app.get("/api/nyaa", async (req, res) => {
@@ -108,16 +108,17 @@ async function startServer() {
 
   // Vite middleware
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+    app.get('*', (_req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${port}`);
   });
 }
 
