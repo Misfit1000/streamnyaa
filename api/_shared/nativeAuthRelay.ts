@@ -1,5 +1,17 @@
 export type NativeRecoveryPlatform = 'desktop' | 'android';
 
+const RECOVERY_FIELDS = new Set([
+  'access_token',
+  'refresh_token',
+  'expires_in',
+  'expires_at',
+  'token_type',
+  'type',
+  'error',
+  'error_code',
+  'error_description',
+]);
+
 const NATIVE_TARGETS: Record<NativeRecoveryPlatform, string> = {
   desktop: 'streamnyaa://auth/callback?action=recovery&next=%2Freset-password',
   android: 'streamnyaa://auth/recovery?action=recovery',
@@ -8,6 +20,12 @@ const NATIVE_TARGETS: Record<NativeRecoveryPlatform, string> = {
 export function parseNativeRecoveryPlatform(value: unknown): NativeRecoveryPlatform | null {
   const candidate = String(Array.isArray(value) ? value[0] : value || '').trim().toLowerCase();
   return candidate === 'desktop' || candidate === 'android' ? candidate : null;
+}
+
+export function hasOnlyNativeRecoveryQueryParameters(query: Record<string, unknown>, dynamicRoute = false) {
+  const allowed = new Set(['platform', 'action', ...RECOVERY_FIELDS]);
+  if (dynamicRoute) allowed.add('route');
+  return Object.keys(query || {}).every((key) => allowed.has(key));
 }
 
 export function nativeRecoveryRelayHtml(platform: NativeRecoveryPlatform) {
@@ -31,7 +49,14 @@ export function nativeRecoveryRelayHtml(platform: NativeRecoveryPlatform) {
         const target = new URL(${JSON.stringify(target)});
         const query = new URLSearchParams(location.search);
         const fragment = new URLSearchParams(location.hash.replace(/^#/, ''));
-        const allowed = ['access_token', 'refresh_token', 'expires_in', 'expires_at', 'token_type', 'type', 'error', 'error_code', 'error_description'];
+        const allowed = ${JSON.stringify([...RECOVERY_FIELDS])};
+        const known = new Set(['platform', 'action', ...allowed]);
+        const unknown = [...query.keys(), ...fragment.keys()].some((key) => !known.has(key));
+        if (unknown) {
+          target.searchParams.set('error', 'The password recovery callback contained unsupported data.');
+          location.replace(target.toString());
+          return;
+        }
         for (const key of allowed) {
           const value = fragment.get(key) || query.get(key);
           if (value) target.searchParams.set(key, value);
@@ -49,4 +74,3 @@ export function nativeRecoveryRelayHtml(platform: NativeRecoveryPlatform) {
   </body>
 </html>`;
 }
-

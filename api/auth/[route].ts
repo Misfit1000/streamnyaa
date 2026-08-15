@@ -1,5 +1,5 @@
 import { fetchSupabaseUser, isAdminEmail } from '../_shared/adminAuth.js';
-import { nativeRecoveryRelayHtml, parseNativeRecoveryPlatform } from '../_shared/nativeAuthRelay.js';
+import { hasOnlyNativeRecoveryQueryParameters, nativeRecoveryRelayHtml, parseNativeRecoveryPlatform } from '../_shared/nativeAuthRelay.js';
 
 const APP_CALLBACK = 'streamnyaa://auth';
 
@@ -87,7 +87,9 @@ function nativeCallback(req: any, res: any) {
   if (req.method !== 'GET') return res.status(405).send('Method not allowed');
   const platform = parseNativeRecoveryPlatform(req.query?.platform);
   const action = String(Array.isArray(req.query?.action) ? req.query.action[0] : req.query?.action || '').trim().toLowerCase();
-  if (!platform || action !== 'recovery') return res.status(400).send('Invalid native recovery callback');
+  if (!platform || action !== 'recovery' || !hasOnlyNativeRecoveryQueryParameters(req.query || {}, true)) {
+    return res.status(400).send('Invalid native recovery callback');
+  }
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Referrer-Policy', 'no-referrer');
