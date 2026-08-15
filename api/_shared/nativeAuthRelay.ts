@@ -51,9 +51,13 @@ export function nativeRecoveryRelayHtml(platform: NativeRecoveryPlatform) {
         const fragment = new URLSearchParams(location.hash.replace(/^#/, ''));
         const allowed = ${JSON.stringify([...RECOVERY_FIELDS])};
         const known = new Set(['platform', 'action', ...allowed]);
-        const unknown = [...query.keys(), ...fragment.keys()].some((key) => !known.has(key));
-        if (unknown) {
-          target.searchParams.set('error', 'The password recovery callback contained unsupported data.');
+        const unknown = [...new Set([...query.keys(), ...fragment.keys()])]
+          .filter((key) => !known.has(key))
+          .slice(0, 4)
+          .map((key) => key.slice(0, 32));
+        if (unknown.length) {
+          target.searchParams.set('error_code', 'unsupported_callback_fields');
+          target.searchParams.set('error_description', 'Unsupported recovery fields: ' + unknown.join(', ') + '.');
           location.replace(target.toString());
           return;
         }
