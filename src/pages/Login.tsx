@@ -4,6 +4,7 @@ import { Eye, EyeOff, KeyRound, Lock, LogIn, Mail, UserPlus } from 'lucide-react
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
 import { useSeasonalAnimeQuery } from '../lib/seasonalAnime';
+import { parseWebRecoveryCallback } from '../lib/webRecovery';
 
 type LoginProps = {
   adminOnly?: boolean;
@@ -91,20 +92,21 @@ export default function Login({ adminOnly = false }: LoginProps) {
   }, [seasonalVisuals.length]);
 
   useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const queryParams = new URLSearchParams(location.search);
-    const accessToken = hashParams.get('access_token') || '';
-    const type = hashParams.get('type') || queryParams.get('type');
-
-    if (accessToken && type === 'recovery') {
-      setResetToken(accessToken);
+    const recovery = parseWebRecoveryCallback(window.location.href);
+    if (recovery.status === 'valid') {
+      setResetToken(recovery.accessToken);
       setMode('reset');
-        setMessage('Choose a new password.');
+      setError('');
+      setMessage('Choose a new password.');
       window.history.replaceState(null, '', '/reset-password');
-    } else if (location.pathname === '/reset-password' || queryParams.get('mode') === 'reset') {
-      setMode('reset');
+    } else if (recovery.status === 'invalid') {
+      setResetToken('');
+      setMode('forgot');
+      setMessage('');
+      setError(recovery.message);
+      window.history.replaceState(null, '', '/reset-password');
     }
-  }, [location.pathname, location.search]);
+  }, [location.hash, location.pathname, location.search]);
 
   useEffect(() => {
     if (!adminOnly && user && location.pathname === '/login') {
@@ -142,6 +144,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
         await sendPasswordReset(email.trim());
         setMessage('Password reset link sent. Check your email and open the link to set a new password.');
       } else if (mode === 'reset') {
+        if (!resetToken) throw new Error('This password reset link is missing or expired. Send another link to continue.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
         await resetPassword(resetToken, password);
         setMessage('Password updated. You can sign in with your new password.');

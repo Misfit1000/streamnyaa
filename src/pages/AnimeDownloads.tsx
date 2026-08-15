@@ -166,6 +166,29 @@ export default function AnimeDownloads() {
     enabled: !!anime?.title && downloadSearchAvailable,
   });
 
+  const sortedTorrents = useMemo(() => [...(torrents || [])].filter((torrent) => !isBatchSource(torrent.title)).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
+    if (sortBy === 'best') {
+        if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
+        const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
+        const trustedA = trustedGroups.some(g => a.title.includes(g)) ? 1 : 0;
+        const trustedB = trustedGroups.some(g => b.title.includes(g)) ? 1 : 0;
+        if (trustedA !== trustedB) return trustedB - trustedA;
+        if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
+        return b.rawSize - a.rawSize;
+    } else if (sortBy === 'seeders') {
+        if (b.rawSeeders !== a.rawSeeders) return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
+        return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
+    } else {
+        if (b.rawSize !== a.rawSize) return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
+        return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
+    }
+  }), [sortBy, sortDirection, sourceFilter, torrents]);
+  const topSource = sortedTorrents[0];
+  const visibleTorrents = useMemo(() => showAllSources ? sortedTorrents : sortedTorrents.slice(0, 5), [showAllSources, sortedTorrents]);
+  const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
+  const totalSeeders = useMemo(() => sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0), [sortedTorrents]);
+  const highSeederCount = useMemo(() => sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length, [sortedTorrents]);
+
   if (animeLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -226,28 +249,6 @@ export default function AnimeDownloads() {
     );
   }
 
-  const sortedTorrents = useMemo(() => [...(torrents || [])].filter((torrent) => !isBatchSource(torrent.title)).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
-    if (sortBy === 'best') {
-        if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
-        const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
-        const trustedA = trustedGroups.some(g => a.title.includes(g)) ? 1 : 0;
-        const trustedB = trustedGroups.some(g => b.title.includes(g)) ? 1 : 0;
-        if (trustedA !== trustedB) return trustedB - trustedA;
-        if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
-        return b.rawSize - a.rawSize;
-    } else if (sortBy === 'seeders') {
-        if (b.rawSeeders !== a.rawSeeders) return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
-        return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
-    } else {
-        if (b.rawSize !== a.rawSize) return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
-        return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
-    }
-  }), [sortBy, sortDirection, sourceFilter, torrents]);
-  const topSource = sortedTorrents[0];
-  const visibleTorrents = useMemo(() => showAllSources ? sortedTorrents : sortedTorrents.slice(0, 5), [showAllSources, sortedTorrents]);
-  const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
-  const totalSeeders = useMemo(() => sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0), [sortedTorrents]);
-  const highSeederCount = useMemo(() => sortedTorrents.filter((torrent) => torrent.rawSeeders >= 50).length, [sortedTorrents]);
   const updateEpisodeSelection = (value: string) => {
     setShowAllSources(false);
     const nextParams = new URLSearchParams(searchParams);

@@ -20,7 +20,7 @@
     "preview": "vite preview",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
-    "test:web": "node --test --import tsx tests/api-account-sync.test.ts tests/api-route-consolidation.test.ts tests/native-auth-relay.test.ts tests/web-release-config.test.ts",
+    "test:web": "node --test --import tsx tests/api-account-sync.test.ts tests/api-route-consolidation.test.ts tests/native-auth-relay.test.ts tests/web-release-config.test.ts tests/web-ui-regressions.test.ts",
     "audit:web": "npm audit --audit-level=high",
     "check:web-build": "node scripts/check-web-build.mjs",
     "smoke:web-server": "node scripts/smoke-web-server.mjs",

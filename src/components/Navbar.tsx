@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Menu, X, Moon, Sun, Bookmark, Cat, UserCircle } from 'lucide-react';
+import { Search, Menu, X, Moon, Sun, Bookmark, Cat, UserCircle, ChevronDown } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
@@ -60,14 +60,14 @@ export default function Navbar() {
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-[var(--glass-border)] bg-background/78 shadow-lg shadow-black/5 backdrop-blur-2xl">
-      <div className="container mx-auto px-4 md:px-10 h-16 flex items-center justify-between gap-4 md:gap-8">
-        <div className="flex items-center gap-4 md:gap-8">
+      <div className="container mx-auto px-4 md:px-8 h-16 flex items-center justify-between gap-3 xl:gap-5">
+        <div className="flex shrink-0 items-center gap-4 xl:gap-6">
           <Link to="/" className="text-xl sm:text-2xl font-black text-primary flex items-center gap-2 tracking-tighter shrink-0">
             <Cat className="w-6 h-6 sm:w-8 sm:h-8" />
             <span className="hidden sm:inline">STREAMNYAA</span>
           </Link>
           
-          <div className="hidden lg:flex items-center gap-6 text-sm font-medium text-muted-foreground">
+          <div className="hidden xl:flex items-center gap-4 2xl:gap-6 text-sm font-medium text-muted-foreground">
             <Link to="/" className="hover:text-foreground transition-colors">Home</Link>
             <Link to="/search" className="hover:text-foreground transition-colors">Browse</Link>
             <Link to="/my-list" className="hover:text-foreground transition-colors">My List</Link>
@@ -78,7 +78,7 @@ export default function Navbar() {
           </div>
         </div>
 
-        <div className="flex-1 max-w-[400px] hidden md:block relative" ref={filterRef}>
+        <div className="relative hidden min-w-0 max-w-[400px] flex-1 md:block" ref={filterRef}>
           <form onSubmit={handleSearch} className="relative flex items-center">
             <input
               type="text"
@@ -87,13 +87,19 @@ export default function Navbar() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-[var(--glass)] border border-[var(--glass-border)] py-2 pl-10 pr-24 rounded-full text-foreground placeholder:text-muted-foreground text-[13px] focus:outline-none focus:border-primary/50 transition-colors"
             />
-            <Search className="absolute left-4 w-4 h-4 text-muted-foreground" />
+            <button
+              type="submit"
+              className="absolute left-1 flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+              aria-label="Search anime"
+            >
+              <Search className="h-4 w-4" aria-hidden="true" />
+            </button>
             <button 
               type="button" 
               onClick={() => setShowFilters(!showFilters)}
               className={`absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-widest flex items-center gap-1 font-bold transition-all ${showFilters || filterType || filterStatus || filterRating ? 'bg-primary/20 text-primary' : 'hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
             >
-              Filters <span className="text-[8px] opacity-70">{showFilters ? '▲' : '▼'}</span>
+              Filters <ChevronDown className={`h-3 w-3 opacity-70 transition-transform ${showFilters ? 'rotate-180' : ''}`} aria-hidden="true" />
             </button>
           </form>
           
@@ -178,7 +184,8 @@ export default function Navbar() {
           </Link>
           <button 
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="lg:hidden p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground"
+            className="xl:hidden p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground"
+            aria-label={isMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           >
             {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -187,7 +194,7 @@ export default function Navbar() {
 
       {/* Mobile Menu */}
       {isMenuOpen && (
-        <div className="absolute left-0 top-full z-50 w-full border-b border-[var(--glass-border)] bg-background/90 shadow-xl shadow-black/20 backdrop-blur-2xl lg:hidden">
+        <div className="absolute left-0 top-full z-50 w-full border-b border-[var(--glass-border)] bg-background/90 shadow-lg shadow-black/20 backdrop-blur-2xl xl:hidden">
           <div className="container mx-auto px-6 py-4 flex flex-col gap-4">
             <form onSubmit={handleSearch} className="md:hidden relative flex items-center mb-2">
               <input
@@ -197,13 +204,19 @@ export default function Navbar() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-[var(--glass)] border border-[var(--glass-border)] py-2.5 pl-10 pr-20 rounded-xl text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:border-primary/50 transition-colors"
               />
-              <Search className="absolute left-3 w-4 h-4 text-muted-foreground" />
+              <button
+                type="submit"
+                className="absolute left-1 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                aria-label="Search anime"
+              >
+                <Search className="h-4 w-4" aria-hidden="true" />
+              </button>
               <button 
                 type="button" 
                 onClick={() => setShowFilters(!showFilters)}
                 className={`absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg text-[10px] uppercase tracking-widest flex items-center gap-1 font-bold transition-all ${showFilters || filterType || filterStatus || filterRating ? 'bg-primary/20 text-primary' : 'hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
               >
-                Filters <span className="text-[8px] opacity-70">{showFilters ? '▲' : '▼'}</span>
+                Filters <ChevronDown className={`h-3 w-3 opacity-70 transition-transform ${showFilters ? 'rotate-180' : ''}`} aria-hidden="true" />
               </button>
             </form>
             
