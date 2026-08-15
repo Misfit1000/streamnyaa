@@ -14,6 +14,9 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "allowJs": true,
+    "typeRoots": [
+      "./node_modules/@types"
+    ],
     "jsx": "react-jsx",
     "paths": {
       "@/*": [
