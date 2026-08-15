@@ -34,17 +34,12 @@ async function upsertProfile(user: any) {
     updated_at: new Date().toISOString(),
   };
 
-  try {
-    const rows = await supabaseRest('user_profiles?on_conflict=user_id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-      body: JSON.stringify([row]),
-    });
-    return Array.isArray(rows) ? rows[0] || row : row;
-  } catch (error: any) {
-    if (error?.status === 404) return null;
-    throw error;
-  }
+  const rows = await supabaseRest('user_profiles?on_conflict=user_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify([row]),
+  });
+  return Array.isArray(rows) ? rows[0] || row : row;
 }
 
 async function getAccountData(user: any) {
@@ -54,19 +49,11 @@ async function getAccountData(user: any) {
   let library: any[] = [];
   let watchHistory: any[] = [];
 
-  try {
-    const rows = await supabaseRest(`user_library?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=500`);
-    library = Array.isArray(rows) ? rows : [];
-  } catch (error: any) {
-    if (error?.status !== 404) throw error;
-  }
+  const libraryRows = await supabaseRest(`user_library?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=500`);
+  library = Array.isArray(libraryRows) ? libraryRows : [];
 
-  try {
-    const rows = await supabaseRest(`user_watch_history?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=100`);
-    watchHistory = Array.isArray(rows) ? rows : [];
-  } catch (error: any) {
-    if (error?.status !== 404) throw error;
-  }
+  const watchRows = await supabaseRest(`user_watch_history?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=500`);
+  watchHistory = Array.isArray(watchRows) ? watchRows : [];
 
   return { profile, library, watchHistory };
 }
@@ -86,6 +73,7 @@ function normalizeLibraryRows(userId: string, rows: any[]) {
         bookmarked: Boolean(item.bookmarked),
         liked: Boolean(item.liked),
         updated_at: item.updatedAt || item.updated_at || now,
+        deleted_at: item.deletedAt || item.deleted_at || null,
       };
     })
     .filter(Boolean);
@@ -94,53 +82,41 @@ function normalizeLibraryRows(userId: string, rows: any[]) {
 export function normalizeWatchHistoryRows(userId: string, rows: any[]) {
   const now = new Date().toISOString();
   return rows
-    .slice(0, 100)
+    .slice(0, 500)
     .map((item) => {
       const key = cleanString(item.key || item.history_key);
-      const source = item.source || item;
-      if (!key || !source) return null;
+      const legacySource = item.source || item;
+      if (!key) return null;
       return {
         user_id: userId,
         history_key: key,
-        source,
-        anime_id: item.animeId || item.anime_id || source.animeId ? String(item.animeId || item.anime_id || source.animeId) : null,
-        anime_title: item.animeTitle || item.anime_title || source.animeTitle || null,
-        episode: item.episode ?? source.episode ?? null,
-        progress_percent: Number(source.progressPercent ?? item.progress_percent ?? 0),
-        resume_seconds: Number(source.resumeSeconds ?? item.resume_seconds ?? 0),
-        duration_seconds: Number(source.durationSeconds ?? item.duration_seconds ?? 0),
+        source: null,
+        anime_id: item.animeId || item.anime_id || legacySource?.animeId ? String(item.animeId || item.anime_id || legacySource?.animeId) : null,
+        anime_title: item.animeTitle || item.anime_title || legacySource?.animeTitle || null,
+        episode: item.episode ?? legacySource?.episode ?? null,
+        poster_url: item.poster || item.poster_url || legacySource?.poster || legacySource?.image || null,
+        progress_percent: Number(item.watchedPercent ?? item.progress_percent ?? legacySource?.progressPercent ?? 0),
+        resume_seconds: Number(item.positionSeconds ?? item.resume_seconds ?? legacySource?.resumeSeconds ?? 0),
+        duration_seconds: Number(item.durationSeconds ?? item.duration_seconds ?? legacySource?.durationSeconds ?? 0),
+        completed: Boolean(item.completed ?? legacySource?.completed),
         updated_at: item.updatedAt || item.updated_at || now,
+        deleted_at: item.deletedAt || item.deleted_at || null,
       };
     })
     .filter(Boolean);
 }
 
-async function replaceRowsSafely(
+async function upsertRowsSafely(
   table: 'user_library' | 'user_watch_history',
   keyColumn: 'anime_id' | 'history_key',
-  userId: string,
   rows: any[],
 ) {
-  const encodedUserId = encode(userId);
-  const existing = await supabaseRest(`${table}?user_id=eq.${encodedUserId}&select=${keyColumn}`);
-  if (rows.length) {
-    await supabaseRest(`${table}?on_conflict=user_id,${keyColumn}`, {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(rows),
-    });
-  }
-  const desired = new Set(rows.map((row) => cleanString(row[keyColumn])).filter(Boolean));
-  const stale = (Array.isArray(existing) ? existing : [])
-    .map((row: any) => cleanString(row[keyColumn]))
-    .filter((key: string) => key && !desired.has(key));
-  for (let index = 0; index < stale.length; index += 25) {
-    const values = stale.slice(index, index + 25).map(encode).join(',');
-    await supabaseRest(`${table}?user_id=eq.${encodedUserId}&${keyColumn}=in.(${values})`, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=minimal' },
-    });
-  }
+  if (!rows.length) return;
+  await supabaseRest(`${table}?on_conflict=user_id,${keyColumn}`, {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(rows),
+  });
 }
 
 export default async function handler(req: any, res: any) {
@@ -167,13 +143,13 @@ export default async function handler(req: any, res: any) {
       if (Array.isArray(body.library)) {
         const rows = normalizeLibraryRows(userId, body.library);
         if (body.library.length && !rows.length) return res.status(400).json({ error: 'No valid library records were provided.' });
-        await replaceRowsSafely('user_library', 'anime_id', userId, rows);
+        await upsertRowsSafely('user_library', 'anime_id', rows);
       }
 
       if (Array.isArray(body.watchHistory)) {
         const rows = normalizeWatchHistoryRows(userId, body.watchHistory);
         if (body.watchHistory.length && !rows.length) return res.status(400).json({ error: 'No valid watch-history records were provided.' });
-        await replaceRowsSafely('user_watch_history', 'history_key', userId, rows);
+        await upsertRowsSafely('user_watch_history', 'history_key', rows);
       }
 
       return res.status(200).json({ ok: true });

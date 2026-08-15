@@ -29,6 +29,7 @@ export type DesktopWatchProgressRecord = {
   durationSeconds?: number;
   progressPercent?: number;
   updatedAt: number;
+  completed?: boolean;
 };
 
 export type DesktopRuntimeStatus = {
@@ -546,6 +547,9 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
     const key = watchProgressKey(normalized);
     const current = loadDesktopWatchProgress();
     const existing = current.find((item) => watchProgressKey(item) === key);
+    if (existing && Number(existing.updatedAt || 0) > normalized.updatedAt) {
+      return;
+    }
     if (
       existing
       && Math.abs(Number(existing.positionSeconds || 0) - normalized.positionSeconds) < 5
@@ -563,6 +567,23 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
     emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
   } catch {
     // Progress is convenience data. Playback must never depend on it.
+  }
+}
+
+export function replaceDesktopWatchProgress(records: DesktopWatchProgressRecord[]) {
+  try {
+    const next = records
+      .filter((item): item is DesktopWatchProgressRecord => Boolean(item?.title && item?.episode))
+      .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
+      .slice(0, DESKTOP_WATCH_PROGRESS_LIMIT);
+    localStorage.setItem(DESKTOP_WATCH_PROGRESS_KEY, JSON.stringify(next));
+    const watchedSeries = next
+      .map(watchedSeriesFromProgress)
+      .filter((item): item is DesktopWatchedSeriesRecord => Boolean(item));
+    writeWatchedSeries(watchedSeries, false);
+    emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
+  } catch {
+    // Synced progress is optional and must never block playback.
   }
 }
 
