@@ -12,6 +12,11 @@ const RECOVERY_FIELDS = new Set([
   'error_description',
 ]);
 
+// Supabase may append this opaque relay decoration after verifying an email
+// action. It is not part of the recovery session and must never be forwarded
+// into the native callback.
+const IGNORED_RECOVERY_FIELDS = new Set(['sb']);
+
 const NATIVE_TARGETS: Record<NativeRecoveryPlatform, string> = {
   desktop: 'streamnyaa://auth/callback?action=recovery&next=%2Freset-password',
   android: 'streamnyaa://auth/recovery?action=recovery',
@@ -23,7 +28,7 @@ export function parseNativeRecoveryPlatform(value: unknown): NativeRecoveryPlatf
 }
 
 export function hasOnlyNativeRecoveryQueryParameters(query: Record<string, unknown>, dynamicRoute = false) {
-  const allowed = new Set(['platform', 'action', ...RECOVERY_FIELDS]);
+  const allowed = new Set(['platform', 'action', ...RECOVERY_FIELDS, ...IGNORED_RECOVERY_FIELDS]);
   if (dynamicRoute) allowed.add('route');
   return Object.keys(query || {}).every((key) => allowed.has(key));
 }
@@ -50,7 +55,8 @@ export function nativeRecoveryRelayHtml(platform: NativeRecoveryPlatform) {
         const query = new URLSearchParams(location.search);
         const fragment = new URLSearchParams(location.hash.replace(/^#/, ''));
         const allowed = ${JSON.stringify([...RECOVERY_FIELDS])};
-        const known = new Set(['platform', 'action', ...allowed]);
+        const ignored = ${JSON.stringify([...IGNORED_RECOVERY_FIELDS])};
+        const known = new Set(['platform', 'action', ...allowed, ...ignored]);
         const unknown = [...new Set([...query.keys(), ...fragment.keys()])]
           .filter((key) => !known.has(key))
           .slice(0, 4)
