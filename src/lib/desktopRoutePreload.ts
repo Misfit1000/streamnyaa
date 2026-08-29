@@ -1,4 +1,6 @@
 import type { ComponentType } from 'react';
+import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
+import { searchNyaa } from '../api/nyaa';
 
 type PageModule = { default: ComponentType };
 type DesktopRouteKey =
@@ -76,9 +78,61 @@ export function preloadDesktopRoute(pathname: string) {
   return loadDesktopPage(key).then(() => undefined).catch(() => undefined);
 }
 
+const watchDataPreloads = new Map<string, Promise<void>>();
+
+export function preloadDesktopWatchData(pathWithSearch: string, includeSources = false) {
+  if (typeof window === 'undefined') return Promise.resolve();
+  const url = new URL(pathWithSearch, window.location.origin);
+  const match = url.pathname.match(/^\/(?:watch|anime)\/([^/]+)/);
+  if (!match) return Promise.resolve();
+  const routeId = decodeURIComponent(match[1]);
+  const episode = Math.max(1, Number(url.searchParams.get('ep') || 1));
+  const preloadKey = `${routeId}|${episode}|${includeSources ? 'sources' : 'metadata'}`;
+  const existing = watchDataPreloads.get(preloadKey);
+  if (existing) return existing;
+
+  const preload = fetchAnimeDetails(routeId, {
+    anilistId: url.searchParams.get('anilistId') || url.searchParams.get('aid') || undefined,
+    malId: url.searchParams.get('malId') || url.searchParams.get('mid') || undefined,
+    routeTitle: routeId.replace(/^\d+-?/, '').replace(/-/g, ' '),
+  }).then(async ({ data }) => {
+    const malId = String(data?.mal_id || url.searchParams.get('malId') || routeId).match(/\d+/)?.[0];
+    const title = String(data?.title_english || data?.title_romaji || data?.title || '').trim();
+    const tasks: Promise<unknown>[] = [];
+    if (malId) tasks.push(fetchAnimeEpisodes(malId, Math.max(1, Math.ceil(episode / 100))));
+    if (includeSources && title) {
+      tasks.push(searchNyaa(`${title} ${String(episode).padStart(2, '0')}`, '1_2', '0', '1', {
+        deep: false,
+        pages: 1,
+        wide: false,
+      }));
+    }
+    await Promise.allSettled(tasks);
+  }).then(() => undefined).catch(() => undefined).finally(() => {
+    window.setTimeout(() => watchDataPreloads.delete(preloadKey), 30_000);
+  });
+  watchDataPreloads.set(preloadKey, preload);
+  return preload;
+}
+
 const CORE_ROUTE_KEYS: DesktopRouteKey[] = ['explore', 'schedule', 'sources', 'library', 'history', 'settings'];
 const MAX_CONCURRENT_WARMS = 2;
 let coreWarmStarted = false;
+let playbackWorkloadBusy = false;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('streamnyaa:playback-workload', ((event: CustomEvent<{ busy?: boolean }>) => {
+    playbackWorkloadBusy = event.detail?.busy === true;
+  }) as EventListener);
+}
+
+function backgroundWarmAllowed() {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
+  const connection = (typeof navigator !== 'undefined' ? navigator : null) as (Navigator & {
+    connection?: { saveData?: boolean };
+  }) | null;
+  return !playbackWorkloadBusy && connection?.connection?.saveData !== true;
+}
 
 type IdleWindow = Window & {
   requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
@@ -90,9 +144,14 @@ export function warmCoreDesktopRoutes() {
   coreWarmStarted = true;
   let cancelled = false;
   let importsStarted = false;
+  let retryHandle: number | undefined;
 
   const start = () => {
     if (cancelled) return;
+    if (!backgroundWarmAllowed()) {
+      retryHandle = window.setTimeout(start, 750);
+      return;
+    }
     importsStarted = true;
     const queue = [...CORE_ROUTE_KEYS];
     let active = 0;
@@ -118,6 +177,7 @@ export function warmCoreDesktopRoutes() {
     cancelled = true;
     if (idleHandle !== undefined) idleWindow.cancelIdleCallback?.(idleHandle);
     if (timeoutHandle !== undefined) window.clearTimeout(timeoutHandle);
+    if (retryHandle !== undefined) window.clearTimeout(retryHandle);
     if (!importsStarted) coreWarmStarted = false;
   };
 }

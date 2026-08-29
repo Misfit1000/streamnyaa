@@ -1,0 +1,78 @@
+export type DesktopDataStatus = 'fresh' | 'stale' | 'empty' | 'offline' | 'timeout' | 'rate-limited' | 'invalid' | 'cancelled' | 'error';
+
+export type DesktopDataCacheState = 'memory' | 'disk' | 'network' | 'none';
+
+export type DesktopDataErrorCode = Exclude<DesktopDataStatus, 'fresh' | 'stale' | 'empty'>;
+
+export type DesktopDataErrorDetails = {
+  code: DesktopDataErrorCode;
+  provider: string;
+  message: string;
+  retryable: boolean;
+  statusCode?: number;
+};
+
+export type DesktopDataResult<T> = {
+  data: T;
+  status: DesktopDataStatus;
+  provider: string;
+  cacheState: DesktopDataCacheState;
+  stale: boolean;
+  fetchedAt: number;
+  durationMs?: number;
+  error?: DesktopDataErrorDetails;
+};
+
+export class DesktopDataError extends Error {
+  readonly code: DesktopDataErrorCode;
+  readonly provider: string;
+  readonly retryable: boolean;
+  readonly statusCode?: number;
+
+  constructor(details: DesktopDataErrorDetails) {
+    super(details.message);
+    this.name = 'DesktopDataError';
+    this.code = details.code;
+    this.provider = details.provider;
+    this.retryable = details.retryable;
+    this.statusCode = details.statusCode;
+  }
+}
+
+export function desktopDataError(provider: string, error: unknown, statusCode?: number) {
+  if (error instanceof DesktopDataError) return error;
+  const message = error instanceof Error ? error.message : String(error || 'Data request failed.');
+  const normalized = message.toLowerCase();
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  const code: DesktopDataErrorCode = offline
+    ? 'offline'
+    : statusCode === 429
+      ? 'rate-limited'
+      : /abort|cancel/.test(normalized)
+        ? 'cancelled'
+        : /timeout|timed out/.test(normalized)
+          ? 'timeout'
+          : /parse|invalid|json/.test(normalized)
+            ? 'invalid'
+            : 'error';
+  return new DesktopDataError({
+    code,
+    provider,
+    message,
+    retryable: !['invalid', 'cancelled'].includes(code),
+    statusCode,
+  });
+}
+
+export type EpisodeCatalogSource = 'authoritative' | 'estimated';
+
+export type EpisodeCatalogResult<T> = DesktopDataResult<T> & {
+  catalogSource: EpisodeCatalogSource;
+  episodeCount: number;
+};
+
+export type SourceSearchResult<T> = DesktopDataResult<T[]> & {
+  complete: boolean;
+  attemptedQueryGroups: string[];
+  providerErrors: DesktopDataErrorDetails[];
+};

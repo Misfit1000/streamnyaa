@@ -198,6 +198,19 @@ select:focus-visible {
   -webkit-backdrop-filter: none !important;
 }
 
+/* Explore grids stay on one stable WebView2 paint layer. Animating clipped
+   poster descendants can produce diagonal blank wedges on some Windows GPUs. */
+.desktop-app-shell .sn-explore-card,
+.desktop-app-shell .sn-explore-poster,
+.desktop-app-shell .sn-explore-poster img {
+  transform: none;
+}
+
+.desktop-app-shell .sn-explore-poster {
+  contain: layout paint;
+  background: #0b0b0d;
+}
+
 .sn-primary-action,
 .sn-secondary-action,
 .sn-ghost-action,

@@ -1,4 +1,5 @@
 import { fetchDesktopSourceApi, isDesktopApp } from '../lib/desktop';
+import { desktopDataError } from '../lib/desktopData';
 
 export interface NyaaItem {
   title: string;
@@ -33,7 +34,9 @@ type SearchCacheEntry = {
 };
 
 const SEARCH_CACHE_TTL = 1000 * 60 * 20;
+const SEARCH_CACHE_MAX_STALE = 1000 * 60 * 60 * 24 * 7;
 const SEARCH_CACHE_MAX_ENTRIES = 260;
+const SEARCH_CACHE_STORAGE_KEY = 'streamnyaa.desktop.sourceCache.v1';
 const inMemorySearchCache = new Map<string, SearchCacheEntry>();
 const inFlightSearches = new Map<string, Promise<NyaaItem[]>>();
 const DEFAULT_TRACKERS = [
@@ -43,6 +46,35 @@ const DEFAULT_TRACKERS = [
   'udp://exodus.desync.com:6969/announce',
   'udp://tracker.torrent.eu.org:451/announce',
 ];
+
+let persistentSourceCacheLoaded = false;
+
+function loadPersistentSourceCache() {
+  if (persistentSourceCacheLoaded || typeof window === 'undefined') return;
+  persistentSourceCacheLoaded = true;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SEARCH_CACHE_STORAGE_KEY) || '[]') as Array<[string, SearchCacheEntry]>;
+    const now = Date.now();
+    parsed.forEach(([key, entry]) => {
+      if (!key || !Array.isArray(entry?.items) || now - Number(entry.savedAt || 0) > SEARCH_CACHE_MAX_STALE) return;
+      inMemorySearchCache.set(key, entry);
+    });
+  } catch {
+    window.localStorage.removeItem(SEARCH_CACHE_STORAGE_KEY);
+  }
+}
+
+function persistSourceCache() {
+  if (typeof window === 'undefined') return;
+  try {
+    const entries = [...inMemorySearchCache.entries()]
+      .sort((left, right) => right[1].savedAt - left[1].savedAt)
+      .slice(0, SEARCH_CACHE_MAX_ENTRIES);
+    window.localStorage.setItem(SEARCH_CACHE_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // A successful lookup must not fail because the optional persistent cache is full.
+  }
+}
 
 function parseSize(sizeStr: string): number {
   if (!sizeStr) return 0;
@@ -103,27 +135,32 @@ export async function searchNyaa(
   category: string = '1_2',
   filter: string = '0',
   page: string = '1',
-  options: { deep?: boolean; pages?: number; wide?: boolean } = {}
+  options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal } = {}
 ): Promise<NyaaItem[]> {
-  const cacheKey = JSON.stringify({ query, category, filter, page, options });
+  const desktopRuntime = isDesktopApp();
+  if (desktopRuntime) loadPersistentSourceCache();
+  const normalizedQuery = query.replace(/\s+/g, ' ').trim();
+  const requestOptions = { deep: options.deep, pages: options.pages, wide: options.wide };
+  const cacheKey = JSON.stringify({ query: normalizedQuery.toLowerCase(), category, filter, page, options: requestOptions });
   const cached = inMemorySearchCache.get(cacheKey);
   if (cached && Date.now() - cached.savedAt < SEARCH_CACHE_TTL) {
     return cached.items;
   }
+  const staleCached = desktopRuntime && cached && Date.now() - cached.savedAt < SEARCH_CACHE_MAX_STALE ? cached.items : null;
 
   const existingRequest = inFlightSearches.get(cacheKey);
-  if (existingRequest) return existingRequest;
+  if (existingRequest) return searchResultUnlessAborted(existingRequest, options.signal);
 
   const request = (async () => {
-    const desktop = isDesktopApp();
+    const desktop = desktopRuntime;
     const url = new URL('/api/nyaa', desktop ? 'https://www.streamnyaa.xyz' : window.location.origin);
-    if (query) url.searchParams.append('q', query);
+    if (normalizedQuery) url.searchParams.append('q', normalizedQuery);
     if (category) url.searchParams.append('c', category);
     if (filter) url.searchParams.append('f', filter);
     if (page) url.searchParams.append('p', page);
-    if (query && options.deep !== false) url.searchParams.append('deep', '1');
-    if (query) url.searchParams.append('pages', String(options.pages || 3));
-    if (query && options.wide) url.searchParams.append('wide', '1');
+    if (normalizedQuery && options.deep !== false) url.searchParams.append('deep', '1');
+    if (normalizedQuery) url.searchParams.append('pages', String(options.pages || 3));
+    if (normalizedQuery && options.wide) url.searchParams.append('wide', '1');
 
     let data: unknown;
     let sourceCacheStatus = '';
@@ -131,10 +168,15 @@ export async function searchNyaa(
     let sourceFetchedAt = Date.now();
 
     if (desktop) {
-      const desktopResponse = await fetchDesktopSourceApi(url.toString());
-      data = desktopResponse.data;
-      sourceFetchedAt = desktopResponse.fetched_at || Date.now();
-      sourceCacheStatus = 'DESKTOP';
+      try {
+        const desktopResponse = await fetchDesktopSourceApi(url.toString());
+        data = desktopResponse.data;
+        sourceFetchedAt = desktopResponse.fetched_at || Date.now();
+        sourceCacheStatus = String(desktopResponse.cache_status || 'NETWORK').toUpperCase();
+      } catch (error) {
+        if (staleCached) return staleCached;
+        throw desktopDataError('nyaa', error);
+      }
     } else {
       const response = await fetch(url.toString());
       if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
@@ -147,6 +189,8 @@ export async function searchNyaa(
     }
 
     if (!Array.isArray(data)) {
+      if (staleCached) return staleCached;
+      if (desktop) throw desktopDataError('nyaa', new Error('Source provider returned an invalid response.'));
       console.error('Source search did not return an array:', data);
       return [];
     }
@@ -195,16 +239,39 @@ export async function searchNyaa(
       if (!oldestKey) break;
       inMemorySearchCache.delete(oldestKey);
     }
+    if (desktop) persistSourceCache();
     return results;
   })();
 
-  inFlightSearches.set(cacheKey, request);
-  try {
-    return await request;
-  } catch (error) {
-    console.error('Source search error:', error);
-    return [];
-  } finally {
-    inFlightSearches.delete(cacheKey);
-  }
+  const handledRequest = request.catch((error) => {
+    if (staleCached) return staleCached;
+    if (!desktopRuntime) {
+      console.error('Source search error:', error);
+      return [];
+    }
+    throw desktopDataError('nyaa', error);
+  });
+  inFlightSearches.set(cacheKey, handledRequest);
+  const clearInFlight = () => {
+    if (inFlightSearches.get(cacheKey) === handledRequest) inFlightSearches.delete(cacheKey);
+  };
+  void handledRequest.then(clearInFlight, clearInFlight);
+  return searchResultUnlessAborted(handledRequest, options.signal);
+}
+
+function searchResultUnlessAborted(request: Promise<NyaaItem[]>, signal?: AbortSignal) {
+  if (!signal) return request;
+  if (signal.aborted) return Promise.resolve([]);
+  return new Promise<NyaaItem[]>((resolve) => {
+    let settled = false;
+    const finish = (items: NyaaItem[]) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      resolve(items);
+    };
+    const onAbort = () => finish([]);
+    signal.addEventListener('abort', onAbort, { once: true });
+    void request.then(finish);
+  });
 }

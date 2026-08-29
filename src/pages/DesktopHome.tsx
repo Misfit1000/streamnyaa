@@ -649,23 +649,12 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
     : source.episode ? `Episode ${source.episode}` : source.size || 'Recent source';
   const episodeLabel = source.episode ? `Episode ${source.episode}` : 'Recent source';
   const lastWatchedText = sourceUpdatedLabel(source);
-  const detailsPath = desktopWatchPath(
-    {
-      mal_id: source.animeId,
-      id: source.animeId,
-      title: source.animeTitle || source.title,
-    },
-    source.episode ? { ep: String(source.episode) } : undefined,
-  );
-  const restart = () => {
-    void openLocalSourceNow({
-      ...source,
-      progressPercent: 0,
-      resumeSeconds: 0,
-    }).catch((error) => {
-      console.warn(error instanceof Error ? error.message : String(error || 'Source link could not open.'));
-    });
-  };
+  const detailsQuery = new URLSearchParams({
+    q: source.animeTitle || source.title,
+    ...(source.animeId ? { animeId: String(source.animeId) } : {}),
+    ...(source.episode ? { ep: String(source.episode) } : {}),
+  });
+  const detailsPath = `/nyaa?${detailsQuery.toString()}`;
   const resume = () => {
     void openLocalSourceNow(source).catch((error) => {
       console.warn(error instanceof Error ? error.message : String(error || 'Source link could not open.'));
@@ -705,18 +694,18 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
             type="button"
             onClick={(event) => {
               event.stopPropagation();
-              restart();
+              resume();
             }}
-            className="sn-ghost-action min-h-0 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em]"
-            aria-label={`Restart ${source.animeTitle || source.title}`}
+            className="sn-ghost-action min-h-0 rounded-full px-2 py-1 text-[10px] font-bold tracking-wide"
+            aria-label={`Resume ${source.animeTitle || source.title}`}
           >
-            Restart
+            Resume
           </button>
           <Link
             to={detailsPath}
             onClick={(event) => event.stopPropagation()}
-            className="sn-ghost-action inline-flex min-h-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em]"
-            aria-label={`Open details for ${source.animeTitle || source.title}`}
+            className="sn-ghost-action inline-flex min-h-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold tracking-wide"
+            aria-label={`Open sources for ${source.animeTitle || source.title}`}
           >
             <Info className="h-3 w-3" />
             Details

@@ -1,14 +1,15 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
 import Seo from '../components/Seo';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
+import { episodeRangeContains, isEpisodeInteractiveTarget, isIntentionalHorizontalDrag } from '../lib/desktopEpisodeInteraction';
 import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
+import { preloadDesktopWatchData } from '../lib/desktopRoutePreload';
 import {
-  findLocalPlaybackHistoryItem,
   desktopEpisodeWatchState,
   formatPlaybackTime,
   controlLocalPlayer,
@@ -21,7 +22,9 @@ import {
   loadDesktopAutoOpenBestSource,
   loadDesktopAudioPreference,
   openLocalSourceNow,
+  resolveDesktopPlaybackCheckpoint,
   saveDesktopWatchProgress,
+  setDesktopEpisodeWatched,
   subscribeDesktopAutoPlayNextEpisode,
   subscribeDesktopPlayerPreferences,
   subscribeDesktopWatchProgress,
@@ -45,7 +48,7 @@ type SourceFilterMode = 'strict' | 'balanced' | 'broad';
 type SourceMatchTier = 'exact' | 'likely' | 'broad' | 'rejected';
 type SourcePlayableStatus = 'verified' | 'untested' | 'low-seed' | 'likely-wrong' | 'unsupported';
 type SourceConfidenceBand = 'high' | 'medium' | 'low' | 'failed';
-type SourceQualityFilter = 'auto' | '2160p' | '1080p' | '720p' | '480p' | 'other';
+type SourceQualityFilter = 'auto' | '2160p' | '1440p' | '1080p' | '720p' | '480p' | 'other';
 type EpisodeViewMode = 'cards' | 'grid';
 type PlaybackNotice = { tone: 'loading' | 'success' | 'error'; text: string };
 type PlaybackStageView = { headline: string; detail: string; progress: number; step: 1 | 2 | 3 | 4; status: string };
@@ -86,10 +89,12 @@ const EPISODE_WINDOW_SIZE = 72;
 const EPISODE_GRID_PAGE_SIZE = 120;
 const EPISODE_CARD_SEARCH_LIMIT = 36;
 const AUTO_COMPACT_EPISODE_THRESHOLD = 180;
-const EPISODE_RAIL_DRAG_THRESHOLD = 8;
+const EPISODE_RAIL_DRAG_THRESHOLD = 12;
 const TIMELINE_SKELETON_CARD_COUNT = 5;
-const SOURCE_QUERY_BATCH_SIZE = 6;
-const SOURCE_RETRY_LIMIT = 5;
+const SOURCE_QUERY_BATCH_SIZE = 2;
+const SOURCE_QUERY_TIMEOUT_MS = 4_000;
+const SOURCE_SEARCH_BUDGET_MS = 12_000;
+const SOURCE_RETRY_LIMIT = 4;
 const FAILED_SOURCE_MEMORY_KEY = 'streamnyaa.desktopFailedSources';
 const FAILED_SOURCE_MEMORY_TTL = 1000 * 60 * 60 * 24;
 const SOURCE_SUCCESS_MEMORY_TTL = 1000 * 60 * 60 * 24 * 7;
@@ -116,7 +121,31 @@ type SourceFailureRecord = {
   failureCount?: number;
   successAt?: number;
   successCount?: number;
+  averageStartupMs?: number;
 };
+
+function resolveWithin<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(fallback);
+    }, Math.max(250, timeoutMs));
+
+    promise.then((value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve(value);
+    }).catch(() => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve(fallback);
+    });
+  });
+}
 
 function posterFor(anime: any) {
   const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
@@ -392,8 +421,8 @@ function parseSourceAnimeTitle(value = '') {
     /\bS\d{1,2}E\d{1,4}\b/i,
     /\b(?:ep|episode)\.?\s*0?\d{1,4}\b/i,
     /\s+-\s+0?\d{1,4}(?:v\d+)?\b/i,
-    /\s+-\s+\[[^\]]*(?:480|720|1080|2160)p[^\]]*\]/i,
-    /\s+-\s+\([^)]+(?:480|720|1080|2160)p[^)]*\)/i,
+    /\s+-\s+\[[^\]]*(?:480|720|1080|1440|2160)p[^\]]*\]/i,
+    /\s+-\s+\([^)]+(?:480|720|1080|1440|2160)p[^)]*\)/i,
   ];
   const splitAt = splitPatterns
     .map((pattern) => {
@@ -405,7 +434,7 @@ function parseSourceAnimeTitle(value = '') {
   if (splitAt) title = title.slice(0, splitAt);
 
   title = title
-    .replace(/\b(?:480|720|1080|2160)p\b.*$/i, ' ')
+    .replace(/\b(?:480|720|1080|1440|2160)p\b.*$/i, ' ')
     .replace(/\b(?:x26[45]|h\.?26[45]|avc|hevc|aac|flac|opus|ddp\d?(?:\.\d)?|10bits?|8bits?)\b.*$/i, ' ')
     .replace(/\b(?:web(?:rip|dl)?|blu(?:ray)?|bd(?:rip)?|hdtv|amzn|cr|netflix|nf)\b.*$/i, ' ')
     .replace(/\b(?:dual|multi)[\s-]?audio\b.*$/i, ' ')
@@ -592,7 +621,7 @@ function rememberSourceFailure(
   saveSourceFailureRecords(records);
 }
 
-function rememberSourceSuccess(source: RankedNyaaItem) {
+function rememberSourceSuccess(source: RankedNyaaItem, startupMs?: number) {
   const key = sourceFailureKey(source);
   if (!key) return;
   const records = loadSourceFailureRecords();
@@ -603,6 +632,9 @@ function rememberSourceSuccess(source: RankedNyaaItem) {
     message: '',
     successAt: Date.now(),
     successCount: Math.min(50, Number(previous.successCount || 0) + 1),
+    averageStartupMs: Number.isFinite(startupMs)
+      ? Math.round(Number(previous.averageStartupMs || startupMs) * 0.65 + Number(startupMs) * 0.35)
+      : previous.averageStartupMs,
   };
   saveSourceFailureRecords(records);
 }
@@ -800,9 +832,10 @@ function hasEpisodeSignal(title = '', episode: number) {
     .replace(/\bseason\s+0?\d{1,3}\b/ig, ' ')
     .replace(/\b\d{1,3}(?:st|nd|rd|th)\s+season\b/ig, ' ')
     .replace(/\b(?:movie|film|ova|ona|special|part|cour|vol(?:ume)?)\s+0?\d{1,3}\b/ig, ' ')
-    .replace(/\b(?:720|1080|2160)p\b/ig, ' ')
+    .replace(/\b(?:720|1080|1440|2160)p\b/ig, ' ')
     .replace(/\bx26[45]\b/ig, ' ')
     .replace(/\bh\.?26[45]\b/ig, ' ');
+  if (episodeRangeContains(sanitized, episode)) return true;
   return [
     new RegExp(`\\bS\\d{1,2}E${padded}\\b`, 'i'),
     new RegExp(`\\bE${padded}\\b`, 'i'),
@@ -1178,7 +1211,10 @@ function sourceHistoryBoost(source: RankedNyaaItem, records: Record<string, Sour
   const success = sourceSuccessFor(source, records);
   if (!success) return 0;
   const ageRatio = Math.max(0, Math.min(1, (Date.now() - Number(success.successAt || 0)) / SOURCE_SUCCESS_MEMORY_TTL));
-  return Math.round((18 + Math.min(12, Number(success.successCount || 1) * 3)) * (1 - ageRatio));
+  const latencyBonus = Number(success.averageStartupMs || 0) > 0
+    ? clampNumber(Math.round((6_000 - Number(success.averageStartupMs)) / 1_000), -2, 5)
+    : 0;
+  return Math.round((18 + Math.min(12, Number(success.successCount || 1) * 3) + latencyBonus) * (1 - ageRatio));
 }
 
 function sourceConfidenceScore(
@@ -1295,7 +1331,9 @@ function sourceQualityReasons(
   if (source.rawSeeders >= 100) reasons.push('Fast start');
   else if (source.rawSeeders >= 50) reasons.push('Stable peers');
   else if (source.rawSeeders >= 15) reasons.push('Usable peers');
-  if (/\b1080p\b/i.test(source.title)) reasons.push('1080p');
+  if (/\b(?:2160p|4k|uhd)\b/i.test(source.title)) reasons.push('4K');
+  else if (/\b1440p\b/i.test(source.title)) reasons.push('2K');
+  else if (/\b1080p\b/i.test(source.title)) reasons.push('1080p');
   if (/\b(hevc|h\.?265|x265)\b/i.test(source.title)) reasons.push('HEVC');
   if (source.rawSize > 0 && source.rawSize <= 5 * 1024 * 1024 * 1024) reasons.push('Sane size');
   return reasons.filter((reason, index, list) => list.indexOf(reason) === index).slice(0, 6);
@@ -1303,6 +1341,7 @@ function sourceQualityReasons(
 
 function sourceQualityBucket(title = ''): SourceQualityFilter {
   if (/\b(?:2160p|4k|uhd)\b/i.test(title)) return '2160p';
+  if (/\b1440p\b/i.test(title)) return '1440p';
   if (/\b1080p\b/i.test(title)) return '1080p';
   if (/\b720p\b/i.test(title)) return '720p';
   if (/\b480p\b/i.test(title)) return '480p';
@@ -1312,6 +1351,8 @@ function sourceQualityBucket(title = ''): SourceQualityFilter {
 function sourceQualityLabel(quality: SourceQualityFilter) {
   if (quality === 'auto') return 'Auto';
   if (quality === 'other') return 'Other';
+  if (quality === '2160p') return '4K / 2160p';
+  if (quality === '1440p') return '2K / 1440p';
   return quality;
 }
 
@@ -1675,6 +1716,7 @@ function EpisodeWatchIndicator({ state }: { state: DesktopEpisodeWatchState }) {
 }
 
 export default function DesktopWatch() {
+  const queryClient = useQueryClient();
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
@@ -1699,6 +1741,7 @@ export default function DesktopWatch() {
   const [seekDraft, setSeekDraft] = useState<number | null>(null);
   const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
   const [playbackNotice, setPlaybackNotice] = useState<PlaybackNotice | null>(null);
+  const [recoveryExhausted, setRecoveryExhausted] = useState(false);
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(() => new Set());
   const [failedSourceVersion, setFailedSourceVersion] = useState(0);
@@ -1728,8 +1771,11 @@ export default function DesktopWatch() {
   const playSourceRef = useRef<(source: RankedNyaaItem, resumeOverride?: number) => void | Promise<void>>(() => {});
   const playNextEpisodeRef = useRef<(reason?: 'manual' | 'ended' | string) => void>(() => {});
   const playbackValueRef = useRef(playback);
+  const playbackProgressValueRef = useRef<DesktopPlaybackProgress | null | undefined>(null);
   const pendingAutoPlayEpisodeRef = useRef<number | null>(null);
   const preferenceSyncRetryRef = useRef<number | null>(null);
+  const midstreamRecoveryCountRef = useRef(0);
+  const preparedNextEpisodeRef = useRef('');
 
   const toggleSourceDetails = useCallback((sourceId: string) => {
     setExpandedSourceIds((current) => {
@@ -1836,9 +1882,11 @@ export default function DesktopWatch() {
       routeTitle: titleFromRoute(id),
     }),
     enabled: !!id,
-    placeholderData: (previous) => previous,
     staleTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    retry: 2,
+    retryDelay: (attempt) => 250 + attempt * 450,
   });
 
   const fallbackAnime = useMemo(() => fallbackAnimeFromRoute(id), [id]);
@@ -1974,23 +2022,54 @@ export default function DesktopWatch() {
   const installmentGraphData = installmentGraphQuery.data;
   const installmentGraphInitialLoading = Boolean(hasFullMetadata && !metadataFailed && installmentGraphQuery.isLoading);
 
-  const { data: episodeData } = useQuery({
+  const episodeQuery = useQuery({
     queryKey: ['episodes', episodeLookupId, episodePage],
     queryFn: async () => {
       if (!canFetchEpisodeMetadata) {
-        return { data: [], pagination: { last_visible_page: 1 } };
+        return {
+          data: [],
+          pagination: { last_visible_page: 1 },
+          streamnyaa: { status: 'estimated', provider: 'anime-count' },
+        };
       }
-      return fetchAnimeEpisodes(episodeLookupId, episodePage);
+      try {
+        return await fetchAnimeEpisodes(episodeLookupId, episodePage);
+      } catch (error) {
+        const estimatedCount = Math.max(knownAiredEpisodeCount(anime), requestedEpisode, 1);
+        return {
+          data: [],
+          pagination: { last_visible_page: Math.max(1, Math.ceil(estimatedCount / 100)) },
+          streamnyaa: {
+            status: 'estimated',
+            provider: 'anime-count',
+            error: error instanceof Error ? error.message : 'Episode titles are temporarily unavailable.',
+          },
+        };
+      }
     },
     enabled: canFetchEpisodeMetadata,
-    placeholderData: (previous) => previous,
     staleTime: 1000 * 60 * 10,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
   });
+  const episodeData = episodeQuery.data;
 
   const pageItems = episodeData?.data || [];
   const airedCount = knownAiredEpisodeCount(anime, pageItems);
-  const selectedEpisode = Math.max(1, Math.min(requestedEpisode || airedCount || 1, airedCount || 1));
+  const selectedEpisode = Math.max(1, requestedEpisode || airedCount || 1);
+  const episodeCatalogEstimated = episodeData?.streamnyaa?.status === 'estimated';
+  const selectedEpisodeWatchState = desktopEpisodeWatchState(anime, selectedEpisode, watchProgressRecords);
+  const sourceBrowserPath = useMemo(() => {
+    const query = new URLSearchParams({
+      q: anime.title,
+      ep: String(selectedEpisode),
+      ...(anime.mal_id || anime.id ? { animeId: String(anime.mal_id || anime.id) } : {}),
+    });
+    return `/nyaa?${query.toString()}`;
+  }, [anime.id, anime.mal_id, anime.title, selectedEpisode]);
+  const toggleSelectedEpisodeWatched = () => {
+    setDesktopEpisodeWatched(anime, selectedEpisode, !selectedEpisodeWatchState.completed);
+  };
   const episodeSearchTerm = episodeSearch.trim().toLowerCase();
   const longEpisodeRun = airedCount > EPISODE_WINDOW_SIZE;
   const pageEpisodeMap = useMemo<Map<number, EpisodeMetaEntry>>(() => {
@@ -2166,19 +2245,33 @@ export default function DesktopWatch() {
     });
   }, [anime, animeNotYetAired, id, selectedEpisode, selectedInstallment]);
 
-  const { data: sources, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
-    queryKey: ['desktop-watch-sources', anime?.title, anime?.title_english, anime?.title_romaji, selectedInstallment?.mal_id, selectedInstallment?.label, selectedEpisode, audioMode, audioPreference, sourceMode],
+  const sourceQueryKey = useMemo(() => [
+    'desktop-watch-sources',
+    anime?.title,
+    anime?.title_english,
+    anime?.title_romaji,
+    selectedInstallment?.mal_id,
+    selectedInstallment?.label,
+    selectedEpisode,
+    audioMode,
+    audioPreference,
+    sourceMode,
+  ] as const, [anime?.title, anime?.title_english, anime?.title_romaji, audioMode, audioPreference, selectedEpisode, selectedInstallment?.label, selectedInstallment?.mal_id, sourceMode]);
+
+  const { data: sources, error: sourcesError, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
+    queryKey: sourceQueryKey,
     queryFn: async ({ signal }) => {
       const epPadded = String(selectedEpisode).padStart(2, '0');
       const titleCandidates = sourceSearchTitleVariants(anime, id, selectedInstallment)
         .filter(isSafeSourceQueryTitle)
-        .slice(0, 6);
+        .slice(0, 5);
       const seasonHints = sourceSearchSeasonHints(anime, id, selectedInstallment);
       const partHints = sourceSearchPartHints(anime, id, selectedInstallment);
       const audioSuffix = audioMode === 'dub' ? ' dub' : '';
       const requestId = `${Date.now().toString(36)}-${selectedEpisode}-${sourceMode}`;
       const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const elapsedMs = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+      const remainingBudgetMs = () => Math.max(0, SOURCE_SEARCH_BUDGET_MS - elapsedMs());
       const isAborted = () => Boolean(signal?.aborted);
       const finish = (items: RankedNyaaItem[], stage: string) => {
         debugSourceLoading('done', {
@@ -2228,14 +2321,29 @@ export default function DesktopWatch() {
       };
 
       const combineSources = (items: RankedNyaaItem[]) => dedupeNyaaItems(items) as RankedNyaaItem[];
+      const publishPartial = (items: RankedNyaaItem[], stage: string) => {
+        if (isAborted() || !items.length) return;
+        const partial = combineSources(items);
+        queryClient.setQueryData<RankedNyaaItem[]>(sourceQueryKey, partial);
+        debugSourceLoading('partial', { request: requestId, stage, count: partial.length, totalMs: elapsedMs() });
+      };
 
       const runQuery = async (query: string, options: { pages?: number; wide?: boolean; deep?: boolean }) => {
-        if (isAborted()) return [];
+        if (isAborted() || remainingBudgetMs() <= 0) return [];
         const queryStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        const result = await searchNyaa(query, '1_2', '0', '1', options);
+        const timeoutMs = Math.min(SOURCE_QUERY_TIMEOUT_MS, remainingBudgetMs());
+        const result = await resolveWithin<NyaaItem[] | null>(
+          searchNyaa(query, '1_2', '0', '1', { ...options, signal }),
+          timeoutMs,
+          null,
+        );
         const queryMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - queryStartedAt);
         if (isAborted()) {
           debugSourceLoading('stale-query', { request: requestId, query, ms: queryMs });
+          return [];
+        }
+        if (!result) {
+          debugSourceLoading('query-timeout', { request: requestId, query, ms: queryMs });
           return [];
         }
         const normalized = normalizeSourcePool(result);
@@ -2244,7 +2352,11 @@ export default function DesktopWatch() {
       };
 
       const attemptedQueries = new Set<string>();
-      const tryQueries = async (queries: string[], options: { pages?: number; wide?: boolean; deep?: boolean }) => {
+      const tryQueries = async (
+        queries: string[],
+        options: { pages?: number; wide?: boolean; deep?: boolean },
+        maxQueries: number,
+      ) => {
         const pending: string[] = [];
         for (const rawQuery of queries) {
           const query = rawQuery.replace(/\s+/g, ' ').trim();
@@ -2253,17 +2365,21 @@ export default function DesktopWatch() {
           if (attemptedQueries.has(key)) continue;
           attemptedQueries.add(key);
           pending.push(query);
+          if (pending.length >= maxQueries) break;
         }
 
+        let accumulated: RankedNyaaItem[] = [];
         for (let index = 0; index < pending.length; index += SOURCE_QUERY_BATCH_SIZE) {
-          if (isAborted()) return [];
+          if (isAborted() || remainingBudgetMs() <= 0) return [];
           const batch = pending.slice(index, index + SOURCE_QUERY_BATCH_SIZE);
           const results = await Promise.all(batch.map(async (query) => ({ query, items: await runQuery(query, options) })));
           if (isAborted()) return [];
           const hitItems = combineSources(results.flatMap((result) => result.items));
-          if (hitItems.length) return hitItems;
+          accumulated = combineSources([...accumulated, ...hitItems]);
+          const healthyMatches = accumulated.filter((source) => source.playable && source.rawSeeders > 0);
+          if (healthyMatches.length >= 3) return accumulated;
         }
-        return [];
+        return accumulated;
       };
 
       const seasonCodeEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
@@ -2284,9 +2400,11 @@ export default function DesktopWatch() {
           `${cleanedTitle} ep ${selectedEpisode}${audioSuffix}`,
         ];
       });
-      const exact = await tryQueries([...seasonCodeEpisodeQueries, ...exactEpisodeQueries], { pages: 2, wide: false, deep: false });
+      const exact = await tryQueries([...seasonCodeEpisodeQueries, ...exactEpisodeQueries], { pages: 2, wide: false, deep: false }, 16);
       if (isAborted()) return finish([], 'aborted-after-exact');
-      if (exact.some((source) => source.matchTier === 'exact')) return finish(exact, 'exact');
+      publishPartial(exact, 'exact');
+      if (exact.filter((source) => source.matchTier === 'exact' && source.playable).length >= 3) return finish(exact, 'exact');
+      if (remainingBudgetMs() <= 0) return finish(exact, 'budget-after-exact');
 
       const seasonEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
         const stripped = stripSeasonDecorators(title) || cleanTitle(title);
@@ -2301,11 +2419,13 @@ export default function DesktopWatch() {
         });
         return queries;
       }));
-      const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 2, wide: true, deep: true });
+      const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 2, wide: true, deep: true }, 12);
       if (isAborted()) return finish([], 'aborted-after-season');
       const combinedSeason = combineSources([...exact, ...seasonEpisode]);
+      publishPartial(combinedSeason, 'season');
       if (sourceMode === 'strict') return finish(combinedSeason, 'strict-season');
-      if (combinedSeason.some((source) => source.matchTier === 'exact' || source.matchTier === 'likely')) return finish(combinedSeason, 'exact-or-likely');
+      if (combinedSeason.filter((source) => source.playable && (source.matchTier === 'exact' || source.matchTier === 'likely')).length >= 3) return finish(combinedSeason, 'exact-or-likely');
+      if (remainingBudgetMs() <= 0) return finish(combinedSeason, 'budget-after-season');
 
       const broadEpisodeQueries = titleCandidates.flatMap((title) => {
         const cleanedTitle = cleanTitle(title);
@@ -2315,12 +2435,14 @@ export default function DesktopWatch() {
           `${cleanedTitle} ${selectedEpisode}`,
         ];
       });
-      const broad = await tryQueries(broadEpisodeQueries, { pages: 5, wide: true, deep: true });
+      const broad = await tryQueries(broadEpisodeQueries, { pages: 3, wide: true, deep: true }, 8);
       const combinedEpisode = combineSources([...exact, ...seasonEpisode, ...broad]);
       if (isAborted()) return finish([], 'aborted-after-broad');
-      if (combinedEpisode.some((source) => source.matchTier === 'exact' || source.matchTier === 'likely') || (sourceMode === 'balanced' && combinedEpisode.length)) return finish(combinedEpisode, 'broad-needed');
+      publishPartial(combinedEpisode, 'broad');
+      if (combinedEpisode.filter((source) => source.playable && (source.matchTier === 'exact' || source.matchTier === 'likely')).length >= 3) return finish(combinedEpisode, 'broad-needed');
+      if (remainingBudgetMs() <= 0) return finish(combinedEpisode, 'budget-after-broad');
 
-      const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 5, wide: true, deep: true });
+      const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 3, wide: true, deep: true }, 4);
       if (isAborted()) return finish([], 'aborted-after-fallback');
       if (fallback.length) return finish(combineSources([...combinedEpisode, ...fallback]), 'fallback');
 
@@ -2329,6 +2451,12 @@ export default function DesktopWatch() {
     enabled: sourceSearchReady,
     staleTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    retry: (failureCount, error) => {
+      const code = String((error as { code?: string })?.code || '');
+      return failureCount < 2 && code !== 'invalid' && code !== 'cancelled';
+    },
+    retryDelay: (attempt) => 350 + attempt * 600,
   });
 
   const failedSourceRecords = useMemo(() => loadSourceFailureRecords(), [failedSourceVersion]);
@@ -2384,6 +2512,7 @@ export default function DesktopWatch() {
   const sourceQualityOptions = useMemo<SourceQualityFilter[]>(() => {
     const options: SourceQualityFilter[] = ['auto'];
     if (qualityCounts.has('2160p')) options.push('2160p');
+    if (qualityCounts.has('1440p')) options.push('1440p');
     options.push('1080p', '720p', '480p');
     if (qualityCounts.has('other')) options.push('other');
     return options;
@@ -2417,13 +2546,17 @@ export default function DesktopWatch() {
     ? `Finding sources for Episode ${selectedEpisode}...`
     : sortedSources.length
       ? `Sources for Episode ${selectedEpisode}`
-      : `No reliable sources found for Episode ${selectedEpisode}`;
+      : sourcesError
+        ? `Source service interrupted for Episode ${selectedEpisode}`
+        : `No reliable sources found for Episode ${selectedEpisode}`;
   const sourceSectionSubtitle = animeNotYetAired
     ? 'This title is listed as upcoming. StreamNyaa will enable source search after episodes are released.'
     : sortedSources.length
     ? 'Ranked by episode accuracy, quality, seeds, and subtitle preference.'
     : sourcesLoading || (sourcesFetching && !sources?.length)
       ? 'Checking episode match, seed health, audio preference, and release quality.'
+    : sourcesError
+      ? `${sourcesError instanceof Error ? sourcesError.message : 'Source discovery could not finish.'} Saved results remain available; retry when the connection recovers.`
     : sourceMode === 'broad'
       ? 'Try another episode, audio preference, or refresh the source list.'
       : 'Try Broad mode to include less certain matches.';
@@ -2437,6 +2570,11 @@ export default function DesktopWatch() {
     selectedEpisodeNumberRef.current = selectedEpisode;
     maxEpisodeRef.current = Math.max(airedCount || 0, allEpisodes.length || 0, selectedEpisode || 1);
   }, [airedCount, allEpisodes.length, selectedEpisode]);
+
+  useEffect(() => {
+    midstreamRecoveryCountRef.current = 0;
+    setRecoveryExhausted(false);
+  }, [selectedEpisode]);
 
   useEffect(() => {
     activeSourceIdValueRef.current = activeSourceId;
@@ -2467,8 +2605,9 @@ export default function DesktopWatch() {
     refetchInterval: (query) => {
       const progress = query.state.data;
       if (progress?.state === 'stopped') return false;
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return 5_000;
-      return progress?.state === 'playing' || progress?.state === 'ready' ? 2_500 : 1_200;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return 8_000;
+      if (progress?.buffering || ['retrying', 'switching'].includes(String(progress?.recovery_stage || ''))) return 900;
+      return progress?.state === 'playing' || progress?.state === 'ready' ? 4_000 : 1_200;
     },
     retry: 1,
   });
@@ -2476,7 +2615,83 @@ export default function DesktopWatch() {
   const playbackSteps = ['Metadata', 'Peers', 'Buffer', 'Play'];
 
   useEffect(() => {
+    const busy = Boolean(playback && (
+      playbackProgress?.buffering
+      || playbackProgress?.recovery_stage === 'retrying'
+      || playbackProgress?.recovery_stage === 'switching'
+      || sourcesBusy
+    ));
+    window.dispatchEvent(new CustomEvent('streamnyaa:playback-workload', { detail: { busy } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('streamnyaa:playback-workload', { detail: { busy: false } }));
+    };
+  }, [playback, playbackProgress?.buffering, playbackProgress?.recovery_stage, sourcesBusy]);
+
+  useEffect(() => {
+    if (!playback || !playbackProgress?.ok) return;
+    const duration = Number(playbackProgress.duration_seconds || 0);
+    const current = Number(playbackProgress.current_seconds || 0);
+    if (duration <= 0 || current / duration < 0.6) return;
+    const nextEpisode = selectedEpisode + 1;
+    if (nextEpisode > Math.max(1, maxEpisodeRef.current)) return;
+    const prepareKey = `${id}|${nextEpisode}`;
+    if (preparedNextEpisodeRef.current === prepareKey) return;
+    preparedNextEpisodeRef.current = prepareKey;
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set('ep', String(nextEpisode));
+    const prepare = () => void preloadDesktopWatchData(`${nextUrl.pathname}${nextUrl.search}`, true);
+    const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number };
+    const handle = idleWindow.requestIdleCallback?.(prepare, { timeout: 1_500 });
+    const timer = handle === undefined ? window.setTimeout(prepare, 500) : undefined;
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [id, playback, playbackProgress?.current_seconds, playbackProgress?.duration_seconds, playbackProgress?.ok, selectedEpisode]);
+
+  useEffect(() => {
+    playbackProgressValueRef.current = playbackProgress;
+  }, [playbackProgress]);
+
+  const persistActivePlaybackCheckpoint = useCallback((positionOverride?: number) => {
+    const activePlayback = playbackValueRef.current;
+    const progress = playbackProgressValueRef.current;
+    if (!activePlayback || !progress?.ok || progress.state === 'stopped') return;
+
+    const positionSeconds = Math.max(0, Number(
+      Number.isFinite(positionOverride) ? positionOverride : progress.current_seconds || 0,
+    ));
+    const durationSeconds = Math.max(0, Number(progress.duration_seconds || activePlayback.source.durationSeconds || 0));
+    if (positionSeconds <= 0 && durationSeconds <= 0) return;
+    const watchedPercent = durationSeconds > 0
+      ? Math.max(0, Math.min(100, (positionSeconds / durationSeconds) * 100))
+      : Number(activePlayback.source.progressPercent || 0);
+    const completed = watchedPercent >= 92 || (durationSeconds > 0 && durationSeconds - positionSeconds <= 90);
+    const updatedAt = Date.now();
+
+    updateLocalPlaybackHistoryProgress(activePlayback.source, {
+      currentSeconds: positionSeconds,
+      durationSeconds,
+    });
+    saveDesktopWatchProgress({
+      animeId: activePlayback.source.animeId || activePlayback.source.animeTitle || activePlayback.source.title,
+      title: activePlayback.source.animeTitle || activePlayback.source.title,
+      poster: activePlayback.source.poster || activePlayback.source.image || activePlayback.source.banner,
+      episode: activePlayback.source.episode || 1,
+      positionSeconds,
+      durationSeconds: durationSeconds || undefined,
+      progressPercent: watchedPercent,
+      updatedAt,
+      completed,
+    });
+  }, []);
+
+  useEffect(() => () => {
+    persistActivePlaybackCheckpoint();
+  }, [persistActivePlaybackCheckpoint]);
+
+  useEffect(() => {
     if (playback && playbackProgress?.state === 'stopped') {
+      persistActivePlaybackCheckpoint();
       setPlayback(null);
       setPlaybackNotice({ tone: 'success', text: playbackProgress.message || 'Playback ended and temporary files were cleaned.' });
     }
@@ -2484,30 +2699,15 @@ export default function DesktopWatch() {
 
   useEffect(() => {
     if (!playback || !playbackProgress?.ok || playbackProgress.state === 'stopped') return;
-    if (!playbackProgress.current_seconds && !playbackProgress.duration_seconds && !playbackProgress.progress) return;
-    updateLocalPlaybackHistoryProgress(playback.source, {
-      currentSeconds: playbackProgress.current_seconds,
-      durationSeconds: playbackProgress.duration_seconds,
-      progressPercent: playbackProgress.progress,
-    });
-    saveDesktopWatchProgress({
-      animeId: playback.source.animeId || playback.source.animeTitle || playback.source.title,
-      title: playback.source.animeTitle || playback.source.title,
-      poster: playback.source.poster || playback.source.image || playback.source.banner,
-      episode: playback.source.episode || selectedEpisode || 1,
-      positionSeconds: Number(playbackProgress.current_seconds || 0),
-      durationSeconds: playbackProgress.duration_seconds || undefined,
-      progressPercent: playbackProgress.progress || undefined,
-      updatedAt: Date.now(),
-    });
+    if (!playbackProgress.current_seconds && !playbackProgress.duration_seconds) return;
+    persistActivePlaybackCheckpoint();
   }, [
     playback,
     playbackProgress?.current_seconds,
     playbackProgress?.duration_seconds,
     playbackProgress?.ok,
-    playbackProgress?.progress,
     playbackProgress?.state,
-    selectedEpisode,
+    persistActivePlaybackCheckpoint,
   ]);
 
   useEffect(() => {
@@ -2551,14 +2751,7 @@ export default function DesktopWatch() {
   }, [airedCount, episodeSearch, searchedEpisodes, selectEpisode, selectedEpisode]);
 
   const sourcePayloadFor = useCallback((source: NyaaItem, resumeOverride?: number): LocalPlaybackSource => {
-    const historyEntry = findLocalPlaybackHistoryItem({
-      animeTitle: anime.title,
-      animeId: anime.mal_id || anime.id,
-      episode: selectedEpisode,
-      magnet: source.magnet,
-      title: source.title,
-    });
-    return {
+    const baseSource: LocalPlaybackSource = {
       magnet: source.magnet,
       torrentUrl: torrentUrlFor(source),
       infoHash: source.infoHash,
@@ -2571,9 +2764,16 @@ export default function DesktopWatch() {
       image: posterFor(anime),
       poster: posterFor(anime),
       banner: wideImageFor(anime),
-      progressPercent: historyEntry?.progressPercent ?? 0,
-      resumeSeconds: Number.isFinite(resumeOverride) ? Math.max(0, Number(resumeOverride)) : (historyEntry?.resumeSeconds ?? 0),
-      durationSeconds: historyEntry?.durationSeconds ?? 0,
+    };
+    const checkpoint = resolveDesktopPlaybackCheckpoint(baseSource);
+    const hasResumeOverride = Number.isFinite(resumeOverride);
+    return {
+      ...baseSource,
+      progressPercent: checkpoint?.progressPercent ?? 0,
+      progressUpdatedAt: hasResumeOverride ? Date.now() : checkpoint?.updatedAt,
+      resumeSeconds: hasResumeOverride ? Math.max(0, Number(resumeOverride)) : (checkpoint?.positionSeconds ?? 0),
+      durationSeconds: checkpoint?.durationSeconds ?? 0,
+      completed: checkpoint?.completed ?? false,
     };
   }, [anime, selectedEpisode]);
 
@@ -2595,6 +2795,7 @@ export default function DesktopWatch() {
       setPlaybackNotice({ tone: 'error', text: `${source.playableLabel} source. StreamNyaa will only play sources that pass the same-anime, same-installment, same-episode checks.` });
       return;
     }
+    persistActivePlaybackCheckpoint(resumeOverride);
     const requestId = playbackRequestIdRef.current + 1;
     playbackRequestIdRef.current = requestId;
     playActionLockRef.current = true;
@@ -2631,9 +2832,12 @@ export default function DesktopWatch() {
         }
 
         try {
+          const candidateStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
           const { result, playbackSource } = await openOneSource(candidate, resumeOverride);
           if (playbackRequestIdRef.current !== requestId) return;
-          rememberSourceSuccess(candidate);
+          const candidateStartupMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - candidateStartedAt;
+          rememberSourceSuccess(candidate, candidateStartupMs);
+          setRecoveryExhausted(false);
           setFailedSourceVersion((value) => value + 1);
           setPlayback({ torrentId: result.torrent_id!, title: result.title || candidate.title, source: playbackSource });
           syncPlayerPreferences('player-opened');
@@ -2675,7 +2879,7 @@ export default function DesktopWatch() {
         playActionLockRef.current = false;
       }
     }
-  }, [activeSourceId, anime?.id, anime?.mal_id, exactSources.length, likelySources.length, openOneSource, playableSources, selectedEpisode, sourceMode, syncPlayerPreferences]);
+  }, [activeSourceId, anime?.id, anime?.mal_id, exactSources.length, likelySources.length, openOneSource, persistActivePlaybackCheckpoint, playableSources, selectedEpisode, sourceMode, syncPlayerPreferences]);
 
   useEffect(() => {
     playSourceRef.current = playSource;
@@ -2685,6 +2889,20 @@ export default function DesktopWatch() {
     if (!nextPlayableSource) return;
     void playSource(nextPlayableSource);
   }, [nextPlayableSource, playSource]);
+
+  const retryCurrentSource = useCallback(() => {
+    const currentSource = playbackValueRef.current?.source;
+    if (!currentSource) return;
+    const currentId = currentSource.infoHash || currentSource.magnet || currentSource.title;
+    const candidate = playableSources.find((source) => (
+      (source.infoHash || source.magnet || source.title) === currentId
+    ));
+    if (!candidate) return;
+    const position = Number(playbackProgressValueRef.current?.current_seconds || currentSource.resumeSeconds || 0);
+    setRecoveryExhausted(false);
+    setPlaybackNotice({ tone: 'loading', text: `Retrying the current release at ${formatPlaybackTime(position)}...` });
+    void playSource(candidate, position);
+  }, [playSource, playableSources]);
 
   const runPlayerControl = useCallback(async (action: DesktopPlayerControlAction, value?: number) => {
     if (!playback) return;
@@ -2785,13 +3003,14 @@ export default function DesktopWatch() {
         ? `Auto-opening episode ${nextEpisode}...`
         : `Opening episode ${nextEpisode}...`,
     });
+    persistActivePlaybackCheckpoint();
     playbackRequestIdRef.current += 1;
     playActionLockRef.current = false;
     activeSourceIdValueRef.current = null;
     setActiveSourceId(null);
     setPlayback(null);
     playEpisodeNumber(nextEpisode);
-  }, [playEpisodeNumber]);
+  }, [persistActivePlaybackCheckpoint, playEpisodeNumber]);
 
   useEffect(() => {
     playNextEpisodeRef.current = playNextEpisode;
@@ -2836,19 +3055,40 @@ export default function DesktopWatch() {
       const candidates = currentIndex >= 0
         ? [...pool.slice(currentIndex + 1), ...pool.slice(0, currentIndex)]
         : pool;
-      const backup = candidates.find((candidate) => candidate.playable !== false);
+      const currentCandidate = currentIndex >= 0 ? pool[currentIndex] : null;
+      if (currentCandidate) {
+        rememberSourceFailure(currentCandidate, 'Midstream buffer stopped advancing.', {
+          animeId: currentSource?.animeId,
+          episode,
+        });
+        setFailedSourceVersion((value) => value + 1);
+      }
+      const failedRecords = loadSourceFailureRecords();
+      const backup = candidates.find((candidate) => (
+        candidate.playable !== false
+        && (candidate.infoHash || candidate.magnet || candidate.title) !== currentId
+        && !sourceFailureFor(candidate, failedRecords)
+      ));
+      if (midstreamRecoveryCountRef.current >= 3) {
+        setRecoveryExhausted(true);
+        setPlaybackNotice({ tone: 'error', text: 'Automatic recovery tried three backup releases. Choose a recovery action instead of waiting on the stalled stream.' });
+        return;
+      }
       if (!backup) {
-        setPlaybackNotice({ tone: 'error', text: 'No other verified source is available for this episode.' });
+        setRecoveryExhausted(true);
+        setPlaybackNotice({ tone: 'error', text: 'No other healthy verified source is available for this episode.' });
         return;
       }
 
       const position = Number(event.position_seconds || 0);
+      persistActivePlaybackCheckpoint(Number.isFinite(position) ? Math.max(0, position) : undefined);
+      midstreamRecoveryCountRef.current += 1;
       playbackRequestIdRef.current += 1;
       playActionLockRef.current = false;
       activeSourceIdValueRef.current = null;
       setActiveSourceId(null);
       console.info(`[StreamNyaa Watch] Player requested backup recovery episode=${episode} position=${position.toFixed(1)}`);
-      setPlaybackNotice({ tone: 'loading', text: 'Current stream stalled. Opening the next verified source...' });
+      setPlaybackNotice({ tone: 'loading', text: `Current stream stalled. Opening backup ${midstreamRecoveryCountRef.current} of 3 at ${formatPlaybackTime(position)}...` });
       void playSourceRef.current(backup, Number.isFinite(position) ? Math.max(0, position) : 0);
     }).then((cleanup) => {
       if (!mounted) {
@@ -2865,11 +3105,12 @@ export default function DesktopWatch() {
 
   const watchEpisodeFromCard = useCallback((episodeNumber: number) => {
     if (suppressEpisodeClickRef.current) return;
-    playEpisodeNumber(episodeNumber);
-  }, [playEpisodeNumber]);
+    selectEpisode(episodeNumber);
+  }, [selectEpisode]);
 
   const startEpisodeRailDrag = useCallback((event: any) => {
     if (event.button !== 0) return;
+    if (isEpisodeInteractiveTarget(event.target)) return;
     const rail = episodesRailRef.current;
     if (!rail || rail.scrollWidth <= rail.clientWidth) return;
     episodeDragRef.current = {
@@ -2894,7 +3135,7 @@ export default function DesktopWatch() {
     if (!rail || !drag.dragging || drag.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - drag.startX;
     const deltaY = event.clientY - drag.startY;
-    if (!drag.moved && Math.hypot(deltaX, deltaY) <= EPISODE_RAIL_DRAG_THRESHOLD) return;
+    if (!drag.moved && !isIntentionalHorizontalDrag(deltaX, deltaY, EPISODE_RAIL_DRAG_THRESHOLD)) return;
     if (!drag.moved) {
       drag.moved = true;
       suppressEpisodeClickRef.current = true;
@@ -2973,6 +3214,7 @@ export default function DesktopWatch() {
 
   const stopPlayback = useCallback(async () => {
     try {
+      persistActivePlaybackCheckpoint();
       setPlaybackNotice({ tone: 'loading', text: 'Stopping the active stream and cleaning temporary files...' });
       const result = await stopDesktopPlayback();
       setPlayback(null);
@@ -2981,7 +3223,7 @@ export default function DesktopWatch() {
     } catch (error) {
       setPlaybackNotice({ tone: 'error', text: errorMessage(error, 'Playback could not be stopped.') });
     }
-  }, []);
+  }, [persistActivePlaybackCheckpoint]);
 
   if (!id) return <div className="py-24 text-center text-white">Select an anime to continue.</div>;
 
@@ -3130,6 +3372,19 @@ export default function DesktopWatch() {
         </aside>
 
         <main className="min-w-0 py-8">
+          {metadataFailed ? (
+            <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-amber-300/15 bg-amber-200/[0.045] px-4 py-3 text-sm text-amber-50/72" role="status">
+              <span>Anime details could not refresh. The current screen remains usable while the primary service reconnects.</span>
+              <button
+                type="button"
+                onClick={() => void detailsQuery.refetch()}
+                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md bg-white/[0.07] px-3 font-semibold text-white transition-colors hover:bg-white/[0.11]"
+              >
+                <RotateCw className="h-3.5 w-3.5" />
+                Retry
+              </button>
+            </div>
+          ) : null}
           <section>
             <div className="sn-glass-panel mb-5 overflow-hidden rounded-[28px] p-5">
               <div className="mb-4 flex items-start justify-between gap-4">
@@ -3378,6 +3633,21 @@ export default function DesktopWatch() {
                 </button>
                 <button
                   type="button"
+                  onClick={toggleSelectedEpisodeWatched}
+                  aria-pressed={selectedEpisodeWatchState.completed}
+                  aria-label={`${selectedEpisodeWatchState.completed ? 'Mark unwatched' : 'Mark watched'} episode ${selectedEpisode}`}
+                  title={selectedEpisodeWatchState.completed ? 'Mark this episode as unwatched' : 'Mark this episode as watched'}
+                  className={`hidden min-h-11 items-center gap-2 rounded-xl px-4 text-xs font-black uppercase tracking-[0.14em] transition-all active:scale-[0.98] md:inline-flex ${
+                    selectedEpisodeWatchState.completed
+                      ? 'bg-emerald-400/[0.12] text-emerald-200 shadow-inner shadow-emerald-300/[0.08] hover:bg-emerald-400/[0.18]'
+                      : 'bg-white/[0.065] text-white/66 hover:bg-white/[0.11] hover:text-white'
+                  }`}
+                >
+                  <Check className="h-4 w-4" strokeWidth={2.5} />
+                  {selectedEpisodeWatchState.completed ? 'Watched' : 'Mark watched'}
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     const next = !autoOpenBestSource;
                     setAutoOpenBestSource(next);
@@ -3411,6 +3681,19 @@ export default function DesktopWatch() {
                 </div>
               </div>
             </div>
+            {episodeCatalogEstimated ? (
+              <div className="mb-3 flex items-center justify-between gap-4 rounded-lg border border-amber-300/15 bg-amber-200/[0.045] px-4 py-2.5 text-sm text-amber-50/72" role="status">
+                <span>Episode selection is available. Titles are refreshing in the background.</span>
+                <button
+                  type="button"
+                  onClick={() => void episodeQuery.refetch()}
+                  className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md bg-white/[0.07] px-3 font-semibold text-white transition-colors hover:bg-white/[0.11]"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  Refresh
+                </button>
+              </div>
+            ) : null}
             {episodeSearchTerm && !displayedEpisodes.length ? (
               <div className="rounded-xl border border-white/[0.10] bg-white/[0.04] p-6 text-sm font-bold text-white/58">
                 No episodes matched that search. Try a title keyword or an episode number.
@@ -3697,12 +3980,38 @@ export default function DesktopWatch() {
                     : 'border-amber-300/18 bg-amber-300/[0.08] text-amber-50/86'
               }`}>
                 <span>{playbackNotice.text}</span>
-                {playbackNotice.tone === 'error' && nextPlayableSource ? (
+                {playbackNotice.tone === 'error' && recoveryExhausted ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={retryCurrentSource}
+                      className="rounded-lg bg-white/[0.08] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/[0.13]"
+                    >
+                      Retry current source
+                    </button>
+                    {nextPlayableSource ? (
+                      <button
+                        type="button"
+                        disabled={Boolean(activeSourceId) || sourcesBusy}
+                        onClick={playNextPlayableSource}
+                        className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Try another source
+                      </button>
+                    ) : null}
+                    <Link
+                      to={sourceBrowserPath}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+                    >
+                      Open Source Browser
+                    </Link>
+                  </div>
+                ) : playbackNotice.tone === 'error' && nextPlayableSource ? (
                   <button
                     type="button"
                     disabled={Boolean(activeSourceId) || sourcesBusy}
                     onClick={playNextPlayableSource}
-                    className="rounded-full border border-white/12 bg-white px-4 py-2 text-xs font-black text-black transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-white px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Try next playable source
                   </button>
@@ -3716,7 +4025,7 @@ export default function DesktopWatch() {
               const volumeValue = Math.max(0, Math.min(130, Number(volumeDraft ?? playbackProgress?.volume ?? 100)));
               const watchedPercent = durationSeconds > 0
                 ? Math.max(0, Math.min(100, (currentSeconds / durationSeconds) * 100))
-                : Math.max(0, Math.min(100, playbackStage.progress));
+                : Math.max(0, Math.min(100, Number(playback.source.progressPercent || 0)));
               const isPaused = playbackProgress?.paused ?? false;
               const playerBusy = Boolean(playerControlBusy);
               const artworkCandidates = uniqueImageCandidates([
@@ -3754,6 +4063,38 @@ export default function DesktopWatch() {
                       </div>
 
                       <div>
+                        {playbackProgress?.buffering ? (
+                          <div className="mb-4 rounded-xl border border-primary/20 bg-black/55 px-4 py-3 backdrop-blur-sm" role="status" aria-live="polite">
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <Loader2 className={`h-4 w-4 shrink-0 text-primary ${playbackProgress.buffer_advancing ? 'animate-spin' : ''}`} />
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-white">
+                                    {playbackProgress.buffer_percent == null
+                                      ? 'Connecting to the stream'
+                                      : `Buffering ${Math.round(playbackProgress.buffer_percent)}%`}
+                                  </p>
+                                  <p className="mt-0.5 truncate text-xs text-white/55">
+                                    {playbackProgress.buffer_advancing
+                                      ? `${Math.round(playbackProgress.buffered_seconds || 0)}s ready ahead`
+                                      : playbackProgress.stall_seconds
+                                        ? `Buffer has not advanced for ${playbackProgress.stall_seconds}s · recovery ${playbackProgress.recovery_stage || 'pending'}`
+                                        : 'Waiting for playable data'}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="shrink-0 text-sm font-semibold tabular-nums text-primary">
+                                {playbackProgress.buffer_percent == null ? '—' : `${Math.round(playbackProgress.buffer_percent)}%`}
+                              </span>
+                            </div>
+                            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                              <span
+                                className={`block h-full rounded-full bg-primary transition-[width] duration-300 ${playbackProgress.buffer_percent == null ? 'w-1/4 animate-pulse' : ''}`}
+                                style={playbackProgress.buffer_percent == null ? undefined : { width: `${Math.max(2, Math.min(100, playbackProgress.buffer_percent))}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
                         <div className="mb-4">
                           <div className="mb-2 flex items-center justify-between text-xs font-bold text-white/58">
                             <span>{durationSeconds > 0 ? formatPlaybackTime(currentSeconds) : '--:--'}</span>
@@ -4031,9 +4372,11 @@ export default function DesktopWatch() {
               </div>
             ) : (
               <div className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.05))] p-8 text-center text-white/62">
-                <p className="text-lg font-black text-white">{sourceQuality === 'auto' ? 'No playable source found' : `No ${sourceQualityLabel(sourceQuality)} source found`}</p>
+                <p className="text-lg font-black text-white">{sourcesError ? 'Source lookup was interrupted' : sourceQuality === 'auto' ? 'No playable source found' : `No ${sourceQualityLabel(sourceQuality)} source found`}</p>
                 <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/50">
-                  {sourceQuality === 'auto'
+                  {sourcesError
+                    ? 'This is a connection or provider error, not proof that the episode has no releases. Retry to continue the primary search.'
+                    : sourceQuality === 'auto'
                     ? 'No confident title-compatible sources were found for this anime and episode. Try switching audio mode, using Broad, or opening manual source search.'
                     : 'This episode has title-compatible sources in other qualities. Switch back to Auto or pick another quality to keep browsing.'}
                 </p>
@@ -4111,7 +4454,7 @@ function clampNumber(value: number, min: number, max: number) {
 }
 
 function playbackStageMeta(playbackProgress?: DesktopPlaybackProgress | null): PlaybackStageView {
-  const rawProgress = Number(playbackProgress?.progress || 0);
+  const rawProgress = Number(playbackProgress?.buffer_percent ?? 0);
   const message = playbackProgress?.message?.trim();
   switch (playbackProgress?.state) {
     case 'ready':

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Filter, Heart, Search, SlidersHorizontal, Sparkles, Star, TrendingUp, Tv, X } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -16,6 +17,7 @@ import {
 import { getCurrentAnimeSeason } from '../lib/currentSeason';
 import { saveDesktopAudioPreference, type DesktopAudioPreference } from '../lib/desktop';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
+import { desktopPosterCandidates, desktopSpotlightArtworkCandidates } from '../lib/desktopArtwork';
 
 type ExploreMode = 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year';
 type VisualFilterKey = 'genre' | 'season' | 'status' | 'format' | 'source' | 'yearRange' | 'audio' | 'rating' | 'episodes' | 'popularity';
@@ -214,6 +216,7 @@ function fallbackAnime(id: number, malId: number | undefined, title: string, sco
   const cover = fallbackCover(id);
   return {
     id,
+    anilist_id: id,
     mal_id: malId || id,
     title,
     title_english: title,
@@ -326,9 +329,9 @@ const fallbackByMode: Record<ExploreMode, any[]> = {
     fallbackAnime(11061, 11061, 'Hunter x Hunter', 9.0, 148, 2011, ['Action', 'Adventure']),
     fallbackAnime(1735, 1735, 'Naruto: Shippuden', 8.3, 500, 2007, ['Action', 'Adventure']),
     fallbackAnime(5114, 5114, 'Fullmetal Alchemist: Brotherhood', 9.1, 64, 2009, ['Action', 'Drama']),
-    fallbackAnime(30276, 30276, 'One Punch Man', 8.5, 12, 2015, ['Action', 'Comedy']),
+    fallbackAnime(21087, 30276, 'One Punch Man', 8.5, 12, 2015, ['Action', 'Comedy']),
     fallbackAnime(11757, 11757, 'Sword Art Online', 7.2, 25, 2012, ['Action', 'Fantasy']),
-    fallbackAnime(31933, 31933, 'JoJo’s Bizarre Adventure: Diamond is Unbreakable', 8.5, 39, 2016, ['Action', 'Adventure']),
+    fallbackAnime(21450, 31933, 'JoJo’s Bizarre Adventure: Diamond is Unbreakable', 8.5, 39, 2016, ['Action', 'Adventure']),
     fallbackAnime(9253, 9253, 'Steins;Gate', 9.1, 24, 2011, ['Drama', 'Sci-Fi']),
   ],
   top: [
@@ -337,11 +340,11 @@ const fallbackByMode: Record<ExploreMode, any[]> = {
     fallbackAnime(11061, 11061, 'Hunter x Hunter', 9.0, 148, 2011, ['Action', 'Adventure']),
     fallbackAnime(9253, 9253, 'Steins;Gate', 9.1, 24, 2011, ['Drama', 'Sci-Fi']),
     fallbackAnime(17074, 17074, 'Monogatari Series: Second Season', 8.8, 26, 2013, ['Mystery', 'Supernatural']),
-    fallbackAnime(35180, 35180, '3-gatsu no Lion 2nd Season', 9.0, 22, 2017, ['Drama']),
-    fallbackAnime(28977, 28977, 'Gintama Season 4', 9.0, 51, 2015, ['Action', 'Comedy']),
+    fallbackAnime(98478, 35180, '3-gatsu no Lion 2nd Season', 9.0, 22, 2017, ['Drama']),
+    fallbackAnime(20996, 28977, 'Gintama Season 4', 9.0, 51, 2015, ['Action', 'Comedy']),
     fallbackAnime(9969, 9969, 'Gintama Season 2', 9.0, 51, 2011, ['Action', 'Comedy']),
-    fallbackAnime(37987, 37987, 'Violet Evergarden Movie', 8.9, 1, 2020, ['Drama']),
-    fallbackAnime(40028, 40028, 'Attack on Titan Final Season', 8.8, 16, 2020, ['Action', 'Drama']),
+    fallbackAnime(103047, 37987, 'Violet Evergarden Movie', 8.9, 1, 2020, ['Drama']),
+    fallbackAnime(110277, 40028, 'Attack on Titan Final Season', 8.8, 16, 2020, ['Action', 'Drama']),
   ],
   airing: [
     fallbackAnime(154587, 52991, 'Frieren: Beyond Journey’s End', 9.3, 28, 2023, ['Adventure', 'Drama']),
@@ -659,7 +662,7 @@ function EmptyState({ text, children }: { text: string; children?: ReactNode }) 
   );
 }
 
-function PremiumSelect({
+export function PremiumSelect({
   value,
   options,
   onChange,
@@ -674,20 +677,64 @@ function PremiumSelect({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0, width: 168, maxHeight: 288 });
   const selected = options.find((option) => option.value === value) || options[0];
+
+  const positionMenu = () => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const gap = 8;
+    const viewportPadding = 12;
+    const desiredHeight = Math.min(288, options.length * 36 + 8);
+    const roomBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const roomAbove = rect.top - viewportPadding;
+    const openUpward = roomBelow < Math.min(160, desiredHeight) && roomAbove > roomBelow;
+    const maxHeight = Math.max(96, Math.min(desiredHeight, openUpward ? roomAbove - gap : roomBelow - gap));
+    const top = openUpward
+      ? Math.max(viewportPadding, rect.top - maxHeight - gap)
+      : Math.min(window.innerHeight - viewportPadding - maxHeight, rect.bottom + gap);
+    const width = Math.max(168, rect.width);
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - viewportPadding - width));
+    setMenuPosition({ left, top, width, maxHeight });
+  };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    positionMenu();
+  }, [open, options.length]);
 
   useEffect(() => {
     if (!open) return;
     const handlePointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    const handleViewportChange = () => positionMenu();
     window.addEventListener('mousedown', handlePointerDown);
-    return () => window.removeEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
   }, [open]);
 
   return (
     <div ref={rootRef} className={`relative ${minWidth}`}>
       <button
+        ref={triggerRef}
         type="button"
         aria-label={ariaLabel}
         aria-haspopup="listbox"
@@ -698,10 +745,13 @@ function PremiumSelect({
         <span className="truncate">{selected?.label || value}</span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-white/50 transition ${open ? 'rotate-180 text-primary' : ''}`} />
       </button>
-      {open ? (
+      {open && typeof document !== 'undefined' ? createPortal(
         <div
+          ref={menuRef}
           role="listbox"
-          className="absolute left-0 top-[calc(100%+8px)] z-50 max-h-72 w-full overflow-auto rounded-xl bg-[#111116]/98 p-1 shadow-2xl shadow-black/45 ring-1 ring-primary/18 backdrop-blur-xl"
+          aria-label={ariaLabel}
+          className="fixed z-[1000] overflow-auto rounded-lg bg-[#111116] p-1 shadow-sm ring-1 ring-primary/24"
+          style={menuPosition}
         >
           {options.map((option) => {
             const active = option.value === value;
@@ -715,9 +765,9 @@ function PremiumSelect({
                   onChange(option.value);
                   setOpen(false);
                 }}
-                className={`flex min-h-9 w-full items-center rounded-lg px-3 text-left text-sm font-black transition ${
+                className={`flex min-h-9 w-full items-center rounded-md px-3 text-left text-sm font-bold transition-colors ${
                   active
-                    ? 'bg-primary text-white shadow-[0_8px_22px_rgba(244,63,94,0.22)]'
+                    ? 'bg-primary text-white'
                     : 'text-white/70 hover:bg-white/[0.075] hover:text-white'
                 }`}
               >
@@ -725,67 +775,11 @@ function PremiumSelect({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
-}
-
-function uniqueExploreImages(values: any[]) {
-  return values
-    .map((value) => String(value || '').trim())
-    .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
-}
-
-function coverCandidatesFor(anime: any) {
-  const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
-  const fallbackCover = fallbackId > 0 ? `https://img.anili.st/media/${fallbackId}` : '';
-  const posterCandidates = uniqueExploreImages([
-    anime?.coverImage?.extraLarge,
-    anime?.coverImage?.large,
-    anime?.coverImage?.medium,
-    anime?.cover_image,
-    anime?.cover,
-    anime?.poster,
-    anime?.posterImage,
-    anime?.poster_image,
-    anime?.images?.webp?.large_image_url,
-    anime?.images?.jpg?.large_image_url,
-    anime?.images?.webp?.image_url,
-    anime?.images?.jpg?.image_url,
-    anime?.thumbnail,
-    anime?.image_url,
-    anime?.image,
-  ]).filter((value) => !/\/banner\//i.test(value));
-
-  const bannerFallbacks = uniqueExploreImages([
-    anime?.banner_image,
-    anime?.bannerImage,
-    anime?.backdrop,
-    anime?.background,
-  ]);
-
-  return uniqueExploreImages([
-    ...posterCandidates,
-    fallbackCover,
-    ...bannerFallbacks,
-  ]);
-}
-
-function spotlightArtworkCandidatesFor(anime: any) {
-  const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
-  const fallbackCover = fallbackId > 0 ? `https://img.anili.st/media/${fallbackId}` : '';
-  return [
-    anime?.banner_image,
-    anime?.bannerImage,
-    anime?.images?.webp?.large_image_url,
-    anime?.images?.jpg?.large_image_url,
-    anime?.images?.webp?.image_url,
-    anime?.images?.jpg?.image_url,
-    fallbackCover,
-  ]
-    .map((value) => String(value || '').trim())
-    .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
 }
 
 function spotlightQualityScore(anime: any) {
@@ -797,7 +791,7 @@ function spotlightQualityScore(anime: any) {
 }
 
 function buildSpotlightItems(items: any[]) {
-  const withImages = uniqueAnime(items).filter((anime) => spotlightArtworkCandidatesFor(anime).length);
+  const withImages = uniqueAnime(items).filter((anime) => desktopSpotlightArtworkCandidates(anime).length);
   const candidates = withImages.length >= 8 ? withImages : uniqueAnime([...withImages, ...fallbackByMode.airing, ...fallbackByMode.trending]);
   return [...candidates]
     .sort((left, right) => spotlightQualityScore(right) - spotlightQualityScore(left))
@@ -820,7 +814,7 @@ function usePrefersReducedMotion() {
 }
 
 function SpotlightArtwork({ anime, title }: { anime: any | null; title: string }) {
-  const candidates = useMemo(() => anime ? spotlightArtworkCandidatesFor(anime) : [], [anime]);
+  const candidates = useMemo(() => anime ? desktopSpotlightArtworkCandidates(anime) : [], [anime]);
   const animeKey = String(anime?.mal_id || anime?.id || anime?.title || '');
   const [imageIndex, setImageIndex] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
@@ -859,8 +853,8 @@ function SpotlightArtwork({ anime, title }: { anime: any | null; title: string }
   );
 }
 
-function ExploreAnimeCard({ anime, index, density = 'poster' }: { anime: any; index: number; density?: ExploreDensity }) {
-  const candidates = useMemo(() => coverCandidatesFor(anime), [anime]);
+export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, density = 'poster' }: { anime: any; index: number; density?: ExploreDensity }) {
+  const candidates = useMemo(() => desktopPosterCandidates(anime), [anime]);
   const [imageIndex, setImageIndex] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
   const currentImage = candidates[imageIndex] || '';
@@ -887,13 +881,13 @@ function ExploreAnimeCard({ anime, index, density = 'poster' }: { anime: any; in
         aria-label={`Open ${title}`}
         className="sn-card-hover group grid min-h-[132px] grid-cols-[86px_minmax(0,1fr)_auto] items-center gap-4 rounded-2xl p-3 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
       >
-        <div className="sn-poster-card relative h-[112px]">
+        <div className="sn-poster-card sn-explore-poster relative h-[112px]">
           {currentImage && !imageFailed ? (
             <img
               key={currentImage}
               src={currentImage}
               alt={title}
-              className="h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.04]"
+              className="absolute inset-0 block h-full w-full object-cover object-center"
               loading={index < 8 ? 'eager' : 'lazy'}
               decoding="async"
               referrerPolicy="no-referrer"
@@ -938,15 +932,15 @@ function ExploreAnimeCard({ anime, index, density = 'poster' }: { anime: any; in
     <Link
       to={path}
       aria-label={`Open ${title}`}
-      className="sn-card-hover group relative block min-w-0 rounded-[18px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+      className="sn-card-hover sn-explore-card group relative block min-w-0 rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
     >
-      <div className={`sn-poster-card relative ${compact ? 'aspect-[5/7]' : 'aspect-[2/3]'} transition duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_18px_45px_rgba(244,63,94,0.13)] group-hover:ring-primary/25`}>
+      <div className={`sn-poster-card sn-explore-poster relative ${compact ? 'aspect-[5/7]' : 'aspect-[2/3]'} group-hover:ring-primary/25`}>
         {currentImage && !imageFailed ? (
           <img
             key={currentImage}
             src={currentImage}
             alt={title}
-            className="h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.045]"
+            className="absolute inset-0 block h-full w-full object-cover object-center"
             loading={index < 8 ? 'eager' : 'lazy'}
             decoding="async"
             referrerPolicy="no-referrer"
@@ -960,27 +954,27 @@ function ExploreAnimeCard({ anime, index, density = 'poster' }: { anime: any; in
           />
         ) : (
           <div className="flex h-full w-full flex-col justify-end bg-[radial-gradient(circle_at_22%_14%,rgba(244,63,94,0.24),transparent_34%),linear-gradient(145deg,#151018,#06070b)] p-4">
-            <span className="mb-2 w-fit rounded-full bg-white/[0.075] px-2 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-white/52">{format}</span>
-            <span className="line-clamp-3 text-sm font-black leading-tight text-white/84">{title}</span>
+            <span className="mb-2 w-fit rounded-full bg-white/[0.075] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/52">{format}</span>
+            <span className="line-clamp-3 text-sm font-bold leading-tight text-white/84">{title}</span>
           </div>
         )}
 
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(0,0,0,0.04),transparent_25%,rgba(0,0,0,0.46)_58%,rgba(0,0,0,0.92))]" />
-        <span className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/44 text-white/76 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition duration-200 group-hover:bg-primary/18 group-hover:text-white">
+        <span className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full bg-black/64 text-white/76 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors duration-200 group-hover:bg-primary/24 group-hover:text-white">
           <Heart className="h-4 w-4" />
         </span>
 
         <div className="absolute inset-x-0 bottom-0 p-3.5">
           <div className="mb-2 flex flex-wrap gap-1.5">
-            <span className="rounded-full border border-white/10 bg-white/[0.08] px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/72">{format}</span>
-            {status ? <span className="rounded-full border border-primary/22 bg-primary/12 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-primary">{status}</span> : null}
+            <span className="rounded-full border border-white/10 bg-white/[0.08] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/72">{format}</span>
+            {status ? <span className="rounded-full border border-primary/22 bg-primary/12 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">{status}</span> : null}
           </div>
-          <h3 className={`line-clamp-2 ${compact ? 'min-h-[30px] text-[13px]' : 'min-h-[34px] text-[15px]'} font-black leading-[1.12] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]`}>{title}</h3>
+          <h3 className={`line-clamp-2 ${compact ? 'min-h-[30px] text-[13px]' : 'min-h-[34px] text-[15px]'} font-bold leading-[1.12] text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.85)]`}>{title}</h3>
           <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-bold text-white/62">
             <span className="truncate">{genres.length ? genres.join(' / ') : 'Anime'}</span>
             <span className="shrink-0">{year || 'TBA'}</span>
           </div>
-          <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-black text-white/66">
+          <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-bold text-white/66">
             <span className="inline-flex items-center gap-1 text-yellow-300">
               <Star className="h-3.5 w-3.5 fill-current" />
               {score ? score.toFixed(1) : 'N/A'}
@@ -991,7 +985,7 @@ function ExploreAnimeCard({ anime, index, density = 'poster' }: { anime: any; in
       </div>
     </Link>
   );
-}
+});
 
 function modeFromSearchParams(searchParams: URLSearchParams): ExploreMode {
   const mode = searchParams.get('mode');
@@ -1335,7 +1329,7 @@ export default function DesktopExplore() {
   useEffect(() => {
     if (!spotlightItems.length || typeof window === 'undefined') return;
     const next = spotlightItems[(spotlightIndex + 1) % spotlightItems.length];
-    const source = spotlightArtworkCandidatesFor(next)[0];
+    const source = desktopSpotlightArtworkCandidates(next)[0];
     if (!source) return;
     const image = new Image();
     image.referrerPolicy = 'no-referrer';

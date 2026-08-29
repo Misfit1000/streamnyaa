@@ -18,6 +18,7 @@ export type LocalPlaybackSource = {
   progressUpdatedAt?: number;
   resumeSeconds?: number;
   durationSeconds?: number;
+  completed?: boolean;
 };
 
 export type DesktopWatchProgressRecord = {
@@ -29,6 +30,7 @@ export type DesktopWatchProgressRecord = {
   durationSeconds?: number;
   progressPercent?: number;
   updatedAt: number;
+  completed?: boolean;
 };
 
 export type DesktopRuntimeStatus = {
@@ -59,6 +61,13 @@ export type DesktopPlaybackProgress = {
   state: string;
   message: string;
   progress?: number | null;
+  torrent_progress_percent?: number | null;
+  buffer_percent?: number | null;
+  buffered_seconds?: number | null;
+  buffering?: boolean;
+  buffer_advancing?: boolean;
+  stall_seconds?: number;
+  recovery_stage?: 'idle' | 'buffering' | 'retrying' | 'switching' | 'failed' | string;
   current_seconds?: number | null;
   duration_seconds?: number | null;
   paused?: boolean | null;
@@ -125,6 +134,9 @@ export type DesktopPlayerControlStatus = {
 export type DesktopSourceApiResponse = {
   data: unknown;
   fetched_at: number;
+  cache_status?: 'memory' | 'disk' | 'network' | 'stale';
+  provider?: string;
+  duration_ms?: number;
 };
 
 export type DesktopMetadataApiRequest = {
@@ -311,6 +323,8 @@ export type DesktopPlayerRecoveryRequestEvent = {
 
 export type DesktopOAuthCallbackEvent = {
   url?: string;
+  action?: 'login' | 'recovery' | 'confirmation';
+  next?: string;
   error?: string;
 };
 
@@ -368,6 +382,23 @@ function normalizedEpisodeNumber(value: unknown) {
   return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
 }
 
+function watchProgressMatchesSource(
+  record: Partial<DesktopWatchProgressRecord>,
+  source: Partial<LocalPlaybackSource>,
+) {
+  const sourceEpisode = normalizedEpisodeNumber(source.episode);
+  const recordEpisode = normalizedEpisodeNumber(record.episode);
+  if (!sourceEpisode || sourceEpisode !== recordEpisode) return false;
+
+  const recordId = String(record.animeId || '').trim();
+  const sourceId = String(source.animeId || '').trim();
+  if (recordId && sourceId && recordId === sourceId) return true;
+
+  const recordTitle = animeTitleKey(record.title || '');
+  const sourceTitle = animeTitleKey(source.animeTitle || source.title || '');
+  return Boolean(recordTitle && sourceTitle && recordTitle === sourceTitle);
+}
+
 function playbackProgressPercent(source: Partial<LocalPlaybackSource>) {
   const explicitPercent = Number(source.progressPercent || 0);
   if (Number.isFinite(explicitPercent) && explicitPercent > 0) {
@@ -410,6 +441,7 @@ function watchProgressFromSource(source: Partial<LocalPlaybackSource>): DesktopW
     durationSeconds: durationSeconds || undefined,
     progressPercent: playbackProgressPercent(source),
     updatedAt: Number(source.progressUpdatedAt || source.savedAt || Date.now()),
+    completed: source.completed ?? isPlaybackEntryComplete(source),
   };
 }
 
@@ -542,10 +574,18 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
         ? undefined
         : Math.max(0, Math.min(100, Number(record.progressPercent || 0))),
       updatedAt: record.updatedAt || Date.now(),
+      completed: record.completed ?? isPlaybackEntryComplete({
+        progressPercent: record.progressPercent,
+        resumeSeconds: record.positionSeconds,
+        durationSeconds: record.durationSeconds,
+      }),
     };
     const key = watchProgressKey(normalized);
     const current = loadDesktopWatchProgress();
     const existing = current.find((item) => watchProgressKey(item) === key);
+    if (existing && Number(existing.updatedAt || 0) > normalized.updatedAt) {
+      return;
+    }
     if (
       existing
       && Math.abs(Number(existing.positionSeconds || 0) - normalized.positionSeconds) < 5
@@ -564,6 +604,70 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
   } catch {
     // Progress is convenience data. Playback must never depend on it.
   }
+}
+
+export function replaceDesktopWatchProgress(records: DesktopWatchProgressRecord[]) {
+  try {
+    const next = records
+      .filter((item): item is DesktopWatchProgressRecord => Boolean(item?.title && item?.episode))
+      .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
+      .slice(0, DESKTOP_WATCH_PROGRESS_LIMIT);
+    localStorage.setItem(DESKTOP_WATCH_PROGRESS_KEY, JSON.stringify(next));
+    const watchedSeries = next
+      .map(watchedSeriesFromProgress)
+      .filter((item): item is DesktopWatchedSeriesRecord => Boolean(item));
+    writeWatchedSeries(watchedSeries, false);
+    emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
+  } catch {
+    // Synced progress is optional and must never block playback.
+  }
+}
+
+export function findDesktopWatchProgressForSource(
+  source: Partial<LocalPlaybackSource>,
+  records = loadDesktopWatchProgress(),
+) {
+  return records
+    .filter((record) => watchProgressMatchesSource(record, source))
+    .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))[0] || null;
+}
+
+export function resolveDesktopPlaybackCheckpoint(source: Partial<LocalPlaybackSource>) {
+  const history = findLocalPlaybackHistoryItem(source);
+  const watchProgress = findDesktopWatchProgressForSource(source);
+  const candidates = [
+    source.resumeSeconds !== undefined ? {
+      positionSeconds: Math.max(0, Number(source.resumeSeconds || 0)),
+      durationSeconds: Math.max(0, Number(source.durationSeconds || 0)),
+      progressPercent: playbackProgressPercent(source),
+      updatedAt: Number(source.progressUpdatedAt || source.savedAt || 0),
+      completed: source.completed ?? isPlaybackEntryComplete(source),
+    } : null,
+    history ? {
+      positionSeconds: Math.max(0, Number(history.resumeSeconds || 0)),
+      durationSeconds: Math.max(0, Number(history.durationSeconds || 0)),
+      progressPercent: playbackProgressPercent(history),
+      updatedAt: Number(history.progressUpdatedAt || history.savedAt || 0),
+      completed: history.completed ?? isPlaybackEntryComplete(history),
+    } : null,
+    watchProgress ? {
+      positionSeconds: Math.max(0, Number(watchProgress.positionSeconds || 0)),
+      durationSeconds: Math.max(0, Number(watchProgress.durationSeconds || 0)),
+      progressPercent: playbackProgressPercent({
+        progressPercent: watchProgress.progressPercent,
+        resumeSeconds: watchProgress.positionSeconds,
+        durationSeconds: watchProgress.durationSeconds,
+      }),
+      updatedAt: Number(watchProgress.updatedAt || 0),
+      completed: watchProgress.completed ?? isPlaybackEntryComplete({
+        progressPercent: watchProgress.progressPercent,
+        resumeSeconds: watchProgress.positionSeconds,
+        durationSeconds: watchProgress.durationSeconds,
+      }),
+    } : null,
+  ].filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+
+  return candidates.sort((left, right) => right.updatedAt - left.updatedAt)[0] || null;
 }
 
 function playbackHistoryMatchesAnime(source: Partial<LocalPlaybackSource>, anime: any) {
@@ -653,12 +757,15 @@ export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
 
 export async function openLocalSourceNow(source: LocalPlaybackSource, settings = loadDesktopPlaybackSettings()) {
   const existing = findLocalPlaybackHistoryItem(source);
+  const checkpoint = resolveDesktopPlaybackCheckpoint(source);
   const preparedSource: LocalPlaybackSource = {
     ...(existing || {}),
     ...source,
-    progressPercent: source.progressPercent ?? existing?.progressPercent ?? 0,
-    resumeSeconds: source.resumeSeconds ?? existing?.resumeSeconds ?? 0,
-    durationSeconds: source.durationSeconds ?? existing?.durationSeconds ?? 0,
+    progressPercent: checkpoint?.progressPercent ?? 0,
+    progressUpdatedAt: checkpoint?.updatedAt || source.progressUpdatedAt || existing?.progressUpdatedAt,
+    resumeSeconds: checkpoint?.positionSeconds ?? 0,
+    durationSeconds: checkpoint?.durationSeconds ?? 0,
+    completed: checkpoint?.completed ?? false,
   };
   const result = await startLocalPlaybackWithSettings(preparedSource, settings);
   if (result?.ok) {
@@ -686,11 +793,11 @@ export function updateLocalPlaybackHistoryProgress(
 
   const currentSeconds = Math.max(0, Number(progress.currentSeconds || 0));
   const durationSeconds = Math.max(0, Number(progress.durationSeconds || existing.durationSeconds || 0));
-  const percent = Number.isFinite(Number(progress.progressPercent))
-    ? Math.max(0, Math.min(100, Number(progress.progressPercent || 0)))
-    : durationSeconds > 0
-      ? Math.max(0, Math.min(100, (currentSeconds / durationSeconds) * 100))
-      : Number(existing.progressPercent || 0);
+  // Torrent completion and watched completion are independent metrics. Watch
+  // progress must always come from the media timeline when duration is known.
+  const percent = durationSeconds > 0
+    ? Math.max(0, Math.min(100, (currentSeconds / durationSeconds) * 100))
+    : Number(existing.progressPercent || 0);
 
   const priorSeconds = Math.max(0, Number(existing.resumeSeconds || 0));
   const priorPercent = Math.max(0, Number(existing.progressPercent || 0));
@@ -705,6 +812,11 @@ export function updateLocalPlaybackHistoryProgress(
     progressUpdatedAt: Date.now(),
     resumeSeconds: currentSeconds,
     durationSeconds,
+    completed: isPlaybackEntryComplete({
+      progressPercent: percent,
+      resumeSeconds: currentSeconds,
+      durationSeconds,
+    }),
   });
 }
 
@@ -1031,21 +1143,54 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
     throw new Error('Desktop streaming is only available inside the StreamNyaa desktop app.');
   }
 
-  return invoke<DesktopPlaybackStatus>('play_local_torrent', {
-    request: {
-      magnet: source.magnet,
-      torrent_url: source.torrentUrl || '',
-      info_hash: source.infoHash || '',
-      title: source.title,
-      anime_title: source.animeTitle || '',
-      episode: source.episode ? String(source.episode) : '',
-      size: source.size || '',
-      poster: source.poster || source.image || '',
-      banner: source.banner || '',
-      resume_seconds: Number(source.resumeSeconds || 0),
-      settings,
-    },
-  });
+  try {
+    const result = await invoke<DesktopPlaybackStatus>('play_local_torrent', {
+      request: {
+        magnet: source.magnet,
+        torrent_url: source.torrentUrl || '',
+        info_hash: source.infoHash || '',
+        title: source.title,
+        anime_title: source.animeTitle || '',
+        episode: source.episode ? String(source.episode) : '',
+        size: source.size || '',
+        poster: source.poster || source.image || '',
+        banner: source.banner || '',
+        resume_seconds: Number(source.resumeSeconds || 0),
+        settings,
+      },
+    });
+    if (!result?.ok && result?.message) {
+      return { ...result, message: describeDesktopPlaybackError(result.message) };
+    }
+    return result;
+  } catch (error) {
+    throw new Error(describeDesktopPlaybackError(error));
+  }
+}
+
+export function describeDesktopPlaybackError(error: unknown) {
+  const raw = String(
+    error instanceof Error
+      ? error.message
+      : (error as { message?: unknown })?.message || error || '',
+  ).replace(/^Playback task could not finish:\s*/i, '').trim();
+  if (!raw) return 'Playback could not start. Try another verified release.';
+  if (/no peers?|zero peers?|waiting for the first peers?|did not respond/i.test(raw)) {
+    return 'No peers responded for this release. StreamNyaa will try another verified source.';
+  }
+  if (/metadata|no matching playable|expose(?:d)? a playable|episode file/i.test(raw)) {
+    return 'Torrent metadata did not expose the requested playable episode. Try another release.';
+  }
+  if (/delivered no video data|buffer.*not advancing|stalled/i.test(raw)) {
+    return 'Peers connected, but video data stopped advancing. StreamNyaa will recover or switch sources.';
+  }
+  if (/local stream engine|torrent engine|rqbit/i.test(raw)) {
+    return `The local torrent engine could not start this release. ${raw}`;
+  }
+  if (/native player|mpv|decoder|load the stream/i.test(raw)) {
+    return `The native video player could not open this release. ${raw}`;
+  }
+  return raw;
 }
 
 export async function getDesktopRuntimeStatus(settings = loadDesktopPlaybackSettings()) {
@@ -1285,6 +1430,65 @@ export function desktopEpisodeWatchState(
   };
 }
 
+export function setDesktopEpisodeWatched(anime: any, episode: number, watched: boolean) {
+  const normalizedEpisode = normalizedEpisodeNumber(episode);
+  if (!normalizedEpisode) return;
+
+  if (watched) {
+    const title = String(
+      (typeof anime?.title === 'string' ? anime.title : '')
+      || anime?.title_english
+      || anime?.title_romaji
+      || anime?.title?.english
+      || anime?.title?.romaji
+      || anime?.title?.native
+      || '',
+    ).trim();
+    if (!title) return;
+    saveDesktopWatchProgress({
+      animeId: animeIdentity(anime) || title,
+      title,
+      poster: anime?.images?.jpg?.large_image_url
+        || anime?.images?.webp?.large_image_url
+        || anime?.cover_image
+        || anime?.coverImage?.extraLarge
+        || anime?.coverImage?.large
+        || anime?.image,
+      episode: normalizedEpisode,
+      positionSeconds: 0,
+      progressPercent: 100,
+      updatedAt: Date.now(),
+      completed: true,
+    });
+    return;
+  }
+
+  try {
+    const nextProgress = loadDesktopWatchProgress().filter((record) => !(
+      progressRecordMatchesAnime(record, anime)
+      && normalizedEpisodeNumber(record.episode) === normalizedEpisode
+    ));
+    localStorage.setItem(DESKTOP_WATCH_PROGRESS_KEY, JSON.stringify(nextProgress));
+
+    const nextHistory = loadLocalPlaybackHistory().map((source) => {
+      if (!playbackHistoryMatchesAnime(source, anime)) return source;
+      if (normalizedEpisodeNumber(source.episode) !== normalizedEpisode) return source;
+      return {
+        ...source,
+        progressPercent: 0,
+        progressUpdatedAt: Date.now(),
+        resumeSeconds: 0,
+        completed: false,
+      };
+    });
+    localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(nextHistory));
+    emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
+    emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
+  } catch {
+    // Manual watch state is convenience data and must never affect playback.
+  }
+}
+
 export function hasDesktopWatchedSeries(anime: any, records = loadDesktopWatchProgress()) {
   const targetSeriesKeys = [anime?.title, anime?.title_english, anime?.title_romaji, anime?.title_japanese]
     .map(seriesTitleKey)
@@ -1364,15 +1568,10 @@ export async function listenDesktopPlayerReady(listener: (event: DesktopPlayerRe
   });
 }
 
-export async function fetchDesktopSourceApi(url: string) {
+export async function fetchDesktopSourceApi(url: string): Promise<DesktopSourceApiResponse> {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (invoke) {
-    try {
-      return await invoke<DesktopSourceApiResponse>('fetch_desktop_source_api', { url });
-    } catch {
-      // Fall through to the browser fetch path. Some dev or installed builds can briefly
-      // miss the bridge during startup, but source search should not leave the UI blank.
-    }
+    return invoke<DesktopSourceApiResponse>('fetch_desktop_source_api', { url });
   }
 
   const response = await fetch(url);

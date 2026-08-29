@@ -1,6 +1,6 @@
 import type { NyaaItem } from '../api/nyaa';
 
-export type TorrentBadgeTone = 'trusted' | 'seeders' | 'codec' | 'audio' | 'batch' | 'episode';
+export type TorrentBadgeTone = 'quality' | 'trusted' | 'seeders' | 'codec' | 'audio' | 'batch' | 'episode';
 
 export interface TorrentBadge {
   label: string;
@@ -35,15 +35,24 @@ const hasEpisodeNumber = (title: string) => {
   const matches: string[] = title.match(/(?:^|[\s._\-[({])(\d{1,4})(?:v\d+)?(?:[\s._\]))}-]|$)(?!\s*(?:bit|kb|mb|gb|p))/gi) || [];
   return matches.some((match) => {
     const number = Number((match.match(/\d{1,4}/) || [])[0]);
-    return number > 0 && number < 3000 && ![480, 720, 1080, 2160].includes(number) && !(number >= 1900 && number <= 2099);
+    return number > 0 && number < 3000 && ![480, 720, 1080, 1440, 2160].includes(number) && !(number >= 1900 && number <= 2099);
   });
 };
 
 const isEpisode = (title: string) => hasEpisodeNumber(title) && !isBatch(title);
 
-const hasQuality = (title: string, quality: '1080p' | '720p') => (
+const hasQuality = (title: string, quality: '2160p' | '1440p' | '1080p' | '720p') => (
   new RegExp(`\\b${quality}\\b`, 'i').test(title)
 );
+
+export function sourceResolutionLabel(title = '') {
+  if (/\b(?:2160p|4k|uhd)\b/i.test(title)) return '4K / 2160p';
+  if (/\b1440p\b/i.test(title)) return '2K / 1440p';
+  if (/\b1080p\b/i.test(title)) return '1080p';
+  if (/\b720p\b/i.test(title)) return '720p';
+  if (/\b480p\b/i.test(title)) return '480p';
+  return '';
+}
 
 const isRaw = (torrent: NyaaItem) => (
   torrent.categoryId === '1_4' || /\b(raw|japanese audio|jp audio)\b/i.test(torrent.title || '')
@@ -52,7 +61,9 @@ const isRaw = (torrent: NyaaItem) => (
 export function getTorrentBadges(torrent: NyaaItem): TorrentBadge[] {
   const badges: TorrentBadge[] = [];
   const title = torrent.title || '';
+  const resolution = sourceResolutionLabel(title);
 
+  if (resolution.startsWith('4K') || resolution.startsWith('2K')) badges.push({ label: resolution, tone: 'quality' });
   if (hasTrustedSignal(torrent)) badges.push({ label: 'Trusted', tone: 'trusted' });
   if (torrent.rawSeeders >= 50) badges.push({ label: 'High seeders', tone: 'seeders' });
   if (isHevc(title)) badges.push({ label: 'HEVC', tone: 'codec' });
@@ -62,7 +73,7 @@ export function getTorrentBadges(torrent: NyaaItem): TorrentBadge[] {
   return badges;
 }
 
-export type TorrentSourceFilter = '' | 'trusted' | 'high-seeders' | 'hevc' | 'dual-audio' | 'batch' | 'episode' | 'quality-1080p' | 'quality-720p' | 'raw';
+export type TorrentSourceFilter = '' | 'trusted' | 'high-seeders' | 'hevc' | 'dual-audio' | 'batch' | 'episode' | 'quality-2160p' | 'quality-1440p' | 'quality-1080p' | 'quality-720p' | 'raw';
 
 export function torrentMatchesSourceFilter(torrent: NyaaItem, filter: TorrentSourceFilter) {
   if (!filter) return true;
@@ -73,6 +84,8 @@ export function torrentMatchesSourceFilter(torrent: NyaaItem, filter: TorrentSou
   if (filter === 'dual-audio') return isDualAudio(title);
   if (filter === 'batch') return isBatch(title);
   if (filter === 'episode') return isEpisode(title);
+  if (filter === 'quality-2160p') return /\b(?:2160p|4k|uhd)\b/i.test(title);
+  if (filter === 'quality-1440p') return hasQuality(title, '1440p');
   if (filter === 'quality-1080p') return hasQuality(title, '1080p');
   if (filter === 'quality-720p') return hasQuality(title, '720p');
   if (filter === 'raw') return isRaw(torrent);
@@ -82,6 +95,7 @@ export function torrentMatchesSourceFilter(torrent: NyaaItem, filter: TorrentSou
 export function torrentBadgeClassName(tone: TorrentBadgeTone) {
   const base = 'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-black uppercase tracking-wide';
   const styles: Record<TorrentBadgeTone, string> = {
+    quality: 'border-primary/25 bg-primary/10 text-rose-200',
     trusted: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500',
     seeders: 'border-green-500/20 bg-green-500/10 text-green-500',
     codec: 'border-violet-500/20 bg-violet-500/10 text-violet-500',

@@ -1,6 +1,7 @@
 import { useStore } from '../store/useStore';
 import { extractNumericId } from '../lib/slug';
 import { fetchDesktopMetadataApi, isDesktopApp } from '../lib/desktop';
+import { desktopDataError } from '../lib/desktopData';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 const LOCAL_METADATA_PREFIX = 'streamnyaa.metadataCache.v2.';
@@ -41,6 +42,34 @@ const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale') =
     'X-StreamNyaa-Local-Cache': cacheState,
   },
 });
+
+const refreshMetadataInBackground = (
+  provider: MetadataProvider,
+  requestKey: string,
+  key: string,
+  ttlSeconds: number,
+  request: () => Promise<Response>,
+) => {
+  if (inFlightMetadataRequests.has(requestKey) || providerInCooldown(provider)) return;
+  const refresh = (async () => {
+    const response = await request();
+    if (!response.ok) {
+      if (response.status === 429 || response.status >= 500) markProviderCooldown(provider, response);
+      throw desktopDataError(provider, new Error(`Metadata refresh failed with status ${response.status}.`), response.status);
+    }
+    const json = await response.clone().json();
+    writeLocalMetadata(key, json, ttlSeconds);
+    providerCooldowns.delete(provider);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('streamnyaa:metadata-refreshed', { detail: { provider, key } }));
+    }
+    return response;
+  })();
+  inFlightMetadataRequests.set(requestKey, refresh);
+  void refresh.catch(() => undefined).finally(() => {
+    if (inFlightMetadataRequests.get(requestKey) === refresh) inFlightMetadataRequests.delete(requestKey);
+  });
+};
 
 const pruneLocalMetadataCache = () => {
   if (typeof window === 'undefined') return;
@@ -236,6 +265,10 @@ const fetchWithLocalMetadataCache = async (
   if (stale && providerInCooldown(provider)) return jsonResponse(stale.value, 'local-stale');
 
   const requestKey = `${provider}:${key}`;
+  if (stale && isDesktopApp()) {
+    refreshMetadataInBackground(provider, requestKey, key, ttlSeconds, request);
+    return jsonResponse(stale.value, 'local-stale');
+  }
   const existingRequest = inFlightMetadataRequests.get(requestKey);
   if (existingRequest) {
     try {
@@ -284,22 +317,18 @@ const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600) =
   const cacheKey = cacheKeyFor('anilist', body);
   return fetchWithLocalMetadataCache('anilist', cacheKey, ttlSeconds, async () => {
     if (isDesktopApp()) {
-      try {
-        const desktopResponse = await fetchDesktopMetadataApi({
-          provider: 'anilist',
-          body,
-          ttl_seconds: ttlSeconds,
-        });
-        return new Response(JSON.stringify(desktopResponse.data), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-StreamNyaa-Desktop-Cache': 'bridge',
-          },
-        });
-      } catch {
-        return fetchAniListDirect(body);
-      }
+      const desktopResponse = await fetchDesktopMetadataApi({
+        provider: 'anilist',
+        body,
+        ttl_seconds: ttlSeconds,
+      });
+      return new Response(JSON.stringify(desktopResponse.data), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-StreamNyaa-Desktop-Cache': 'bridge',
+        },
+      });
     }
 
     const gatewayResponse = await fetch(`/api/stream-sources?provider=anilist&ttl=${ttlSeconds}`, {
@@ -319,22 +348,18 @@ const fetchJikanPath = async (path: string, ttlSeconds = 21600) => {
   const cacheKey = cacheKeyFor('jikan', path);
   return fetchWithLocalMetadataCache('jikan', cacheKey, ttlSeconds, async () => {
     if (isDesktopApp()) {
-      try {
-        const desktopResponse = await fetchDesktopMetadataApi({
-          provider: 'jikan',
-          path,
-          ttl_seconds: ttlSeconds,
-        });
-        return new Response(JSON.stringify(desktopResponse.data), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-StreamNyaa-Desktop-Cache': 'bridge',
-          },
-        });
-      } catch {
-        return fetchJikanPathDirect(path);
-      }
+      const desktopResponse = await fetchDesktopMetadataApi({
+        provider: 'jikan',
+        path,
+        ttl_seconds: ttlSeconds,
+      });
+      return new Response(JSON.stringify(desktopResponse.data), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-StreamNyaa-Desktop-Cache': 'bridge',
+        },
+      });
     }
 
     const gatewayResponse = await fetch(`/api/stream-sources?provider=jikan&ttl=${ttlSeconds}&path=${encodeURIComponent(path)}`).catch(() => null);
@@ -887,25 +912,24 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
     pushCandidate(payload.data.Media);
   };
 
-  if (preferredMalId) {
-    await loadSingle(ANIME_DETAIL_QUERY_BY_MAL, { id: preferredMalId });
-  }
+  const lookups: Promise<void>[] = [];
+  if (preferredMalId) lookups.push(loadSingle(ANIME_DETAIL_QUERY_BY_MAL, { id: preferredMalId }));
   if (preferredAniListId && preferredAniListId !== preferredMalId) {
-    await loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: preferredAniListId });
+    lookups.push(loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: preferredAniListId }));
   } else if (!preferredAniListId && routeNumericId && routeNumericId !== preferredMalId) {
-    await loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: routeNumericId });
+    lookups.push(loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: routeNumericId }));
   }
-
   if (titleHint) {
-    const searchResponse = await fetchAniList(
+    lookups.push(fetchAniList(
       { query: ANIME_DETAIL_SEARCH_QUERY, variables: { search: titleHint } },
       21600,
-    );
-    if (searchResponse.ok) {
+    ).then(async (searchResponse) => {
+      if (!searchResponse.ok) return;
       const searchPayload = await searchResponse.json();
       (searchPayload?.data?.Page?.media || []).forEach(pushCandidate);
-    }
+    }));
   }
+  await Promise.allSettled(lookups);
 
   const media = [...candidates].sort(
     (left, right) => animeDetailsCandidateScore(right, {
@@ -949,7 +973,12 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
   }
 
   const mappedAnime = mapAnilistToJikan(media);
-  const jikanStats = media.idMal ? await fetchJikanAnimeStats(media.idMal) : null;
+  const jikanStats = media.idMal
+    ? await Promise.race([
+        fetchJikanAnimeStats(media.idMal),
+        new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 650)),
+      ])
+    : null;
 
   return {
     data: {
@@ -1069,10 +1098,23 @@ export const fetchMangaDetails = async (id: string) => {
 export const fetchAnimeEpisodes = async (id: string, page: number = 1) => {
   try {
     const res = await fetchJikanPath(`/anime/${extractNumericId(id)}/episodes?page=${page}`, 21600);
-    const json = await res.json();
-    return json;
+    if (!res.ok) throw desktopDataError('jikan', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
+    const json = await res.json().catch((error) => {
+      throw desktopDataError('jikan', error);
+    });
+    if (!json || !Array.isArray(json.data)) {
+      throw desktopDataError('jikan', new Error('Episode metadata response was invalid.'));
+    }
+    return {
+      ...json,
+      streamnyaa: {
+        status: res.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' ? 'stale' : 'authoritative',
+        provider: 'jikan',
+      },
+    };
   } catch (error) {
-    console.error("Failed to fetch episodes from Jikan", error);
+    if (isDesktopApp()) throw error;
+    console.error('Failed to fetch episodes from Jikan', error);
     return { data: [], pagination: { last_visible_page: 1 } };
   }
 };

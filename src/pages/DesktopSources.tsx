@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, memo, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Loader2, Play, Search, SlidersHorizontal } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
@@ -43,9 +43,21 @@ function saveRecentSourceSearches(values: string[]) {
   }
 }
 
-function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle: string; onStatus: (value: string) => void }) {
+const SourceCard = memo(function SourceCard({
+  item,
+  animeTitle,
+  animeId,
+  episode: routeEpisode,
+  onStatus,
+}: {
+  item: NyaaItem;
+  animeTitle: string;
+  animeId?: string;
+  episode?: string;
+  onStatus: (value: string) => void;
+}) {
   const score = sourceQualityScore(item);
-  const episode = sourceEpisode(item.title);
+  const episode = routeEpisode || sourceEpisode(item.title);
 
   const play = async () => {
     onStatus(`Opening ${item.title}`);
@@ -56,6 +68,7 @@ function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle
         infoHash: item.infoHash,
         title: item.title,
         animeTitle: animeTitle || item.title,
+        animeId: animeId || undefined,
         episode: episode || null,
         size: item.size,
         seeders: item.seeders,
@@ -120,11 +133,13 @@ function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle
       </div>
     </article>
   );
-}
+});
 
 export default function DesktopSources() {
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
+  const routeAnimeId = searchParams.get('animeId') || '';
+  const routeEpisode = searchParams.get('ep') || '';
   const [input, setInput] = useState(initialQuery);
   const [query, setQuery] = useState(initialQuery);
   const [audioMode, setAudioMode] = useState<'sub' | 'dual'>(() => (
@@ -175,11 +190,21 @@ export default function DesktopSources() {
     setStatus('');
   }, [query, searchParams]);
 
+  const contextualEpisode = query === initialQuery ? routeEpisode : '';
+  const contextualAnimeId = query === initialQuery ? routeAnimeId : '';
+  const sourceSearchQuery = contextualEpisode
+    ? `${query} episode ${String(contextualEpisode).padStart(2, '0')}`
+    : query;
   const searchQuery = useQuery({
-    queryKey: ['desktop-sources', query, audioMode],
-    queryFn: () => {
+    queryKey: ['desktop-sources', sourceSearchQuery, audioMode],
+    queryFn: ({ signal }) => {
       const audioHint = audioMode === 'dual' ? ' dual audio' : '';
-      return searchNyaa(`${query}${audioHint}`.trim(), '1_2', '0', '1', { deep: true, pages: 2, wide: audioMode === 'dual' });
+      return searchNyaa(`${sourceSearchQuery}${audioHint}`.trim(), '1_2', '0', '1', {
+        deep: true,
+        pages: 2,
+        wide: audioMode === 'dual',
+        signal,
+      });
     },
     enabled: query.trim().length >= 2,
     staleTime: 1000 * 60 * 3,
@@ -307,6 +332,8 @@ export default function DesktopSources() {
             </button>
           ))}
           {[
+            ['quality-2160p', '4K / 2160p'],
+            ['quality-1440p', '2K / 1440p'],
             ['quality-1080p', '1080p'],
             ['quality-720p', '720p'],
             ['trusted', 'Trusted'],
@@ -364,7 +391,7 @@ export default function DesktopSources() {
             </div>
             <div className="sn-glass-panel p-4">
               <p className="mb-3 text-[11px] font-black uppercase tracking-[0.22em] text-primary">Recommended Source</p>
-              <SourceCard item={results[0]} animeTitle={query} onStatus={setStatus} />
+              <SourceCard item={results[0]} animeTitle={query} animeId={contextualAnimeId} episode={contextualEpisode} onStatus={setStatus} />
             </div>
             {results.length > 1 ? (
               <div className="pt-2">
@@ -374,7 +401,7 @@ export default function DesktopSources() {
                 </div>
                 <div className="space-y-3">
                   {results.slice(1).map((item) => (
-                    <SourceCard key={item.infoHash || item.link || item.title} item={item} animeTitle={query} onStatus={setStatus} />
+                    <SourceCard key={item.infoHash || item.link || item.title} item={item} animeTitle={query} animeId={contextualAnimeId} episode={contextualEpisode} onStatus={setStatus} />
                   ))}
                 </div>
               </div>

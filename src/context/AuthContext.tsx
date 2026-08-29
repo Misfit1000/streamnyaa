@@ -2,13 +2,16 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import {
   AuthSession,
   AuthUser,
+  RecoveryState,
   createGoogleOAuthUrl,
   fetchAccount,
   fetchSessionUser,
   loadStoredSession,
   normalizeOAuthSessionFromHash,
+  parseDesktopAuthCallback,
   refreshSession,
   requestPasswordReset,
+  revokeRecoverySession,
   signInWithGoogle,
   signInWithPassword,
   signOutSession,
@@ -28,6 +31,12 @@ type AuthContextValue = {
   isAdmin: boolean;
   loading: boolean;
   error: string;
+  desktopRoute: string;
+  recoveryAccessToken: string;
+  recoveryState: RecoveryState;
+  recoveryError: string;
+  clearDesktopRoute: () => void;
+  clearRecovery: () => void;
   signIn: (email: string, password: string) => Promise<void>;
   signInGoogle: (redirectPath?: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
@@ -50,6 +59,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [desktopRoute, setDesktopRoute] = useState('');
+  const [recoveryAccessToken, setRecoveryAccessToken] = useState('');
+  const [recoveryState, setRecoveryState] = useState<RecoveryState>('idle');
+  const [recoveryError, setRecoveryError] = useState('');
 
   const applySession = async (nextSession: AuthSession | null, allowRefresh = true) => {
     setSession(nextSession);
@@ -133,31 +146,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!active) return;
       try {
         if (payload.error) throw new Error(payload.error);
-        const callbackUrl = new URL(String(payload.url || ''));
-        const hashParams = new URLSearchParams(callbackUrl.hash.replace(/^#/, ''));
-        const queryParams = callbackUrl.searchParams;
-        const oauthError = hashParams.get('error_description')
-          || queryParams.get('error_description')
-          || hashParams.get('error')
-          || queryParams.get('error');
-        if (oauthError) throw new Error(oauthError);
-
-        const nextSession = normalizeOAuthSessionFromHash(callbackUrl.hash);
+        const callback = parseDesktopAuthCallback(String(payload.url || ''));
+        if (callback.action === 'recovery' && callback.error) {
+          setRecoveryAccessToken('');
+          setRecoveryState('expired');
+          setRecoveryError(callback.error);
+          setDesktopRoute('/reset-password');
+          return;
+        }
+        if (callback.error) throw new Error(callback.error);
+        const nextSession = callback.session;
         if (!nextSession?.access_token) {
-          throw new Error('Google sign-in did not return a valid desktop session.');
+          throw new Error(callback.action === 'recovery'
+            ? 'This password reset link is missing or expired.'
+            : 'Authentication did not return a valid desktop session.');
         }
 
         setError('');
-        setLoading(true);
-        storeSession(nextSession);
-        await applySession(nextSession);
+        if (callback.action === 'recovery') {
+          const now = Math.floor(Date.now() / 1000);
+          if (nextSession.expires_at && nextSession.expires_at <= now) {
+            setRecoveryAccessToken('');
+            setRecoveryState('expired');
+            setRecoveryError('This password reset link has expired. Request a new link and try again.');
+            setDesktopRoute('/reset-password');
+            return;
+          }
+          setRecoveryAccessToken(nextSession.access_token);
+          setRecoveryState('ready');
+          setRecoveryError('');
+          setDesktopRoute('/reset-password');
+        } else {
+          setLoading(true);
+          storeSession(nextSession);
+          await applySession(nextSession);
+          setDesktopRoute(callback.next);
+        }
       } catch (authError) {
         if (!active) return;
-        storeSession(null);
-        setSession(null);
-        setUser(null);
-        setIsAdmin(false);
-        setError(authError instanceof Error ? authError.message : 'Google sign-in failed.');
+        const message = authError instanceof Error ? authError.message : 'Desktop authentication failed.';
+        if (String(payload.action || '').toLowerCase() === 'recovery') {
+          setRecoveryAccessToken('');
+          setRecoveryState(/expired|missing|invalid/i.test(message) ? 'expired' : 'error');
+          setRecoveryError(message);
+          setDesktopRoute('/reset-password');
+        } else {
+          setError(message);
+          setDesktopRoute('/login');
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -180,6 +216,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isAdmin,
     loading,
     error,
+    desktopRoute,
+    recoveryAccessToken,
+    recoveryState,
+    recoveryError,
+    clearDesktopRoute: () => setDesktopRoute(''),
+    clearRecovery: () => {
+      setRecoveryAccessToken('');
+      setRecoveryState('idle');
+      setRecoveryError('');
+    },
     signIn: async (email, password) => {
       setError('');
       const nextSession = await signInWithPassword(email, password);
@@ -201,20 +247,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     sendPasswordReset: async (email) => {
       setError('');
+      setRecoveryAccessToken('');
+      setRecoveryState('idle');
+      setRecoveryError('');
       await requestPasswordReset(email);
     },
     resetPassword: async (accessToken, password) => {
       setError('');
-      await updatePassword(accessToken, password);
-      storeSession(null);
-      await applySession(null, false);
+      setRecoveryState('submitting');
+      try {
+        await updatePassword(accessToken, password);
+        await revokeRecoverySession(accessToken);
+        storeSession(null);
+        setRecoveryAccessToken('');
+        setRecoveryState('idle');
+        setRecoveryError('');
+        await applySession(null, false);
+      } catch (resetError) {
+        const message = resetError instanceof Error ? resetError.message : 'Password could not be updated.';
+        setRecoveryState(/expired|invalid|unauthorized|jwt/i.test(message) ? 'expired' : 'error');
+        setRecoveryError(message);
+        throw resetError;
+      }
     },
     signOut: async () => {
       await signOutSession(session);
       await applySession(null, false);
     },
     refreshAccount,
-  }), [session, user, isAdmin, loading, error]);
+  }), [session, user, isAdmin, loading, error, desktopRoute, recoveryAccessToken, recoveryState, recoveryError]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -40,7 +40,18 @@ function isDesktopRuntime() {
 export default function Login({ adminOnly = false }: LoginProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, signIn, signInGoogle, signUp, sendPasswordReset, resetPassword } = useAuth();
+  const {
+    user,
+    recoveryAccessToken,
+    recoveryState,
+    recoveryError,
+    clearRecovery,
+    signIn,
+    signInGoogle,
+    signUp,
+    sendPasswordReset,
+    resetPassword,
+  } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -96,15 +107,26 @@ export default function Login({ adminOnly = false }: LoginProps) {
     const accessToken = hashParams.get('access_token') || '';
     const type = hashParams.get('type') || queryParams.get('type');
 
-    if (accessToken && type === 'recovery') {
+    if (recoveryAccessToken) {
+      setResetToken(recoveryAccessToken);
+      setMode('reset');
+      setError('');
+      setMessage('Choose a new password.');
+    } else if (recoveryState === 'expired' || recoveryState === 'error') {
+      setResetToken('');
+      setMode('reset');
+      setMessage('');
+      setError(recoveryError || 'This password reset link is missing or expired.');
+    } else if (accessToken && type === 'recovery') {
       setResetToken(accessToken);
       setMode('reset');
         setMessage('Choose a new password.');
       window.history.replaceState(null, '', '/reset-password');
     } else if (location.pathname === '/reset-password' || queryParams.get('mode') === 'reset') {
       setMode('reset');
+      if (!resetToken) setError('This password reset link is missing or expired. Request a new link to continue.');
     }
-  }, [location.pathname, location.search]);
+  }, [location.pathname, location.search, recoveryAccessToken, recoveryError, recoveryState, resetToken]);
 
   useEffect(() => {
     if (!adminOnly && user && location.pathname === '/login') {
@@ -117,10 +139,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
     setMessage('');
     setSubmitting(true);
     try {
-      const loginRedirect = redirectTarget === defaultAuthenticatedRoute
-        ? '/login'
-        : `/login?next=${encodeURIComponent(redirectTarget)}`;
-      await signInGoogle(loginRedirect);
+      await signInGoogle(redirectTarget);
       if (isDesktopRuntime()) {
         setSubmitting(false);
         setMessage('Complete sign-in in your browser. StreamNyaa will return here automatically.');
@@ -142,6 +161,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
         await sendPasswordReset(email.trim());
         setMessage('Password reset link sent. Check your email and open the link to set a new password.');
       } else if (mode === 'reset') {
+        if (!resetToken) throw new Error('This password reset link is missing or expired. Request a new link to continue.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
         await resetPassword(resetToken, password);
         setMessage('Password updated. You can sign in with your new password.');
@@ -149,6 +169,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
         setPassword('');
         setConfirmPassword('');
         setResetToken('');
+        clearRecovery();
       } else if (adminOnly || mode === 'login') {
         await signIn(email.trim(), password);
         navigate(redirectTarget);
@@ -369,17 +390,34 @@ export default function Login({ adminOnly = false }: LoginProps) {
                 Forgot your password?
               </button>
             ) : mode === 'forgot' || mode === 'reset' ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setError('');
-                  setMessage('');
-                  setMode('login');
-                }}
-                className="mt-3 w-full text-center text-sm font-bold text-white/72 hover:text-white hover:underline"
-              >
-                Back to sign in
-              </button>
+              <div className="mt-3 flex flex-col items-center gap-2">
+                {mode === 'reset' && !resetToken ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearRecovery();
+                      setError('');
+                      setMessage('');
+                      setMode('forgot');
+                    }}
+                    className="min-h-11 rounded-lg px-4 text-sm font-bold text-primary hover:bg-primary/10"
+                  >
+                    Send another reset link
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearRecovery();
+                    setError('');
+                    setMessage('');
+                    setMode('login');
+                  }}
+                  className="min-h-11 rounded-lg px-4 text-sm font-bold text-white/72 hover:bg-white/5 hover:text-white"
+                >
+                  Back to sign in
+                </button>
+              </div>
             ) : null}
 
             {adminOnly ? (

@@ -22,14 +22,39 @@ if (-not $version) {
 $releaseRoot = Join-Path $repoRoot ("desktop\releases\v{0}" -f $version)
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 
+if ($version -eq '0.1.3') {
+  $validationMarker = Join-Path $releaseRoot 'auth-recovery-live-validation.json'
+  if (-not (Test-Path $validationMarker)) {
+    throw 'The 0.1.3 recovery installer cannot be replaced before live desktop validation.'
+  }
+  $validation = Get-Content -Raw $validationMarker | ConvertFrom-Json
+  if (-not $validation.validated -or [string]$validation.releaseRevision -ne 'auth-recovery-hotfix-2') {
+    throw 'The live validation marker does not authorize auth-recovery-hotfix-2 packaging.'
+  }
+}
+
+$rollbackInstaller = Get-ChildItem (Join-Path $repoRoot 'desktop\releases\v0.1.4') -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($rollbackInstaller -and $installer.Length -gt ($rollbackInstaller.Length + 2MB)) {
+  throw ("Installer size grew by more than 2 MiB over 0.1.4 ({0} -> {1} bytes)." -f $rollbackInstaller.Length, $installer.Length)
+}
+
 $copiedInstaller = Join-Path $releaseRoot $installer.Name
 Copy-Item -LiteralPath $installer.FullName -Destination $copiedInstaller -Force
 
-$hash = (Get-FileHash -Algorithm SHA256 $copiedInstaller).Hash
+$sha256 = [Security.Cryptography.SHA256]::Create()
+$installerStream = [IO.File]::OpenRead($copiedInstaller)
+try {
+  $hash = ([BitConverter]::ToString($sha256.ComputeHash($installerStream))).Replace('-', '')
+}
+finally {
+  $installerStream.Dispose()
+  $sha256.Dispose()
+}
 $sizeBytes = (Get-Item $copiedInstaller).Length
 $manifest = [ordered]@{
   product = 'StreamNyaa Desktop'
   version = $version
+  releaseRevision = 'desktop-upward-optimization-1'
   generatedAt = (Get-Date).ToString('o')
   installer = @{
     fileName = [IO.Path]::GetFileName($copiedInstaller)

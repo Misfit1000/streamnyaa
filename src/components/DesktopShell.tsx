@@ -1,4 +1,4 @@
-import { memo, Suspense, useEffect, useState, type FocusEvent, type PointerEvent } from 'react';
+import { memo, Suspense, useEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Bell, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
@@ -18,7 +18,7 @@ import {
   readDesktopScheduleReminders,
   subscribeDesktopScheduleReminders,
 } from '../lib/desktopReminders';
-import { preloadDesktopRoute, warmCoreDesktopRoutes } from '../lib/desktopRoutePreload';
+import { preloadDesktopRoute, preloadDesktopWatchData, warmCoreDesktopRoutes } from '../lib/desktopRoutePreload';
 
 const desktopNav = [
   { to: '/', label: 'Home', icon: Home },
@@ -35,17 +35,22 @@ const desktopLibrary = [
 ];
 
 const SIDEBAR_STORAGE_KEY = 'streamnyaa.desktop.sidebarCollapsed';
+const HOVER_PRELOAD_DELAY_MS = 110;
 
 const desktopShortcuts = [
   ['Ctrl K', 'Open search'],
   ['?', 'Show this shortcut guide'],
-  ['Esc', 'Close panels or overlays'],
-  ['Space', 'Play or pause in the player'],
-  ['[ / ]', 'Previous or next episode in the player'],
-  ['← / →', 'Seek backward or forward in the player'],
+  ['Esc', 'Exit fullscreen or close player panels'],
+  ['Space / K', 'Play or pause in the player'],
+  ['← / →', 'Seek 5 seconds backward or forward'],
+  ['J / L', 'Seek 10 seconds backward or forward'],
   ['↑ / ↓', 'Adjust player volume'],
   ['F', 'Toggle fullscreen in the player'],
+  ['M', 'Mute or unmute the player'],
   ['C', 'Toggle subtitles in the player'],
+  ['[ / ]', 'Decrease or increase playback speed'],
+  ['0–9', 'Jump to a percentage of the episode'],
+  ['Shift N', 'Play the next episode'],
 ];
 
 function DesktopOutletFallback() {
@@ -58,12 +63,21 @@ function DesktopOutletFallback() {
   );
 }
 
-function preloadLinkedRoute(target: EventTarget | null) {
+function internalLinkedRoute(target: EventTarget | null) {
   const anchor = (target as HTMLElement | null)?.closest<HTMLAnchorElement>('a[href]');
-  if (!anchor) return;
+  if (!anchor) return null;
   const url = new URL(anchor.href, window.location.href);
-  if (url.origin !== window.location.origin) return;
+  if (url.origin !== window.location.origin) return null;
+  return url;
+}
+
+function preloadLinkedRoute(target: EventTarget | null, includeWatchSources = false) {
+  const url = internalLinkedRoute(target);
+  if (!url) return;
   void preloadDesktopRoute(url.pathname);
+  if (/^\/(?:watch|anime)\//.test(url.pathname)) {
+    void preloadDesktopWatchData(`${url.pathname}${url.search}`, includeWatchSources);
+  }
 }
 
 export function isTypingTarget(target: EventTarget | null) {
@@ -76,16 +90,16 @@ export function isTypingTarget(target: EventTarget | null) {
 
 function ShortcutHelpOverlay({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/68 p-5 backdrop-blur-md" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-      <div className="sn-glass-panel w-full max-w-2xl overflow-hidden rounded-[2rem] shadow-2xl shadow-black/50">
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/82 p-5" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+      <div className="sn-glass-panel w-full max-w-2xl overflow-hidden rounded-xl border border-white/[0.08] shadow-sm">
         <div className="flex items-center justify-between gap-4 border-b border-white/[0.08] px-5 py-4">
           <div className="flex items-center gap-3">
             <span className="grid h-10 w-10 place-items-center rounded-2xl bg-primary/16 text-primary">
               <Keyboard className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Shortcuts</p>
-              <h2 className="text-xl font-black tracking-[-0.03em] text-white">Desktop controls</h2>
+              <p className="text-xs font-semibold text-primary">Keyboard shortcuts</p>
+              <h2 className="text-xl font-semibold text-white">Universal player controls</h2>
             </div>
           </div>
           <button type="button" onClick={onClose} className="sn-icon-action h-10 w-10 rounded-full" aria-label="Close shortcuts">
@@ -94,9 +108,9 @@ function ShortcutHelpOverlay({ onClose }: { onClose: () => void }) {
         </div>
         <div className="grid gap-2 p-5 sm:grid-cols-2">
           {desktopShortcuts.map(([keys, label]) => (
-            <div key={keys} className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.045] px-4 py-3">
-              <span className="text-sm font-bold text-white/70">{label}</span>
-              <kbd className="shrink-0 rounded-lg bg-black/42 px-2.5 py-1 text-xs font-black text-white/72 shadow-inner shadow-white/[0.04]">{keys}</kbd>
+            <div key={keys} className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.045] px-4 py-3">
+              <span className="text-sm font-semibold text-white/70">{label}</span>
+              <kbd className="shrink-0 rounded-md bg-black/42 px-2.5 py-1 text-xs font-semibold text-white/72">{keys}</kbd>
             </div>
           ))}
         </div>
@@ -160,6 +174,8 @@ export default function DesktopShell() {
   const isWatch = location.pathname.startsWith('/watch/');
   const [logoFailed, setLogoFailed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const hoverPreloadTimer = useRef<number | undefined>(undefined);
+  const hoverPreloadHref = useRef('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -186,6 +202,33 @@ export default function DesktopShell() {
   }, []);
 
   useEffect(() => warmCoreDesktopRoutes(), []);
+
+  useEffect(() => () => {
+    if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);
+  }, []);
+
+  const scheduleLinkedRoutePreload = (target: EventTarget | null) => {
+    const url = internalLinkedRoute(target);
+    if (!url || hoverPreloadHref.current === url.href) return;
+    hoverPreloadHref.current = url.href;
+    if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);
+    hoverPreloadTimer.current = window.setTimeout(() => {
+      hoverPreloadTimer.current = undefined;
+      void preloadDesktopRoute(url.pathname);
+      if (/^\/(?:watch|anime)\//.test(url.pathname)) {
+        void preloadDesktopWatchData(`${url.pathname}${url.search}`, false);
+      }
+    }, HOVER_PRELOAD_DELAY_MS);
+  };
+
+  const preloadLinkedRouteNow = (target: EventTarget | null, includeWatchSources = false) => {
+    if (hoverPreloadTimer.current !== undefined) {
+      window.clearTimeout(hoverPreloadTimer.current);
+      hoverPreloadTimer.current = undefined;
+    }
+    hoverPreloadHref.current = '';
+    preloadLinkedRoute(target, includeWatchSources);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -360,9 +403,9 @@ export default function DesktopShell() {
           </header>
           <main
             className="custom-scrollbar h-[calc(100vh-70px)] overflow-y-auto"
-            onPointerOverCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRoute(event.target)}
-            onPointerDownCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRoute(event.target)}
-            onFocusCapture={(event: FocusEvent<HTMLElement>) => preloadLinkedRoute(event.target)}
+            onPointerOverCapture={(event: PointerEvent<HTMLElement>) => scheduleLinkedRoutePreload(event.target)}
+            onPointerDownCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRouteNow(event.target, true)}
+            onFocusCapture={(event: FocusEvent<HTMLElement>) => preloadLinkedRouteNow(event.target)}
           >
             <div className="desktop-route-transition">
               <Suspense fallback={<DesktopOutletFallback />}>

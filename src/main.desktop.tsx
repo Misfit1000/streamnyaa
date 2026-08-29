@@ -10,3 +10,12 @@ createRoot(document.getElementById('root')!).render(
     <AppDesktop />
   </StrictMode>,
 );
+
+window.requestAnimationFrame(() => {
+  window.requestAnimationFrame(() => {
+    const boot = document.getElementById('streamnyaa-desktop-boot');
+    if (!boot) return;
+    boot.classList.add('sn-boot--leaving');
+    window.setTimeout(() => boot.remove(), 220);
+  });
+});

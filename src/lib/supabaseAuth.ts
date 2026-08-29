@@ -3,7 +3,10 @@ import { accountApiFetch, accountApiUrl } from './accountApi';
 const STORAGE_KEY = 'streamnyaa.auth.session';
 const FALLBACK_SUPABASE_URL = 'https://opteiijnvuwstpdjxwlk.supabase.co';
 const FALLBACK_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_oHAwXtg1wXcPybVYfLBUuQ_GiYz3Fxv';
-const DESKTOP_AUTH_CALLBACK_URL = 'streamnyaa://auth';
+const DESKTOP_AUTH_CALLBACK_ORIGIN = 'streamnyaa://auth/callback';
+const NATIVE_AUTH_RELAY_URL = 'https://www.streamnyaa.xyz/api/auth/native-callback';
+
+export type DesktopAuthAction = 'login' | 'recovery' | 'confirmation';
 
 export interface AuthUser {
   id: string;
@@ -19,7 +22,7 @@ export interface AuthSession {
   user?: AuthUser;
 }
 
-interface AuthConfig {
+export interface AuthConfig {
   supabaseUrl: string;
   publishableKey: string;
 }
@@ -72,7 +75,7 @@ function normalizeAuthNetworkError(error: unknown) {
   return error instanceof Error ? error : new Error('Authentication request failed.');
 }
 
-async function authConfig() {
+export async function getAuthConfig() {
   if (cachedConfig) return cachedConfig;
 
   const directConfig = envAuthConfig();
@@ -97,7 +100,7 @@ async function authConfig() {
 }
 
 async function authFetch(path: string, options: RequestInit = {}) {
-  const config = await authConfig();
+  const config = await getAuthConfig();
   let response: Response;
   try {
     response = await fetch(`${config.supabaseUrl}/auth/v1/${path}`, {
@@ -122,7 +125,10 @@ async function authFetch(path: string, options: RequestInit = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(data?.msg || data?.message || 'Authentication request failed.');
+    const error = new Error(data?.msg || data?.message || 'Authentication request failed.');
+    (error as any).status = response.status;
+    (error as any).code = data?.error_code || data?.code || undefined;
+    throw error;
   }
 
   return data;
@@ -151,9 +157,9 @@ function normalizeSession(data: any): AuthSession {
   };
 }
 
-function safeAuthRedirectPath(path = '/login') {
+export function safeAuthRedirectPath(path = '/login') {
   const normalized = String(path || '/login').trim();
-  if (!normalized.startsWith('/') || normalized.startsWith('//')) return '/login';
+  if (!normalized.startsWith('/') || normalized.startsWith('//') || /[\r\n]/.test(normalized)) return '/login';
   return normalized;
 }
 
@@ -181,8 +187,20 @@ function siteRedirectUrl(path = '/login') {
   return `${origin}${safePath}`;
 }
 
-function desktopAuthRedirectUrl(_path = '/login') {
-  return DESKTOP_AUTH_CALLBACK_URL;
+export type RecoverySession = AuthSession & {
+  access_token: string;
+};
+
+export type RecoveryState = 'idle' | 'ready' | 'submitting' | 'expired' | 'error';
+
+export function desktopAuthRedirectUrl(action: DesktopAuthAction, next = '/profile') {
+  const params = new URLSearchParams({ action, next: safeAuthRedirectPath(next) });
+  return `${DESKTOP_AUTH_CALLBACK_ORIGIN}?${params.toString()}`;
+}
+
+export function nativeRecoveryRedirectUrl(platform: 'desktop' | 'android') {
+  const params = new URLSearchParams({ platform, action: 'recovery' });
+  return `${NATIVE_AUTH_RELAY_URL}?${params.toString()}`;
 }
 
 export function normalizeOAuthSessionFromHash(hash: string): AuthSession | null {
@@ -201,15 +219,77 @@ export function normalizeOAuthSessionFromHash(hash: string): AuthSession | null 
   };
 }
 
+function callbackParams(url: URL) {
+  const params = new URLSearchParams(url.search);
+  const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
+  fragment.forEach((value, key) => params.set(key, value));
+  return params;
+}
+
+function normalizeOAuthSessionFromCallback(url: URL): AuthSession | null {
+  const params = callbackParams(url);
+  const accessToken = params.get('access_token');
+  if (!accessToken) return null;
+  return {
+    access_token: accessToken,
+    refresh_token: params.get('refresh_token') || undefined,
+    expires_at: params.get('expires_at')
+      ? Number(params.get('expires_at'))
+      : params.get('expires_in')
+        ? Math.floor(Date.now() / 1000) + Number(params.get('expires_in'))
+        : undefined,
+  };
+}
+
+export type DesktopAuthCallback = {
+  action: DesktopAuthAction;
+  next: string;
+  session: AuthSession | null;
+  error: string;
+};
+
+function callbackParam(url: URL, name: string) {
+  return callbackParams(url).get(name) || '';
+}
+
+export function parseDesktopAuthCallback(value: string): DesktopAuthCallback {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('The desktop authentication callback is invalid.');
+  }
+  if (url.protocol !== 'streamnyaa:' || url.hostname !== 'auth' || url.pathname !== '/callback') {
+    throw new Error('The desktop authentication callback was rejected.');
+  }
+  const rawAction = url.searchParams.get('action');
+  if (rawAction !== 'login' && rawAction !== 'recovery' && rawAction !== 'confirmation') {
+    throw new Error('The desktop authentication action was rejected.');
+  }
+  const defaultRoute = rawAction === 'login' ? '/profile' : '/login';
+  const session = normalizeOAuthSessionFromCallback(url);
+  const callbackType = callbackParam(url, 'type');
+  if (rawAction === 'recovery' && session?.access_token && callbackType !== 'recovery') {
+    throw new Error('The desktop password recovery session was rejected.');
+  }
+  return {
+    action: rawAction,
+    next: safeAuthRedirectPath(url.searchParams.get('next') || defaultRoute),
+    session,
+    error: callbackParam(url, 'error_description') || callbackParam(url, 'error'),
+  };
+}
+
 export async function createGoogleOAuthUrl(redirectPath = '/login', desktopCallback = false) {
-  const config = await authConfig();
+  const config = await getAuthConfig();
   const redirectTo = desktopCallback
-    ? desktopAuthRedirectUrl(redirectPath)
+    ? desktopAuthRedirectUrl('login', redirectPath)
     : siteRedirectUrl(redirectPath);
   const params = new URLSearchParams({
     provider: 'google',
     redirect_to: redirectTo,
   });
+  if (desktopCallback) params.set('prompt', 'select_account');
   return `${config.supabaseUrl}/auth/v1/authorize?${params.toString()}`;
 }
 
@@ -228,7 +308,9 @@ export async function signInWithGoogle(redirectPath = '/login') {
 }
 
 export async function signUpWithPassword(email: string, password: string) {
-  const redirectTo = siteRedirectUrl('/login');
+  const redirectTo = isDesktopRuntime()
+    ? desktopAuthRedirectUrl('confirmation', '/login')
+    : siteRedirectUrl('/login');
   const data = await authFetch(`signup?redirect_to=${encodeURIComponent(redirectTo)}`, {
     method: 'POST',
     body: JSON.stringify({ email, password }),
@@ -244,7 +326,9 @@ export async function signUpWithPassword(email: string, password: string) {
 }
 
 export async function requestPasswordReset(email: string) {
-  const redirectTo = siteRedirectUrl('/reset-password');
+  const redirectTo = isDesktopRuntime()
+    ? nativeRecoveryRedirectUrl('desktop')
+    : siteRedirectUrl('/reset-password');
   await authFetch(`recover?redirect_to=${encodeURIComponent(redirectTo)}`, {
     method: 'POST',
     body: JSON.stringify({ email }),
@@ -258,6 +342,18 @@ export async function updatePassword(accessToken: string, password: string) {
     headers: { Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ password }),
   });
+}
+
+export async function revokeRecoverySession(accessToken: string) {
+  if (!accessToken) return;
+  try {
+    await authFetch('logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  } catch {
+    // The password update may already have invalidated this short-lived session.
+  }
 }
 
 export async function fetchSessionUser(session: AuthSession) {
@@ -295,6 +391,10 @@ export async function signOutSession(session: AuthSession | null) {
 }
 
 export async function fetchAccount(session: AuthSession) {
+  if (isDesktopRuntime()) {
+    const user = await fetchSessionUser(session);
+    return { user, isAdmin: false };
+  }
   let response: Response;
   try {
     response = await fetch(accountApiUrl('/api/auth/me'), {

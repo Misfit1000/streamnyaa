@@ -1,13 +1,14 @@
-import { Component, lazy, type ErrorInfo, type ReactNode } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
+import { Component, lazy, useEffect, type ErrorInfo, type ReactNode } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import ScrollToTop from './components/ScrollToTop';
 import DesktopShell from './components/DesktopShell';
 import DesktopPlayerPreferenceBridge from './components/DesktopPlayerPreferenceBridge';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { AccountSyncProvider } from './context/AccountSyncContext';
 import { createAppQueryClient } from './lib/queryClient';
 import { desktopPageLoaders } from './lib/desktopRoutePreload';
+import { installDesktopQuerySnapshot, restoreDesktopQuerySnapshot } from './lib/desktopQuerySnapshot';
 
 const DesktopHome = lazy(desktopPageLoaders.home);
 const DesktopWatch = lazy(desktopPageLoaders.watch);
@@ -25,6 +26,8 @@ const DesktopProfile = lazy(desktopPageLoaders.profile);
 const Login = lazy(desktopPageLoaders.login);
 
 const queryClient = createAppQueryClient();
+restoreDesktopQuerySnapshot(queryClient);
+installDesktopQuerySnapshot(queryClient);
 
 class DesktopRouteBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null };
@@ -52,6 +55,26 @@ class DesktopRouteBoundary extends Component<{ children: ReactNode }, { error: E
           <p className="mt-2 max-w-2xl text-sm leading-6 text-white/62">
             {this.state.error.message || 'A desktop page failed before it could display content.'}
           </p>
+          <div className="mt-5 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => this.setState({ error: null })}
+              className="rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-primary/90"
+            >
+              Retry page
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.history.pushState({}, '', '/');
+                window.dispatchEvent(new PopStateEvent('popstate'));
+                this.setState({ error: null });
+              }}
+              className="rounded-md bg-white/[0.07] px-4 py-2.5 text-sm font-semibold text-white/76 transition-colors hover:bg-white/[0.11] hover:text-white"
+            >
+              Go home
+            </button>
+          </div>
         </div>
       );
     }
@@ -66,13 +89,42 @@ function AnimeToDesktopWatch() {
   return <Navigate to={`/watch/${id || ''}${location.search}`} replace />;
 }
 
+function DesktopAuthRouteBridge() {
+  const navigate = useNavigate();
+  const { desktopRoute, clearDesktopRoute } = useAuth();
+
+  useEffect(() => {
+    if (!desktopRoute) return;
+    navigate(desktopRoute, { replace: true });
+    clearDesktopRoute();
+  }, [clearDesktopRoute, desktopRoute, navigate]);
+
+  return null;
+}
+
+function DesktopMetadataRefreshBridge() {
+  useEffect(() => {
+    const handleRefresh = () => {
+      void queryClient.invalidateQueries({
+        predicate: (query) => ['anime', 'episodes', 'desktop-watch-installments-graph'].includes(String(query.queryKey[0] || '')),
+        refetchType: 'active',
+      });
+    };
+    window.addEventListener('streamnyaa:metadata-refreshed', handleRefresh);
+    return () => window.removeEventListener('streamnyaa:metadata-refreshed', handleRefresh);
+  }, []);
+  return null;
+}
+
 export default function AppDesktop() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <AccountSyncProvider>
           <DesktopPlayerPreferenceBridge />
+          <DesktopMetadataRefreshBridge />
           <BrowserRouter>
+            <DesktopAuthRouteBridge />
             <ScrollToTop />
             <DesktopRouteBoundary>
               <Routes>

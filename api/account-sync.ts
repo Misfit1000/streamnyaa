@@ -34,17 +34,12 @@ async function upsertProfile(user: any) {
     updated_at: new Date().toISOString(),
   };
 
-  try {
-    const rows = await supabaseRest('user_profiles?on_conflict=user_id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-      body: JSON.stringify([row]),
-    });
-    return Array.isArray(rows) ? rows[0] || row : row;
-  } catch (error: any) {
-    if (error?.status === 404) return null;
-    throw error;
-  }
+  const rows = await supabaseRest('user_profiles?on_conflict=user_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify([row]),
+  });
+  return Array.isArray(rows) ? rows[0] || row : row;
 }
 
 async function getAccountData(user: any) {
@@ -54,19 +49,10 @@ async function getAccountData(user: any) {
   let library: any[] = [];
   let watchHistory: any[] = [];
 
-  try {
-    const rows = await supabaseRest(`user_library?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=500`);
-    library = Array.isArray(rows) ? rows : [];
-  } catch (error: any) {
-    if (error?.status !== 404) throw error;
-  }
-
-  try {
-    const rows = await supabaseRest(`user_watch_history?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=100`);
-    watchHistory = Array.isArray(rows) ? rows : [];
-  } catch (error: any) {
-    if (error?.status !== 404) throw error;
-  }
+  const libraryRows = await supabaseRest(`user_library?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=500`);
+  library = Array.isArray(libraryRows) ? libraryRows : [];
+  const watchRows = await supabaseRest(`user_watch_history?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=100`);
+  watchHistory = Array.isArray(watchRows) ? watchRows : [];
 
   return { profile, library, watchHistory };
 }
@@ -86,6 +72,7 @@ function normalizeLibraryRows(userId: string, rows: any[]) {
         bookmarked: Boolean(item.bookmarked),
         liked: Boolean(item.liked),
         updated_at: item.updatedAt || item.updated_at || now,
+        deleted_at: item.deletedAt || item.deleted_at || null,
       };
     })
     .filter(Boolean);
@@ -97,19 +84,22 @@ function normalizeWatchHistoryRows(userId: string, rows: any[]) {
     .slice(0, 100)
     .map((item) => {
       const key = cleanString(item.key || item.history_key);
-      const source = item.source;
-      if (!key || !source) return null;
+      const source = item.source || null;
+      if (!key) return null;
       return {
         user_id: userId,
         history_key: key,
         source,
-        anime_id: item.animeId || item.anime_id || source.animeId ? String(item.animeId || item.anime_id || source.animeId) : null,
-        anime_title: item.animeTitle || item.anime_title || source.animeTitle || null,
-        episode: item.episode ?? source.episode ?? null,
-        progress_percent: Number(source.progressPercent || 0) || null,
-        resume_seconds: Number(source.resumeSeconds || 0) || null,
-        duration_seconds: Number(source.durationSeconds || 0) || null,
+        anime_id: item.animeId || item.anime_id || source?.animeId ? String(item.animeId || item.anime_id || source?.animeId) : null,
+        anime_title: item.animeTitle || item.anime_title || source?.animeTitle || null,
+        episode: item.episode ?? source?.episode ?? null,
+        poster_url: item.poster || item.poster_url || source?.poster || source?.image || null,
+        progress_percent: Number(item.watchedPercent ?? item.progress_percent ?? source?.progressPercent ?? 0),
+        resume_seconds: Number(item.positionSeconds ?? item.resume_seconds ?? source?.resumeSeconds ?? 0),
+        duration_seconds: Number(item.durationSeconds ?? item.duration_seconds ?? source?.durationSeconds ?? 0),
+        completed: Boolean(item.completed ?? source?.completed),
         updated_at: item.updatedAt || item.updated_at || now,
+        deleted_at: item.deletedAt || item.deleted_at || null,
       };
     })
     .filter(Boolean);
@@ -133,35 +123,26 @@ export default async function handler(req: any, res: any) {
     if (req.method === 'POST') {
       const body = parseBody(req);
       const userId = user.id;
-      const encodedUserId = encode(userId);
 
       await upsertProfile(user);
 
       if (Array.isArray(body.library)) {
-        await supabaseRest(`user_library?user_id=eq.${encodedUserId}`, {
-          method: 'DELETE',
-          headers: { Prefer: 'return=minimal' },
-        });
         const rows = normalizeLibraryRows(userId, body.library);
         if (rows.length) {
-          await supabaseRest('user_library', {
+          await supabaseRest('user_library?on_conflict=user_id,anime_id', {
             method: 'POST',
-            headers: { Prefer: 'return=minimal' },
+            headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
             body: JSON.stringify(rows),
           });
         }
       }
 
       if (Array.isArray(body.watchHistory)) {
-        await supabaseRest(`user_watch_history?user_id=eq.${encodedUserId}`, {
-          method: 'DELETE',
-          headers: { Prefer: 'return=minimal' },
-        });
         const rows = normalizeWatchHistoryRows(userId, body.watchHistory);
         if (rows.length) {
-          await supabaseRest('user_watch_history', {
+          await supabaseRest('user_watch_history?on_conflict=user_id,history_key', {
             method: 'POST',
-            headers: { Prefer: 'return=minimal' },
+            headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
             body: JSON.stringify(rows),
           });
         }
