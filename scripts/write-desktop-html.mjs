@@ -44,12 +44,12 @@ body{overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Bli
 .sn-boot__content{display:flex;flex-direction:column;align-items:center;gap:18px;transform:translateY(-2vh)}
 .sn-boot__mark{width:74px;height:74px;color:#f32645;filter:drop-shadow(0 8px 8px rgba(243,38,69,.18));animation:sn-boot-enter 460ms cubic-bezier(.2,.8,.2,1) both}
 .sn-boot__name{font-size:28px;font-weight:700;letter-spacing:-.04em}.sn-boot__name span{color:#f32645}
-.sn-boot__status{font-size:13px;color:rgba(247,247,248,.48)}
+.sn-boot__status{display:flex;width:224px;align-items:center;justify-content:space-between;gap:14px;font-size:13px;color:rgba(247,247,248,.48)}
+.sn-boot__value{font-variant-numeric:tabular-nums;color:rgba(247,247,248,.82);font-weight:600}
 .sn-boot__track{width:184px;height:2px;overflow:hidden;background:rgba(255,255,255,.08)}
-.sn-boot__bar{height:100%;width:46%;background:#f32645;animation:sn-boot-progress 1.15s ease-in-out infinite}
+.sn-boot__bar{height:100%;width:8%;background:#f32645;transition:width 260ms cubic-bezier(.2,.8,.2,1)}
 @keyframes sn-boot-enter{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
-@keyframes sn-boot-progress{0%{transform:translateX(-120%)}100%{transform:translateX(290%)}}
-@media(prefers-reduced-motion:reduce){.sn-boot__mark,.sn-boot__bar{animation:none}.sn-boot__bar{width:100%;opacity:.72}}
+@media(prefers-reduced-motion:reduce){.sn-boot__mark{animation:none}.sn-boot__bar{transition:none}}
 `;
 
 const html = `<!doctype html>
@@ -62,7 +62,7 @@ const html = `<!doctype html>
     <style>${criticalStyle}${inlineStyles ? `\n${inlineStyles}` : ''}</style>
   </head>
   <body>
-    <div id="streamnyaa-desktop-boot" class="sn-boot" role="status" aria-live="polite" aria-label="Starting StreamNyaa Desktop">
+    <div id="streamnyaa-desktop-boot" class="sn-boot" role="progressbar" aria-live="polite" aria-label="Starting StreamNyaa Desktop" aria-valuemin="0" aria-valuemax="100" aria-valuenow="8" data-progress="8">
       <div class="sn-boot__content">
         <svg class="sn-boot__mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 5c.67 0 1.35.09 2 .26 1.78-2 5.03-2.84 6.42-2.26 1.4.58-.42 7-.42 7 .57 1.07 1 2.24 1 3.44C21 17.9 16.97 21 12 21s-9-3-9-7.56c0-1.25.5-2.4 1-3.44 0 0-1.89-6.42-.5-7 1.39-.58 4.72.23 6.5 2.23A9.04 9.04 0 0 1 12 5Z"/>
@@ -70,7 +70,7 @@ const html = `<!doctype html>
         </svg>
         <div class="sn-boot__name">Stream<span>Nyaa</span></div>
         <div class="sn-boot__track" aria-hidden="true"><div class="sn-boot__bar"></div></div>
-        <div class="sn-boot__status">Restoring your desktop session</div>
+        <div class="sn-boot__status"><span class="sn-boot__status-label">Reading saved app data</span><span class="sn-boot__value">8%</span></div>
       </div>
     </div>
     <div id="root"></div>

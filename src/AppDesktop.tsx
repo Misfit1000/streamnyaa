@@ -9,6 +9,7 @@ import { AccountSyncProvider } from './context/AccountSyncContext';
 import { createAppQueryClient } from './lib/queryClient';
 import { desktopPageLoaders } from './lib/desktopRoutePreload';
 import { installDesktopQuerySnapshot, restoreDesktopQuerySnapshot } from './lib/desktopQuerySnapshot';
+import { completeDesktopBoot, updateDesktopBoot } from './lib/desktopBoot';
 
 const DesktopHome = lazy(desktopPageLoaders.home);
 const DesktopWatch = lazy(desktopPageLoaders.watch);
@@ -28,6 +29,7 @@ const Login = lazy(desktopPageLoaders.login);
 const queryClient = createAppQueryClient();
 restoreDesktopQuerySnapshot(queryClient);
 installDesktopQuerySnapshot(queryClient);
+updateDesktopBoot({ percent: 58, label: 'Restored saved content' });
 
 class DesktopRouteBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null };
@@ -102,6 +104,27 @@ function DesktopAuthRouteBridge() {
   return null;
 }
 
+function DesktopBootBridge() {
+  const { loading } = useAuth();
+
+  useEffect(() => {
+    if (loading) {
+      updateDesktopBoot({ percent: 76, label: 'Restoring your session and preferences' });
+      return;
+    }
+    updateDesktopBoot({ percent: 94, label: 'Preparing your library' });
+    const timer = window.setTimeout(() => completeDesktopBoot('Ready'), 80);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
+
+  useEffect(() => {
+    const safetyTimer = window.setTimeout(() => completeDesktopBoot('Opening in offline-ready mode'), 6000);
+    return () => window.clearTimeout(safetyTimer);
+  }, []);
+
+  return null;
+}
+
 function DesktopMetadataRefreshBridge() {
   useEffect(() => {
     const handleRefresh = () => {
@@ -120,6 +143,7 @@ export default function AppDesktop() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <DesktopBootBridge />
         <AccountSyncProvider>
           <DesktopPlayerPreferenceBridge />
           <DesktopMetadataRefreshBridge />

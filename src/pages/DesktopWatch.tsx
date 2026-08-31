@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
@@ -1745,6 +1746,7 @@ export default function DesktopWatch() {
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(() => new Set());
   const [failedSourceVersion, setFailedSourceVersion] = useState(0);
+  const [sourceSearchProgress, setSourceSearchProgress] = useState(18);
   const [watchProgressRecords, setWatchProgressRecords] = useState(() => loadDesktopWatchProgress());
   const routeAniListId = searchParams.get('aid') || '';
   const routeMalId = searchParams.get('mid') || '';
@@ -1776,6 +1778,7 @@ export default function DesktopWatch() {
   const preferenceSyncRetryRef = useRef<number | null>(null);
   const midstreamRecoveryCountRef = useRef(0);
   const preparedNextEpisodeRef = useRef('');
+  const sourceProgressTokenRef = useRef(0);
 
   const toggleSourceDetails = useCallback((sourceId: string) => {
     setExpandedSourceIds((current) => {
@@ -2261,6 +2264,13 @@ export default function DesktopWatch() {
   const { data: sources, error: sourcesError, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
     queryKey: sourceQueryKey,
     queryFn: async ({ signal }) => {
+      const progressToken = ++sourceProgressTokenRef.current;
+      const reportProgress = (value: number) => {
+        if (sourceProgressTokenRef.current === progressToken && !signal?.aborted) {
+          setSourceSearchProgress((current) => Math.max(current, value));
+        }
+      };
+      setSourceSearchProgress(18);
       const epPadded = String(selectedEpisode).padStart(2, '0');
       const titleCandidates = sourceSearchTitleVariants(anime, id, selectedInstallment)
         .filter(isSafeSourceQueryTitle)
@@ -2274,6 +2284,7 @@ export default function DesktopWatch() {
       const remainingBudgetMs = () => Math.max(0, SOURCE_SEARCH_BUDGET_MS - elapsedMs());
       const isAborted = () => Boolean(signal?.aborted);
       const finish = (items: RankedNyaaItem[], stage: string) => {
+        reportProgress(96);
         debugSourceLoading('done', {
           request: requestId,
           stage,
@@ -2325,6 +2336,7 @@ export default function DesktopWatch() {
         if (isAborted() || !items.length) return;
         const partial = combineSources(items);
         queryClient.setQueryData<RankedNyaaItem[]>(sourceQueryKey, partial);
+        reportProgress(stage === 'exact' ? 54 : stage === 'season' ? 74 : 88);
         debugSourceLoading('partial', { request: requestId, stage, count: partial.length, totalMs: elapsedMs() });
       };
 
@@ -3252,7 +3264,7 @@ export default function DesktopWatch() {
             ) : null}
             <h1 className={`${selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? 'mt-2' : 'mt-7'} break-words text-[31px] font-black leading-[1.05] tracking-[-0.04em] text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)]`}>{anime.title}</h1>
             {metadataLoading && !leftPanelInfo.primaryMeta.length && !leftPanelInfo.secondaryMeta.length && !leftPanelInfo.detailMeta.length ? (
-              <div className="mt-3 h-4 w-36 animate-pulse rounded bg-white/8" />
+              <DesktopLoadingProgress className="mt-4" variant="inline" label="Loading anime details" percent={detailsQuery.data ? 82 : 44} detail="Identity is available; episode metadata is refreshing." />
             ) : null}
             <div className="mt-3 space-y-1.5 text-sm font-bold text-white/64">
               {leftPanelInfo.primaryMeta.length ? (
@@ -4044,7 +4056,7 @@ export default function DesktopWatch() {
                       className="absolute inset-0 h-full w-full object-cover opacity-40"
                       fallbackClassName="absolute inset-0 h-full w-full"
                     />
-                    <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(3,3,6,0.96),rgba(3,3,6,0.62)_48%,rgba(3,3,6,0.24)),linear-gradient(0deg,rgba(3,3,6,0.96),rgba(3,3,6,0.18)_54%,rgba(3,3,6,0.50)),radial-gradient(circle_at_18%_18%,rgba(244,63,94,0.22),transparent_32%)]" />
+                    <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(3,3,6,0.96),rgba(3,3,6,0.62)_48%,rgba(3,3,6,0.24)),linear-gradient(0deg,rgba(3,3,6,0.96),rgba(3,3,6,0.18)_54%,rgba(3,3,6,0.50))]" />
                     <div className="relative flex min-h-[320px] flex-col justify-between p-6">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="min-w-0">
@@ -4247,16 +4259,7 @@ export default function DesktopWatch() {
 
             {animeNotYetAired ? null : sourcesBusy ? (
               <div className="grid gap-3">
-                <div className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.065))] p-4 shadow-lg shadow-black/20">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Finding best source</p>
-                      <p className="mt-1 text-sm font-black text-white">Searching sources for Episode {selectedEpisode}...</p>
-                      <p className="mt-1 text-xs font-bold text-white/50">Checking episode match, seed health, audio preference, and release quality.</p>
-                    </div>
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  </div>
-                </div>
+                <DesktopLoadingProgress label={`Finding sources for Episode ${selectedEpisode}`} percent={sourceSearchProgress} detail="Checking exact episode matches, seed health, audio preference, then broader aliases." />
                 {Array.from({ length: 3 }).map((_, index) => (
                   <div key={index} className="desktop-skeleton-shimmer h-[76px] rounded-2xl border border-white/[0.06]" />
                 ))}

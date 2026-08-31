@@ -4,6 +4,7 @@ import { ArrowLeft, CalendarDays, Filter, Flame, Loader2 } from 'lucide-react';
 import { fetchAnimeSeason, searchAnime } from '../api/jikan';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { animePath } from '../lib/slug';
 
 const seasonNames = ['winter', 'spring', 'summer', 'fall'];
@@ -150,9 +151,7 @@ export default function AnimeLanding() {
       ) : null}
 
       {isLoading ? (
-        <div className="flex justify-center py-24">
-          <Loader2 className="h-10 w-10 animate-spin text-primary" />
-        </div>
+        <DesktopLoadingProgress variant="screen" label="Loading this anime collection" percent={38} detail="Checking saved results while the live catalog responds." />
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-border bg-secondary/20 p-10 text-center text-muted-foreground">
           No anime found for this landing page yet.

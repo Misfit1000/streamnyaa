@@ -21,8 +21,14 @@ import { animeIdentity, animeTitleKey } from '../lib/animeIdentity';
 import { desktopUpcomingPath, desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { useSeasonalAnimeQuery } from '../lib/seasonalAnime';
 
-function fallbackCover(anilistId: number) {
-  return `https://img.anili.st/media/${anilistId}`;
+const FALLBACK_POSTERS: Record<number, string> = {
+  52299: 'https://cdn.myanimelist.net/images/anime/1801/142390l.jpg',
+  57334: 'https://cdn.myanimelist.net/images/anime/1584/143719l.jpg',
+  54492: 'https://cdn.myanimelist.net/images/anime/1708/138033l.jpg',
+};
+
+function fallbackCover(malId?: number) {
+  return malId ? FALLBACK_POSTERS[malId] || '' : '';
 }
 
 function makeFallbackAnime({
@@ -46,7 +52,7 @@ function makeFallbackAnime({
   synopsis?: string;
   genres?: string[];
 }) {
-  const cover = fallbackCover(id);
+  const cover = fallbackCover(mal_id);
   return {
     id,
     ...(mal_id ? { mal_id } : {}),
@@ -61,8 +67,10 @@ function makeFallbackAnime({
     rating: 'PG-13',
     type: 'TV',
     genres: (genres || ['Action', 'Drama']).map((name) => ({ name })),
-    banner_image: cover,
-    images: { jpg: { large_image_url: cover, image_url: cover }, webp: { large_image_url: cover, image_url: cover } },
+    banner_image: '',
+    images: cover
+      ? { jpg: { large_image_url: cover, image_url: cover }, webp: { large_image_url: cover, image_url: cover } }
+      : undefined,
   };
 }
 
@@ -268,11 +276,6 @@ function uniqueRecentSources(items: LocalPlaybackSource[]) {
   });
 }
 
-function imageFallbackCandidate(anime: any) {
-  const id = Number(anime?.anilist_id || (!anime?.mal_id ? anime?.id : 0) || 0);
-  return id > 0 ? `https://img.anili.st/media/${id}` : '';
-}
-
 function posterImageCandidates(anime: any) {
   return uniqueValues([
     anime?.coverImage?.extraLarge,
@@ -283,7 +286,6 @@ function posterImageCandidates(anime: any) {
     anime?.images?.jpg?.image_url,
     anime?.poster,
     anime?.image,
-    imageFallbackCandidate(anime),
     anime?.banner_image,
     anime?.bannerImage,
     anime?.trailer?.images?.maximum_image_url,
@@ -319,7 +321,6 @@ function landscapeImageCandidates(anime: any) {
     anime?.images?.jpg?.large_image_url,
     anime?.coverImage?.extraLarge,
     anime?.coverImage?.large,
-    imageFallbackCandidate(anime),
   ]);
 }
 

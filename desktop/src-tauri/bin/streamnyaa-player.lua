@@ -202,6 +202,7 @@ local player_meta = {
   coverBackgroundBgraPath = "",
   coverBackgroundWidth = 0,
   coverBackgroundHeight = 0,
+  artworkLayout = "",
 }
 
 local cover_overlay = nil
@@ -685,7 +686,7 @@ function normalize_loading_title(value)
   local title = tostring(value or "")
   title = title:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
   if title == "" then title = "this anime" end
-  return title:upper()
+  return title
 end
 
 function estimated_spaced_text_width(value, size, spacing)
@@ -715,8 +716,10 @@ end
 
 function loading_title_layout(raw_title, width, height, s)
   local title = normalize_loading_title(raw_title)
+  local artwork_layout = tostring(player_meta.artworkLayout or "landscape")
   local key = table.concat({
     title,
+    artwork_layout,
     tostring(math.floor(width or 0)),
     tostring(math.floor(height or 0)),
   }, ":")
@@ -724,13 +727,12 @@ function loading_title_layout(raw_title, width, height, s)
     return ui.title_layout
   end
 
-  local max_width = width * 0.82
-  local size = clamp(86 * s, 46 * s, 108 * s)
-  local spacing = clamp(size * 0.055, 1.6 * s, 5.8 * s)
+  local max_width = artwork_layout == "portrait" and width * 0.48 or width * 0.70
+  local size = clamp(61 * s, 38 * s, 72 * s)
+  local spacing = 0
 
-  while size > 58 * s and estimated_spaced_text_width(title, size, spacing) > max_width do
+  while size > 42 * s and estimated_spaced_text_width(title, size, spacing) > max_width do
     size = size - 2 * s
-    spacing = clamp(size * 0.052, 1.4 * s, 5.2 * s)
   end
 
   local lines = { title }
@@ -755,8 +757,7 @@ function loading_title_layout(raw_title, width, height, s)
         end
       end
       lines = { best_left or title, best_right or "" }
-      while size > 46 * s do
-        spacing = clamp(size * 0.047, 1.2 * s, 4.8 * s)
+      while size > 36 * s do
         local fits = true
         for _, line_value in ipairs(lines) do
           if estimated_spaced_text_width(line_value, size, spacing) > max_width then
@@ -881,6 +882,7 @@ function load_player_meta()
   end
 
   local previous_title = tostring(player_meta.animeTitle or "")
+  local previous_artwork_layout = tostring(player_meta.artworkLayout or "")
   local previous_cover_key = cover_metadata_key()
 
   player_meta.animeTitle = tostring(data.animeTitle or data.anime_title or "")
@@ -895,6 +897,7 @@ function load_player_meta()
   player_meta.coverBackgroundBgraPath = tostring(data.coverBackgroundBgraPath or data.cover_background_bgra_path or "")
   player_meta.coverBackgroundWidth = tonumber(data.coverBackgroundWidth or data.cover_background_width) or 0
   player_meta.coverBackgroundHeight = tonumber(data.coverBackgroundHeight or data.cover_background_height) or 0
+  player_meta.artworkLayout = tostring(data.artworkLayout or data.artwork_layout or "")
   msg.info(
     "[StreamNyaa Lua] metadata parsed: title="
       .. tostring(player_meta.animeTitle or "")
@@ -932,13 +935,15 @@ function load_player_meta()
     )
   )
 
-  if previous_title ~= tostring(player_meta.animeTitle or "") then
+  if previous_title ~= tostring(player_meta.animeTitle or "")
+      or previous_artwork_layout ~= tostring(player_meta.artworkLayout or "") then
     ui.title_layout_key = ""
     ui.title_layout = nil
   end
 
   local next_cover_key = cover_metadata_key()
-  if previous_cover_key ~= next_cover_key then
+  if previous_cover_key ~= next_cover_key
+      or previous_artwork_layout ~= tostring(player_meta.artworkLayout or "") then
     clear_cover_overlay()
     ui.cover_missing_log_key = ""
     if next_cover_key ~= "" and ui.cover_loaded_log_key ~= next_cover_key then
@@ -2831,6 +2836,21 @@ function loading_status_text()
   return "PREPARING STREAM..."
 end
 
+function startup_loading_percent()
+  local value = tonumber(mp.get_property("user-data/streamnyaa/loading_percent", ""))
+  if not value then return nil end
+  return math.floor(clamp(value, 0, 100) + 0.5)
+end
+
+function loading_episode_label()
+  local episode_number = tostring(player_meta.episodeNumber or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local episode_title = tostring(player_meta.episodeTitle or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local prefix = episode_number ~= "" and ("Episode " .. episode_number) or ""
+  if prefix ~= "" and episode_title ~= "" then return prefix .. "  ·  " .. episode_title end
+  if prefix ~= "" then return prefix end
+  return episode_title
+end
+
 function draw_loading_required_content(ass, width, height, s, status)
   local cx = width / 2
   if is_midplayback_buffering() then
@@ -2884,37 +2904,57 @@ function draw_loading_required_content(ass, width, height, s, status)
     return
   end
 
+  local artwork_layout = tostring(player_meta.artworkLayout or "landscape")
   local layout = loading_title_layout(loading_media_title(), width, height, s)
-  local title_size = clamp(layout.size, 46 * s, 104 * s)
-  local line_gap = title_size * 1.13
-  local title_center_y = height * 0.48
+  local title_size = clamp(layout.size, 36 * s, 72 * s)
+  local line_gap = title_size * 1.10
+  local title_x = artwork_layout == "portrait" and width * 0.075 or width * 0.07
+  local title_center_y = artwork_layout == "portrait" and height * 0.46 or height * 0.69
   local first_line_y = title_center_y - ((#layout.lines - 1) * line_gap / 2)
-  local spinner_y = height - 154 * s
-  local status_y = spinner_y + 48 * s
+  local episode_label = loading_episode_label()
+  local detail_y = first_line_y + #layout.lines * line_gap + 7 * s
+  local status_y = detail_y + (episode_label ~= "" and 40 * s or 12 * s)
   local t = (mp.get_time() - ui.anim_started)
-  local spinner_r = 19 * s
+  local percent = startup_loading_percent()
+  local status_text = percent and string.format("%s  %d%%", status, percent) or status
+
+  if artwork_layout == "landscape" then
+    rect(ass, 0, height * 0.48, width, height, C.black, 118)
+  else
+    rect(ass, 0, 0, width * 0.62, height, C.black, 94)
+  end
 
   for index, line_value in ipairs(layout.lines) do
-    draw_spaced_text(
+    draw_text(
       ass,
-      cx,
+      title_x,
       first_line_y + (index - 1) * line_gap,
-      5,
+      4,
       title_size,
       C.white,
       0,
       line_value,
-      layout.spacing,
       true,
       "Segoe UI Semibold"
     )
   end
 
-  local start_angle = (t * 250) % 360
-  draw_arc(ass, cx, spinner_y, spinner_r, start_angle, 218, 3.2 * s, C.accent, 0)
-  draw_arc(ass, cx, spinner_y, spinner_r * 0.62, 360 - start_angle, 142, 2.2 * s, C.white, 76)
-  circle(ass, cx, spinner_y, 3.2 * s, C.accent, 0)
-  draw_spaced_text(ass, cx, status_y, 5, font_px(s, 14, 13, 17), C.white, 8, status, 4.2 * s, true, "Segoe UI Semibold")
+  if episode_label ~= "" then
+    draw_text(ass, title_x, detail_y, 4, font_px(s, 17, 14, 20), C.secondary, 3, episode_label, false, "Segoe UI")
+  end
+  draw_text(ass, title_x, status_y, 4, font_px(s, 14, 12, 17), C.white, 4, status_text, true, "Segoe UI Semibold")
+
+  local bar_x1 = title_x
+  local bar_x2 = title_x + math.min(width * (artwork_layout == "portrait" and 0.42 or 0.38), 560 * s)
+  local bar_y = status_y + 24 * s
+  rounded_rect(ass, bar_x1, bar_y, bar_x2, bar_y + 4 * s, 2 * s, C.white, 220)
+  if percent then
+    rounded_rect(ass, bar_x1, bar_y, bar_x1 + (bar_x2 - bar_x1) * clamp(percent / 100, 0, 1), bar_y + 4 * s, 2 * s, C.accent, 0)
+  else
+    local segment = (bar_x2 - bar_x1) * 0.22
+    local pulse_x = bar_x1 + ((bar_x2 - bar_x1) - segment) * ((math.sin(t * 3.0) + 1) / 2)
+    rounded_rect(ass, pulse_x, bar_y, pulse_x + segment, bar_y + 4 * s, 2 * s, C.accent, 0)
+  end
 end
 
 function draw_loading(ass, width, height, s, cover_info)
@@ -2934,7 +2974,6 @@ function draw_loading(ass, width, height, s, cover_info)
       rect(ass, 0, 0, width, height, C.black, 0)
       rect(ass, 0, 0, width, height, "150006", 108)
     end
-    rect(ass, 0, 0, width, height, C.accent, 248)
     draw_loading_required_content(ass, width, height, s, status)
   end)
 

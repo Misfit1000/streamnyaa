@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Filter, Heart, Search, SlidersHorizontal, Sparkles, Star, TrendingUp, Tv, X } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import {
   fetchAnimeSeason,
   fetchPopularAnime,
@@ -642,13 +643,15 @@ function buildExploreRow(liveItems: any[], fallbackItems: any[], count: number, 
   return result;
 }
 
-function SkeletonGrid() {
+function SkeletonGrid({ label = 'Loading anime', percent = 36 }: { label?: string; percent?: number }) {
   return (
-    <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-      {Array.from({ length: 10 }).map((_, index) => (
-        <div key={index} className="sn-poster-card aspect-[2/3] animate-pulse bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]" />
-      ))}
-    </div>
+    <DesktopLoadingProgress label={label} percent={percent} detail="Cached titles appear immediately; live results are being verified.">
+      <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
+        {Array.from({ length: 10 }).map((_, index) => (
+          <div key={index} className="sn-poster-card aspect-[2/3] animate-pulse bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))] motion-reduce:animate-none" />
+        ))}
+      </div>
+    </DesktopLoadingProgress>
   );
 }
 
@@ -1790,7 +1793,7 @@ export default function DesktopExplore() {
             ))}
           </div>
         </div>
-        {searchQuery.isLoading ? <SkeletonGrid /> : results.length ? (
+        {searchQuery.isLoading ? <SkeletonGrid label={query ? 'Searching the anime catalog' : 'Loading this category'} percent={42} /> : results.length ? (
           <>
             <div className={densityGridClass}>
               {visibleResults.map((anime, index) => <ExploreAnimeCard key={anime.mal_id || anime.id || anime.title} anime={anime} index={index} density={density} />)}
@@ -1855,7 +1858,7 @@ export default function DesktopExplore() {
                   </button>
                 ) : null}
               </div>
-              {row.loading ? <SkeletonGrid /> : row.data.length ? (
+              {row.loading ? <SkeletonGrid label={`Loading ${row.title}`} percent={36} /> : row.data.length ? (
                 <div className={densityGridClass}>
                   {rowItems.map((anime, index) => <ExploreAnimeCard key={`${row.title}-${anime.mal_id || anime.id || anime.title}`} anime={anime} index={index} density={density} />)}
                 </div>

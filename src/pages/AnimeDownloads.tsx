@@ -6,6 +6,7 @@ import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volu
 import { useMemo, useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
 import type { TorrentSourceFilter } from '../lib/torrentBadges';
 import { useAuth } from '../context/AuthContext';
@@ -167,11 +168,7 @@ export default function AnimeDownloads() {
   });
 
   if (animeLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-      </div>
-    );
+    return <DesktopLoadingProgress variant="screen" label="Loading anime source details" percent={38} detail="Resolving the exact title and episode identity." />;
   }
 
   if (!anime) return <div className="text-center py-20">Anime not found</div>;
@@ -513,10 +510,12 @@ export default function AnimeDownloads() {
       </div>
 
       {torrentsLoading ? (
-        <div className="py-20 flex flex-col items-center gap-4">
-            <Loader2 className="w-10 h-10 text-primary animate-spin" />
-            <p className="text-muted-foreground font-medium">Searching sources for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {downloadFilter || 'episode'} releases...</p>
-        </div>
+        <DesktopLoadingProgress
+          variant="screen"
+          label={`Searching ${audioFilter === 'dub' ? 'dubbed' : 'subbed'} ${downloadFilter || 'episode'} sources`}
+          percent={52}
+          detail="Exact matches and source health are checked before results appear."
+        />
       ) : sortedTorrents.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-8 md:p-12 rounded-3xl text-center flex flex-col items-center">
           <HardDrive className="w-16 h-16 text-muted-foreground mb-4" />

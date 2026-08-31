@@ -4,19 +4,7 @@ function uniqueArtworkCandidates(values: unknown[]) {
     .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
 }
 
-function explicitAniListId(anime: any) {
-  const value = Number(
-    anime?.anilist_id
-    || anime?.idAniList
-    || (anime?.coverImage && anime?.id),
-  );
-  return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
-}
-
 export function desktopPosterCandidates(anime: any) {
-  const anilistId = explicitAniListId(anime);
-  const fallbackCover = anilistId ? `https://img.anili.st/media/${anilistId}` : '';
-
   return uniqueArtworkCandidates([
     anime?.coverImage?.extraLarge,
     anime?.coverImage?.large,
@@ -33,7 +21,6 @@ export function desktopPosterCandidates(anime: any) {
     anime?.thumbnail,
     anime?.image_url,
     anime?.image,
-    fallbackCover,
   ]).filter((value) => !/\/(?:banner|backdrop)\//i.test(value));
 }
 

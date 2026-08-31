@@ -332,6 +332,7 @@ struct PlayerMetadata {
     cover_background_bgra_path: Option<String>,
     cover_background_width: Option<u32>,
     cover_background_height: Option<u32>,
+    artwork_layout: Option<String>,
 }
 
 struct PreparedCover {
@@ -344,6 +345,7 @@ struct PreparedCover {
     background_path: PathBuf,
     background_width: u32,
     background_height: u32,
+    artwork_layout: String,
 }
 
 struct PlayerMetadataWrite {
@@ -1759,26 +1761,20 @@ fn playback_cover_source(request: &PlaybackRequest) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-fn playback_cover_source_kind(request: &PlaybackRequest, source: &str) -> &'static str {
-    if request
-        .banner
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty() && *value == source)
-        .is_some()
-    {
-        "banner"
-    } else if request
-        .poster
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty() && *value == source)
-        .is_some()
-    {
-        "poster"
-    } else {
-        "cover"
+fn playback_cover_sources(request: &PlaybackRequest) -> Vec<(String, &'static str)> {
+    let mut sources = Vec::new();
+    for (value, kind) in [
+        (request.banner.as_deref(), "banner"),
+        (request.poster.as_deref(), "poster"),
+    ] {
+        let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+            continue;
+        };
+        if !sources.iter().any(|(existing, _)| existing == value) {
+            sources.push((value.to_string(), kind));
+        }
     }
+    sources
 }
 
 fn is_remote_url(value: &str) -> bool {
@@ -1840,48 +1836,129 @@ fn rgba_to_bgra(image: &image::RgbaImage) -> Vec<u8> {
     bgra
 }
 
-fn prepare_cover_background(decoded: &image::RgbaImage) -> image::RgbaImage {
+fn cover_fill(
+    decoded: &image::RgbaImage,
+    target_width: u32,
+    target_height: u32,
+) -> image::RgbaImage {
     let (source_width, source_height) = decoded.dimensions();
-    let target_width = PLAYER_COVER_BACKGROUND_WIDTH;
-    let target_height = PLAYER_COVER_BACKGROUND_HEIGHT;
     let scale = (target_width as f64 / source_width as f64)
         .max(target_height as f64 / source_height as f64)
-        .max(1.0);
+        .max(0.01);
     let resized_width = ((source_width as f64 * scale).round() as u32).max(target_width);
     let resized_height = ((source_height as f64 * scale).round() as u32).max(target_height);
     let resized =
         image::imageops::resize(decoded, resized_width, resized_height, FilterType::Lanczos3);
     let crop_x = resized_width.saturating_sub(target_width) / 2;
     let crop_y = resized_height.saturating_sub(target_height) / 2;
-    let cropped =
-        image::imageops::crop_imm(&resized, crop_x, crop_y, target_width, target_height).to_image();
-    let mut background = image::imageops::blur(&cropped, 7.0);
-    for pixel in background.pixels_mut() {
-        pixel[0] = ((pixel[0] as f32 * 0.62) + 12.0).clamp(0.0, 255.0) as u8;
-        pixel[1] = (pixel[1] as f32 * 0.50).clamp(0.0, 255.0) as u8;
-        pixel[2] = ((pixel[2] as f32 * 0.52) + 8.0).clamp(0.0, 255.0) as u8;
+    image::imageops::crop_imm(&resized, crop_x, crop_y, target_width, target_height).to_image()
+}
+
+fn neutral_darken(image: &mut image::RgbaImage, amount: f32) {
+    let amount = amount.clamp(0.0, 1.0);
+    for pixel in image.pixels_mut() {
+        pixel[0] = (pixel[0] as f32 * amount).round().clamp(0.0, 255.0) as u8;
+        pixel[1] = (pixel[1] as f32 * amount).round().clamp(0.0, 255.0) as u8;
+        pixel[2] = (pixel[2] as f32 * amount).round().clamp(0.0, 255.0) as u8;
         pixel[3] = 255;
     }
-    background
+}
+
+fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage, &'static str) {
+    let (source_width, source_height) = decoded.dimensions();
+    let target_width = PLAYER_COVER_BACKGROUND_WIDTH;
+    let target_height = PLAYER_COVER_BACKGROUND_HEIGHT;
+    let aspect_ratio = source_width as f64 / source_height.max(1) as f64;
+
+    if aspect_ratio >= 1.35 {
+        return (
+            cover_fill(decoded, target_width, target_height),
+            "landscape",
+        );
+    }
+
+    // The backdrop is intentionally soft, so blur a quarter-size plate and
+    // scale it once. A full 1080p blur delayed player artwork on slower CPUs.
+    let soft_plate = cover_fill(decoded, target_width / 4, target_height / 4);
+    let soft_plate = image::imageops::blur(&soft_plate, 4.0);
+    let mut background = image::imageops::resize(
+        &soft_plate,
+        target_width,
+        target_height,
+        FilterType::Triangle,
+    );
+    neutral_darken(&mut background, 0.34);
+
+    let max_poster_width = 680u32;
+    let max_poster_height = 940u32;
+    let scale = (max_poster_width as f64 / source_width as f64)
+        .min(max_poster_height as f64 / source_height as f64)
+        .max(0.01);
+    let poster_width = ((source_width as f64 * scale).round() as u32).max(1);
+    let poster_height = ((source_height as f64 * scale).round() as u32).max(1);
+    let poster =
+        image::imageops::resize(decoded, poster_width, poster_height, FilterType::Lanczos3);
+    let poster_x = target_width
+        .saturating_sub(poster_width)
+        .saturating_sub(120);
+    let poster_y = target_height.saturating_sub(poster_height) / 2;
+
+    let shadow_x1 = poster_x.saturating_sub(18);
+    let shadow_y1 = poster_y.saturating_sub(18);
+    let shadow_x2 = (poster_x + poster_width + 18).min(target_width);
+    let shadow_y2 = (poster_y + poster_height + 18).min(target_height);
+    for y in shadow_y1..shadow_y2 {
+        for x in shadow_x1..shadow_x2 {
+            if x < poster_x
+                || x >= poster_x + poster_width
+                || y < poster_y
+                || y >= poster_y + poster_height
+            {
+                let pixel = background.get_pixel_mut(x, y);
+                pixel[0] = (pixel[0] as f32 * 0.72) as u8;
+                pixel[1] = (pixel[1] as f32 * 0.72) as u8;
+                pixel[2] = (pixel[2] as f32 * 0.72) as u8;
+            }
+        }
+    }
+    image::imageops::overlay(&mut background, &poster, poster_x.into(), poster_y.into());
+    (background, "portrait")
 }
 
 fn prepare_player_cover(
     cache_dir: &Path,
     request: &PlaybackRequest,
 ) -> Result<Option<PreparedCover>, String> {
-    let Some(source) = playback_cover_source(request) else {
+    let sources = playback_cover_sources(request);
+    if sources.is_empty() {
         return Ok(None);
+    }
+
+    let mut decoded_cover = None;
+    let mut last_error = None;
+    for (source, source_kind) in sources {
+        match read_cover_bytes(&source).and_then(|bytes| {
+            image::load_from_memory(&bytes)
+                .map_err(|error| format!("Could not decode cover image: {}", error))
+        }) {
+            Ok(image) if image.width() > 0 && image.height() > 0 => {
+                decoded_cover = Some((image.to_rgba8(), source, source_kind));
+                break;
+            }
+            Ok(_) => last_error = Some("Artwork dimensions were empty.".to_string()),
+            Err(error) => {
+                log_info(format!("Player artwork candidate skipped: {}", error));
+                last_error = Some(error);
+            }
+        }
+    }
+    let Some((decoded, source, source_kind)) = decoded_cover else {
+        return Err(last_error.unwrap_or_else(|| "No player artwork could be decoded.".to_string()));
     };
-    let source_kind = playback_cover_source_kind(request, &source);
     log_info(format!(
         "Player cover source selected: type={} source={}",
         source_kind, source
     ));
-
-    let bytes = read_cover_bytes(&source)?;
-    let decoded = image::load_from_memory(&bytes)
-        .map_err(|error| format!("Could not decode cover image: {}", error))?
-        .to_rgba8();
     let (source_width, source_height) = decoded.dimensions();
     if source_width == 0 || source_height == 0 {
         return Ok(None);
@@ -1892,7 +1969,7 @@ fn prepare_player_cover(
         .min(1.0);
     let width = ((source_width as f64 * scale).round() as u32).max(1);
     let height = ((source_height as f64 * scale).round() as u32).max(1);
-    let background = prepare_cover_background(&decoded);
+    let (background, artwork_layout) = prepare_loading_composition(&decoded);
     let resized = if width == source_width && height == source_height {
         decoded.clone()
     } else {
@@ -1966,6 +2043,7 @@ fn prepare_player_cover(
         background_path,
         background_width: background.width(),
         background_height: background.height(),
+        artwork_layout: artwork_layout.to_string(),
     }))
 }
 
@@ -1989,6 +2067,7 @@ fn player_metadata_for(
         cover_background_bgra_path: cover.map(|item| path_for_player_option(&item.background_path)),
         cover_background_width: cover.map(|item| item.background_width),
         cover_background_height: cover.map(|item| item.background_height),
+        artwork_layout: cover.map(|item| item.artwork_layout.clone()),
     }
 }
 
@@ -3770,6 +3849,7 @@ fn update_player_stream_metrics(
         },
     );
     set_player_user_data(ipc, "buffer", &format!("{:.0}%", buffer_percent));
+    set_player_user_data(ipc, "loading_percent", &format!("{:.0}", buffer_percent));
 }
 
 fn show_player_text_with_title(ipc: &str, title: Option<&str>, text: &str) {
@@ -5092,14 +5172,7 @@ fn wait_for_stream_with_session_guard(
                 || target_age >= STREAM_TARGET_HANDOFF_MS.saturating_mul(4);
             if ready_for_player {
                 if let Some(ipc) = player_ipc {
-                    let progress = if total_bytes > 0 {
-                        Some(
-                            (downloaded_bytes as f64 / total_bytes as f64 * 100.0)
-                                .clamp(0.0, 100.0),
-                        )
-                    } else {
-                        None
-                    };
+                    let progress = Some(100.0);
                     update_player_stream_metrics(
                         ipc,
                         "Ready",
@@ -5157,11 +5230,21 @@ fn wait_for_stream_with_session_guard(
                 (true, true) => "Buffering",
                 (true, false) => "Preparing",
             };
-            let progress = if total_bytes > 0 {
-                Some((downloaded_bytes as f64 / total_bytes as f64 * 100.0).clamp(0.0, 100.0))
+            // Startup progress is measured against the bytes required to begin
+            // playback. Torrent completion is a different metric and would make
+            // a ready episode misleadingly look only a few percent loaded.
+            let buffer_progress = if target_buffer > 0 {
+                (downloaded_bytes as f64 / target_buffer as f64 * 100.0).clamp(0.0, 100.0)
             } else {
-                None
+                0.0
             };
+            let stage_floor: f64 = match (selected_target.is_some(), peers > 0) {
+                (false, false) => 12.0,
+                (false, true) => 28.0,
+                (true, false) => 42.0,
+                (true, true) => 48.0,
+            };
+            let progress = Some(stage_floor.max(48.0 + buffer_progress * 0.48).min(96.0));
             update_player_stream_metrics(
                 ipc,
                 status_label,
@@ -6510,8 +6593,31 @@ mod tests {
         assert!(loading_image_len > 1024);
         assert_eq!(cover.loading_image_width, PLAYER_COVER_BACKGROUND_WIDTH);
         assert_eq!(cover.loading_image_height, PLAYER_COVER_BACKGROUND_HEIGHT);
+        assert_eq!(cover.artwork_layout, "landscape");
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn portrait_player_art_uses_neutral_right_aligned_composition() {
+        let source = image::RgbaImage::from_pixel(600, 900, image::Rgba([40, 120, 220, 255]));
+        let (composition, layout) = prepare_loading_composition(&source);
+        assert_eq!(layout, "portrait");
+        assert_eq!(composition.dimensions(), (1920, 1080));
+
+        let left = composition.get_pixel(120, 540);
+        let poster = composition.get_pixel(1400, 540);
+        assert!(poster[2] > left[2]);
+        assert!(poster[2] > poster[0]);
+    }
+
+    #[test]
+    fn landscape_player_art_preserves_original_color_balance() {
+        let source = image::RgbaImage::from_pixel(1600, 900, image::Rgba([30, 100, 210, 255]));
+        let (composition, layout) = prepare_loading_composition(&source);
+        assert_eq!(layout, "landscape");
+        let center = composition.get_pixel(960, 540);
+        assert_eq!([center[0], center[1], center[2]], [30, 100, 210]);
     }
 
     #[test]

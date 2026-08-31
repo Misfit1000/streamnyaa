@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, BarChart3, CheckCircle2, Gauge, GitCompare, Layers3, Loader2, Search, Tags, Trophy } from 'lucide-react';
 import { fetchAnimeDetails, searchAnime } from '../api/jikan';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
+import { aggregateLoadingProgress } from '../lib/desktopLoading';
 import { animePath } from '../lib/slug';
 
 function formatStatus(status?: string) {
@@ -229,6 +231,10 @@ export default function AnimeCompare() {
   const leftStudios = listNames(left?.studios);
   const rightStudios = listNames(right?.studios);
   const isReady = Boolean(left && right);
+  const comparisonProgress = aggregateLoadingProgress([
+    { id: 'left', complete: Boolean(leftPick && !leftLoading), progress: leftPick ? 25 : 0 },
+    { id: 'right', complete: Boolean(rightPick && !rightLoading), progress: rightPick ? 25 : 0 },
+  ]);
 
   return (
     <div className="container mx-auto px-4 py-10 md:px-10">
@@ -252,10 +258,7 @@ export default function AnimeCompare() {
       </section>
 
       {(leftLoading || rightLoading) && isReady ? (
-        <div className="mt-8 flex items-center justify-center gap-3 rounded-2xl border border-border bg-secondary/20 p-5 text-sm font-bold text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          Loading full comparison details...
-        </div>
+        <DesktopLoadingProgress className="mt-8" label="Loading full comparison details" percent={comparisonProgress.percent} detail={`${comparisonProgress.completed} of ${comparisonProgress.total} anime detail records verified.`} />
       ) : null}
 
       {isReady ? (

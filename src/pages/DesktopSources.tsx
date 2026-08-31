@@ -4,6 +4,7 @@ import { Copy, Loader2, Play, Search, SlidersHorizontal } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { searchNyaa, type NyaaItem } from '../api/nyaa';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter, type TorrentSourceFilter } from '../lib/torrentBadges';
 import {
   loadDesktopAudioPreference,
@@ -379,10 +380,7 @@ export default function DesktopSources() {
             Search by title plus episode, for example: <span className="font-black text-white">Witch Hat Atelier 07</span>
           </div>
         ) : searchQuery.isLoading ? (
-          <div className="sn-empty-state flex items-center justify-center py-20 text-white/60">
-            <Loader2 className="mr-3 h-6 w-6 animate-spin text-primary" />
-            Searching sources...
-          </div>
+          <DesktopLoadingProgress variant="screen" label="Searching verified sources" percent={46} detail="Exact episode matches are checked before broader title aliases." />
         ) : results.length ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm text-white/46">

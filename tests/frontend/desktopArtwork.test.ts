@@ -11,8 +11,11 @@ describe('desktop artwork candidates', () => {
 
     expect(candidates).toEqual([
       'https://images.example/frieren-poster.webp',
-      'https://img.anili.st/media/154587',
     ]);
+  });
+
+  it('does not use AniList social-card endpoints as portrait covers', () => {
+    expect(desktopPosterCandidates({ anilist_id: 154587 })).toEqual([]);
   });
 
   it('does not treat a generic or MAL id as an AniList image id', () => {

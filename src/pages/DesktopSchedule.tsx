@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Bell, CalendarDays, ChevronRight, Heart, History, Loader2 } from 'lucide-react';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { fetchCompleteSchedule, fetchSchedule } from '../api/jikan';
 import { animeIdentity } from '../lib/animeIdentity';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
@@ -595,10 +596,7 @@ export default function DesktopSchedule() {
         {!hasWatchHistory ? (
           <p className="mt-4 text-sm text-white/48">Watch an episode and its next scheduled release will appear here automatically.</p>
         ) : watchedWeekQuery.isLoading ? (
-          <div className="mt-4 flex items-center gap-2 text-sm text-white/52">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            Matching this week with your watch history...
-          </div>
+          <DesktopLoadingProgress className="mt-4" variant="inline" label="Matching your watch history" percent={48} detail="Checking upcoming episodes for saved series." />
         ) : (
           <>
             {watchedWeekItems.length ? (
@@ -675,10 +673,7 @@ export default function DesktopSchedule() {
       <section className="mt-7">
         {scheduleQuery.isLoading ? (
           <div className="sn-glass-panel p-5">
-            <div className="mb-4 flex items-center text-sm font-black text-white/58">
-              <Loader2 className="mr-3 h-5 w-5 animate-spin text-primary" />
-              Loading airing schedule...
-            </div>
+            <DesktopLoadingProgress variant="inline" label="Loading the airing schedule" percent={44} detail="Normalizing broadcast times for your time zone." />
             <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
               {Array.from({ length: 10 }).map((_, index) => (
                 <div key={index} className="sn-poster-card animate-pulse bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]" />

@@ -211,6 +211,19 @@ select:focus-visible {
   background: #0b0b0d;
 }
 
+/* Apply the same stable paint path to Home, Library, and related poster
+   surfaces. WebView2 can otherwise leave diagonal unpainted wedges while an
+   image or its clipped parent is transformed. Hover feedback remains in the
+   border and shadow instead of moving the media layer. */
+.desktop-app-shell .sn-poster-card img,
+.desktop-app-shell .sn-landscape-card img {
+  transform: none !important;
+}
+
+.desktop-app-shell .sn-card-hover:hover {
+  transform: none;
+}
+
 .sn-primary-action,
 .sn-secondary-action,
 .sn-ghost-action,

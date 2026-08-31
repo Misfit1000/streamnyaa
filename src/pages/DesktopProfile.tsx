@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { useAuth } from '../context/AuthContext';
 import { useAccountSync } from '../context/AccountSyncContext';
 import { animeIdentity } from '../lib/animeIdentity';
@@ -228,14 +229,7 @@ export default function DesktopProfile() {
     .join('') || 'SN';
 
   if (loading) {
-    return (
-      <div className="grid min-h-[60vh] place-items-center px-6">
-        <div className="sn-glass-panel px-6 py-5 shadow-2xl shadow-black/25">
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <p className="mt-4 text-sm font-semibold text-white/60">Loading desktop profile...</p>
-        </div>
-      </div>
-    );
+    return <DesktopLoadingProgress variant="screen" label="Loading your desktop profile" percent={72} detail="Restoring the encrypted session before account data is shown." />;
   }
 
   if (!user) {
