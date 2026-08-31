@@ -6,7 +6,7 @@ import DesktopShell from './components/DesktopShell';
 import DesktopPlayerPreferenceBridge from './components/DesktopPlayerPreferenceBridge';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AccountSyncProvider } from './context/AccountSyncContext';
-import { createAppQueryClient } from './lib/queryClient';
+import { desktopQueryClient } from './lib/desktopQueryClient';
 import { desktopPageLoaders } from './lib/desktopRoutePreload';
 import { installDesktopQuerySnapshot, restoreDesktopQuerySnapshot } from './lib/desktopQuerySnapshot';
 import { completeDesktopBoot, updateDesktopBoot } from './lib/desktopBoot';
@@ -26,7 +26,7 @@ const DesktopHistory = lazy(desktopPageLoaders.history);
 const DesktopProfile = lazy(desktopPageLoaders.profile);
 const Login = lazy(desktopPageLoaders.login);
 
-const queryClient = createAppQueryClient();
+const queryClient = desktopQueryClient;
 restoreDesktopQuerySnapshot(queryClient);
 installDesktopQuerySnapshot(queryClient);
 updateDesktopBoot({ percent: 58, label: 'Restored saved content' });

@@ -9,6 +9,7 @@ import { isDesktopApp } from '../lib/desktop';
 import { animeIdentity } from '../lib/animeIdentity';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 import { preloadDesktopRoute } from '../lib/desktopRoutePreload';
+import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 
 interface AnimeCardProps {
   anime: any;
@@ -53,6 +54,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   const prefetchAnime = () => {
     if (desktop) void preloadDesktopRoute(cardPath);
     if (desktop) {
+      primeDesktopWatchSnapshot(cardPath, anime);
       const [routePath, routeSearch = ''] = cardPath.split('?');
       const desktopRouteId = routePath.split('/').filter(Boolean).pop() || routeId;
       const params = new URLSearchParams(routeSearch);
@@ -95,6 +97,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
       to={cardPath}
       onMouseEnter={prefetchAnime}
       onFocus={prefetchAnime}
+      onPointerDown={prefetchAnime}
       className="sn-card-hover group relative block w-full rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
     >
       <div className="sn-poster-card relative aspect-[2/3]">

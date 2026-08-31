@@ -19,7 +19,9 @@ import {
 } from '../lib/desktop';
 import { animeIdentity, animeTitleKey } from '../lib/animeIdentity';
 import { desktopUpcomingPath, desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
+import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { useSeasonalAnimeQuery } from '../lib/seasonalAnime';
+import { airedEpisodeCount, episodeAvailabilityLabel } from '../lib/animeEpisodes';
 
 const FALLBACK_POSTERS: Record<number, string> = {
   52299: 'https://cdn.myanimelist.net/images/anime/1801/142390l.jpg',
@@ -591,15 +593,24 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
   episode?: string | number;
   showNew?: boolean;
 }) {
-  const episodeLabel = episode || anime?.latestEpisode || anime?.episodes || '';
+  const episodeLabel = episodeAvailabilityLabel({
+    ...anime,
+    latestEpisode: airedEpisodeCount(anime) ?? (Number(episode) > 0 ? Number(episode) : undefined),
+  });
   const year = animeYear(anime);
   const type = anime?.type || 'TV';
   const badges = [
-    episodeLabel ? `EP ${episodeLabel}` : '',
+    `EP ${episodeLabel}`,
     showNew ? 'NEW' : '',
   ].filter(Boolean);
   return (
-    <Link to={to} className="sn-card-hover group w-[190px] shrink-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 2xl:w-[210px]">
+    <Link
+      to={to}
+      onPointerEnter={() => primeDesktopWatchSnapshot(to, anime)}
+      onFocus={() => primeDesktopWatchSnapshot(to, anime)}
+      onPointerDown={() => primeDesktopWatchSnapshot(to, anime)}
+      className="sn-card-hover group w-[190px] shrink-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 2xl:w-[210px]"
+    >
       <div className="sn-poster-card relative h-[278px] transition-all duration-200 group-focus-visible:ring-primary/40 2xl:h-[304px]">
         <DesktopImage
           candidates={posterImageCandidates(anime)}

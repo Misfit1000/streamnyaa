@@ -48,6 +48,7 @@ const DEFAULT_TRACKERS = [
 ];
 
 let persistentSourceCacheLoaded = false;
+let sourceCachePersistTimer: number | undefined;
 
 function loadPersistentSourceCache() {
   if (persistentSourceCacheLoaded || typeof window === 'undefined') return;
@@ -64,7 +65,11 @@ function loadPersistentSourceCache() {
   }
 }
 
-function persistSourceCache() {
+export function warmDesktopSourceCache() {
+  if (isDesktopApp()) loadPersistentSourceCache();
+}
+
+function persistSourceCacheNow() {
   if (typeof window === 'undefined') return;
   try {
     const entries = [...inMemorySearchCache.entries()]
@@ -74,6 +79,20 @@ function persistSourceCache() {
   } catch {
     // A successful lookup must not fail because the optional persistent cache is full.
   }
+}
+
+function schedulePersistSourceCache() {
+  if (typeof window === 'undefined') return;
+  if (sourceCachePersistTimer !== undefined) window.clearTimeout(sourceCachePersistTimer);
+  sourceCachePersistTimer = window.setTimeout(() => {
+    sourceCachePersistTimer = undefined;
+    const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number };
+    if (idleWindow.requestIdleCallback) {
+      idleWindow.requestIdleCallback(persistSourceCacheNow, { timeout: 2_000 });
+    } else {
+      persistSourceCacheNow();
+    }
+  }, 900);
 }
 
 function parseSize(sizeStr: string): number {
@@ -239,7 +258,7 @@ export async function searchNyaa(
       if (!oldestKey) break;
       inMemorySearchCache.delete(oldestKey);
     }
-    if (desktop) persistSourceCache();
+    if (desktop) schedulePersistSourceCache();
     return results;
   })();
 
@@ -262,7 +281,7 @@ export async function searchNyaa(
 function searchResultUnlessAborted(request: Promise<NyaaItem[]>, signal?: AbortSignal) {
   if (!signal) return request;
   if (signal.aborted) return Promise.resolve([]);
-  return new Promise<NyaaItem[]>((resolve) => {
+  return new Promise<NyaaItem[]>((resolve, reject) => {
     let settled = false;
     const finish = (items: NyaaItem[]) => {
       if (settled) return;
@@ -272,6 +291,11 @@ function searchResultUnlessAborted(request: Promise<NyaaItem[]>, signal?: AbortS
     };
     const onAbort = () => finish([]);
     signal.addEventListener('abort', onAbort, { once: true });
-    void request.then(finish);
+    void request.then(finish, (error) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      reject(error);
+    });
   });
 }

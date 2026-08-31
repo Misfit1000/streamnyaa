@@ -50,6 +50,7 @@ export function restoreDesktopQuerySnapshot(queryClient: QueryClient) {
 export function installDesktopQuerySnapshot(queryClient: QueryClient) {
   if (typeof window === 'undefined') return () => {};
   let timer: number | undefined;
+  let idleHandle: number | undefined;
   const persist = () => {
     timer = undefined;
     try {
@@ -70,10 +71,27 @@ export function installDesktopQuerySnapshot(queryClient: QueryClient) {
   const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
     if (!event?.query || !isPublicDesktopQuery(event.query)) return;
     if (timer !== undefined) window.clearTimeout(timer);
-    timer = window.setTimeout(persist, 900);
+    timer = window.setTimeout(() => {
+      timer = undefined;
+      const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+        cancelIdleCallback?: (handle: number) => void;
+      };
+      if (idleWindow.requestIdleCallback) {
+        idleHandle = idleWindow.requestIdleCallback(() => {
+          idleHandle = undefined;
+          persist();
+        }, { timeout: 2_500 });
+      } else {
+        persist();
+      }
+    }, 900);
   });
   return () => {
     unsubscribe();
     if (timer !== undefined) window.clearTimeout(timer);
+    if (idleHandle !== undefined) {
+      (window as Window & { cancelIdleCallback?: (handle: number) => void }).cancelIdleCallback?.(idleHandle);
+    }
   };
 }

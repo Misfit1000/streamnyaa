@@ -10,6 +10,8 @@ import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { episodeRangeContains, isEpisodeInteractiveTarget, isIntentionalHorizontalDrag } from '../lib/desktopEpisodeInteraction';
 import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 import { preloadDesktopWatchData } from '../lib/desktopRoutePreload';
+import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
+import { totalEpisodeCount } from '../lib/animeEpisodes';
 import {
   desktopEpisodeWatchState,
   formatPlaybackTime,
@@ -1133,15 +1135,26 @@ function preferInstallmentCandidate(
 }
 
 function knownAiredEpisodeCount(anime: any, episodeItems: any[] = []) {
+  const now = Date.now();
   const pageMax = episodeItems.length
     ? Math.max(...episodeItems.map((episode: any) => Number(episode?.mal_id) || 0))
     : 0;
-  if (anime?.nextAiringEpisode?.episode) return Math.max(Number(anime.nextAiringEpisode.episode) - 1, pageMax, 0);
-  if (String(anime?.status || '').toUpperCase() === 'FINISHED') return Math.max(Number(anime?.episodes || 1), pageMax, 1);
-  if (String(anime?.status || '').toUpperCase() === 'RELEASING') {
-    return Math.max(Number(anime?.episodes || 0), Number(anime?.streamingEpisodes?.length || 0), pageMax, 1);
-  }
-  return Math.max(pageMax, Number(anime?.episodes || 0), 0);
+  const verifiedPageMax = episodeItems.length
+    ? Math.max(0, ...episodeItems
+        .filter((episode: any) => {
+          const airedAt = Date.parse(String(episode?.aired || ''));
+          return Number.isFinite(airedAt) && airedAt <= now;
+        })
+        .map((episode: any) => Number(episode?.mal_id) || 0))
+    : 0;
+  const nextEpisode = Number(anime?.nextAiringEpisode?.episode || 0);
+  const explicitLatest = Number(anime?.latestEpisode || anime?.latest_episode || 0);
+  const streamCount = Number(anime?.streamingEpisodes?.length || 0);
+  const status = String(anime?.status || '').toUpperCase();
+  if (nextEpisode > 0) return Math.max(nextEpisode - 1, explicitLatest, verifiedPageMax, streamCount, 0);
+  if (/FINISHED|COMPLETED/.test(status)) return Math.max(Number(anime?.episodes || 1), pageMax, 1);
+  if (/RELEASING|AIRING/.test(status)) return Math.max(explicitLatest, verifiedPageMax, streamCount, 0);
+  return Math.max(explicitLatest, verifiedPageMax, pageMax, Number(anime?.episodes || 0), 0);
 }
 
 function episodeNumberFromTitle(value = '') {
@@ -1892,7 +1905,10 @@ export default function DesktopWatch() {
     retryDelay: (attempt) => 250 + attempt * 450,
   });
 
-  const fallbackAnime = useMemo(() => fallbackAnimeFromRoute(id), [id]);
+  const fallbackAnime = useMemo(
+    () => readDesktopWatchSnapshot(id || '') || fallbackAnimeFromRoute(id),
+    [id],
+  );
   const usingPlaceholderDetails = Boolean((detailsQuery as { isPlaceholderData?: boolean }).isPlaceholderData);
   const resolvedAnime = usingPlaceholderDetails ? null : detailsQuery.data?.data;
   const anime = resolvedAnime || fallbackAnime;
@@ -2059,7 +2075,9 @@ export default function DesktopWatch() {
 
   const pageItems = episodeData?.data || [];
   const airedCount = knownAiredEpisodeCount(anime, pageItems);
-  const selectedEpisode = Math.max(1, requestedEpisode || airedCount || 1);
+  const selectedEpisode = airedCount > 0
+    ? Math.min(Math.max(1, requestedEpisode || airedCount), airedCount)
+    : 1;
   const episodeCatalogEstimated = episodeData?.streamnyaa?.status === 'estimated';
   const selectedEpisodeWatchState = desktopEpisodeWatchState(anime, selectedEpisode, watchProgressRecords);
   const sourceBrowserPath = useMemo(() => {
@@ -2094,7 +2112,7 @@ export default function DesktopWatch() {
     return new Map(entries);
   }, [anime?.streamingEpisodes]);
   const allEpisodes = useMemo(() => {
-    const count = Math.max(airedCount || pageItems.length || 1, selectedEpisode || 1);
+    const count = Math.max(airedCount, 0);
     return Array.from({ length: count }, (_, index) => {
       const number = index + 1;
       const pageEpisode = pageEpisodeMap.get(number);
@@ -2178,7 +2196,7 @@ export default function DesktopWatch() {
     const animeInfo: any = anime;
     const year = Number(animeInfo?.year || animeInfo?.seasonYear || 0);
     const type = compactAnimeType(animeInfo?.type || animeInfo?.format || '');
-    const episodeCount = airedCount || Number(animeInfo?.episodes || animeInfo?.episodeCount || 0) || 0;
+    const totalEpisodes = totalEpisodeCount(animeInfo);
     const score = Number(animeInfo?.score || 0);
     const rawStatus = String(animeInfo?.status || '').trim();
     const rawSeason = String(animeInfo?.season || '').trim();
@@ -2206,7 +2224,7 @@ export default function DesktopWatch() {
       primaryMeta: [
         year ? String(year) : '',
         type,
-        episodeCount ? `${episodeCount} ${episodeCount === 1 ? 'episode' : 'episodes'}` : '',
+        `Latest aired ${airedCount || 0}/${totalEpisodes ?? '?'}`,
       ].filter(Boolean),
       secondaryMeta: [
         score ? `Rating ${score.toFixed(1)}` : '',
@@ -2241,12 +2259,13 @@ export default function DesktopWatch() {
 
   const sourceSearchReady = useMemo(() => {
     if (animeNotYetAired) return false;
+    if (airedCount <= 0) return false;
     if (selectedEpisode <= 0) return false;
     return sourceSearchTitleVariants(anime, id, selectedInstallment).some((title) => {
       const cleaned = cleanTitle(title).trim().toLowerCase();
       return Boolean(cleaned && isSafeSourceQueryTitle(cleaned));
     });
-  }, [anime, animeNotYetAired, id, selectedEpisode, selectedInstallment]);
+  }, [airedCount, anime, animeNotYetAired, id, selectedEpisode, selectedInstallment]);
 
   const sourceQueryKey = useMemo(() => [
     'desktop-watch-sources',
@@ -2368,6 +2387,8 @@ export default function DesktopWatch() {
         queries: string[],
         options: { pages?: number; wide?: boolean; deep?: boolean },
         maxQueries: number,
+        stage: 'exact' | 'season' | 'broad',
+        baseItems: RankedNyaaItem[] = [],
       ) => {
         const pending: string[] = [];
         for (const rawQuery of queries) {
@@ -2388,6 +2409,7 @@ export default function DesktopWatch() {
           if (isAborted()) return [];
           const hitItems = combineSources(results.flatMap((result) => result.items));
           accumulated = combineSources([...accumulated, ...hitItems]);
+          if (accumulated.length) publishPartial(combineSources([...baseItems, ...accumulated]), stage);
           const healthyMatches = accumulated.filter((source) => source.playable && source.rawSeeders > 0);
           if (healthyMatches.length >= 3) return accumulated;
         }
@@ -2412,7 +2434,7 @@ export default function DesktopWatch() {
           `${cleanedTitle} ep ${selectedEpisode}${audioSuffix}`,
         ];
       });
-      const exact = await tryQueries([...seasonCodeEpisodeQueries, ...exactEpisodeQueries], { pages: 2, wide: false, deep: false }, 16);
+      const exact = await tryQueries([...seasonCodeEpisodeQueries, ...exactEpisodeQueries], { pages: 1, wide: false, deep: false }, 16, 'exact');
       if (isAborted()) return finish([], 'aborted-after-exact');
       publishPartial(exact, 'exact');
       if (exact.filter((source) => source.matchTier === 'exact' && source.playable).length >= 3) return finish(exact, 'exact');
@@ -2431,7 +2453,7 @@ export default function DesktopWatch() {
         });
         return queries;
       }));
-      const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 2, wide: true, deep: true }, 12);
+      const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 1, wide: true, deep: true }, 12, 'season', exact);
       if (isAborted()) return finish([], 'aborted-after-season');
       const combinedSeason = combineSources([...exact, ...seasonEpisode]);
       publishPartial(combinedSeason, 'season');
@@ -2447,14 +2469,14 @@ export default function DesktopWatch() {
           `${cleanedTitle} ${selectedEpisode}`,
         ];
       });
-      const broad = await tryQueries(broadEpisodeQueries, { pages: 3, wide: true, deep: true }, 8);
+      const broad = await tryQueries(broadEpisodeQueries, { pages: 2, wide: true, deep: true }, 8, 'broad', combinedSeason);
       const combinedEpisode = combineSources([...exact, ...seasonEpisode, ...broad]);
       if (isAborted()) return finish([], 'aborted-after-broad');
       publishPartial(combinedEpisode, 'broad');
       if (combinedEpisode.filter((source) => source.playable && (source.matchTier === 'exact' || source.matchTier === 'likely')).length >= 3) return finish(combinedEpisode, 'broad-needed');
       if (remainingBudgetMs() <= 0) return finish(combinedEpisode, 'budget-after-broad');
 
-      const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 3, wide: true, deep: true }, 4);
+      const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 2, wide: true, deep: true }, 4, 'broad', combinedEpisode);
       if (isAborted()) return finish([], 'aborted-after-fallback');
       if (fallback.length) return finish(combineSources([...combinedEpisode, ...fallback]), 'fallback');
 
@@ -3540,9 +3562,12 @@ export default function DesktopWatch() {
             </div>
 
             <div className="sn-glass-card sticky top-3 z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-2xl px-3 py-3">
-              <div className="flex items-center gap-2 text-lg font-black">
+              <div className="flex items-center gap-2">
                 <Download className="h-4 w-4 text-primary" />
-                <span>{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'} ({airedCount || allEpisodes.length || 0})</span>
+                <span>
+                  <span className="block text-lg font-bold">{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'}</span>
+                  <span className="mt-0.5 block text-xs font-semibold text-white/46">Latest aired {airedCount || 0} · Total {totalEpisodeCount(anime) ?? '?'}</span>
+                </span>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-3">
                 <div className="hidden items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 px-3 py-2 shadow-inner shadow-black/20 md:flex">

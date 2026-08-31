@@ -54,7 +54,7 @@ $sizeBytes = (Get-Item $copiedInstaller).Length
 $manifest = [ordered]@{
   product = 'StreamNyaa Desktop'
   version = $version
-  releaseRevision = 'desktop-loading-presentation-1'
+  releaseRevision = 'desktop-interaction-speed-1'
   generatedAt = (Get-Date).ToString('o')
   installer = @{
     fileName = [IO.Path]::GetFileName($copiedInstaller)
@@ -63,8 +63,10 @@ $manifest = [ordered]@{
     sha256 = $hash
   }
   notes = @(
-    'Adds aspect-aware neutral player artwork and truthful boot, section, source, and playback loading progress.',
-    'Prevents AniList social cards and WebView paint wedges from entering desktop poster surfaces.',
+    'Adds adaptive click-ahead route, metadata, episode, artwork, and source preparation without downloading torrent video early.',
+    'Rebuilds Explore around the primary desktop metadata path with persistent controls and no fabricated fallback catalog.',
+    'Shows verified aired and total episode counts, and hides unaired episodes from Watch selection.',
+    'Moves metadata, source, and query snapshot persistence away from interaction frames.',
     'Run the manual desktop release checklist before publishing this installer.',
     'Code-sign the installer before distribution.',
     'Keep the previous stable installer for rollback.'

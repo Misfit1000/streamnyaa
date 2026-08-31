@@ -35,7 +35,8 @@ const desktopLibrary = [
 ];
 
 const SIDEBAR_STORAGE_KEY = 'streamnyaa.desktop.sidebarCollapsed';
-const HOVER_PRELOAD_DELAY_MS = 110;
+const HOVER_PRELOAD_DELAY_MS = 80;
+const HOVER_SOURCE_PRELOAD_DELAY_MS = 360;
 
 const desktopShortcuts = [
   ['Ctrl K', 'Open search'],
@@ -175,7 +176,9 @@ export default function DesktopShell() {
   const [logoFailed, setLogoFailed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const hoverPreloadTimer = useRef<number | undefined>(undefined);
+  const hoverSourcePreloadTimer = useRef<number | undefined>(undefined);
   const hoverPreloadHref = useRef('');
+  const contentRef = useRef<HTMLElement>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -203,8 +206,41 @@ export default function DesktopShell() {
 
   useEffect(() => warmCoreDesktopRoutes(), []);
 
+  useEffect(() => {
+    if (isWatch || typeof window === 'undefined') return;
+    const connection = navigator as Navigator & { connection?: { saveData?: boolean } };
+    if (connection.connection?.saveData) return;
+    let cancelled = false;
+    const prepareVisibleLinks = () => {
+      if (cancelled || document.visibilityState === 'hidden') return;
+      const links = [...(contentRef.current?.querySelectorAll<HTMLAnchorElement>('a[href]') || [])]
+        .filter((link) => {
+          const url = new URL(link.href, window.location.href);
+          if (!/^\/(?:watch|anime)\//.test(url.pathname)) return false;
+          const rect = link.getBoundingClientRect();
+          return rect.bottom > 70 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+        })
+        .slice(0, 6);
+      let cursor = 0;
+      const worker = async () => {
+        while (!cancelled && cursor < links.length) {
+          const link = links[cursor++];
+          const url = new URL(link.href, window.location.href);
+          await preloadDesktopWatchData(`${url.pathname}${url.search}`, false);
+        }
+      };
+      void Promise.all([worker(), worker()]);
+    };
+    const timer = window.setTimeout(prepareVisibleLinks, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isWatch, location.key, location.pathname, location.search]);
+
   useEffect(() => () => {
     if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);
+    if (hoverSourcePreloadTimer.current !== undefined) window.clearTimeout(hoverSourcePreloadTimer.current);
   }, []);
 
   const scheduleLinkedRoutePreload = (target: EventTarget | null) => {
@@ -212,6 +248,7 @@ export default function DesktopShell() {
     if (!url || hoverPreloadHref.current === url.href) return;
     hoverPreloadHref.current = url.href;
     if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);
+    if (hoverSourcePreloadTimer.current !== undefined) window.clearTimeout(hoverSourcePreloadTimer.current);
     hoverPreloadTimer.current = window.setTimeout(() => {
       hoverPreloadTimer.current = undefined;
       void preloadDesktopRoute(url.pathname);
@@ -219,12 +256,24 @@ export default function DesktopShell() {
         void preloadDesktopWatchData(`${url.pathname}${url.search}`, false);
       }
     }, HOVER_PRELOAD_DELAY_MS);
+    if (/^\/(?:watch|anime)\//.test(url.pathname)) {
+      hoverSourcePreloadTimer.current = window.setTimeout(() => {
+        hoverSourcePreloadTimer.current = undefined;
+        if (hoverPreloadHref.current === url.href) {
+          void preloadDesktopWatchData(`${url.pathname}${url.search}`, true);
+        }
+      }, HOVER_SOURCE_PRELOAD_DELAY_MS);
+    }
   };
 
   const preloadLinkedRouteNow = (target: EventTarget | null, includeWatchSources = false) => {
     if (hoverPreloadTimer.current !== undefined) {
       window.clearTimeout(hoverPreloadTimer.current);
       hoverPreloadTimer.current = undefined;
+    }
+    if (hoverSourcePreloadTimer.current !== undefined) {
+      window.clearTimeout(hoverSourcePreloadTimer.current);
+      hoverSourcePreloadTimer.current = undefined;
     }
     hoverPreloadHref.current = '';
     preloadLinkedRoute(target, includeWatchSources);
@@ -402,6 +451,7 @@ export default function DesktopShell() {
             </div>
           </header>
           <main
+            ref={contentRef}
             className="custom-scrollbar h-[calc(100vh-70px)] overflow-y-auto"
             onPointerOverCapture={(event: PointerEvent<HTMLElement>) => scheduleLinkedRoutePreload(event.target)}
             onPointerDownCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRouteNow(event.target, true)}

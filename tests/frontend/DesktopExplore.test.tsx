@@ -18,6 +18,8 @@ describe('desktop Explore behavior', () => {
             banner_image: 'https://images.example/banner/frieren.webp',
             type: 'TV',
             score: 9.3,
+            episodes: 27,
+            latestEpisode: 24,
           }}
         />
       </MemoryRouter>,
@@ -27,6 +29,7 @@ describe('desktop Explore behavior', () => {
     expect(image.getAttribute('src')).toBe('https://images.example/frieren.webp');
     expect(image.className).not.toMatch(/scale|transition|transform/);
     expect(container.querySelector('.sn-explore-poster')).not.toBeNull();
+    expect(screen.getByText('EP 24/27')).toBeTruthy();
   });
 
   it('renders select options in a body-level popup outside clipped filter panels', () => {

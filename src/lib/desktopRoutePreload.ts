@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
-import { searchNyaa } from '../api/nyaa';
+import { searchNyaa, warmDesktopSourceCache } from '../api/nyaa';
+import { desktopQueryClient } from './desktopQueryClient';
 
 type PageModule = { default: ComponentType };
 type DesktopRouteKey =
@@ -91,15 +92,29 @@ export function preloadDesktopWatchData(pathWithSearch: string, includeSources =
   const existing = watchDataPreloads.get(preloadKey);
   if (existing) return existing;
 
-  const preload = fetchAnimeDetails(routeId, {
-    anilistId: url.searchParams.get('anilistId') || url.searchParams.get('aid') || undefined,
-    malId: url.searchParams.get('malId') || url.searchParams.get('mid') || undefined,
-    routeTitle: routeId.replace(/^\d+-?/, '').replace(/-/g, ' '),
+  const anilistId = url.searchParams.get('anilistId') || url.searchParams.get('aid') || '';
+  const malIdHint = url.searchParams.get('malId') || url.searchParams.get('mid') || '';
+  const detailsKey = ['anime', routeId, anilistId, malIdHint] as const;
+  const preload = desktopQueryClient.fetchQuery({
+    queryKey: detailsKey,
+    queryFn: () => fetchAnimeDetails(routeId, {
+      anilistId: anilistId || undefined,
+      malId: malIdHint || undefined,
+      routeTitle: routeId.replace(/^\d+-?/, '').replace(/-/g, ' '),
+    }),
+    staleTime: 1000 * 60 * 15,
   }).then(async ({ data }) => {
-    const malId = String(data?.mal_id || url.searchParams.get('malId') || routeId).match(/\d+/)?.[0];
+    const malId = String(data?.mal_id || malIdHint || routeId).match(/\d+/)?.[0];
     const title = String(data?.title_english || data?.title_romaji || data?.title || '').trim();
     const tasks: Promise<unknown>[] = [];
-    if (malId) tasks.push(fetchAnimeEpisodes(malId, Math.max(1, Math.ceil(episode / 100))));
+    if (malId) {
+      const page = Math.max(1, Math.ceil(episode / 100));
+      tasks.push(desktopQueryClient.prefetchQuery({
+        queryKey: ['episodes', malId, page],
+        queryFn: () => fetchAnimeEpisodes(malId, page),
+        staleTime: 1000 * 60 * 10,
+      }));
+    }
     if (includeSources && title) {
       tasks.push(searchNyaa(`${title} ${String(episode).padStart(2, '0')}`, '1_2', '0', '1', {
         deep: false,
@@ -115,7 +130,7 @@ export function preloadDesktopWatchData(pathWithSearch: string, includeSources =
   return preload;
 }
 
-const CORE_ROUTE_KEYS: DesktopRouteKey[] = ['explore', 'schedule', 'sources', 'library', 'history', 'settings'];
+const CORE_ROUTE_KEYS: DesktopRouteKey[] = ['watch', 'explore', 'schedule', 'sources', 'library', 'history', 'settings'];
 const MAX_CONCURRENT_WARMS = 2;
 let coreWarmStarted = false;
 let playbackWorkloadBusy = false;
@@ -153,6 +168,7 @@ export function warmCoreDesktopRoutes() {
       return;
     }
     importsStarted = true;
+    warmDesktopSourceCache();
     const queue = [...CORE_ROUTE_KEYS];
     let active = 0;
     const runNext = () => {

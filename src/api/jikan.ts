@@ -21,6 +21,8 @@ type MetadataCacheEntry = {
 const memoryMetadataCache = new Map<string, MetadataCacheEntry>();
 const inFlightMetadataRequests = new Map<string, Promise<Response>>();
 const providerCooldowns = new Map<MetadataProvider, number>();
+const pendingMetadataWrites = new Map<string, MetadataCacheEntry>();
+let metadataPersistTimer: number | undefined;
 
 const hashCacheKey = (input: string) => {
   let hash = 5381;
@@ -213,6 +215,33 @@ const readLocalMetadata = (key: string, allowStale = false) => {
   }
 };
 
+const flushPendingMetadataWrites = () => {
+  if (typeof window === 'undefined' || !pendingMetadataWrites.size) return;
+  const entries = [...pendingMetadataWrites.entries()];
+  pendingMetadataWrites.clear();
+  try {
+    entries.forEach(([key, entry]) => localStorage.setItem(key, JSON.stringify(entry)));
+    pruneLocalMetadataCache();
+  } catch {
+    // The memory cache remains authoritative for this session.
+  }
+};
+
+const scheduleMetadataPersistence = () => {
+  if (typeof window === 'undefined') return;
+  if (metadataPersistTimer !== undefined) window.clearTimeout(metadataPersistTimer);
+  metadataPersistTimer = window.setTimeout(() => {
+    metadataPersistTimer = undefined;
+    const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number };
+    if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(flushPendingMetadataWrites, { timeout: 2_000 });
+    else flushPendingMetadataWrites();
+  }, 700);
+};
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flushPendingMetadataWrites);
+}
+
 const writeLocalMetadata = (key: string, value: unknown, ttlSeconds: number) => {
   const boundedTtlSeconds = Math.max(60, Math.min(60 * 60 * 24 * 30, Math.floor(ttlSeconds || 0)));
   const entry: MetadataCacheEntry = {
@@ -223,17 +252,8 @@ const writeLocalMetadata = (key: string, value: unknown, ttlSeconds: number) => 
   memoryMetadataCache.set(key, entry);
 
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(entry));
-    pruneLocalMetadataCache();
-  } catch {
-    try {
-      pruneLocalMetadataCache();
-      localStorage.setItem(key, JSON.stringify(entry));
-    } catch {
-      // The direct request already succeeded, so cache write failure should not break the page.
-    }
-  }
+  pendingMetadataWrites.set(key, entry);
+  scheduleMetadataPersistence();
 };
 
 const providerInCooldown = (provider: MetadataProvider) => {
@@ -502,6 +522,7 @@ const mapAnilistToJikan = (m: any) => ({
   isAdult: m.isAdult || false,
   streamingEpisodes: m.streamingEpisodes || [],
   nextAiringEpisode: m.nextAiringEpisode,
+  latestEpisode: m.latestEpisode || (m.nextAiringEpisode?.episode ? Math.max(0, Number(m.nextAiringEpisode.episode) - 1) : null),
   relations: m.relations?.edges?.map((edge: any) => ({
     relation: edge.relationType,
     entry: [
@@ -618,6 +639,7 @@ export const fetchTopAiring = async () => {
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -734,6 +756,7 @@ export const fetchPopularAnime = async () => {
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -767,6 +790,7 @@ export const fetchSeasonalAnime = async () => {
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -1180,6 +1204,7 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -1210,6 +1235,7 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -1257,6 +1283,7 @@ export const fetchTopAnimeByYear = async (year: number, maxPages = 1) => {
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -1304,6 +1331,7 @@ export const fetchAnimeSeason = async (season: string, year: number, page = 1) =
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
