@@ -1,7 +1,9 @@
 import { memo, Suspense, useEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Bell, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
+import { CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
+import DesktopNotificationCenter from './DesktopNotificationCenter';
+import { fetchCompleteSchedule } from '../api/jikan';
 import { useAuth } from '../context/AuthContext';
 import {
   listenDesktopPlayerAutoNextChanged,
@@ -19,6 +21,7 @@ import {
   subscribeDesktopScheduleReminders,
 } from '../lib/desktopReminders';
 import { preloadDesktopRoute, preloadDesktopWatchData, warmCoreDesktopRoutes } from '../lib/desktopRoutePreload';
+import { loadDesktopScheduleUpdatePreferences } from '../lib/scheduleRevisions';
 
 const desktopNav = [
   { to: '/', label: 'Home', icon: Home },
@@ -205,6 +208,37 @@ export default function DesktopShell() {
   }, []);
 
   useEffect(() => warmCoreDesktopRoutes(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    let lastRefreshAt = 0;
+    const refreshScheduleUpdates = async () => {
+      const preferences = loadDesktopScheduleUpdatePreferences();
+      if (cancelled || (!preferences.personal && !preferences.global)) return;
+      lastRefreshAt = Date.now();
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+      end.setHours(23, 59, 59, 999);
+      await fetchCompleteSchedule(
+        Math.floor(start.getTime() / 1000),
+        Math.floor(end.getTime() / 1000),
+        4,
+      ).catch(() => undefined);
+    };
+    const refreshWhenStale = () => {
+      if (Date.now() - lastRefreshAt >= 1000 * 60 * 20) void refreshScheduleUpdates();
+    };
+    timer = window.setTimeout(() => void refreshScheduleUpdates(), 2200);
+    window.addEventListener('focus', refreshWhenStale);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      window.removeEventListener('focus', refreshWhenStale);
+    };
+  }, []);
 
   useEffect(() => {
     if (isWatch || typeof window === 'undefined') return;
@@ -431,10 +465,7 @@ export default function DesktopShell() {
               <kbd className="ml-auto rounded-md bg-white/8 px-2 py-1 text-[11px] font-bold text-white/42">Ctrl K</kbd>
             </Link>
             <div className="ml-auto flex items-center gap-3">
-              <Link to="/schedule" title="Airing reminders" className="sn-icon-action relative h-10 w-10 rounded-full">
-                <Bell className="h-5 w-5" />
-                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary shadow-[0_0_0_4px_rgba(244,63,94,0.14)]" />
-              </Link>
+              <DesktopNotificationCenter />
               <Link
                 to={user ? '/profile' : '/login?next=/profile'}
                 title={user ? 'Profile' : 'Sign in'}

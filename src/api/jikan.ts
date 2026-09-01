@@ -1,4 +1,5 @@
 import { useStore } from '../store/useStore';
+import { enrichDesktopScheduleRevisions } from '../lib/scheduleRevisions';
 import { extractNumericId } from '../lib/slug';
 import { fetchDesktopMetadataApi, isDesktopApp } from '../lib/desktop';
 import { desktopDataError } from '../lib/desktopData';
@@ -1424,13 +1425,15 @@ export const fetchSchedule = async (page = 1, startDate: number, endDate: number
     return true;
   });
   
-  return {
-    data: schedules.map((schedule: any) => ({
+  const mappedSchedules = schedules.map((schedule: any) => ({
       ...mapAnilistToJikan(schedule.media),
       airingAt: schedule.airingAt,
       airingEpisode: schedule.episode,
       scheduleId: schedule.id
-    })),
+    }));
+
+  return {
+    data: isDesktopApp() ? enrichDesktopScheduleRevisions(mappedSchedules) : mappedSchedules,
     pagination: {
       has_next_page: data.data.Page.pageInfo.hasNextPage,
       last_visible_page: data.data.Page.pageInfo.lastPage

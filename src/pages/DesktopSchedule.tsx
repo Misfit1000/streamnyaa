@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Bell, CalendarDays, ChevronRight, Heart, History, Loader2 } from 'lucide-react';
+import { Bell, CalendarDays, ChevronRight, Heart, History, Loader2, TriangleAlert } from 'lucide-react';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
@@ -25,6 +25,7 @@ import {
   writeDesktopScheduleReminders as writeScheduleReminders,
 } from '../lib/desktopReminders';
 import { useStore } from '../store/useStore';
+import { readDesktopScheduleUpdates, subscribeDesktopScheduleUpdates } from '../lib/scheduleRevisions';
 
 type ScheduleNotice = {
   tone: 'success' | 'error' | 'info';
@@ -140,11 +141,16 @@ function scheduleBroadcastState(anime: any, airingMs = airingAtMs(anime)): Sched
   }
 
   if (explicitRescheduled || /\b(rescheduled|reschedule|moved to|new time)\b/.test(statusText)) {
+    const previousAiringMs = airingAtMs({ airingAt: anime?.previousAiringAt });
     return {
       kind: 'rescheduled',
       label: 'Rescheduled',
       headline: 'RESCHEDULED',
-      detail: airingMs ? 'Airing time has changed.' : 'Waiting for an updated airing time.',
+      detail: previousAiringMs && airingMs
+        ? `Moved from ${formatAiringTime(previousAiringMs)} to ${formatAiringTime(airingMs)}.`
+        : airingMs
+          ? 'Airing time has changed.'
+          : 'Waiting for an updated airing time.',
       prominent: true,
       blocksReminder: !airingMs,
     };
@@ -179,17 +185,10 @@ function scheduleBroadcastState(anime: any, airingMs = airingAtMs(anime)): Sched
   };
 }
 
-function scheduleStatePanelClass(kind: ScheduleBroadcastState['kind']) {
-  if (kind === 'cancelled' || kind === 'suspended') {
-    return 'border-red-300/35 bg-red-950/75 text-red-50 shadow-red-950/35';
-  }
-  if (kind === 'delayed' || kind === 'postponed' || kind === 'hiatus') {
-    return 'border-amber-300/35 bg-amber-950/75 text-amber-50 shadow-amber-950/30';
-  }
-  if (kind === 'rescheduled') {
-    return 'border-sky-300/30 bg-sky-950/75 text-sky-50 shadow-sky-950/30';
-  }
-  return 'border-white/12 bg-black/70 text-white shadow-black/30';
+function scheduleStateAccentClass(kind: ScheduleBroadcastState['kind']) {
+  if (kind === 'cancelled' || kind === 'suspended') return 'border-red-400/70 text-red-100';
+  if (kind === 'rescheduled') return 'border-sky-300/55 text-sky-100';
+  return 'border-primary/70 text-primary';
 }
 
 function scheduleStateBadgeClass(kind: ScheduleBroadcastState['kind']) {
@@ -259,6 +258,7 @@ export default function DesktopSchedule() {
   const [pendingReminderId, setPendingReminderId] = useState<string | null>(null);
   const [notice, setNotice] = useState<ScheduleNotice | null>(null);
   const [notificationPermission, setNotificationPermission] = useState<ScheduleNotificationPermission>('default');
+  const [scheduleUpdates, setScheduleUpdates] = useState(() => readDesktopScheduleUpdates());
   const [watchedSeries, setWatchedSeries] = useState(() => loadDesktopWatchedSeries());
   const { isInMyList, addToMyList, removeFromMyList } = useStore();
   const days = useMemo(scheduleDays, []);
@@ -328,6 +328,10 @@ export default function DesktopSchedule() {
 
   useEffect(() => subscribeDesktopWatchProgress(() => {
     setWatchedSeries(loadDesktopWatchedSeries());
+  }), []);
+
+  useEffect(() => subscribeDesktopScheduleUpdates(() => {
+    setScheduleUpdates(readDesktopScheduleUpdates());
   }), []);
 
   useEffect(() => {
@@ -476,12 +480,12 @@ export default function DesktopSchedule() {
               <CalendarDays className="h-6 w-6" />
             </span>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Calendar</p>
+              <p className="text-xs font-semibold text-primary">Calendar</p>
               <h1 className="mt-1 text-3xl font-semibold tracking-[-0.03em] text-white">Airing schedule</h1>
               <p className="mt-1 text-sm text-white/56">Times are shown in {timezone}.</p>
             </div>
           </div>
-          <div className="flex flex-wrap justify-end gap-2 text-xs font-black text-white/58">
+          <div className="flex flex-wrap justify-end gap-2 text-xs font-semibold text-white/58">
             <button
               type="button"
               onClick={() => setFavoritesOnly((value) => !value)}
@@ -556,6 +560,38 @@ export default function DesktopSchedule() {
         </div>
       ) : null}
 
+      {scheduleUpdates.length ? (
+        <section className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.035] p-4" aria-labelledby="recent-schedule-alerts">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="grid h-9 w-9 place-items-center rounded-lg bg-amber-400/12 text-amber-200">
+                <TriangleAlert className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 id="recent-schedule-alerts" className="text-sm font-semibold text-white">Recent delay and cancellation alerts</h2>
+                <p className="mt-0.5 text-xs text-white/46">Confirmed provider states only; inferred schedule changes are labeled separately as rescheduled.</p>
+              </div>
+            </div>
+            <span className="text-xs font-semibold text-white/42">{scheduleUpdates.length} update{scheduleUpdates.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="sn-scroll-rail mt-3 flex gap-2 pb-1">
+            {scheduleUpdates.slice(0, 8).map((update) => (
+              <div key={update.id} className="w-[280px] shrink-0 rounded-lg bg-black/28 px-3 py-3 ring-1 ring-inset ring-white/[0.06]">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-semibold text-white">{update.title}</span>
+                  <span className={`shrink-0 text-[10px] font-semibold ${update.kind === 'cancelled' ? 'text-red-200' : 'text-amber-200'}`}>
+                    {update.kind === 'cancelled' ? 'Cancelled' : 'Delayed'}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-white/50">
+                  Episode {update.episode}{update.kind === 'delayed' ? ` · ${formatAiringTime(update.airingAt)}` : ''}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <div className="sn-scroll-rail mt-6 flex gap-3 pb-2">
         {days.map((day, index) => (
           <button
@@ -568,14 +604,14 @@ export default function DesktopSchedule() {
                 : 'bg-white/[0.045] text-white/62 hover:bg-white/[0.07] hover:text-white'
             }`}
           >
-            <span className="block text-sm font-black">{day.label}</span>
+            <span className="block text-sm font-semibold">{day.label}</span>
             <span className="mt-1 block text-xs opacity-72">{day.date}</span>
-            {index === 0 ? <span className="mt-2 inline-flex rounded-full bg-white/12 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]">Today</span> : null}
+            {index === 0 ? <span className="mt-2 inline-flex rounded-full bg-white/12 px-2 py-0.5 text-[10px] font-semibold">Today</span> : null}
           </button>
         ))}
       </div>
 
-      <section className="mt-6 overflow-hidden rounded-2xl bg-[linear-gradient(120deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_58%,rgba(153,0,24,0.12))] p-5 shadow-xl shadow-black/20 ring-1 ring-inset ring-white/[0.07]">
+      <section className="mt-6 overflow-hidden rounded-xl bg-[linear-gradient(120deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_58%,rgba(153,0,24,0.12))] p-5 shadow-sm ring-1 ring-inset ring-white/[0.07]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-primary/14 text-primary">
@@ -762,24 +798,27 @@ export default function DesktopSchedule() {
                             )}
                           </button>
                         </div>
-                        <div className="absolute left-2 top-2 z-20 rounded-lg border border-white/10 bg-black/72 px-2 py-1 text-[11px] font-black text-white backdrop-blur">
+                        <div className="absolute left-2 top-2 z-20 rounded-lg border border-white/10 bg-black/72 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur">
                           {time} - Ep {anime.airingEpisode}
                         </div>
                         {broadcastState.prominent ? (
                           <div
-                            className={`pointer-events-none absolute inset-x-3 top-1/2 z-[25] -translate-y-1/2 rounded-2xl border px-3 py-3 text-center shadow-2xl backdrop-blur-md ${scheduleStatePanelClass(broadcastState.kind)}`}
+                            className="pointer-events-none absolute inset-x-3 top-[46%] z-[25] flex -translate-y-1/2 items-center gap-2"
+                            title={broadcastState.detail}
                           >
-                            <div className="text-2xl font-black uppercase tracking-[0.2em]">{broadcastState.headline || broadcastState.label}</div>
-                            {broadcastState.detail ? (
-                              <div className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] opacity-80">{broadcastState.detail}</div>
-                            ) : null}
+                            <span className="h-px min-w-3 flex-1 bg-gradient-to-r from-transparent via-primary/65 to-primary/20" />
+                            <span className={`rounded-md border bg-[#08080b]/92 px-4 py-2 text-xs font-semibold tracking-wider backdrop-blur-sm ${scheduleStateAccentClass(broadcastState.kind)}`}>
+                              {broadcastState.headline || broadcastState.label}
+                            </span>
+                            <span className="h-px min-w-3 flex-1 bg-gradient-to-l from-transparent via-primary/65 to-primary/20" />
                           </div>
-                        ) : null}
-                        <div
-                          className={`absolute bottom-2 right-2 z-20 rounded-lg border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] backdrop-blur ${scheduleStateBadgeClass(broadcastState.kind)}`}
-                        >
-                          {broadcastState.label}
-                        </div>
+                        ) : (
+                          <div
+                            className={`absolute bottom-2 right-2 z-20 rounded-lg border px-2 py-1 text-[10px] font-semibold backdrop-blur ${scheduleStateBadgeClass(broadcastState.kind)}`}
+                          >
+                            {broadcastState.label}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -789,7 +828,7 @@ export default function DesktopSchedule() {
           </div>
         ) : (
           <div className="sn-empty-state px-6 py-16 text-center">
-            <p className="text-lg font-black text-white">No episodes scheduled for this day.</p>
+            <p className="text-lg font-semibold text-white">No episodes scheduled for this day.</p>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Check another day or view upcoming releases from Explore.</p>
           </div>
         )}

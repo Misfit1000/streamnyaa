@@ -54,7 +54,7 @@ $sizeBytes = (Get-Item $copiedInstaller).Length
 $manifest = [ordered]@{
   product = 'StreamNyaa Desktop'
   version = $version
-  releaseRevision = 'desktop-loading-recovery-2'
+  releaseRevision = 'desktop-loading-recovery-4'
   generatedAt = (Get-Date).ToString('o')
   installer = @{
     fileName = [IO.Path]::GetFileName($copiedInstaller)
@@ -70,6 +70,8 @@ $manifest = [ordered]@{
     'Adds a resolution-aware launch sequence and complete neutral landscape artwork with real anime titles and native loading stages.',
     'Shows live playable-buffer percentage and seconds, including while stalled and recovering.',
     'Adds bounded recovery for streams that never expose a playable MPV timeline: current-stream reload, verified backup, then manual actions.',
+    'Adds credential-free schedule revision tracking that labels changed AniList episode slots as rescheduled without guessing cancellations.',
+    'Adds a compact notification center for confirmed delays and cancellations, personal/global feed controls, and categorized desktop settings navigation.',
     'Run the manual desktop release checklist before publishing this installer.',
     'Code-sign the installer before distribution.',
     'Keep the previous stable installer for rollback.'
