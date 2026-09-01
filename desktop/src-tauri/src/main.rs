@@ -82,8 +82,19 @@ fn desktop_oauth_callback_fingerprint(value: &str) -> u64 {
 fn sanitize_desktop_next_route(value: &str) -> String {
     let candidate = value.trim();
     let path = candidate.split(['?', '#']).next().unwrap_or_default();
-    let allowed = matches!(path, "/" | "/profile" | "/login" | "/reset-password" | "/my-list" | "/dashboard" | "/history" | "/settings" | "/search" | "/schedule" | "/nyaa")
-        || path.starts_with("/watch/");
+    let allowed = matches!(
+        path,
+        "/" | "/profile"
+            | "/login"
+            | "/reset-password"
+            | "/my-list"
+            | "/dashboard"
+            | "/history"
+            | "/settings"
+            | "/search"
+            | "/schedule"
+            | "/nyaa"
+    ) || path.starts_with("/watch/");
     if candidate.len() <= 512
         && candidate.starts_with('/')
         && !candidate.starts_with("//")
@@ -322,6 +333,7 @@ struct PlaybackRequest {
     size: Option<String>,
     poster: Option<String>,
     banner: Option<String>,
+    banner_candidates: Option<Vec<String>>,
     resume_seconds: Option<f64>,
     settings: Option<DesktopSettings>,
 }
@@ -1779,25 +1791,25 @@ fn prepare_player_setting_request(cache_dir: &Path) -> Result<PathBuf, String> {
 }
 
 fn playback_cover_source(request: &PlaybackRequest) -> Option<String> {
-    [request.banner.as_deref(), request.poster.as_deref()]
+    playback_cover_sources(request)
         .into_iter()
-        .flatten()
-        .map(str::trim)
-        .find(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
+        .next()
+        .map(|(value, _)| value)
 }
 
 fn playback_cover_sources(request: &PlaybackRequest) -> Vec<(String, &'static str)> {
     let mut sources = Vec::new();
-    for (value, kind) in [
-        (request.banner.as_deref(), "banner"),
-        (request.poster.as_deref(), "poster"),
-    ] {
+    let mut candidates = Vec::new();
+    candidates.push(request.banner.as_deref());
+    if let Some(values) = request.banner_candidates.as_ref() {
+        candidates.extend(values.iter().map(String::as_str).map(Some));
+    }
+    for value in candidates {
         let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
             continue;
         };
         if !sources.iter().any(|(existing, _)| existing == value) {
-            sources.push((value.to_string(), kind));
+            sources.push((value.to_string(), "landscape"));
         }
     }
     sources
@@ -1880,16 +1892,6 @@ fn cover_fill(
     image::imageops::crop_imm(&resized, crop_x, crop_y, target_width, target_height).to_image()
 }
 
-fn neutral_darken(image: &mut image::RgbaImage, amount: f32) {
-    let amount = amount.clamp(0.0, 1.0);
-    for pixel in image.pixels_mut() {
-        pixel[0] = (pixel[0] as f32 * amount).round().clamp(0.0, 255.0) as u8;
-        pixel[1] = (pixel[1] as f32 * amount).round().clamp(0.0, 255.0) as u8;
-        pixel[2] = (pixel[2] as f32 * amount).round().clamp(0.0, 255.0) as u8;
-        pixel[3] = 255;
-    }
-}
-
 fn compose_full_landscape_art(
     decoded: &image::RgbaImage,
     target_width: u32,
@@ -1917,25 +1919,16 @@ fn apply_loading_readability_gradient(image: &mut image::RgbaImage) {
 }
 
 fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage, &'static str) {
-    let (source_width, source_height) = decoded.dimensions();
     let target_width = PLAYER_COVER_BACKGROUND_WIDTH;
     let target_height = PLAYER_COVER_BACKGROUND_HEIGHT;
-    let aspect_ratio = source_width as f64 / source_height.max(1) as f64;
+    let mut composition = compose_full_landscape_art(decoded, target_width, target_height);
+    apply_loading_readability_gradient(&mut composition);
+    (composition, "landscape")
+}
 
-    if aspect_ratio >= 1.35 {
-        let mut composition = compose_full_landscape_art(decoded, target_width, target_height);
-        apply_loading_readability_gradient(&mut composition);
-        return (composition, "landscape");
-    }
-
-    // If an upstream record has no real banner, turn its poster into a quiet,
-    // full-viewport landscape plate. Never draw the portrait as a card inside
-    // the player; that made loading look like a catalog screen.
-    let soft_plate = cover_fill(decoded, target_width, target_height);
-    let mut background = image::imageops::blur(&soft_plate, 0.45);
-    neutral_darken(&mut background, 0.76);
-    apply_loading_readability_gradient(&mut background);
-    (background, "landscape")
+fn is_quality_landscape_art(decoded: &image::RgbaImage) -> bool {
+    let (width, height) = decoded.dimensions();
+    width >= 960 && height >= 480 && width as f64 / height.max(1) as f64 >= 1.35
 }
 
 fn prepare_player_cover(
@@ -1955,8 +1948,17 @@ fn prepare_player_cover(
                 .map_err(|error| format!("Could not decode cover image: {}", error))
         }) {
             Ok(image) if image.width() > 0 && image.height() > 0 => {
-                decoded_cover = Some((image.to_rgba8(), source, source_kind));
-                break;
+                let decoded = image.to_rgba8();
+                if is_quality_landscape_art(&decoded) {
+                    decoded_cover = Some((decoded, source, source_kind));
+                    break;
+                }
+                log_info(format!(
+                    "Player artwork candidate skipped: expected quality landscape art, received {}x{}",
+                    decoded.width(),
+                    decoded.height()
+                ));
+                last_error = Some("No quality landscape player artwork was available.".to_string());
             }
             Ok(_) => last_error = Some("Artwork dimensions were empty.".to_string()),
             Err(error) => {
@@ -1966,9 +1968,18 @@ fn prepare_player_cover(
         }
     }
     let Some((decoded, _source, source_kind)) = decoded_cover else {
-        return Err(last_error.unwrap_or_else(|| "No player artwork could be decoded.".to_string()));
+        if let Some(error) = last_error {
+            log_info(format!(
+                "Player will use branded loading background: {}",
+                error
+            ));
+        }
+        return Ok(None);
     };
-    log_info(format!("Player cover source selected: type={}", source_kind));
+    log_info(format!(
+        "Player cover source selected: type={}",
+        source_kind
+    ));
     let (source_width, source_height) = decoded.dimensions();
     if source_width == 0 || source_height == 0 {
         return Ok(None);
@@ -4647,7 +4658,7 @@ fn launch_or_reuse_player(
         .arg("--cursor-autohide=900")
         .arg("--no-window-dragging")
         .arg("--input-default-bindings=yes")
-        .arg("--background-color=#050508")
+        .arg("--background-color=#020203")
         .arg("--hwdec=auto-safe")
         .arg("--vo=gpu-next,gpu")
         .arg("--cache=yes")
@@ -6032,9 +6043,9 @@ fn validated_desktop_source_api_url(value: &str) -> Result<String, String> {
     let pairs = parsed.query_pairs().collect::<Vec<_>>();
     if pairs.is_empty()
         || pairs.len() > allowed_keys.len()
-        || pairs.iter().any(|(key, value)| {
-            !allowed_keys.contains(&key.as_ref()) || value.len() > 512
-        })
+        || pairs
+            .iter()
+            .any(|(key, value)| !allowed_keys.contains(&key.as_ref()) || value.len() > 512)
     {
         return Err("Desktop source search parameters are not valid.".to_string());
     }
@@ -6152,7 +6163,10 @@ fn valid_desktop_metadata_payload(provider: &str, data: &serde_json::Value) -> b
     };
     match provider {
         "anilist" => {
-            object.get("data").and_then(serde_json::Value::as_object).is_some()
+            object
+                .get("data")
+                .and_then(serde_json::Value::as_object)
+                .is_some()
                 && object
                     .get("errors")
                     .and_then(serde_json::Value::as_array)
@@ -6285,13 +6299,17 @@ fn fetch_desktop_metadata_api_blocking(
                     .and_then(|response| response.error_for_status())
                     .map_err(|error| format!("AniDB desktop metadata request failed: {}", error))?;
                 if response.content_length().unwrap_or(0) > MAX_REMOTE_RESPONSE_BYTES {
-                    return Err("AniDB desktop metadata response was unexpectedly large.".to_string());
+                    return Err(
+                        "AniDB desktop metadata response was unexpectedly large.".to_string()
+                    );
                 }
                 let bytes = response
                     .bytes()
                     .map_err(|error| format!("Could not read AniDB metadata: {}", error))?;
                 if bytes.len() as u64 > MAX_REMOTE_RESPONSE_BYTES {
-                    return Err("AniDB desktop metadata response was unexpectedly large.".to_string());
+                    return Err(
+                        "AniDB desktop metadata response was unexpectedly large.".to_string()
+                    );
                 }
                 let xml = String::from_utf8(bytes.to_vec())
                     .map_err(|_| "AniDB desktop metadata was not valid text.".to_string())?;
@@ -6306,7 +6324,10 @@ fn fetch_desktop_metadata_api_blocking(
     };
 
     if !valid_desktop_metadata_payload(&provider, &data) {
-        return Err(format!("{} desktop metadata response was invalid.", provider));
+        return Err(format!(
+            "{} desktop metadata response was invalid.",
+            provider
+        ));
     }
 
     let fetched_at = now_millis();
@@ -6569,10 +6590,22 @@ mod tests {
     fn desktop_source_relay_requires_an_exact_origin_path_and_parameters() {
         let valid = "https://www.streamnyaa.xyz/api/nyaa?q=Example+S01E02&c=1_2&f=0&p=1&deep=1&pages=3&wide=1";
         assert!(validated_desktop_source_api_url(valid).is_ok());
-        assert!(validated_desktop_source_api_url("https://www.streamnyaa.xyz.evil.example/api/nyaa?q=test").is_err());
-        assert!(validated_desktop_source_api_url("https://www.streamnyaa.xyz@evil.example/api/nyaa?q=test").is_err());
-        assert!(validated_desktop_source_api_url("https://www.streamnyaa.xyz/api/other?q=test").is_err());
-        assert!(validated_desktop_source_api_url("https://www.streamnyaa.xyz/api/nyaa?q=test&token=secret").is_err());
+        assert!(validated_desktop_source_api_url(
+            "https://www.streamnyaa.xyz.evil.example/api/nyaa?q=test"
+        )
+        .is_err());
+        assert!(validated_desktop_source_api_url(
+            "https://www.streamnyaa.xyz@evil.example/api/nyaa?q=test"
+        )
+        .is_err());
+        assert!(
+            validated_desktop_source_api_url("https://www.streamnyaa.xyz/api/other?q=test")
+                .is_err()
+        );
+        assert!(validated_desktop_source_api_url(
+            "https://www.streamnyaa.xyz/api/nyaa?q=test&token=secret"
+        )
+        .is_err());
     }
 
     #[test]
@@ -6701,14 +6734,14 @@ mod tests {
         let root = env::temp_dir().join(format!("streamnyaa-cover-test-{}", now_millis()));
         fs::create_dir_all(&root).expect("create cover test dir");
         let source_path = root.join("cover.png");
-        let image = image::RgbaImage::from_fn(640, 360, |x, y| {
+        let image = image::RgbaImage::from_fn(1280, 720, |x, y| {
             image::Rgba([(x % 255) as u8, (y % 255) as u8, ((x + y) % 255) as u8, 255])
         });
         image::DynamicImage::ImageRgba8(image)
             .save(&source_path)
             .expect("write test cover");
         let mut request = playback_request_for_episode("1");
-        request.poster = Some(source_path.to_string_lossy().to_string());
+        request.banner = Some(source_path.to_string_lossy().to_string());
 
         let cover = prepare_player_cover(&root, &request)
             .expect("prepare cover")
@@ -6737,16 +6770,43 @@ mod tests {
     }
 
     #[test]
-    fn portrait_player_art_becomes_a_full_landscape_plate_without_a_card() {
-        let source = image::RgbaImage::from_pixel(600, 900, image::Rgba([40, 120, 220, 255]));
-        let (composition, layout) = prepare_loading_composition(&source);
-        assert_eq!(layout, "landscape");
-        assert_eq!(composition.dimensions(), (1920, 1080));
+    fn portrait_player_art_is_rejected_instead_of_stretched_or_blurred() {
+        let root = env::temp_dir().join(format!("streamnyaa-portrait-cover-test-{}", now_millis()));
+        fs::create_dir_all(&root).expect("create portrait cover test dir");
+        let source_path = root.join("portrait.png");
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            900,
+            1350,
+            image::Rgba([40, 120, 220, 255]),
+        ))
+        .save(&source_path)
+        .expect("write portrait test cover");
+        let mut request = playback_request_for_episode("1");
+        request.poster = Some(source_path.to_string_lossy().to_string());
+        request.banner = Some(source_path.to_string_lossy().to_string());
 
-        let left = composition.get_pixel(120, 540);
-        let right = composition.get_pixel(1400, 540);
-        assert!(left[2] > left[0]);
-        assert!(right[2] > right[0]);
+        assert!(prepare_player_cover(&root, &request)
+            .expect("portrait artwork should be handled")
+            .is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn player_art_candidates_never_use_the_portrait_poster() {
+        let mut request = playback_request_for_episode("1");
+        request.poster = Some("https://example.com/portrait.jpg".to_string());
+        request.banner = Some("https://example.com/banner.jpg".to_string());
+        request.banner_candidates = Some(vec![
+            "https://example.com/banner.jpg".to_string(),
+            "https://example.com/episode-wide.jpg".to_string(),
+        ]);
+
+        let sources = playback_cover_sources(&request);
+        assert_eq!(sources.len(), 2);
+        assert!(sources.iter().all(|(_, kind)| *kind == "landscape"));
+        assert!(sources
+            .iter()
+            .all(|(source, _)| !source.contains("portrait")));
     }
 
     #[test]
@@ -6799,6 +6859,7 @@ mod tests {
             size: None,
             poster: None,
             banner: None,
+            banner_candidates: None,
             resume_seconds: None,
             settings: None,
         };
@@ -6864,6 +6925,7 @@ mod tests {
             size: None,
             poster: None,
             banner: None,
+            banner_candidates: None,
             resume_seconds: None,
             settings: None,
         };
@@ -6884,6 +6946,7 @@ mod tests {
             size: None,
             poster: None,
             banner: None,
+            banner_candidates: None,
             resume_seconds: None,
             settings: None,
         }
@@ -6989,6 +7052,7 @@ mod tests {
             size: None,
             poster: None,
             banner: None,
+            banner_candidates: None,
             resume_seconds: None,
             settings: None,
         };

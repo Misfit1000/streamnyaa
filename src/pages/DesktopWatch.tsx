@@ -172,20 +172,9 @@ function wideImageFor(anime: any) {
   return anime?.bannerImage
     || anime?.banner_image
     || anime?.backdrop
-    || anime?.background
     || anime?.trailer?.images?.maximum_image_url
     || anime?.trailer?.images?.large_image_url
     || posterFor(anime);
-}
-
-function playerLandscapeFor(anime: any) {
-  return anime?.bannerImage
-    || anime?.banner_image
-    || anime?.backdrop
-    || anime?.background
-    || anime?.trailer?.images?.maximum_image_url
-    || anime?.trailer?.images?.large_image_url
-    || '';
 }
 
 function uniqueImageCandidates(values: Array<string | undefined | null>) {
@@ -326,6 +315,29 @@ function youtubeVideoIdFor(value = '') {
   } catch {
     return '';
   }
+}
+
+function playerLandscapeCandidates(anime: any, episodeImage?: string) {
+  const trailer = anime?.trailer || {};
+  const directTrailerId = youtubeVideoIdFor(String(trailer?.url || ''));
+  const declaredTrailerId = String(trailer?.youtube_id || trailer?.id || '').trim();
+  const youtubeId = directTrailerId
+    || (/^[a-zA-Z0-9_-]{6,20}$/.test(declaredTrailerId)
+      && (!trailer?.site || String(trailer.site).toLowerCase() === 'youtube')
+      ? declaredTrailerId
+      : '');
+
+  return uniqueImageCandidates([
+    anime?.bannerImage,
+    anime?.banner_image,
+    anime?.backdrop,
+    episodeImage,
+    trailer?.images?.maximum_image_url,
+    trailer?.images?.large_image_url,
+    trailer?.thumbnail,
+    youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : '',
+    youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hq720.jpg` : '',
+  ]);
 }
 
 function trailerUrlFor(anime: any) {
@@ -2824,6 +2836,10 @@ export default function DesktopWatch() {
   }, [airedCount, episodeSearch, searchedEpisodes, selectEpisode, selectedEpisode]);
 
   const sourcePayloadFor = useCallback((source: NyaaItem, resumeOverride?: number): LocalPlaybackSource => {
+    const bannerCandidates = playerLandscapeCandidates(
+      anime,
+      streamingEpisodeMap.get(selectedEpisode)?.thumbnail || selectedEpisodeInfo?.image,
+    );
     const baseSource: LocalPlaybackSource = {
       magnet: source.magnet,
       torrentUrl: torrentUrlFor(source),
@@ -2836,7 +2852,8 @@ export default function DesktopWatch() {
       seeders: source.seeders,
       image: posterFor(anime),
       poster: posterFor(anime),
-      banner: playerLandscapeFor(anime),
+      banner: bannerCandidates[0] || '',
+      bannerCandidates,
     };
     const checkpoint = resolveDesktopPlaybackCheckpoint(baseSource);
     const hasResumeOverride = Number.isFinite(resumeOverride);
@@ -2848,7 +2865,7 @@ export default function DesktopWatch() {
       durationSeconds: checkpoint?.durationSeconds ?? 0,
       completed: checkpoint?.completed ?? false,
     };
-  }, [anime, selectedEpisode]);
+  }, [anime, selectedEpisode, selectedEpisodeInfo?.image, streamingEpisodeMap]);
 
   const openOneSource = useCallback(async (source: NyaaItem, resumeOverride?: number) => {
     const playbackSource = sourcePayloadFor(source, resumeOverride);

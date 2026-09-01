@@ -51,7 +51,7 @@ local DEBUG_PERF = false
 local DEBUG_SUBMENU_PERF = false
 local DEBUG_SCRIPT_MESSAGES = false
 local DEBUG_FORCE_MINIMAL_OSD = false
-local ENABLE_COVER_BITMAP_OVERLAY = false
+local ENABLE_COVER_BITMAP_OVERLAY = true
 local DEBUG_COVER_LOADING = false
 local DEBUG_LOADING_DRAW = false
 local DEBUG_COVER_TEST = false
@@ -67,6 +67,7 @@ local STALL_LOW_BUFFER_SECONDS = 2.5
 local STARTUP_STREAM_RETRY_SECONDS = 12
 local STARTUP_STREAM_BACKUP_SECONDS = 8
 local STARTUP_STREAM_ACTION_SECONDS = 8
+local FIRST_VIDEO_FRAME_GRACE_SECONDS = 0.35
 if script_options.stall_test_mode then
   STARTUP_STREAM_RETRY_SECONDS = 0.2
   STARTUP_STREAM_BACKUP_SECONDS = 0.2
@@ -151,6 +152,7 @@ local ui = {
   skip_intro_applied = false,
   skip_outro_applied = false,
   loading_override_until = 0,
+  first_video_frame_cover_until = 0,
   hover_region_id = "",
   subtitle_menu_scroll = 0,
   last_meta_poll_at = 0,
@@ -1513,6 +1515,23 @@ function clean_buffering_percent(percent)
   return math.floor(clamp(value, 0, 100) + 0.5)
 end
 
+function hold_cover_for_first_video_frame()
+  return has_playable_media()
+    and not is_placeholder_media()
+    and state.has_started_playback
+    and mp.get_time() < (ui.first_video_frame_cover_until or 0)
+end
+
+function begin_first_video_frame_handoff()
+  ui.first_video_frame_cover_until = mp.get_time() + FIRST_VIDEO_FRAME_GRACE_SECONDS
+  mp.add_timeout(FIRST_VIDEO_FRAME_GRACE_SECONDS + 0.02, function()
+    if mp.get_time() >= (ui.first_video_frame_cover_until or 0) then
+      ui.first_video_frame_cover_until = 0
+      draw(true, "first-video-frame-visible")
+    end
+  end)
+end
+
 function adaptive_buffer_target_seconds()
   if (ui.source_recovery_count or 0) >= 2 then return BUFFER_STRESSED_TARGET_SECONDS end
   if (ui.source_recovery_count or 0) >= 1 or ui.playback_stalled or ui.inferred_buffering then
@@ -2538,7 +2557,8 @@ function button(ass, mouse, id, cx, cy, hit, icon_size, draw_icon, active)
   hit = math.max(44, tonumber(hit) or 44)
   local hot = inside(mouse, cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
   if hot or active then
-    circle(ass, cx, cy, hit * 0.44, active and C.accent or C.white, hot and 228 or 214)
+    circle(ass, cx, cy + 1, hit * 0.43, C.black, 112)
+    circle(ass, cx, cy, hit * 0.40, active and C.accent or C.white, hot and 218 or 204)
   end
   draw_icon(ass, cx, cy, icon_size, active and C.accent or C.white)
   add_region(id, cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
@@ -2579,13 +2599,19 @@ end
 
 function draw_center_play(ass, width, height, mouse, s)
   if is_loading() or ui.end_overlay or ui.settings_open then return end
-  local cx, cy = width / 2, height / 2
-  local hit = math.max(116 * s, 92)
+  local cx, cy = width / 2, height / 2 - 6 * s
+  local hit = math.max(104 * s, 90)
   local hot = inside(mouse, cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
   add_region("center_toggle", cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
-  if not state.paused then return end
-  icon_play(ass, cx + 4 * s, cy + 2 * s, 48 * s, C.black)
-  icon_play(ass, cx + 2 * s, cy, 46 * s, hot and C.hover or C.white)
+  local radius = (state.paused and 39 or 34) * s
+  circle(ass, cx, cy + 2 * s, radius + 4 * s, C.black, 98)
+  circle(ass, cx, cy, radius, C.panel, hot and 22 or 50)
+  draw_arc(ass, cx, cy, radius, 0, 360, math.max(1.2, 1.4 * s), hot and C.white or C.secondary, hot and 154 or 200)
+  if state.paused then
+    icon_play(ass, cx + 2.5 * s, cy, 34 * s, hot and C.hover or C.white)
+  else
+    icon_pause(ass, cx, cy, 31 * s, hot and C.hover or C.white)
+  end
 end
 
 function timeline_ratio(mouse, width, height, s)
@@ -3081,7 +3107,7 @@ function draw_loading_required_content(ass, width, height, s, status)
 end
 
 function draw_loading(ass, width, height, s, cover_info)
-  if not (is_loading() or is_buffering()) then return end
+  if not (is_loading() or is_buffering() or hold_cover_for_first_video_frame()) then return end
   local cx = width / 2
   local status = loading_status_text()
   local buffering_only = is_midplayback_buffering()
@@ -3095,7 +3121,7 @@ function draw_loading(ass, width, height, s, cover_info)
       rect(ass, 0, 0, width, height, C.black, 150)
     else
       rect(ass, 0, 0, width, height, C.black, 0)
-      rect(ass, 0, 0, width, height, "150006", 108)
+      rect(ass, 0, 0, width, height, C.panel, 80)
     end
     draw_loading_required_content(ass, width, height, s, status)
   end)
@@ -3579,7 +3605,8 @@ function draw(immediate, reason)
     width, height = 1280, 720
   end
   local force_minimal_osd = DEBUG_FORCE_MINIMAL_OSD
-  local loading = is_loading() or is_buffering()
+  local startup_loading = is_loading() or hold_cover_for_first_video_frame()
+  local loading = startup_loading or is_buffering()
   local skip_intro_range = nil
   local skip_outro_range = nil
   local skip_only = false
@@ -3645,7 +3672,7 @@ function draw(immediate, reason)
   ui.skip_only_rendered = false
 
   if loading then
-    if is_loading() then
+    if startup_loading then
       maybe_reload_loading_metadata()
     end
     if not ui.native_loading_osd_cleared then
@@ -3655,7 +3682,7 @@ function draw(immediate, reason)
   else
     ui.native_loading_osd_cleared = false
   end
-  local cover_info = update_cover_overlay(is_loading(), width, height, s)
+  local cover_info = update_cover_overlay(startup_loading, width, height, s)
   if loading then
     draw_loading(ass, width, height, s, cover_info)
     ui.regions_ready = #regions > 0
@@ -4376,7 +4403,9 @@ end)
 mp.observe_property("time-pos", "number", function(_, value)
   state.pos = value or 0
   if has_playable_media() and state.pos > 0.25 then
+    local first_progress = not state.has_started_playback
     state.has_started_playback = true
+    if first_progress then begin_first_video_frame_handoff() end
     reset_startup_stream_watchdog(true)
     ui.eof_candidate_key = current_media_key()
     ui.loading_override_until = 0
@@ -4430,6 +4459,7 @@ mp.observe_property("path", "string", function(_, value)
     ui.chapter_state_key = ""
     ui.anim_started = mp.get_time()
     state.has_started_playback = false
+    ui.first_video_frame_cover_until = 0
     safe_set_property("user-data/streamnyaa/has_started", "false")
     ui.loading_override_until = mp.get_time() + 2.5
     if is_placeholder_path(next_path) then
@@ -4732,6 +4762,7 @@ end)
 mp.register_event("playback-restart", function()
   if has_playable_media() and not is_placeholder_media() then
     state.has_started_playback = true
+    begin_first_video_frame_handoff()
     safe_set_property("user-data/streamnyaa/has_started", "true")
     reset_startup_stream_watchdog(true)
     ui.loading_override_until = 0
@@ -4750,7 +4781,7 @@ mp.register_event("playback-restart", function()
 end)
 
 mp.add_periodic_timer(0.05, function()
-  local loading = is_loading() or is_buffering()
+  local loading = is_loading() or is_buffering() or hold_cover_for_first_video_frame()
   if loading then
     draw(true, "timer-loading")
   elseif ui.dragging then
@@ -4861,11 +4892,12 @@ end)
 
 mp.register_script_message("streamnyaa-playback-ready", function()
   log_script_message("streamnyaa-playback-ready")
-  msg.info("[StreamNyaa Lua] playback-ready received")
-  ui.loading_override_until = 0
-  state.has_started_playback = true
+  -- This message confirms that the native MPV window and IPC bridge are ready;
+  -- it does not mean the torrent has produced a decoded video frame. Keep the
+  -- artwork visible until playback-restart or advancing time-pos proves that.
+  msg.info("[StreamNyaa Lua] player shell ready; waiting for the first video frame")
   show_overlay()
-  draw(true, "playback-ready")
+  draw(true, "player-shell-ready")
 end)
 
 load_persisted_player_preferences()

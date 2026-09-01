@@ -13,6 +13,7 @@ export type LocalPlaybackSource = {
   image?: string;
   poster?: string;
   banner?: string;
+  bannerCandidates?: string[];
   savedAt?: number;
   progressPercent?: number;
   progressUpdatedAt?: number;
@@ -1157,6 +1158,7 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
         size: source.size || '',
         poster: source.poster || source.image || '',
         banner: source.banner || '',
+        banner_candidates: Array.isArray(source.bannerCandidates) ? source.bannerCandidates : [],
         resume_seconds: Number(source.resumeSeconds || 0),
         settings,
       },
