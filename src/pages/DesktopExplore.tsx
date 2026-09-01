@@ -343,6 +343,7 @@ export default function DesktopExplore() {
     gcTime: 1000 * 60 * 90,
     retry: (count, error) => count < 2 && !/invalid|cancel/i.test(String((error as Error)?.message || '')),
     retryDelay: (attempt) => 250 + attempt * 500,
+    refetchOnReconnect: true,
   });
 
   const results = useMemo(() => {

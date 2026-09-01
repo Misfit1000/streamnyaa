@@ -744,11 +744,11 @@ function loading_title_layout(raw_title, width, height, s)
     return ui.title_layout
   end
 
-  local max_width = artwork_layout == "portrait" and width * 0.48 or width * 0.70
-  local size = clamp(61 * s, 38 * s, 72 * s)
+  local max_width = artwork_layout == "portrait" and width * 0.52 or width * 0.74
+  local size = clamp(76 * s, 50 * s, 94 * s)
   local spacing = 0
 
-  while size > 42 * s and estimated_spaced_text_width(title, size, spacing) > max_width do
+  while size > 52 * s and estimated_spaced_text_width(title, size, spacing) > max_width do
     size = size - 2 * s
   end
 
@@ -774,7 +774,7 @@ function loading_title_layout(raw_title, width, height, s)
         end
       end
       lines = { best_left or title, best_right or "" }
-      while size > 36 * s do
+      while size > 42 * s do
         local fits = true
         for _, line_value in ipairs(lines) do
           if estimated_spaced_text_width(line_value, size, spacing) > max_width then
@@ -3010,10 +3010,10 @@ function draw_loading_required_content(ass, width, height, s, status)
 
   local artwork_layout = tostring(player_meta.artworkLayout or "landscape")
   local layout = loading_title_layout(loading_media_title(), width, height, s)
-  local title_size = clamp(layout.size, 42 * s, 76 * s)
-  local line_gap = title_size * 1.10
-  local title_x = artwork_layout == "portrait" and width * 0.075 or width * 0.07
-  local title_center_y = artwork_layout == "portrait" and height * 0.46 or height * 0.72
+  local title_size = clamp(layout.size, 50 * s, 94 * s)
+  local line_gap = title_size * 1.08
+  local title_x = width * 0.065
+  local title_center_y = height * 0.60
   local first_line_y = title_center_y - ((#layout.lines - 1) * line_gap / 2)
   local episode_label = loading_episode_label()
   local detail_y = first_line_y + #layout.lines * line_gap + 7 * s
@@ -3024,6 +3024,10 @@ function draw_loading_required_content(ass, width, height, s, status)
 
   -- Readability is baked into the generated full-viewport artwork with a
   -- smooth neutral gradient. Avoid visible overlay bands and color tinting.
+
+  local accent_top = first_line_y - title_size * 0.54
+  local accent_bottom = first_line_y + (#layout.lines - 1) * line_gap + title_size * 0.54
+  rounded_rect(ass, title_x - 16 * s, accent_top, title_x - 12 * s, accent_bottom, 2 * s, C.accent, 0)
 
   for index, line_value in ipairs(layout.lines) do
     draw_text(
@@ -3043,14 +3047,16 @@ function draw_loading_required_content(ass, width, height, s, status)
   if episode_label ~= "" then
     draw_text(ass, title_x, detail_y, 4, font_px(s, 17, 14, 20), C.secondary, 3, episode_label, false, "Segoe UI")
   end
-  draw_text(ass, title_x, status_y, 4, font_px(s, 14, 12, 17), C.white, 4, status_text, true, "Segoe UI Semibold")
+  local activity_alpha = math.floor(28 + ((math.sin(t * 4.2) + 1) / 2) * 112)
+  circle(ass, title_x + 4 * s, status_y, 4 * s, C.accent, activity_alpha)
+  draw_text(ass, title_x + 18 * s, status_y, 4, font_px(s, 14, 12, 17), C.white, 4, status_text, true, "Segoe UI Semibold")
 
   local bar_x1 = title_x
   local bar_x2 = title_x + math.min(width * (artwork_layout == "portrait" and 0.42 or 0.38), 560 * s)
   if percent ~= nil then
     draw_text(ass, bar_x2, status_y + 2 * s, 6, font_px(s, 23, 19, 28), C.accent, 0, string.format("%d%%", percent), true, "Segoe UI Semibold")
   else
-    draw_text(ass, bar_x2, status_y + 1 * s, 6, font_px(s, 12, 11, 14), C.secondary, 0, "CONNECTING", true, "Segoe UI Semibold")
+    draw_text(ass, bar_x2, status_y + 1 * s, 6, font_px(s, 12, 11, 14), C.secondary, 0, "Connecting", true, "Segoe UI Semibold")
   end
   local bar_y = status_y + 24 * s
   rounded_rect(ass, bar_x1, bar_y, bar_x2, bar_y + 4 * s, 2 * s, C.white, 220)

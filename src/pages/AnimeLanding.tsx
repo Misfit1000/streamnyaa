@@ -1,6 +1,6 @@
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { ArrowLeft, CalendarDays, Filter, Flame, Loader2 } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Filter, Flame, Loader2, RefreshCw } from 'lucide-react';
 import { fetchAnimeSeason, searchAnime } from '../api/jikan';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
@@ -53,7 +53,7 @@ export default function AnimeLanding() {
       ? `Browse popular ${titleCase(season!.season)} ${season!.year} anime with StreamNyaa title pages, episode context, and download search.`
       : 'Browse popular anime on StreamNyaa with title pages, episode context, related anime, and download search options.';
 
-  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = useInfiniteQuery({
+  const { data, isLoading, isError, isFetching, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } = useInfiniteQuery({
     queryKey: ['anime-landing', location.pathname, genreName, season?.season, season?.year],
     queryFn: ({ pageParam = 1 }) => {
       if (isSeasonPage) return fetchAnimeSeason(season!.season, season!.year, pageParam as number);
@@ -62,6 +62,7 @@ export default function AnimeLanding() {
     },
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => lastPage.pagination?.has_next_page ? allPages.length + 1 : undefined,
+    refetchOnReconnect: true,
   });
 
   const items = uniqueAnimeList(data?.pages.flatMap((page) => page.data) || []);
@@ -150,11 +151,28 @@ export default function AnimeLanding() {
         </section>
       ) : null}
 
+      {isError && items.length ? (
+        <div className="mb-5 flex items-center justify-between gap-4 border border-amber-300/15 bg-amber-300/[0.055] px-4 py-3 text-sm text-foreground/72">
+          <span>Saved titles remain available while this collection reconnects.</span>
+          <button type="button" onClick={() => void refetch()} className="inline-flex min-h-10 items-center gap-2 bg-secondary px-3 text-sm font-semibold text-foreground hover:bg-secondary/80">
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin motion-reduce:animate-none' : ''}`} /> Retry
+          </button>
+        </div>
+      ) : null}
+
       {isLoading ? (
         <DesktopLoadingProgress variant="screen" label="Loading this anime collection" percent={38} detail="Checking saved results while the live catalog responds." />
+      ) : isError && items.length === 0 ? (
+        <div className="border border-amber-300/15 bg-amber-300/[0.055] p-8 text-center">
+          <p className="text-base font-semibold text-foreground">This collection is reconnecting.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Nothing was erased and navigation remains available.</p>
+          <button type="button" onClick={() => void refetch()} className="mt-5 inline-flex min-h-11 items-center gap-2 bg-primary px-4 text-sm font-semibold text-white">
+            <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin motion-reduce:animate-none' : ''}`} /> Try again
+          </button>
+        </div>
       ) : items.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-secondary/20 p-10 text-center text-muted-foreground">
-          No anime found for this landing page yet.
+        <div className="border border-border bg-secondary/20 p-10 text-center text-muted-foreground">
+          No matching anime are listed in this collection yet.
         </div>
       ) : (
         <>

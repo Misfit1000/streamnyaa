@@ -46,6 +46,33 @@ const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale') =
   },
 });
 
+export const isValidDesktopMetadataPayload = (provider: MetadataProvider, value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (provider === 'anilist') {
+    return Boolean(record.data && typeof record.data === 'object' && !Array.isArray(record.data))
+      && (!Array.isArray(record.errors) || record.errors.length === 0);
+  }
+  if (provider === 'jikan') {
+    return Object.prototype.hasOwnProperty.call(record, 'data')
+      && (Array.isArray(record.data) || Boolean(record.data && typeof record.data === 'object'));
+  }
+  return true;
+};
+
+const readValidatedMetadataJson = async (provider: MetadataProvider, response: Response) => {
+  let json: unknown;
+  try {
+    json = await response.clone().json();
+  } catch (error) {
+    throw desktopDataError(provider, error);
+  }
+  if (!isValidDesktopMetadataPayload(provider, json)) {
+    throw desktopDataError(provider, new Error('The metadata response had an invalid shape.'));
+  }
+  return json;
+};
+
 const refreshMetadataInBackground = (
   provider: MetadataProvider,
   requestKey: string,
@@ -60,7 +87,7 @@ const refreshMetadataInBackground = (
       if (response.status === 429 || response.status >= 500) markProviderCooldown(provider, response);
       throw desktopDataError(provider, new Error(`Metadata refresh failed with status ${response.status}.`), response.status);
     }
-    const json = await response.clone().json();
+    const json = await readValidatedMetadataJson(provider, response);
     writeLocalMetadata(key, json, ttlSeconds);
     providerCooldowns.delete(provider);
     if (typeof window !== 'undefined') {
@@ -308,7 +335,7 @@ const fetchWithLocalMetadataCache = async (
       return response;
     }
 
-    const json = await response.clone().json();
+    const json = await readValidatedMetadataJson(provider, response);
     writeLocalMetadata(key, json, ttlSeconds);
     providerCooldowns.delete(provider);
     return response;

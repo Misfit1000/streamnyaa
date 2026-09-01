@@ -210,7 +210,7 @@ export async function searchNyaa(
     if (!Array.isArray(data)) {
       if (staleCached) return staleCached;
       if (desktop) throw desktopDataError('nyaa', new Error('Source provider returned an invalid response.'));
-      console.error('Source search did not return an array:', data);
+      console.error('Source search returned an invalid response shape.');
       return [];
     }
 
@@ -265,7 +265,7 @@ export async function searchNyaa(
   const handledRequest = request.catch((error) => {
     if (staleCached) return staleCached;
     if (!desktopRuntime) {
-      console.error('Source search error:', error);
+      console.error('Source search failed:', String((error as Error)?.message || 'unknown error').slice(0, 160));
       return [];
     }
     throw desktopDataError('nyaa', error);
@@ -280,7 +280,7 @@ export async function searchNyaa(
 
 function searchResultUnlessAborted(request: Promise<NyaaItem[]>, signal?: AbortSignal) {
   if (!signal) return request;
-  if (signal.aborted) return Promise.resolve([]);
+  if (signal.aborted) return Promise.reject(desktopDataError('nyaa', new DOMException('Source search cancelled.', 'AbortError')));
   return new Promise<NyaaItem[]>((resolve, reject) => {
     let settled = false;
     const finish = (items: NyaaItem[]) => {
@@ -289,7 +289,12 @@ function searchResultUnlessAborted(request: Promise<NyaaItem[]>, signal?: AbortS
       signal.removeEventListener('abort', onAbort);
       resolve(items);
     };
-    const onAbort = () => finish([]);
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      reject(desktopDataError('nyaa', new DOMException('Source search cancelled.', 'AbortError')));
+    };
     signal.addEventListener('abort', onAbort, { once: true });
     void request.then(finish, (error) => {
       if (settled) return;

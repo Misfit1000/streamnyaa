@@ -13,6 +13,7 @@ import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 import { preloadDesktopWatchData } from '../lib/desktopRoutePreload';
 import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { totalEpisodeCount } from '../lib/animeEpisodes';
+import { desktopDataError } from '../lib/desktopData';
 import {
   desktopEpisodeWatchState,
   formatPlaybackTime,
@@ -129,7 +130,7 @@ type SourceFailureRecord = {
 };
 
 function resolveWithin<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let settled = false;
     const timer = window.setTimeout(() => {
       if (settled) return;
@@ -142,11 +143,11 @@ function resolveWithin<T>(promise: Promise<T>, timeoutMs: number, fallback: T): 
       settled = true;
       window.clearTimeout(timer);
       resolve(value);
-    }).catch(() => {
+    }).catch((error) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timer);
-      resolve(fallback);
+      reject(error);
     });
   });
 }
@@ -2321,7 +2322,16 @@ export default function DesktopWatch() {
       const elapsedMs = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
       const remainingBudgetMs = () => Math.max(0, SOURCE_SEARCH_BUDGET_MS - elapsedMs());
       const isAborted = () => Boolean(signal?.aborted);
+      let completedSourceQueries = 0;
+      let timedOutSourceQueries = 0;
+      let failedSourceQueries = 0;
       const finish = (items: RankedNyaaItem[], stage: string) => {
+        if (isAborted()) {
+          throw desktopDataError('nyaa', new DOMException('Playback preparation was cancelled.', 'AbortError'));
+        }
+        if (!items.length && completedSourceQueries === 0 && (timedOutSourceQueries > 0 || failedSourceQueries > 0)) {
+          throw desktopDataError('nyaa', new Error('Playback preparation could not complete before the connection limit.'));
+        }
         reportProgress(96);
         debugSourceLoading('done', {
           request: requestId,
@@ -2382,20 +2392,30 @@ export default function DesktopWatch() {
         if (isAborted() || remainingBudgetMs() <= 0) return [];
         const queryStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
         const timeoutMs = Math.min(SOURCE_QUERY_TIMEOUT_MS, remainingBudgetMs());
-        const result = await resolveWithin<NyaaItem[] | null>(
-          searchNyaa(query, '1_2', '0', '1', { ...options, signal }),
-          timeoutMs,
-          null,
-        );
+        let result: NyaaItem[] | null;
+        try {
+          result = await resolveWithin<NyaaItem[] | null>(
+            searchNyaa(query, '1_2', '0', '1', { ...options, signal }),
+            timeoutMs,
+            null,
+          );
+        } catch (error) {
+          if (isAborted()) throw error;
+          failedSourceQueries += 1;
+          debugSourceLoading('query-failed', { request: requestId, ms: Math.round(elapsedMs()) });
+          return [];
+        }
         const queryMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - queryStartedAt);
         if (isAborted()) {
           debugSourceLoading('stale-query', { request: requestId, query, ms: queryMs });
           return [];
         }
         if (!result) {
+          timedOutSourceQueries += 1;
           debugSourceLoading('query-timeout', { request: requestId, query, ms: queryMs });
           return [];
         }
+        completedSourceQueries += 1;
         const normalized = normalizeSourcePool(result);
         debugSourceLoading('provider', { request: requestId, query, raw: result.length, usable: normalized.length, ms: queryMs });
         return normalized;
@@ -3257,7 +3277,7 @@ export default function DesktopWatch() {
     if (playableSources[0]) {
       const bestSource = playableSources[0];
       setPendingAutoPlayEpisode(null);
-      console.info(`[StreamNyaa Watch] Starting pending next episode source=${bestSource.title || bestSource.infoHash || bestSource.magnet}`);
+      console.info('[StreamNyaa Watch] Starting the prepared next episode source.');
       void playSource(bestSource);
       return;
     }

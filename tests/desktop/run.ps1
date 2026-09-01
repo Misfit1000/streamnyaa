@@ -49,6 +49,9 @@ $desktopNotificationCenter = Get-Content -Raw (Join-Path $repo 'src\components\D
 $desktopScheduleRevisions = Get-Content -Raw (Join-Path $repo 'src\lib\scheduleRevisions.ts')
 $desktopExploreCache = Get-Content -Raw (Join-Path $repo 'src\lib\desktopExploreCache.ts')
 $desktopScheduleCache = Get-Content -Raw (Join-Path $repo 'src\lib\desktopScheduleCache.ts')
+$desktopCatalogCache = Get-Content -Raw (Join-Path $repo 'src\lib\desktopCatalogCache.ts')
+$desktopSecurity = Get-Content -Raw (Join-Path $repo 'src\lib\desktopSecurity.ts')
+$desktopQueryClient = Get-Content -Raw (Join-Path $repo 'src\lib\queryClient.ts')
 $desktopPlayerShortcuts = Get-Content -Raw (Join-Path $repo 'src\lib\desktopPlayerShortcuts.ts')
 $upcomingNotifyButton = Get-Content -Raw (Join-Path $repo 'src\components\UpcomingNotifyButton.tsx')
 $desktopCss = Get-Content -Raw (Join-Path $repo 'src\index.css')
@@ -72,7 +75,7 @@ $releasePreparer = Get-Content -Raw (Join-Path $repo 'scripts\prepare-desktop-re
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
 Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.7"' 'Desktop release configuration should target version 0.1.7.'
 Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.7"' 'Rust package version should match the desktop release version.'
-Assert-Match $releasePreparer "releaseRevision\s*=\s*'desktop-loading-recovery-7'" 'The 0.1.7 release manifest must identify the current loading, recovery, schedule, notification, and catalog pass.'
+Assert-Match $releasePreparer "releaseRevision\s*=\s*'desktop-loading-recovery-8'" 'The 0.1.7 release manifest must identify the current loading, recovery, schedule, notification, catalog, and request-hardening pass.'
 Assert-Match $releasePreparer 'auth-recovery-live-validation\.json' 'The 0.1.3 artifact must remain gated on live password-recovery validation.'
 Assert-Match $releasePreparer '2MB' 'The installer must reject growth beyond the two MiB budget.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
@@ -248,7 +251,12 @@ Assert-Match $desktopSchedule 'Enable StreamNyaa in Windows notification setting
 Assert-Match $desktopSchedule 'Windows notifications enabled' 'Desktop Schedule should show native notification status.'
 Assert-Match $desktopSchedule 'Native notifications unavailable' 'Desktop Schedule should report unsupported native notification delivery.'
 Assert-Match $nyaaApi 'inMemorySearchCache' 'Desktop source fetch cache is missing.'
+Assert-Match $nyaaApi 'Source search cancelled' 'Cancelled source searches must remain distinct from valid empty results.'
 Assert-Match $metadataApi 'inFlightMetadataRequests' 'Desktop metadata requests should be coalesced to prevent provider rate-limit bursts.'
+Assert-Match $metadataApi 'isValidDesktopMetadataPayload' 'Malformed primary metadata must be rejected before it reaches the persistent cache.'
+Assert-Match $desktopCatalogCache 'if \(typeof window === .undefined. \|\| !key \|\| key\.length > 180 \|\| !Array\.isArray\(data\?\.data\) \|\| !data\.data\.length\) return' 'An ambiguous empty Home refresh must not overwrite last-known-good catalog data.'
+Assert-Match $desktopSecurity 'redactDesktopDiagnostic' 'Desktop diagnostics must redact credentials and source links.'
+Assert-Match $desktopQueryClient 'refetchOnReconnect:\s*true' 'Active desktop screens must refresh after connectivity returns.'
 Assert-Match $metadataApi 'providerCooldowns' 'Desktop metadata layer should cool down providers after rate-limit/server errors.'
 Assert-Match $metadataApi 'LOCAL_METADATA_MAX_STALE_MS' 'Desktop metadata layer should keep bounded stale fallback data.'
 Assert-Match $metadataApi 'type MetadataProvider' 'Desktop metadata layer should use one provider type for all metadata integrations.'
@@ -344,6 +352,9 @@ Assert-Match $watchPage 'coverImage\?\.extraLarge' 'Desktop watch poster candida
 Assert-Match $watchPage 'function youtubeVideoIdFor' 'Desktop trailers should validate and canonicalize YouTube URLs before opening them.'
 Assert-Match $watchPage "url\.protocol !== 'https:'" 'Desktop trailer links must require HTTPS.'
 Assert-Match $tauriMain 'validated_command_candidate' 'Desktop command overrides must pass the executable-name allowlist before launch.'
+Assert-Match $tauriMain 'validated_desktop_source_api_url' 'The native source relay must validate the exact HTTPS origin and path.'
+Assert-Match $tauriMain 'MAX_REMOTE_RESPONSE_BYTES' 'Remote metadata and source responses must have a bounded size.'
+Assert-Match $tauriMain 'valid_desktop_metadata_payload' 'The native metadata cache must reject invalid primary responses.'
 Assert-Match $tauriMain 'allowed_command\(value, allowed_names\)' 'Desktop command validation must reject arbitrary executable names.'
 Assert-NotMatch $tauriConfig 'ws://localhost' 'Packaged desktop CSP must not permit unused WebSocket connections.'
 Assert-Match $desktopHistory 'role="alertdialog"' 'Desktop History must confirm destructive cleanup inside the app.'

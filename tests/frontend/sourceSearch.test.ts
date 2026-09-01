@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe('desktop source request coordination', () => {
-  it('returns immediately when a stale source request is aborted', async () => {
+  it('rejects an aborted request instead of reporting a valid empty result', async () => {
     let resolveBridge: ((value: unknown) => void) | undefined;
     const invoke = vi.fn(() => new Promise((resolve) => {
       resolveBridge = resolve;
@@ -24,7 +24,7 @@ describe('desktop source request coordination', () => {
     });
     controller.abort();
 
-    await expect(request).resolves.toEqual([]);
+    await expect(request).rejects.toMatchObject({ provider: 'nyaa', code: 'cancelled' });
     expect(invoke).toHaveBeenCalledTimes(1);
     resolveBridge?.({ data: [], fetched_at: Date.now() });
   });

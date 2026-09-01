@@ -50,6 +50,7 @@ const PLAYER_COVER_MAX_HEIGHT: u32 = 440;
 const PLAYER_COVER_BACKGROUND_WIDTH: u32 = 1920;
 const PLAYER_COVER_BACKGROUND_HEIGHT: u32 = 1080;
 const PLAYER_COVER_PRELOAD_TIMEOUT_MS: u64 = 1_600;
+const MAX_REMOTE_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -80,10 +81,19 @@ fn desktop_oauth_callback_fingerprint(value: &str) -> u64 {
 
 fn sanitize_desktop_next_route(value: &str) -> String {
     let candidate = value.trim();
-    if candidate.starts_with('/')
+    let path = candidate.split(['?', '#']).next().unwrap_or_default();
+    let allowed = matches!(path, "/" | "/profile" | "/login" | "/reset-password" | "/my-list" | "/dashboard" | "/history" | "/settings" | "/search" | "/schedule" | "/nyaa")
+        || path.starts_with("/watch/");
+    if candidate.len() <= 512
+        && candidate.starts_with('/')
         && !candidate.starts_with("//")
+        && !candidate.contains("\\")
+        && !candidate.contains("://")
+        && !candidate.contains('#')
         && !candidate.contains('\r')
         && !candidate.contains('\n')
+        && !candidate.chars().any(char::is_control)
+        && allowed
     {
         candidate.to_string()
     } else {
@@ -635,9 +645,17 @@ fn fetch_nyaa_rss(client: &reqwest::blocking::Client, rss_url: &str) -> Result<S
             status
         ));
     }
-    response
-        .text()
-        .map_err(|error| format!("Could not read direct Nyaa source results: {}", error))
+    if response.content_length().unwrap_or(0) > MAX_REMOTE_RESPONSE_BYTES {
+        return Err("Direct Nyaa source results were unexpectedly large.".to_string());
+    }
+    let bytes = response
+        .bytes()
+        .map_err(|error| format!("Could not read direct Nyaa source results: {}", error))?;
+    if bytes.len() as u64 > MAX_REMOTE_RESPONSE_BYTES {
+        return Err("Direct Nyaa source results were unexpectedly large.".to_string());
+    }
+    String::from_utf8(bytes.to_vec())
+        .map_err(|_| "Direct Nyaa source results were not valid text.".to_string())
 }
 
 fn send_json_with_retry(
@@ -653,8 +671,16 @@ fn send_json_with_retry(
             Ok(response) => {
                 let status = response.status();
                 if status.is_success() {
-                    return response
-                        .json::<serde_json::Value>()
+                    if response.content_length().unwrap_or(0) > MAX_REMOTE_RESPONSE_BYTES {
+                        return Err(format!("{} response was unexpectedly large.", label));
+                    }
+                    let bytes = response
+                        .bytes()
+                        .map_err(|error| format!("Could not read {} response: {}", label, error))?;
+                    if bytes.len() as u64 > MAX_REMOTE_RESPONSE_BYTES {
+                        return Err(format!("{} response was unexpectedly large.", label));
+                    }
+                    return serde_json::from_slice::<serde_json::Value>(&bytes)
                         .map_err(|error| format!("Could not read {} response: {}", label, error));
                 }
                 last_error = format!("{} returned status {}", label, status);
@@ -1905,15 +1931,9 @@ fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage,
     // If an upstream record has no real banner, turn its poster into a quiet,
     // full-viewport landscape plate. Never draw the portrait as a card inside
     // the player; that made loading look like a catalog screen.
-    let soft_plate = cover_fill(decoded, target_width / 4, target_height / 4);
-    let soft_plate = image::imageops::blur(&soft_plate, 2.4);
-    let mut background = image::imageops::resize(
-        &soft_plate,
-        target_width,
-        target_height,
-        FilterType::Triangle,
-    );
-    neutral_darken(&mut background, 0.72);
+    let soft_plate = cover_fill(decoded, target_width, target_height);
+    let mut background = image::imageops::blur(&soft_plate, 0.45);
+    neutral_darken(&mut background, 0.76);
     apply_loading_readability_gradient(&mut background);
     (background, "landscape")
 }
@@ -1945,13 +1965,10 @@ fn prepare_player_cover(
             }
         }
     }
-    let Some((decoded, source, source_kind)) = decoded_cover else {
+    let Some((decoded, _source, source_kind)) = decoded_cover else {
         return Err(last_error.unwrap_or_else(|| "No player artwork could be decoded.".to_string()));
     };
-    log_info(format!(
-        "Player cover source selected: type={} source={}",
-        source_kind, source
-    ));
+    log_info(format!("Player cover source selected: type={}", source_kind));
     let (source_width, source_height) = decoded.dimensions();
     if source_width == 0 || source_height == 0 {
         return Ok(None);
@@ -5994,11 +6011,39 @@ fn find_number(value: &serde_json::Value, keys: &[&str]) -> Option<f64> {
     }
 }
 
-fn fetch_desktop_source_api_blocking(url: String) -> Result<SourceApiResponse, String> {
-    let trimmed_url = url.trim();
-    if !trimmed_url.starts_with("https://www.streamnyaa.xyz/api/nyaa?") {
+fn validated_desktop_source_api_url(value: &str) -> Result<String, String> {
+    let candidate = value.trim();
+    if candidate.len() > 2_048 || candidate.chars().any(char::is_control) {
+        return Err("Desktop source search URL is not valid.".to_string());
+    }
+    let parsed = reqwest::Url::parse(candidate)
+        .map_err(|_| "Desktop source search URL is not valid.".to_string())?;
+    if parsed.scheme() != "https"
+        || parsed.host_str() != Some("www.streamnyaa.xyz")
+        || parsed.port_or_known_default() != Some(443)
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.path() != "/api/nyaa"
+        || parsed.fragment().is_some()
+    {
         return Err("Desktop source search can only call the StreamNyaa source API.".to_string());
     }
+    let allowed_keys = ["q", "c", "f", "p", "deep", "pages", "wide"];
+    let pairs = parsed.query_pairs().collect::<Vec<_>>();
+    if pairs.is_empty()
+        || pairs.len() > allowed_keys.len()
+        || pairs.iter().any(|(key, value)| {
+            !allowed_keys.contains(&key.as_ref()) || value.len() > 512
+        })
+    {
+        return Err("Desktop source search parameters are not valid.".to_string());
+    }
+    Ok(parsed.to_string())
+}
+
+fn fetch_desktop_source_api_blocking(url: String) -> Result<SourceApiResponse, String> {
+    let validated_url = validated_desktop_source_api_url(&url)?;
+    let trimmed_url = validated_url.as_str();
     if let Ok(mut cache) = source_cache().lock() {
         trim_memory_cache(
             &mut cache,
@@ -6006,7 +6051,7 @@ fn fetch_desktop_source_api_blocking(url: String) -> Result<SourceApiResponse, S
             SOURCE_API_CACHE_MAX_ENTRIES,
         );
         if let Some(entry) = cache.get(trimmed_url) {
-            log_info(format!("Desktop source API cache hit: {}", trimmed_url));
+            log_info("Desktop source API cache hit".to_string());
             return Ok(SourceApiResponse {
                 data: entry.data.clone(),
                 fetched_at: entry.fetched_at,
@@ -6039,7 +6084,7 @@ fn fetch_desktop_source_api_blocking(url: String) -> Result<SourceApiResponse, S
             SOURCE_API_CACHE_MAX_ENTRIES,
         );
     }
-    log_info(format!("Desktop source API fetched: {}", trimmed_url));
+    log_info("Desktop source API fetched".to_string());
     Ok(SourceApiResponse { data, fetched_at })
 }
 
@@ -6084,14 +6129,42 @@ fn safe_metadata_path(path: Option<&str>, provider: &str) -> Result<String, Stri
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| format!("{} desktop metadata request is missing a path.", provider))?;
-    if !clean_path.starts_with('/')
+    let lower_path = clean_path.to_ascii_lowercase();
+    if clean_path.len() > 2_048
+        || !clean_path.starts_with('/')
         || clean_path.contains("://")
         || clean_path.contains("..")
         || clean_path.contains('\\')
+        || clean_path.contains('#')
+        || clean_path.chars().any(char::is_control)
+        || lower_path.contains("%2e")
+        || lower_path.contains("%2f")
+        || lower_path.contains("%5c")
     {
         return Err(format!("{} desktop metadata path is not valid.", provider));
     }
     Ok(clean_path.to_string())
+}
+
+fn valid_desktop_metadata_payload(provider: &str, data: &serde_json::Value) -> bool {
+    let Some(object) = data.as_object() else {
+        return false;
+    };
+    match provider {
+        "anilist" => {
+            object.get("data").and_then(serde_json::Value::as_object).is_some()
+                && object
+                    .get("errors")
+                    .and_then(serde_json::Value::as_array)
+                    .map(|errors| errors.is_empty())
+                    .unwrap_or(true)
+        }
+        "jikan" => object
+            .get("data")
+            .map(|value| value.is_array() || value.is_object())
+            .unwrap_or(false),
+        _ => true,
+    }
 }
 
 fn fetch_desktop_metadata_api_blocking(
@@ -6204,15 +6277,24 @@ fn fetch_desktop_metadata_api_blocking(
                     .append_pair("clientver", &client_version.unwrap_or_default())
                     .append_pair("protover", "1")
                     .append_pair("aid", &aid.to_string());
-                let xml = client
+                let response = client
                     .get(url)
                     .header("Accept", "application/xml,text/xml,*/*")
                     .header("User-Agent", "StreamNyaa Desktop Metadata Cache/1.0")
                     .send()
                     .and_then(|response| response.error_for_status())
-                    .map_err(|error| format!("AniDB desktop metadata request failed: {}", error))?
-                    .text()
+                    .map_err(|error| format!("AniDB desktop metadata request failed: {}", error))?;
+                if response.content_length().unwrap_or(0) > MAX_REMOTE_RESPONSE_BYTES {
+                    return Err("AniDB desktop metadata response was unexpectedly large.".to_string());
+                }
+                let bytes = response
+                    .bytes()
                     .map_err(|error| format!("Could not read AniDB metadata: {}", error))?;
+                if bytes.len() as u64 > MAX_REMOTE_RESPONSE_BYTES {
+                    return Err("AniDB desktop metadata response was unexpectedly large.".to_string());
+                }
+                let xml = String::from_utf8(bytes.to_vec())
+                    .map_err(|_| "AniDB desktop metadata was not valid text.".to_string())?;
                 serde_json::json!({
                     "provider": "anidb",
                     "aid": aid,
@@ -6222,6 +6304,10 @@ fn fetch_desktop_metadata_api_blocking(
         }
         _ => return Err("Unsupported desktop metadata provider.".to_string()),
     };
+
+    if !valid_desktop_metadata_payload(&provider, &data) {
+        return Err(format!("{} desktop metadata response was invalid.", provider));
+    }
 
     let fetched_at = now_millis();
     if let Ok(mut cache) = metadata_cache().lock() {
@@ -6470,6 +6556,51 @@ mod tests {
                 .next,
             "/profile"
         );
+
+        assert_eq!(
+            sanitize_desktop_next_route("/watch/123-example?ep=2"),
+            "/watch/123-example?ep=2"
+        );
+        assert_eq!(sanitize_desktop_next_route("/watch\\evil"), "/profile");
+        assert_eq!(sanitize_desktop_next_route("/admin"), "/profile");
+    }
+
+    #[test]
+    fn desktop_source_relay_requires_an_exact_origin_path_and_parameters() {
+        let valid = "https://www.streamnyaa.xyz/api/nyaa?q=Example+S01E02&c=1_2&f=0&p=1&deep=1&pages=3&wide=1";
+        assert!(validated_desktop_source_api_url(valid).is_ok());
+        assert!(validated_desktop_source_api_url("https://www.streamnyaa.xyz.evil.example/api/nyaa?q=test").is_err());
+        assert!(validated_desktop_source_api_url("https://www.streamnyaa.xyz@evil.example/api/nyaa?q=test").is_err());
+        assert!(validated_desktop_source_api_url("https://www.streamnyaa.xyz/api/other?q=test").is_err());
+        assert!(validated_desktop_source_api_url("https://www.streamnyaa.xyz/api/nyaa?q=test&token=secret").is_err());
+    }
+
+    #[test]
+    fn metadata_paths_reject_encoded_traversal_and_fragments() {
+        assert!(safe_metadata_path(Some("/anime/1/episodes?page=2"), "Jikan").is_ok());
+        assert!(safe_metadata_path(Some("/%2e%2e/private"), "Jikan").is_err());
+        assert!(safe_metadata_path(Some("/anime%2f..%2fprivate"), "Jikan").is_err());
+        assert!(safe_metadata_path(Some("/anime/1#token"), "Jikan").is_err());
+    }
+
+    #[test]
+    fn metadata_cache_accepts_only_valid_primary_payloads() {
+        assert!(valid_desktop_metadata_payload(
+            "anilist",
+            &serde_json::json!({ "data": { "Media": { "id": 1 } } })
+        ));
+        assert!(!valid_desktop_metadata_payload(
+            "anilist",
+            &serde_json::json!({ "errors": [{ "message": "rate limited" }] })
+        ));
+        assert!(valid_desktop_metadata_payload(
+            "jikan",
+            &serde_json::json!({ "data": [] })
+        ));
+        assert!(!valid_desktop_metadata_payload(
+            "jikan",
+            &serde_json::json!({ "pagination": {} })
+        ));
     }
 
     #[test]

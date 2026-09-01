@@ -375,12 +375,21 @@ export default function DesktopSources() {
       ) : null}
 
       <section className="mt-6">
-        {!query ? (
+        {!query || query.trim().length < 2 ? (
           <div className="sn-empty-state px-6 py-16 text-center text-white/56">
             Search by title plus episode, for example: <span className="font-black text-white">Witch Hat Atelier 07</span>
           </div>
-        ) : searchQuery.isLoading ? (
+        ) : searchQuery.isLoading && !searchQuery.data ? (
           <DesktopLoadingProgress variant="screen" label="Searching verified sources" percent={46} detail="Exact episode matches are checked before broader title aliases." />
+        ) : searchQuery.isError && !searchQuery.data ? (
+          <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] px-6 py-10 text-center" role="status">
+            <p className="text-lg font-semibold text-white">Search couldn’t finish.</p>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Your search is preserved. Retry when the connection is ready.</p>
+            <button type="button" onClick={() => void searchQuery.refetch()} className="sn-primary-action mt-5 h-11 px-5">
+              <Loader2 className={`h-4 w-4 ${searchQuery.isFetching ? 'animate-spin' : ''}`} />
+              Retry search
+            </button>
+          </div>
         ) : results.length ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-sm text-white/46">
@@ -405,12 +414,12 @@ export default function DesktopSources() {
               </div>
             ) : null}
           </div>
-        ) : (
+        ) : searchQuery.isSuccess ? (
           <div className="sn-empty-state px-6 py-16 text-center">
             <p className="text-lg font-black text-white">No individual episode sources found.</p>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Try the romanized title, remove the episode number, or search a different release spelling.</p>
           </div>
-        )}
+        ) : null}
       </section>
     </div>
   );

@@ -1,8 +1,9 @@
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Info, Play, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, Loader2, Play, RefreshCw, Star } from 'lucide-react';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { fetchPopularAnime, fetchRecentEpisodes, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
 import {
   formatPlaybackTime,
@@ -22,6 +23,7 @@ import { desktopUpcomingPath, desktopWatchPath, isUpcomingAnime } from '../lib/d
 import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { useSeasonalAnimeQuery } from '../lib/seasonalAnime';
 import { airedEpisodeCount, episodeAvailabilityLabel } from '../lib/animeEpisodes';
+import { readDesktopCatalog, writeDesktopCatalog } from '../lib/desktopCatalogCache';
 
 const FALLBACK_POSTERS: Record<number, string> = {
   52299: 'https://cdn.myanimelist.net/images/anime/1801/142390l.jpg',
@@ -648,12 +650,7 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
 });
 
 const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackSource }) {
-  const sourceId = String(source.animeId || '');
-  const sourceTitle = animeTitleKey(source.animeTitle || source.title || '');
-  const fallbackAnime = FALLBACK_DESKTOP_ANIME.find((anime) => {
-    return (sourceId && animeIdentity(anime) === sourceId) || (sourceTitle && sourceTitle === animeTitleKey(anime.title));
-  });
-  const images = sourceImageCandidates(source, fallbackAnime);
+  const images = sourceImageCandidates(source);
   const progress = sourceProgressPercent(source);
   const progressWidth = progress > 0 ? Math.max(progress, 2) : 0;
   const resumeText = source.resumeSeconds
@@ -743,9 +740,8 @@ function keysForItems(items: any[]) {
   return new Set(items.map((item) => animeIdentity(item)).filter(Boolean));
 }
 
-function buildRailItems(liveItems: any[], fallbackItems: any[], count: number, softBlocked: Set<string> = new Set()) {
+function buildRailItems(liveItems: any[], count: number, softBlocked: Set<string> = new Set()) {
   const liveUnique = uniqueAnimeById(liveItems);
-  const fallbackUnique = uniqueAnimeById(fallbackItems);
   const result = takeDistinct(liveUnique, count, softBlocked);
   const localUsed = keysForItems(result);
 
@@ -754,17 +750,34 @@ function buildRailItems(liveItems: any[], fallbackItems: any[], count: number, s
     keysForItems(result).forEach((key) => localUsed.add(key));
   }
 
-  if (result.length < count) {
-    const blocked = new Set([...localUsed, ...softBlocked]);
-    result.push(...takeDistinct(fallbackUnique, count - result.length, blocked));
-    keysForItems(result).forEach((key) => localUsed.add(key));
-  }
-
-  if (result.length < count) {
-    result.push(...takeDistinct(fallbackUnique, count - result.length, localUsed));
-  }
-
   return result.slice(0, count);
+}
+
+function useHomeCatalogQuery(
+  cacheKey: string,
+  queryKey: readonly unknown[],
+  queryFn: () => Promise<any>,
+  { enabled = true, staleTime = 1000 * 60 * 10 }: { enabled?: boolean; staleTime?: number } = {},
+) {
+  const saved = readDesktopCatalog(cacheKey);
+  return useQuery({
+    queryKey,
+    queryFn: async () => {
+      const response = await queryFn();
+      const normalized = { ...response, data: uniqueAnimeById(response?.data || []).slice(0, 18) };
+      writeDesktopCatalog(cacheKey, normalized);
+      return normalized;
+    },
+    enabled,
+    retry: (count, error) => count < 2 && !/invalid|cancel/i.test(String((error as Error)?.message || '')),
+    retryDelay: (attempt) => 250 + attempt * 500,
+    staleTime,
+    gcTime: 1000 * 60 * 90,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    initialData: saved?.data,
+    initialDataUpdatedAt: saved?.savedAt,
+  });
 }
 
 export default function DesktopHome() {
@@ -798,76 +811,25 @@ export default function DesktopHome() {
   }, []);
 
   // useSeasonalAnimeQuery wraps fetchAnimeSeason so Home always follows the current season/year key.
-  const {
-    currentSeason,
-    data: seasonalData,
-    isError: seasonalError,
-    isSuccess: seasonalSuccess,
-  } = useSeasonalAnimeQuery({
+  const seasonalQuery = useSeasonalAnimeQuery({
     limit: 18,
     queryKeyPrefix: 'desktop-seasonal',
     staleTime: 1000 * 60 * 10,
   });
-  const { data: trendingData } = useQuery({
-    queryKey: ['desktop-trending-airing'],
-    queryFn: () => searchAnime('', 1, '', '', '', '', 'airing'),
-    retry: 1,
-    staleTime: 1000 * 60 * 10,
-    refetchOnWindowFocus: false,
-    placeholderData: (previous) => previous,
-    select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
-  });
-  const { data: recentEpisodeData } = useQuery({
-    queryKey: ['desktop-recent-episodes'],
-    queryFn: fetchRecentEpisodes,
-    enabled: true,
-    retry: 1,
-    staleTime: 1000 * 60 * 2,
-    refetchOnWindowFocus: false,
-    placeholderData: (previous) => previous,
-    select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 12) }),
-  });
-  const { data: popularData } = useQuery({
-    queryKey: ['desktop-popular'],
-    queryFn: fetchPopularAnime,
-    enabled: secondaryRailsReady,
-    retry: 1,
-    staleTime: 1000 * 60 * 15,
-    refetchOnWindowFocus: false,
-    placeholderData: (previous) => previous,
-    select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
-  });
-  const { data: topAiringData } = useQuery({
-    queryKey: ['desktop-top-airing'],
-    queryFn: fetchTopAiring,
-    enabled: true,
-    retry: 1,
-    staleTime: 1000 * 60 * 10,
-    refetchOnWindowFocus: false,
-    placeholderData: (previous) => previous,
-    select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
-  });
-  const { data: upcomingData } = useQuery({
-    queryKey: ['desktop-upcoming'],
-    queryFn: fetchUpcomingAnime,
-    enabled: secondaryRailsReady,
-    retry: 1,
-    staleTime: 1000 * 60 * 30,
-    refetchOnWindowFocus: false,
-    placeholderData: (previous) => previous,
-    select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
-  });
+  const { currentSeason, data: seasonalData } = seasonalQuery;
+  const trendingQuery = useHomeCatalogQuery('home:trending', ['desktop-trending-airing'], () => searchAnime('', 1, '', '', '', '', 'airing'));
+  const recentEpisodeQuery = useHomeCatalogQuery('home:recent', ['desktop-recent-episodes'], fetchRecentEpisodes, { staleTime: 1000 * 60 * 2 });
+  const popularQuery = useHomeCatalogQuery('home:popular', ['desktop-popular'], fetchPopularAnime, { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 15 });
+  const topAiringQuery = useHomeCatalogQuery('home:top-airing', ['desktop-top-airing'], fetchTopAiring);
+  const upcomingQuery = useHomeCatalogQuery('home:upcoming', ['desktop-upcoming'], fetchUpcomingAnime, { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 30 });
   const topYear = new Date().getFullYear() - 1;
-  const { data: yearlyTopData } = useQuery({
-    queryKey: ['desktop-top-year', topYear],
-    queryFn: () => fetchTopAnimeByYear(topYear),
-    enabled: secondaryRailsReady,
-    retry: 1,
-    staleTime: 1000 * 60 * 60,
-    refetchOnWindowFocus: false,
-    placeholderData: (previous) => previous,
-    select: (result: any) => ({ ...result, data: uniqueAnimeById(result?.data || []).slice(0, 18) }),
-  });
+  const yearlyTopQuery = useHomeCatalogQuery(`home:year:${topYear}`, ['desktop-top-year', topYear], () => fetchTopAnimeByYear(topYear), { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 60 });
+  const trendingData = trendingQuery.data;
+  const recentEpisodeData = recentEpisodeQuery.data;
+  const popularData = popularQuery.data;
+  const topAiringData = topAiringQuery.data;
+  const upcomingData = upcomingQuery.data;
+  const yearlyTopData = yearlyTopQuery.data;
   const seasonalItems = seasonalData?.data || [];
   const trendingItems = trendingData?.data || [];
   const recentEpisodeItems = recentEpisodeData?.data || [];
@@ -875,40 +837,44 @@ export default function DesktopHome() {
   const topAiringItems = topAiringData?.data || [];
   const upcomingItems = upcomingData?.data || [];
   const yearlyTopItems = yearlyTopData?.data || [];
-  const seasonalFallbackItems = useMemo(
-    () => (seasonalError || (seasonalSuccess && !seasonalItems.length) ? FALLBACK_SEASONAL : []),
-    [seasonalError, seasonalItems.length, seasonalSuccess],
-  );
+  const homeQueries = [seasonalQuery, trendingQuery, recentEpisodeQuery, popularQuery, topAiringQuery, upcomingQuery, yearlyTopQuery];
+  const homeHasSavedContent = homeQueries.some((query) => Boolean(query.data?.data?.length));
+  const homeRefreshFailed = homeQueries.some((query) => query.isError);
+  const homeIsLoading = homeQueries.some((query) => query.isLoading && !query.data);
+  const homeLoadPercent = homeHasSavedContent ? (homeRefreshFailed ? 92 : 100) : (homeIsLoading ? 46 : 74);
+
+  const retryHome = () => {
+    homeQueries.forEach((query) => {
+      if (query.isError || (!query.data && !query.isFetching)) void query.refetch();
+    });
+  };
 
   const heroPool = useMemo(() => {
     const liveSeasonal = seasonalItems.filter((anime: any) => heroImageCandidates(anime).length);
-    const fallbackSeasonal = seasonalFallbackItems.filter((anime: any) => heroImageCandidates(anime).length);
     const candidates = liveSeasonal.length
       ? liveSeasonal
       : topAiringItems.length
         ? topAiringItems
         : trendingItems.length
           ? trendingItems
-          : fallbackSeasonal.length
-            ? fallbackSeasonal
-            : FALLBACK_DESKTOP_ANIME;
+          : [];
     const topSeasonal = [...candidates]
       .filter((anime: any) => heroImageCandidates(anime).length)
       .sort((a: any, b: any) => (b.score || 0) - (a.score || 0))
       .slice(0, 8);
     return topSeasonal;
-  }, [seasonalFallbackItems, seasonalItems, topAiringItems, trendingItems]);
+  }, [seasonalItems, topAiringItems, trendingItems]);
   const hero = heroPool[heroIndex] || heroPool[0];
   useEffect(() => subscribeLocalPlaybackHistory(() => setHistory(loadLocalPlaybackHistory())), []);
   useEffect(() => subscribeDesktopAudioPreference(() => setAudioPreference(loadDesktopAudioPreference())), []);
   const rails = useMemo(() => {
-    const latestEpisodes = buildRailItems(recentEpisodeItems, FALLBACK_LATEST, 8);
-    const trending = buildRailItems(trendingItems, FALLBACK_TRENDING, 8, keysForItems(latestEpisodes));
-    const topAiring = buildRailItems(topAiringItems, FALLBACK_TOP_AIRING, 8, keysForItems(trending));
-    const seasonalPicks = buildRailItems(seasonalItems, seasonalFallbackItems, 8, keysForItems(topAiring));
-    const upcoming = buildRailItems(upcomingItems, FALLBACK_UPCOMING, 8);
-    const popular = buildRailItems(popularItems, FALLBACK_POPULAR, 8, keysForItems(seasonalPicks));
-    const yearlyTop = buildRailItems(yearlyTopItems, FALLBACK_YEARLY, 8, keysForItems(popular));
+    const latestEpisodes = buildRailItems(recentEpisodeItems, 8);
+    const trending = buildRailItems(trendingItems, 8, keysForItems(latestEpisodes));
+    const topAiring = buildRailItems(topAiringItems, 8, keysForItems(trending));
+    const seasonalPicks = buildRailItems(seasonalItems, 8, keysForItems(topAiring));
+    const upcoming = buildRailItems(upcomingItems, 8);
+    const popular = buildRailItems(popularItems, 8, keysForItems(seasonalPicks));
+    const yearlyTop = buildRailItems(yearlyTopItems, 8, keysForItems(popular));
     return {
       latestEpisodes,
       trending,
@@ -918,7 +884,7 @@ export default function DesktopHome() {
       popular,
       yearlyTop,
     };
-  }, [popularItems, recentEpisodeItems, seasonalFallbackItems, seasonalItems, topAiringItems, trendingItems, upcomingItems, yearlyTopItems]);
+  }, [popularItems, recentEpisodeItems, seasonalItems, topAiringItems, trendingItems, upcomingItems, yearlyTopItems]);
   const latestEpisodes = rails.latestEpisodes;
   const trending = rails.trending;
   const topAiring = rails.topAiring;
@@ -971,6 +937,16 @@ export default function DesktopHome() {
     <div className="desktop-home-cinema sn-page pb-9 pt-4">
       <Seo title="StreamNyaa Desktop Cinema" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
 
+      {homeRefreshFailed ? (
+        <div className="mb-4 flex min-h-12 items-center justify-between gap-4 border border-amber-300/15 bg-amber-300/[0.055] px-4 py-3 text-sm text-white/72">
+          <span>{homeHasSavedContent ? 'Saved titles are ready while Home reconnects.' : 'Home is reconnecting. Your Library and History remain available.'}</span>
+          <button type="button" onClick={retryHome} className="sn-ghost-action shrink-0 gap-2 px-3 py-2 text-xs font-semibold">
+            {homeQueries.some((query) => query.isFetching) ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw className="h-4 w-4" />}
+            Retry
+          </button>
+        </div>
+      ) : null}
+
       <section className="sn-hero-panel relative">
         <div className="relative h-[326px]">
           {heroPool.map((item: any, index: number) => (
@@ -999,10 +975,10 @@ export default function DesktopHome() {
               <div className="min-h-0 overflow-hidden">
                 <p className="mb-3 text-[10px] font-black uppercase tracking-[0.36em] text-primary">Featured Anime</p>
                 <h1 className="line-clamp-2 max-w-[570px] overflow-hidden break-words text-[27px] font-black leading-[1.06] tracking-[-0.03em] text-white drop-shadow-[0_5px_20px_rgba(0,0,0,0.58)] md:text-[30px] xl:text-[32px]">
-                  {hero?.title || 'StreamNyaa'}
+                  {hero?.title || 'Loading your home'}
                 </h1>
                 <p className="mt-2 line-clamp-1 max-w-[520px] overflow-hidden text-[13px] font-semibold leading-5 text-white/72">
-                  {hero?.title_english || hero?.title_japanese || 'Desktop anime cinema'}
+                  {hero?.title_english || hero?.title_japanese || 'Restoring saved titles and recent activity'}
                 </p>
                 <div className="mt-3 flex max-h-[28px] max-w-[520px] gap-2 overflow-hidden">
                   {heroMetadata(hero).slice(0, 4).map((item) => (
@@ -1011,23 +987,31 @@ export default function DesktopHome() {
                     </span>
                   ))}
                 </div>
-                <p className="mt-4 line-clamp-2 max-w-[540px] overflow-hidden text-[13px] leading-5 text-white/78">{heroDescription(hero)}</p>
+                <p className="mt-4 line-clamp-2 max-w-[540px] overflow-hidden text-[13px] leading-5 text-white/78">{hero ? heroDescription(hero) : 'The app shell is ready. Home content will appear here as soon as verified data is restored.'}</p>
+                {!hero ? <DesktopLoadingProgress className="mt-5 max-w-[520px]" variant="inline" label="Loading Home" percent={homeLoadPercent} detail="Restoring the fastest available verified data." /> : null}
               </div>
               <div className="hero-cta mt-auto flex shrink-0 items-end pt-5">
-                <Link
-                  to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))}
-                  className="sn-primary-action group/watch h-[50px] min-w-[176px] rounded-[16px] px-7 text-[15px]"
-                >
-                  <span className="grid h-7 w-7 place-items-center rounded-full bg-white/18 ring-1 ring-white/14 transition-colors group-hover/watch:bg-white/24">
-                    <Play className="ml-0.5 h-[14px] w-[14px] fill-current" />
-                  </span>
-                  Watch Now
-                </Link>
+                {hero ? (
+                  <Link
+                    to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))}
+                    className="sn-primary-action group/watch h-[50px] min-w-[176px] rounded-[16px] px-7 text-[15px]"
+                  >
+                    <span className="grid h-7 w-7 place-items-center rounded-full bg-white/18 ring-1 ring-white/14 transition-colors group-hover/watch:bg-white/24">
+                      <Play className="ml-0.5 h-[14px] w-[14px] fill-current" />
+                    </span>
+                    Watch Now
+                  </Link>
+                ) : (
+                  <button type="button" onClick={retryHome} className="sn-primary-action h-[50px] min-w-[176px] gap-2 px-7 text-[15px]">
+                    {homeQueries.some((query) => query.isFetching) ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw className="h-4 w-4" />}
+                    {homeRefreshFailed ? 'Retry Home' : 'Loading Home'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
 
-          <div className="absolute right-9 top-1/2 flex -translate-y-1/2 gap-3">
+          {heroCount > 1 ? <div className="absolute right-9 top-1/2 flex -translate-y-1/2 gap-3">
             <button
               type="button"
               onClick={() => moveHero(-1)}
@@ -1044,7 +1028,7 @@ export default function DesktopHome() {
             >
               <ChevronRight className="h-5 w-5" />
             </button>
-          </div>
+          </div> : null}
 
           {heroCount > 1 ? (
             <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 gap-3">

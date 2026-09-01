@@ -5,7 +5,7 @@ export function createAppQueryClient() {
     defaultOptions: {
       queries: {
         refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
+        refetchOnReconnect: true,
         retry: 1,
         staleTime: 1000 * 60 * 12,
         gcTime: 1000 * 60 * 45,

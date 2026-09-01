@@ -10,6 +10,7 @@ import { desktopQueryClient } from './lib/desktopQueryClient';
 import { desktopPageLoaders } from './lib/desktopRoutePreload';
 import { installDesktopQuerySnapshot, restoreDesktopQuerySnapshot } from './lib/desktopQuerySnapshot';
 import { completeDesktopBoot, updateDesktopBoot } from './lib/desktopBoot';
+import { redactDesktopDiagnostic } from './lib/desktopSecurity';
 
 const DesktopHome = lazy(desktopPageLoaders.home);
 const DesktopWatch = lazy(desktopPageLoaders.watch);
@@ -39,7 +40,7 @@ class DesktopRouteBoundary extends Component<{ children: ReactNode }, { error: E
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error('Desktop route failed', error, info.componentStack);
+    console.error('Desktop route failed:', redactDesktopDiagnostic(error), Boolean(info.componentStack));
   }
 
   componentDidUpdate(previousProps: { children: ReactNode }) {
@@ -51,11 +52,11 @@ class DesktopRouteBoundary extends Component<{ children: ReactNode }, { error: E
   render() {
     if (this.state.error) {
       return (
-        <div className="m-6 rounded-2xl border border-white/[0.06] bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_52%,rgba(244,63,94,0.06))] p-6 text-white shadow-2xl shadow-black/25">
-          <p className="text-sm font-black uppercase tracking-[0.2em] text-primary">Desktop route failed</p>
-          <h1 className="mt-3 text-2xl font-semibold">This page could not render.</h1>
+        <div className="m-6 rounded-xl border border-white/[0.06] bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_52%,rgba(244,63,94,0.06))] p-6 text-white">
+          <p className="text-sm font-semibold text-primary">Page recovery</p>
+          <h1 className="mt-3 text-2xl font-semibold">This page needs to reload.</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-white/62">
-            {this.state.error.message || 'A desktop page failed before it could display content.'}
+            {redactDesktopDiagnostic(this.state.error)}
           </p>
           <div className="mt-5 flex items-center gap-3">
             <button
