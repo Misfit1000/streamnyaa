@@ -569,7 +569,7 @@ export default function DesktopSchedule() {
               </span>
               <div>
                 <h2 id="recent-schedule-alerts" className="text-sm font-semibold text-white">Recent delay and cancellation alerts</h2>
-                <p className="mt-0.5 text-xs text-white/46">Confirmed provider states only; inferred schedule changes are labeled separately as rescheduled.</p>
+                <p className="mt-0.5 text-xs text-white/46">Confirmed delays and cancellations appear here; changed times are labeled separately as rescheduled.</p>
               </div>
             </div>
             <span className="text-xs font-semibold text-white/42">{scheduleUpdates.length} update{scheduleUpdates.length === 1 ? '' : 's'}</span>

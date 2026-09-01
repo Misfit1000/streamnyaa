@@ -52,4 +52,22 @@ describe('desktop Explore behavior', () => {
     fireEvent.click(screen.getByRole('option', { name: '2025' }));
     expect(onChange).toHaveBeenCalledWith('2025');
   });
+
+  it('offers a real airing notification action for upcoming anime', () => {
+    render(
+      <MemoryRouter>
+        <ExploreAnimeCard
+          index={0}
+          anime={{
+            id: 200,
+            mal_id: 200,
+            title: 'Upcoming Anime',
+            status: 'NOT_YET_AIRED',
+            images: { jpg: { large_image_url: 'https://images.example/upcoming.jpg' } },
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('button', { name: 'Notify me when this anime airs' })).toBeTruthy();
+  });
 });

@@ -64,9 +64,9 @@ local STALL_RECOVERY_SECONDS = 12
 local STALL_ACTION_SECONDS = 10
 local STALL_BACKUP_WAIT_SECONDS = 10
 local STALL_LOW_BUFFER_SECONDS = 2.5
-local STARTUP_STREAM_RETRY_SECONDS = 18
-local STARTUP_STREAM_BACKUP_SECONDS = 10
-local STARTUP_STREAM_ACTION_SECONDS = 10
+local STARTUP_STREAM_RETRY_SECONDS = 12
+local STARTUP_STREAM_BACKUP_SECONDS = 8
+local STARTUP_STREAM_ACTION_SECONDS = 8
 if script_options.stall_test_mode then
   STARTUP_STREAM_RETRY_SECONDS = 0.2
   STARTUP_STREAM_BACKUP_SECONDS = 0.2
@@ -1439,7 +1439,7 @@ function is_midplayback_buffering()
   if ui.end_overlay then return false end
   if not state.has_started_playback then return false end
   if not has_playable_media() or not has_valid_playhead() then return false end
-  if is_placeholder_media() or state.idle or state.core_idle then return false end
+  if is_placeholder_media() or state.idle then return false end
   if ui.dragging == "seek" then return false end
   if state.paused and not state.paused_for_cache then return false end
   if state.paused_for_cache then return true end
@@ -1493,7 +1493,7 @@ function is_loading()
   if state.paused_for_cache and not has_playable_media() then return true end
   if is_placeholder_media() then return true end
   if ui.loading_override_until and mp.get_time() < ui.loading_override_until then return true end
-  if has_playable_media() then return false end
+  if has_playable_media() and state.has_started_playback then return false end
   if state.idle or state.core_idle then return true end
   return not state.has_started_playback and (tonumber(state.duration) or 0) <= 0
 end
@@ -1634,8 +1634,11 @@ end
 
 function check_startup_stream_stall()
   local path = tostring(state.path or "")
-  if path == "" or is_placeholder_media() or has_playable_media() then
-    if has_playable_media() then reset_startup_stream_watchdog(true) end
+  if path == "" or is_placeholder_media() then
+    return
+  end
+  if state.has_started_playback and has_playable_media() and has_valid_playhead() then
+    reset_startup_stream_watchdog(true)
     return
   end
   if state.paused and not state.paused_for_cache then return end
@@ -1674,7 +1677,7 @@ function native_buffering_active()
 end
 
 function stall_watchdog_allowed()
-  if (state.paused and not state.paused_for_cache) or state.seeking or state.idle or state.core_idle or ui.end_overlay or ui.settings_open then return false end
+  if (state.paused and not state.paused_for_cache) or state.seeking or state.idle or ui.end_overlay or ui.settings_open then return false end
   if ui.dragging or is_placeholder_media() then return false end
   if not state.has_started_playback or not has_playable_media() or not has_valid_playhead() then return false end
   local duration = tonumber(state.duration) or 0
@@ -2909,13 +2912,15 @@ end
 function loading_status_text()
   if is_midplayback_buffering() then
     return buffering_status_label()
+  elseif native_buffering_active() and not is_placeholder_media() then
+    return buffering_status_label()
   elseif ui.startup_stream_backup_requested then
     return "SWITCHING TO A VERIFIED BACKUP"
   elseif ui.startup_stream_retried then
     return "REOPENING THE CURRENT STREAM"
   elseif is_placeholder_media() then
     local stage = tostring(mp.get_property("user-data/streamnyaa/state", "")):lower()
-    if stage:find("metadata") then return "READING TORRENT METADATA" end
+    if stage:find("metadata") then return "CHECKING EPISODE AVAILABILITY" end
     if stage:find("matching") then return "MATCHING THE EPISODE FILE" end
     if stage:find("buffer") then return "BUILDING THE PLAYABLE BUFFER" end
     if stage:find("prepar") then return "PREPARING THE VIDEO STREAM" end
@@ -2923,12 +2928,16 @@ function loading_status_text()
   elseif not has_playable_media() and tostring(state.path or "") ~= "" then
     return "OPENING THE VIDEO DECODER"
   elseif state.idle or state.core_idle then
-    return "STARTING TORRENT ENGINE..."
+    return "STARTING PLAYBACK..."
   end
   return "PREPARING STREAM..."
 end
 
 function startup_loading_percent()
+  local playable_percent = buffering_display_percent()
+  if playable_percent ~= nil and not is_placeholder_media() then
+    return math.floor(clamp(playable_percent, 0, 100) + 0.5)
+  end
   local raw_value = mp.get_property("user-data/streamnyaa/loading_percent", "")
   local value = tonumber(raw_value)
   if not value then return nil end
@@ -3009,20 +3018,26 @@ function draw_loading_required_content(ass, width, height, s, status)
 
   local artwork_layout = tostring(player_meta.artworkLayout or "landscape")
   local layout = loading_title_layout(loading_media_title(), width, height, s)
-  local title_size = clamp(layout.size, 36 * s, 72 * s)
+  local title_size = clamp(layout.size, 42 * s, 76 * s)
   local line_gap = title_size * 1.10
   local title_x = artwork_layout == "portrait" and width * 0.075 or width * 0.07
-  local title_center_y = artwork_layout == "portrait" and height * 0.46 or height * 0.69
+  local title_center_y = artwork_layout == "portrait" and height * 0.46 or height * 0.72
   local first_line_y = title_center_y - ((#layout.lines - 1) * line_gap / 2)
   local episode_label = loading_episode_label()
   local detail_y = first_line_y + #layout.lines * line_gap + 7 * s
   local status_y = detail_y + (episode_label ~= "" and 40 * s or 12 * s)
   local t = (mp.get_time() - ui.anim_started)
   local percent = startup_loading_percent()
-  local status_text = percent and string.format("%s  %d%%", status, percent) or status
+  local status_text = status
 
   if artwork_layout == "landscape" then
-    rect(ass, 0, height * 0.48, width, height, C.black, 118)
+    -- Layered neutral bands create a restrained readability gradient without
+    -- tinting the artwork or turning half of the frame into a hard black block.
+    rect(ass, 0, height * 0.36, width, height, C.black, 232)
+    rect(ass, 0, height * 0.48, width, height, C.black, 210)
+    rect(ass, 0, height * 0.60, width, height, C.black, 178)
+    rect(ass, 0, height * 0.72, width, height, C.black, 132)
+    rect(ass, 0, height * 0.84, width, height, C.black, 82)
   else
     rect(ass, 0, 0, width * 0.62, height, C.black, 94)
   end
@@ -3049,6 +3064,11 @@ function draw_loading_required_content(ass, width, height, s, status)
 
   local bar_x1 = title_x
   local bar_x2 = title_x + math.min(width * (artwork_layout == "portrait" and 0.42 or 0.38), 560 * s)
+  if percent ~= nil then
+    draw_text(ass, bar_x2, status_y + 2 * s, 6, font_px(s, 23, 19, 28), C.accent, 0, string.format("%d%%", percent), true, "Segoe UI Semibold")
+  else
+    draw_text(ass, bar_x2, status_y + 1 * s, 6, font_px(s, 12, 11, 14), C.secondary, 0, "CONNECTING", true, "Segoe UI Semibold")
+  end
   local bar_y = status_y + 24 * s
   rounded_rect(ass, bar_x1, bar_y, bar_x2, bar_y + 4 * s, 2 * s, C.white, 220)
   if percent then
@@ -3057,6 +3077,10 @@ function draw_loading_required_content(ass, width, height, s, status)
     local segment = (bar_x2 - bar_x1) * 0.22
     local pulse_x = bar_x1 + ((bar_x2 - bar_x1) - segment) * ((math.sin(t * 3.0) + 1) / 2)
     rounded_rect(ass, pulse_x, bar_y, pulse_x + segment, bar_y + 4 * s, 2 * s, C.accent, 0)
+  end
+  local cached = buffered_seconds()
+  if cached and not is_placeholder_media() then
+    draw_text(ass, bar_x1, bar_y + 20 * s, 4, font_px(s, 12, 11, 14), C.secondary, 0, string.format("%.1f of %ds ready", cached, apply_adaptive_buffer_target()), false, "Segoe UI")
   end
   if ui.startup_stream_actions_visible then
     local button_y = math.min(height - 66 * s, bar_y + 24 * s)
@@ -4354,17 +4378,15 @@ end
 mp.observe_property("duration", "number", function(_, value)
   state.duration = value or 0
   if has_playable_media() then
-    state.has_started_playback = true
-    reset_startup_stream_watchdog(true)
     ui.eof_candidate_key = current_media_key()
-    ui.loading_override_until = 0
+    begin_startup_stream_watchdog(state.path)
   end
   show_overlay()
   draw(true, "duration")
 end)
 mp.observe_property("time-pos", "number", function(_, value)
   state.pos = value or 0
-  if has_playable_media() and state.pos >= 0 then
+  if has_playable_media() and state.pos > 0.25 then
     state.has_started_playback = true
     reset_startup_stream_watchdog(true)
     ui.eof_candidate_key = current_media_key()
@@ -4419,6 +4441,7 @@ mp.observe_property("path", "string", function(_, value)
     ui.chapter_state_key = ""
     ui.anim_started = mp.get_time()
     state.has_started_playback = false
+    safe_set_property("user-data/streamnyaa/has_started", "false")
     ui.loading_override_until = mp.get_time() + 2.5
     if is_placeholder_path(next_path) then
       ui.last_startup_loading_percent = 0
@@ -4718,6 +4741,12 @@ mp.register_event("end-file", function(event)
   draw(true, "end-file")
 end)
 mp.register_event("playback-restart", function()
+  if has_playable_media() and not is_placeholder_media() then
+    state.has_started_playback = true
+    safe_set_property("user-data/streamnyaa/has_started", "true")
+    reset_startup_stream_watchdog(true)
+    ui.loading_override_until = 0
+  end
   show_overlay()
   hide_end_overlay()
   ui.eof_handled_key = ""

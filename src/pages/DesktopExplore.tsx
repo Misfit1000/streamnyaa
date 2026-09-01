@@ -5,13 +5,15 @@ import { CalendarDays, Check, ChevronDown, Clapperboard, Grid2X2, List, Loader2,
 import { Link, useSearchParams } from 'react-router-dom';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
-import { fetchAnimeSeason, fetchPopularAnime, fetchRecentEpisodesWithLimit, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
+import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
+import { fetchAnimeSeason, fetchJikanExploreCatalog, fetchPopularAnime, fetchRecentEpisodesWithLimit, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
 import { getCurrentAnimeSeason } from '../lib/currentSeason';
-import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
+import { desktopWatchOrBrowsePath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { desktopPosterCandidates } from '../lib/desktopArtwork';
 import { episodeAvailabilityLabel } from '../lib/animeEpisodes';
 import { preloadDesktopRoute, preloadDesktopWatchData } from '../lib/desktopRoutePreload';
 import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
+import { exploreCatalogCacheKey, readDesktopExploreCatalog, writeDesktopExploreCatalog } from '../lib/desktopExploreCache';
 
 type ExploreMode = 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year';
 type ExploreDensity = 'poster' | 'compact' | 'list';
@@ -98,7 +100,7 @@ function localSort(items: any[], sort: string) {
   return next;
 }
 
-async function loadExploreCatalog(args: {
+type ExploreCatalogArgs = {
   mode: ExploreMode;
   query: string;
   year: number;
@@ -106,7 +108,9 @@ async function loadExploreCatalog(args: {
   genre: string;
   status: string;
   sort: string;
-}) {
+};
+
+async function loadPrimaryExploreCatalog(args: ExploreCatalogArgs) {
   const { mode, query, year, format, genre, status, sort } = args;
   const currentSeason = getCurrentAnimeSeason();
   const type = providerFormat(format);
@@ -122,6 +126,49 @@ async function loadExploreCatalog(args: {
   if (mode === 'year') return fetchTopAnimeByYear(year, 1);
   if (mode === 'top') return searchAnime('', 1, type, '', providerGenre, 'score', state);
   return searchAnime('', 1, type, '', providerGenre, 'popular', state || 'airing');
+}
+
+function loadExploreCatalog(args: ExploreCatalogArgs) {
+  const currentSeason = getCurrentAnimeSeason();
+  const allowEmpty = Boolean(args.query);
+  return new Promise<any>((resolve, reject) => {
+    let settled = false;
+    let secondaryStarted = false;
+    let failures = 0;
+    const errors: unknown[] = [];
+    const accept = (value: any) => {
+      if (settled) return;
+      if (!Array.isArray(value?.data) || (!allowEmpty && !value.data.length)) {
+        fail(new Error('The anime catalog returned no usable entries.'));
+        return;
+      }
+      settled = true;
+      resolve(value);
+    };
+    const fail = (error: unknown) => {
+      if (settled) return;
+      failures += 1;
+      errors.push(error);
+      if (!secondaryStarted) startSecondary();
+      else if (failures >= 2) reject(errors[0] || error);
+    };
+    const startSecondary = () => {
+      if (secondaryStarted || settled) return;
+      secondaryStarted = true;
+      void fetchJikanExploreCatalog({
+        mode: args.mode,
+        query: args.query,
+        year: args.year,
+        season: currentSeason.season,
+        type: providerFormat(args.format),
+        genre: args.genre === 'Any' ? '' : args.genre,
+        status: providerStatus(args.status),
+      }).then(accept, fail);
+    };
+
+    void loadPrimaryExploreCatalog(args).then(accept, fail);
+    window.setTimeout(startSecondary, 850);
+  });
 }
 
 export function PremiumSelect({ value, options, onChange, ariaLabel }: {
@@ -195,6 +242,7 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
   const genres = genresFor(anime).slice(0, 2);
   const compact = density === 'compact';
   const episodeLabel = episodeAvailabilityLabel(anime);
+  const upcoming = isUpcomingAnime(anime);
 
   useEffect(() => {
     setImageIndex(0);
@@ -215,6 +263,7 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
 
   if (density === 'list') {
     return (
+      <div className="relative">
       <Link to={path} onPointerEnter={prepare} onFocus={prepare} onPointerDown={prepare} className="group grid min-h-[126px] grid-cols-[82px_minmax(0,1fr)_auto] items-center gap-4 rounded-xl border border-white/[0.07] bg-white/[0.025] p-3 transition-colors hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
         <div className="sn-explore-poster relative h-[108px] overflow-hidden rounded-lg">{imageNode}</div>
         <div className="min-w-0">
@@ -225,17 +274,20 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
             <span className="inline-flex items-center gap-1 text-amber-300"><Star className="h-3.5 w-3.5 fill-current" />{scoreFor(anime) ? scoreFor(anime).toFixed(1) : 'N/A'}</span>
           </div>
         </div>
-        <span className="mr-2 grid h-10 w-10 place-items-center rounded-full bg-primary text-white"><Play className="ml-0.5 h-4 w-4 fill-current" /></span>
+        {upcoming ? <span className="mr-[116px]" /> : <span className="mr-2 grid h-10 w-10 place-items-center rounded-full bg-primary text-white"><Play className="ml-0.5 h-4 w-4 fill-current" /></span>}
       </Link>
+      {upcoming ? <UpcomingNotifyButton anime={anime} compact className="absolute bottom-3 right-3" /> : null}
+      </div>
     );
   }
 
   return (
-    <Link to={path} onPointerEnter={prepare} onFocus={prepare} onPointerDown={prepare} className="group min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60" style={{ contentVisibility: 'auto', containIntrinsicSize: compact ? '210px 294px' : '230px 345px' }}>
+    <div className="min-w-0" style={{ contentVisibility: 'auto', containIntrinsicSize: compact ? '210px 294px' : '230px 345px' }}>
+    <Link to={path} onPointerEnter={prepare} onFocus={prepare} onPointerDown={prepare} className="group block min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
       <div className={`sn-explore-poster relative overflow-hidden rounded-xl border border-white/[0.07] bg-[#111114] ${compact ? 'aspect-[5/7]' : 'aspect-[2/3]'}`}>
         {imageNode}<div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_42%,rgba(5,5,7,0.94)_100%)]" />
         <span className="absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-semibold text-white/78">EP {episodeLabel}</span>
-        <span className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Play className="ml-0.5 h-4 w-4 fill-current" /></span>
+        {!upcoming ? <span className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Play className="ml-0.5 h-4 w-4 fill-current" /></span> : null}
         <div className="absolute inset-x-0 bottom-0 p-3.5">
           <h3 className={`${compact ? 'text-[13px]' : 'text-[15px]'} line-clamp-2 font-semibold leading-tight text-white`}>{title}</h3>
           <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-semibold text-white/58">
@@ -246,12 +298,14 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
       </div>
       {!compact ? <p className="mt-2 truncate text-xs font-medium text-white/48">{genres.join(' · ') || yearFor(anime) || 'Anime'}</p> : null}
     </Link>
+    {upcoming ? <UpcomingNotifyButton anime={anime} compact fullWidth className="mt-2" /> : null}
+    </div>
   );
 });
 
 function ExploreSkeleton() {
   return (
-    <DesktopLoadingProgress label="Loading anime catalog" percent={46} detail="Checking the saved catalog and the primary metadata provider.">
+    <DesktopLoadingProgress label="Loading anime catalog" percent={46} detail="Restoring saved titles while the catalog refreshes.">
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
         {Array.from({ length: 12 }).map((_, index) => <div key={index} className="aspect-[2/3] animate-pulse rounded-xl bg-white/[0.045] motion-reduce:animate-none" />)}
       </div>
@@ -272,12 +326,19 @@ export default function DesktopExplore() {
   const year = Math.max(1960, Math.min(currentYear + 1, Number(searchParams.get('year') || currentYear)));
   const density = (['poster', 'compact', 'list'].includes(searchParams.get('view') || '') ? searchParams.get('view') : 'poster') as ExploreDensity;
   const [input, setInput] = useState(query);
+  const catalogCacheKey = useMemo(() => exploreCatalogCacheKey({ mode, query, year, format, genre, status, sort }), [format, genre, mode, query, sort, status, year]);
 
   useEffect(() => setInput(query), [query]);
 
   const catalogQuery = useQuery({
     queryKey: ['desktop-explore-v2', mode, query, year, format, genre, status, sort],
-    queryFn: () => loadExploreCatalog({ mode, query, year, format, genre, status, sort }),
+    queryFn: async () => {
+      const response = await loadExploreCatalog({ mode, query, year, format, genre, status, sort });
+      writeDesktopExploreCatalog(catalogCacheKey, response);
+      return response;
+    },
+    initialData: () => readDesktopExploreCatalog(catalogCacheKey)?.data,
+    initialDataUpdatedAt: () => readDesktopExploreCatalog(catalogCacheKey)?.savedAt,
     staleTime: query ? 1000 * 60 * 10 : 1000 * 60 * 25,
     gcTime: 1000 * 60 * 90,
     retry: (count, error) => count < 2 && !/invalid|cancel/i.test(String((error as Error)?.message || '')),
@@ -328,7 +389,7 @@ export default function DesktopExplore() {
 
   return (
     <div className="min-h-full px-6 pb-16 pt-5 text-white">
-      <Seo title="Explore anime - StreamNyaa" description="Search and browse current anime with reliable desktop metadata." />
+      <Seo title="Explore anime - StreamNyaa" description="Search and browse current anime." />
       <section className="rounded-xl border border-white/[0.07] bg-[#0d0d10] p-5">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div><h1 className="text-3xl font-semibold tracking-tight">Explore anime</h1><p className="mt-1 text-sm text-white/52">Live categories, exact search, and aired-episode availability.</p></div>
@@ -358,18 +419,18 @@ export default function DesktopExplore() {
       </section>
 
       <div className="mt-6 flex items-end justify-between gap-4">
-        <div><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-semibold">{query ? `Results for “${query}”` : selectedMode.label}</h2>{catalogQuery.isFetching && catalogQuery.data ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/46"><Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />Refreshing</span> : null}</div><p className="mt-1 text-sm text-white/48">{results.length ? `${results.length} verified metadata result${results.length === 1 ? '' : 's'}` : `${currentSeason.season} ${currentSeason.year}`}</p></div>
+        <div><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-semibold">{query ? `Results for “${query}”` : selectedMode.label}</h2>{catalogQuery.isFetching && catalogQuery.data ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/46"><Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />Refreshing</span> : null}</div><p className="mt-1 text-sm text-white/48">{results.length ? `${results.length} anime title${results.length === 1 ? '' : 's'}` : `${currentSeason.season} ${currentSeason.year}`}</p></div>
         {catalogQuery.isError ? <button type="button" onClick={() => void catalogQuery.refetch()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-sm font-semibold text-white/72 hover:bg-white/[0.09]"><RefreshCw className="h-4 w-4" />Retry</button> : null}
       </div>
 
       {catalogQuery.isLoading && !catalogQuery.data ? <div className="mt-5"><ExploreSkeleton /></div> : null}
-      {catalogQuery.isError && !catalogQuery.data ? <div className="mt-5 rounded-xl border border-amber-400/18 bg-amber-400/[0.055] p-5"><h3 className="font-semibold text-white">The primary catalog did not respond.</h3><p className="mt-1 max-w-2xl text-sm leading-6 text-white/54">{catalogQuery.error instanceof Error ? catalogQuery.error.message : 'Anime metadata could not be loaded.'} No fabricated fallback titles were inserted.</p><button type="button" onClick={() => void catalogQuery.refetch()} className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4" />Try primary provider again</button></div> : null}
-      {catalogQuery.data && !results.length ? <div className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-6 py-12 text-center"><Search className="mx-auto h-6 w-6 text-white/34" /><h3 className="mt-3 font-semibold text-white">No matching anime</h3><p className="mt-1 text-sm text-white/48">Clear a filter or try another title. The provider returned a valid empty result.</p></div> : null}
+      {catalogQuery.isError && !catalogQuery.data ? <div className="mt-5"><DesktopLoadingProgress label="Reconnecting to the anime catalog" percent={68} detail="The page remains usable while the catalog refreshes." /><div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-3"><span className="text-sm text-white/52">Refresh paused. Filters and search remain available.</span><button type="button" onClick={() => void catalogQuery.refetch()} className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4" />Retry now</button></div></div> : null}
+      {catalogQuery.data && !results.length ? <div className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-6 py-12 text-center"><Search className="mx-auto h-6 w-6 text-white/34" /><h3 className="mt-3 font-semibold text-white">No matching anime</h3><p className="mt-1 text-sm text-white/48">Clear a filter or try another title.</p></div> : null}
       {results.length ? <div className={`${gridClass} mt-5`}>{results.map((anime, index) => <ExploreAnimeCard key={anime?.anilist_id || anime?.id || anime?.mal_id || anime?.title} anime={anime} index={index} density={density} />)}</div> : null}
 
       <section className="mt-8 grid gap-3 md:grid-cols-3">
         <button type="button" onClick={() => chooseMode('new')} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 text-left hover:bg-white/[0.05]"><CalendarDays className="h-5 w-5 text-primary" /><span><span className="block font-semibold">Latest aired episodes</span><span className="mt-0.5 block text-xs text-white/46">See what became available most recently.</span></span></button>
-        <button type="button" onClick={() => chooseMode('seasonal')} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 text-left hover:bg-white/[0.05]"><Tv className="h-5 w-5 text-primary" /><span><span className="block font-semibold">Current season</span><span className="mt-0.5 block text-xs text-white/46">Browse {currentSeason.season} {currentSeason.year} without a fallback catalog.</span></span></button>
+        <button type="button" onClick={() => chooseMode('seasonal')} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 text-left hover:bg-white/[0.05]"><Tv className="h-5 w-5 text-primary" /><span><span className="block font-semibold">Current season</span><span className="mt-0.5 block text-xs text-white/46">Browse verified {currentSeason.season} {currentSeason.year} titles.</span></span></button>
         <button type="button" onClick={() => chooseMode('top')} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 text-left hover:bg-white/[0.05]"><Star className="h-5 w-5 text-primary" /><span><span className="block font-semibold">Top rated</span><span className="mt-0.5 block text-xs text-white/46">Sort verified titles by community score.</span></span></button>
       </section>
     </div>

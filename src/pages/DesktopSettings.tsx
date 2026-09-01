@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BellRing, CheckCircle2, Copy, Download, Globe2, HardDrive, History, PlayCircle, RefreshCw, ServerCog, ShieldCheck, Square, Trash2, Upload, UserRound } from 'lucide-react';
+import { BellRing, CheckCircle2, Copy, Download, Globe2, HardDrive, History, Keyboard, PlayCircle, RefreshCw, ServerCog, ShieldCheck, Square, Trash2, Upload, UserRound } from 'lucide-react';
 import Seo from '../components/Seo';
 import {
   buildDesktopDiagnosticsReport,
@@ -36,6 +36,7 @@ import {
   saveDesktopScheduleUpdatePreferences,
   type DesktopScheduleUpdatePreferences,
 } from '../lib/scheduleRevisions';
+import { desktopPlayerShortcuts } from '../lib/desktopPlayerShortcuts';
 
 function formatBytes(bytes?: number | null) {
   if (!bytes) return '0 B';
@@ -175,7 +176,7 @@ export default function DesktopSettings() {
   const updateAutoOpenBestSource = (enabled: boolean) => {
     setAutoOpenBestSource(enabled);
     saveDesktopAutoOpenBestSource(enabled);
-    setMessage({ tone: 'success', text: enabled ? 'Episodes will start the best source automatically.' : 'Episodes will wait for you to press play.' });
+    setMessage({ tone: 'success', text: enabled ? 'Episodes will start automatically.' : 'Episodes will wait for you to press play.' });
   };
 
   const updateAutoPlayNextEpisode = (enabled: boolean) => {
@@ -319,6 +320,7 @@ export default function DesktopSettings() {
       <nav className="sticky top-2 z-20 mt-5 flex flex-wrap gap-1 rounded-xl border border-white/[0.08] bg-[#101014]/95 p-1.5 shadow-sm" aria-label="Settings sections">
         {[
           ['#playback', 'Playback'],
+          ['#controls', 'Controls'],
           ['#updates', 'Updates'],
           ['#storage', 'Storage'],
           ['#privacy', 'Privacy'],
@@ -345,8 +347,8 @@ export default function DesktopSettings() {
 
             <div className="mt-5 grid gap-4 lg:grid-cols-2">
               <PreferenceCard
-                title="Auto-open best source"
-                description="When you choose an episode, StreamNyaa can open the best ranked source right away."
+                title="Autoplay episodes"
+                description="When you choose an episode, StreamNyaa can start the best playback option right away."
                 checked={autoOpenBestSource}
                 onChange={updateAutoOpenBestSource}
                 enabledLabel="Instant play"
@@ -397,6 +399,23 @@ export default function DesktopSettings() {
                   </button>
                 ))}
               </div>
+            </div>
+          </section>
+
+          <section id="controls" className="sn-glass-panel scroll-mt-24 p-5">
+            <SectionHeader
+              icon={<Keyboard className="h-5 w-5" />}
+              eyebrow="Player"
+              title="Keyboard controls"
+              description="Universal shortcuts that work while the video player is focused."
+            />
+            <div className="mt-5 grid gap-1 sm:grid-cols-2">
+              {desktopPlayerShortcuts.map(([keys, label]) => (
+                <div key={keys} className="flex items-center justify-between gap-4 rounded-lg px-3 py-2.5 odd:bg-white/[0.03]">
+                  <span className="text-sm text-white/64">{label}</span>
+                  <kbd className="shrink-0 rounded-md bg-black/45 px-2.5 py-1 text-xs font-semibold text-white/76">{keys}</kbd>
+                </div>
+              ))}
             </div>
           </section>
 
@@ -570,48 +589,43 @@ export default function DesktopSettings() {
           </section>
         </main>
 
-        <aside className="space-y-5">
-          <section className="sn-glass-card rounded-xl p-5">
+        <aside>
+          <section className="sn-glass-card sticky top-20 rounded-xl p-5">
             <ShieldCheck className="h-5 w-5 text-primary" />
-            <p className="mt-3 text-xs font-semibold text-white/42">App health</p>
+            <p className="mt-3 text-xs font-semibold text-white/42">Streaming status</p>
             <p className="mt-1 text-2xl font-semibold text-white">{ready ? 'Ready' : 'Needs attention'}</p>
             <p className="mt-2 text-sm leading-6 text-white/52">{runtime?.message || 'Checking playback status...'}</p>
-            <div className="mt-4 grid gap-2">
-              <button onClick={() => void refresh(true)} className="sn-secondary-action h-11 px-4 text-sm">
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => void refresh(true)} className="sn-secondary-action h-10 flex-1 px-3 text-xs">
                 <RefreshCw className="h-4 w-4" />
-                Refresh status
+                Check again
               </button>
-              <button onClick={copyDiagnostics} className="sn-secondary-action h-11 px-4 text-sm">
+              <button onClick={copyDiagnostics} className="sn-secondary-action h-10 flex-1 px-3 text-xs">
                 <Copy className="h-4 w-4" />
-                Copy support report
+                Copy report
               </button>
             </div>
-          </section>
-
-          <section className="sn-glass-card rounded-xl p-5">
-            <p className="text-xs font-semibold text-white/42">Support details</p>
-            <div className="mt-3">
-              <SupportRow label="App version" value={diagnostics?.app_version || '0.1.1'} />
-              <SupportRow label="Player" value={runtime?.player_version || 'Auto'} />
-              <SupportRow label="Engine" value={runtime?.torrent_engine_version || 'Auto'} />
-              <SupportRow label="Temp usage" value={`${formatBytes(cache?.total_bytes)} / ${formatBytes(cacheLimit)}`} />
-              <SupportRow label="Saved history" value={historyCount} />
-              {activeSession ? <SupportRow label="Active stream" value={formatBytes(activeSession.cache_bytes)} /> : null}
-            </div>
-            {diagnostics?.recent_errors?.length ? (
-              <div className="mt-4 rounded-2xl border border-red-400/15 bg-red-500/10 p-3">
-                <p className="text-[11px] font-semibold text-red-100/70">Recent problem</p>
-                <p className="mt-1 line-clamp-3 text-xs font-bold leading-5 text-red-50/72">{diagnostics.recent_errors[0]}</p>
+            <details className="mt-5 border-t border-white/[0.07] pt-4">
+              <summary className="cursor-pointer text-sm font-semibold text-white/68 hover:text-white">Technical details</summary>
+              <div className="mt-3">
+                <SupportRow label="App version" value={diagnostics?.app_version || '0.1.7'} />
+                <SupportRow label="Player" value={runtime?.player_version || 'Auto'} />
+                <SupportRow label="Streaming" value={runtime?.torrent_engine_version || 'Auto'} />
+                <SupportRow label="Temp usage" value={`${formatBytes(cache?.total_bytes)} / ${formatBytes(cacheLimit)}`} />
+                <SupportRow label="Saved history" value={historyCount} />
+                {activeSession ? <SupportRow label="Active stream" value={formatBytes(activeSession.cache_bytes)} /> : null}
               </div>
-            ) : null}
-          </section>
-
-          <details className="sn-glass-card rounded-xl p-5">
-            <summary className="cursor-pointer text-sm font-semibold text-white">Full support report</summary>
-            <pre className="mt-3 max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-black/35 p-3 text-xs leading-6 text-white/58">
-              {diagnosticsSummary}
-            </pre>
+              {diagnostics?.recent_errors?.length ? (
+                <div className="mt-4 rounded-lg border border-red-400/15 bg-red-500/10 p-3">
+                  <p className="text-[11px] font-semibold text-red-100/70">Recent problem</p>
+                  <p className="mt-1 line-clamp-3 text-xs font-bold leading-5 text-red-50/72">{diagnostics.recent_errors[0]}</p>
+                </div>
+              ) : null}
+              <pre className="mt-4 max-h-[260px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/35 p-3 text-xs leading-6 text-white/58">
+                {diagnosticsSummary}
+              </pre>
           </details>
+          </section>
         </aside>
       </div>
     </div>

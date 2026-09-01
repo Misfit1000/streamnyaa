@@ -1,5 +1,5 @@
 import { memo, Suspense, useEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
 import DesktopNotificationCenter from './DesktopNotificationCenter';
@@ -18,10 +18,12 @@ import {
   DESKTOP_REMINDER_POLL_MS,
   deliverDueDesktopReminders,
   readDesktopScheduleReminders,
+  resolveDesktopUpcomingAnimeWatches,
   subscribeDesktopScheduleReminders,
 } from '../lib/desktopReminders';
 import { preloadDesktopRoute, preloadDesktopWatchData, warmCoreDesktopRoutes } from '../lib/desktopRoutePreload';
 import { loadDesktopScheduleUpdatePreferences } from '../lib/scheduleRevisions';
+import { desktopPlayerShortcuts } from '../lib/desktopPlayerShortcuts';
 
 const desktopNav = [
   { to: '/', label: 'Home', icon: Home },
@@ -44,18 +46,8 @@ const HOVER_SOURCE_PRELOAD_DELAY_MS = 360;
 const desktopShortcuts = [
   ['Ctrl K', 'Open search'],
   ['?', 'Show this shortcut guide'],
-  ['Esc', 'Exit fullscreen or close player panels'],
-  ['Space / K', 'Play or pause in the player'],
-  ['← / →', 'Seek 5 seconds backward or forward'],
-  ['J / L', 'Seek 10 seconds backward or forward'],
-  ['↑ / ↓', 'Adjust player volume'],
-  ['F', 'Toggle fullscreen in the player'],
-  ['M', 'Mute or unmute the player'],
-  ['C', 'Toggle subtitles in the player'],
-  ['[ / ]', 'Decrease or increase playback speed'],
-  ['0–9', 'Jump to a percentage of the episode'],
-  ['Shift N', 'Play the next episode'],
-];
+  ...desktopPlayerShortcuts,
+] as const;
 
 function DesktopOutletFallback() {
   return (
@@ -174,10 +166,13 @@ const DesktopNavItem = memo(function DesktopNavItem({
 
 export default function DesktopShell() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isWatch = location.pathname.startsWith('/watch/');
   const [logoFailed, setLogoFailed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [topSearchValue, setTopSearchValue] = useState('');
+  const topSearchInputRef = useRef<HTMLInputElement | null>(null);
   const hoverPreloadTimer = useRef<number | undefined>(undefined);
   const hoverSourcePreloadTimer = useRef<number | undefined>(undefined);
   const hoverPreloadHref = useRef('');
@@ -194,6 +189,12 @@ export default function DesktopShell() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTypingTarget(event.target)) return;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        topSearchInputRef.current?.focus();
+        topSearchInputRef.current?.select();
+        return;
+      }
       if (event.key === '?' || (event.shiftKey && event.key === '/')) {
         event.preventDefault();
         setShortcutsOpen(true);
@@ -222,11 +223,12 @@ export default function DesktopShell() {
       const end = new Date(start);
       end.setDate(end.getDate() + 7);
       end.setHours(23, 59, 59, 999);
-      await fetchCompleteSchedule(
+      const schedule = await fetchCompleteSchedule(
         Math.floor(start.getTime() / 1000),
         Math.floor(end.getTime() / 1000),
         4,
-      ).catch(() => undefined);
+      ).catch(() => null);
+      if (schedule?.data) resolveDesktopUpcomingAnimeWatches(schedule.data);
     };
     const refreshWhenStale = () => {
       if (Date.now() - lastRefreshAt >= 1000 * 60 * 20) void refreshScheduleUpdates();
@@ -459,11 +461,26 @@ export default function DesktopShell() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <Link to="/search" className="sn-input flex h-11 min-w-[340px] max-w-[600px] flex-1 items-center gap-3 px-4 text-sm text-white/48 transition-all hover:text-white/74 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
+            <form
+              className="sn-input flex h-11 min-w-[340px] max-w-[600px] flex-1 items-center gap-3 px-4 text-sm text-white/48 focus-within:ring-2 focus-within:ring-primary/60"
+              role="search"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const query = topSearchValue.trim();
+                navigate(query ? `/search?q=${encodeURIComponent(query)}` : '/search');
+              }}
+            >
               <Search className="h-5 w-5" />
-              <span>Search anime, episodes, sources...</span>
+              <input
+                ref={topSearchInputRef}
+                value={topSearchValue}
+                onChange={(event) => setTopSearchValue(event.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/42"
+                placeholder="Search anime titles..."
+                aria-label="Search anime"
+              />
               <kbd className="ml-auto rounded-md bg-white/8 px-2 py-1 text-[11px] font-bold text-white/42">Ctrl K</kbd>
-            </Link>
+            </form>
             <div className="ml-auto flex items-center gap-3">
               <DesktopNotificationCenter />
               <Link

@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
+import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
@@ -1703,13 +1704,21 @@ function railWheelScroll(event: RailWheelEvent, rail: HTMLDivElement | null) {
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'string' && error.trim()) return error;
+  let message = '';
+  if (error instanceof Error && error.message.trim()) message = error.message;
+  else if (typeof error === 'string' && error.trim()) message = error;
   if (error && typeof error === 'object' && 'message' in error) {
     const value = String((error as { message?: unknown }).message || '').trim();
-    if (value) return value;
+    if (value) message = value;
   }
-  return fallback;
+  if (!message) return fallback;
+  if (/no\s+(peer|seed)|zero\s+(peer|seed)|timed?\s*out/i.test(message)) {
+    return 'The stream could not establish a healthy connection. Retry or choose another playback option.';
+  }
+  if (/provider|torrent|magnet|metadata|info\s*hash|tracker|dht/i.test(message)) {
+    return 'Playback could not be prepared. Retry or choose another playback option.';
+  }
+  return message;
 }
 
 function EpisodeWatchIndicator({ state }: { state: DesktopEpisodeWatchState }) {
@@ -2577,22 +2586,22 @@ export default function DesktopWatch() {
   const sourceSectionTitle = animeNotYetAired
     ? 'Still not aired'
     : sourcesLoading || (sourcesFetching && !sources?.length)
-    ? `Finding sources for Episode ${selectedEpisode}...`
+    ? `Preparing Episode ${selectedEpisode}...`
     : sortedSources.length
-      ? `Sources for Episode ${selectedEpisode}`
+      ? `Playback options for Episode ${selectedEpisode}`
       : sourcesError
-        ? `Source service interrupted for Episode ${selectedEpisode}`
-        : `No reliable sources found for Episode ${selectedEpisode}`;
+        ? `Playback preparation paused for Episode ${selectedEpisode}`
+        : `Episode ${selectedEpisode} is not playable yet`;
   const sourceSectionSubtitle = animeNotYetAired
-    ? 'This title is listed as upcoming. StreamNyaa will enable source search after episodes are released.'
+    ? 'This title is upcoming. StreamNyaa will enable playback after episodes are released.'
     : sortedSources.length
-    ? 'Ranked by episode accuracy, quality, seeds, and subtitle preference.'
+    ? 'Optimized by episode accuracy, quality, startup speed, and audio preference.'
     : sourcesLoading || (sourcesFetching && !sources?.length)
-      ? 'Checking episode match, seed health, audio preference, and release quality.'
+      ? 'Checking episode match, connection health, audio preference, and video quality.'
     : sourcesError
-      ? `${sourcesError instanceof Error ? sourcesError.message : 'Source discovery could not finish.'} Saved results remain available; retry when the connection recovers.`
+      ? 'StreamNyaa could not finish preparing playback. Saved options remain available; retry when the connection recovers.'
     : sourceMode === 'broad'
-      ? 'Try another episode, audio preference, or refresh the source list.'
+      ? 'Try another episode, audio preference, or refresh playback options.'
       : 'Try Broad mode to include less certain matches.';
   const sourcesBusy = sourcesLoading || sourcesFetching;
   const nextPlayableSource = useMemo(
@@ -2646,7 +2655,7 @@ export default function DesktopWatch() {
     retry: 1,
   });
   const playbackStage = useMemo(() => playbackStageMeta(playbackProgress), [playbackProgress]);
-  const playbackSteps = ['Metadata', 'Peers', 'Buffer', 'Play'];
+  const playbackSteps = ['Prepare', 'Connect', 'Buffer', 'Play'];
 
   useEffect(() => {
     const busy = Boolean(playback && (
@@ -2884,7 +2893,7 @@ export default function DesktopWatch() {
           return;
         } catch (error) {
           if (playbackRequestIdRef.current !== requestId) return;
-          const message = errorMessage(error, 'Source link could not open.');
+          const message = errorMessage(error, 'Playback could not start.');
           if (/playback source switch was superseded|playback request was superseded/i.test(message)) {
             return;
           }
@@ -2906,7 +2915,7 @@ export default function DesktopWatch() {
       const fallbackHint = retryPool.length > 1
         ? ` StreamNyaa also tried ${Math.min(retryPool.length - 1, SOURCE_RETRY_LIMIT - 1)} backup source${retryPool.length > 2 ? 's' : ''}.`
         : '';
-      setPlaybackNotice({ tone: 'error', text: `${errorMessage(error, 'Source link could not open.')}${fallbackHint}` });
+      setPlaybackNotice({ tone: 'error', text: `${errorMessage(error, 'Playback could not start.')}${fallbackHint}` });
     } finally {
       if (playbackRequestIdRef.current === requestId) {
         setActiveSourceId(null);
@@ -3243,7 +3252,7 @@ export default function DesktopWatch() {
       return;
     }
     setPendingAutoPlayEpisode(null);
-    setPlaybackNotice({ tone: 'error', text: 'No verified same-episode source was found. Switch to Balanced to inspect likely matches, or open the manual source search.' });
+    setPlaybackNotice({ tone: 'error', text: 'This episode could not start automatically. Switch to Balanced or review playback options.' });
   }, [activeSourceId, pendingAutoPlayEpisode, playSource, playableSources, selectedEpisode, sourcesBusy]);
 
   const stopPlayback = useCallback(async () => {
@@ -3408,7 +3417,7 @@ export default function DesktopWatch() {
         <main className="min-w-0 py-8">
           {metadataFailed ? (
             <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-amber-300/15 bg-amber-200/[0.045] px-4 py-3 text-sm text-amber-50/72" role="status">
-              <span>Anime details could not refresh. The current screen remains usable while the primary service reconnects.</span>
+              <span>Anime details could not refresh. The current screen remains usable while StreamNyaa reconnects.</span>
               <button
                 type="button"
                 onClick={() => void detailsQuery.refetch()}
@@ -3664,9 +3673,9 @@ export default function DesktopWatch() {
                   disabled={animeNotYetAired || Boolean(activeSourceId) || sourcesBusy}
                   onClick={() => playEpisodeNumber(selectedEpisode)}
                   className="hidden rounded-xl bg-primary px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white shadow-lg shadow-primary/24 transition-all hover:bg-[#ff3345] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
-                  aria-label={`Play best source for episode ${selectedEpisode}`}
+                  aria-label={`Play episode ${selectedEpisode}`}
                 >
-                  {animeNotYetAired ? 'Not aired yet' : Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : 'Play Best Source'}
+                  {animeNotYetAired ? 'Not aired yet' : Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : 'Play Episode'}
                 </button>
                 <button
                   type="button"
@@ -3856,10 +3865,10 @@ export default function DesktopWatch() {
               {episodeSearchTerm
                 ? `Found ${displayedEpisodes.length} matching episode${displayedEpisodes.length === 1 ? '' : 's'}. Press Enter to open the first match quickly.`
                 : episodeViewMode === 'grid' && longEpisodeRun
-                  ? `Compact view shows episodes ${currentEpisodeRange?.start || displayedEpisodes[0]?.number || 1}-${currentEpisodeRange?.end || displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start the best source.`
+                  ? `Compact view shows episodes ${currentEpisodeRange?.start || displayedEpisodes[0]?.number || 1}-${currentEpisodeRange?.end || displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start watching.`
                   : airedCount > displayedEpisodes.length
-                    ? `Showing episodes ${displayedEpisodes[0]?.number || 1}-${displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start the best source.`
-                    : 'Click an episode to select it. Use Play or double-click to start the best source.'}
+                    ? `Showing episodes ${displayedEpisodes[0]?.number || 1}-${displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start watching.`
+                    : 'Click an episode to select it. Use Play or double-click to start watching.'}
             </p>
           </section>
 
@@ -3867,18 +3876,21 @@ export default function DesktopWatch() {
             <div className="sn-glass-panel mb-5 rounded-[28px] p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Source List</p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Playback</p>
                   <h2 className="mt-1 text-2xl font-black tracking-[-0.03em] text-white">{sourceSectionTitle}</h2>
                   <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/52">{sourceSectionSubtitle}</p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-3">
                   {animeNotYetAired ? (
-                    <Link
-                      to="/calendar"
-                      className="sn-secondary-action h-12 rounded-2xl bg-white px-5 text-sm text-black shadow-lg shadow-white/10 hover:bg-white/90"
-                    >
-                      View airing schedule
-                    </Link>
+                    <>
+                      <UpcomingNotifyButton anime={anime} />
+                      <Link
+                        to="/schedule"
+                        className="sn-secondary-action h-11 rounded-lg px-4 text-sm"
+                      >
+                        View airing schedule
+                      </Link>
+                    </>
                   ) : (
                     <>
                       <button
@@ -3886,19 +3898,19 @@ export default function DesktopWatch() {
                         disabled={!playableSources[0] || Boolean(activeSourceId) || sourcesBusy}
                         onClick={() => playableSources[0] && void playSource(playableSources[0])}
                         className="sn-primary-action h-12 rounded-2xl px-5 text-sm disabled:cursor-not-allowed disabled:opacity-45"
-                        aria-label={`Play best source for episode ${selectedEpisode}`}
+                        aria-label={`Play episode ${selectedEpisode}`}
                       >
                         <Play className="mr-2 h-4 w-4 fill-current" />
-                        {Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : sourcesBusy ? 'Finding...' : 'Play Best Source'}
+                        {Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : sourcesBusy ? 'Preparing...' : 'Play Episode'}
                       </button>
                       <button
                         type="button"
                         onClick={() => sourceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                         className="sn-secondary-action h-12 rounded-2xl px-5 text-sm"
-                        aria-label={`View source list for episode ${selectedEpisode}`}
+                        aria-label={`View playback options for episode ${selectedEpisode}`}
                       >
                         <SlidersHorizontal className="mr-2 h-4 w-4" />
-                        Source List
+                        Playback Options
                       </button>
                     </>
                   )}
@@ -3909,7 +3921,7 @@ export default function DesktopWatch() {
                 <div className="mt-5 rounded-2xl bg-black/28 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.06]">
                   <p className="text-sm font-black text-white">Episodes are not available yet.</p>
                   <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/48">
-                    This listing can be bookmarked and reviewed, but StreamNyaa will not search torrent sources until the anime has aired.
+                    This title can be saved now. Playback becomes available after the first episode airs.
                   </p>
                 </div>
               ) : (
@@ -4002,7 +4014,7 @@ export default function DesktopWatch() {
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-4 text-sm">
                 <p className="font-bold text-white/56">{sourceMatchSummary}</p>
-                <p className="text-xs font-semibold text-white/36">Best source uses the same ranking and fallback logic as before.</p>
+                <p className="text-xs font-semibold text-white/36">StreamNyaa automatically chooses the fastest compatible option.</p>
               </div>
                 </>
               )}
@@ -4024,7 +4036,7 @@ export default function DesktopWatch() {
                       onClick={retryCurrentSource}
                       className="rounded-lg bg-white/[0.08] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/[0.13]"
                     >
-                      Retry current source
+                      Retry playback
                     </button>
                     {nextPlayableSource ? (
                       <button
@@ -4033,14 +4045,14 @@ export default function DesktopWatch() {
                         onClick={playNextPlayableSource}
                         className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Try another source
+                        Try another stream
                       </button>
                     ) : null}
                     <Link
                       to={sourceBrowserPath}
                       className="rounded-lg px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
                     >
-                      Open Source Browser
+                      Playback options
                     </Link>
                   </div>
                 ) : playbackNotice.tone === 'error' && nextPlayableSource ? (
@@ -4050,7 +4062,7 @@ export default function DesktopWatch() {
                     onClick={playNextPlayableSource}
                     className="rounded-lg bg-white px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Try next playable source
+                    Try another stream
                   </button>
                 ) : null}
               </div>
@@ -4089,7 +4101,7 @@ export default function DesktopWatch() {
                           <h3 className="mt-2 line-clamp-2 max-w-3xl text-3xl font-black leading-tight tracking-[-0.035em] text-white">{playback.title}</h3>
                           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/58">
                             <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">{playbackStage.headline}</span>
-                            <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">Peers {playbackProgress?.peers ?? '...'}</span>
+                            <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">{Number(playbackProgress?.peers || 0) > 0 ? 'Connected' : 'Connecting'}</span>
                             <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">{playbackProgress?.state || playbackStage.status}</span>
                           </div>
                         </div>
@@ -4284,7 +4296,7 @@ export default function DesktopWatch() {
 
             {animeNotYetAired ? null : sourcesBusy ? (
               <div className="grid gap-3">
-                <DesktopLoadingProgress label={`Finding sources for Episode ${selectedEpisode}`} percent={sourceSearchProgress} detail="Checking exact episode matches, seed health, audio preference, then broader aliases." />
+                <DesktopLoadingProgress label={`Preparing Episode ${selectedEpisode}`} percent={sourceSearchProgress} detail="Checking video quality, audio preference, and playback health." />
                 {Array.from({ length: 3 }).map((_, index) => (
                   <div key={index} className="desktop-skeleton-shimmer h-[76px] rounded-2xl border border-white/[0.06]" />
                 ))}
@@ -4400,13 +4412,13 @@ export default function DesktopWatch() {
               </div>
             ) : (
               <div className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.05))] p-8 text-center text-white/62">
-                <p className="text-lg font-black text-white">{sourcesError ? 'Source lookup was interrupted' : sourceQuality === 'auto' ? 'No playable source found' : `No ${sourceQualityLabel(sourceQuality)} source found`}</p>
+                <p className="text-lg font-black text-white">{sourcesError ? 'Playback preparation was interrupted' : sourceQuality === 'auto' ? 'This episode is not playable yet' : `${sourceQualityLabel(sourceQuality)} is unavailable`}</p>
                 <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/50">
                   {sourcesError
-                    ? 'This is a connection or provider error, not proof that the episode has no releases. Retry to continue the primary search.'
+                    ? 'The connection was interrupted before playback could be prepared. Retry to continue.'
                     : sourceQuality === 'auto'
-                    ? 'No confident title-compatible sources were found for this anime and episode. Try switching audio mode, using Broad, or opening manual source search.'
-                    : 'This episode has title-compatible sources in other qualities. Switch back to Auto or pick another quality to keep browsing.'}
+                    ? 'No compatible stream is ready for this episode. Try another audio mode, expand matching, or review playback options.'
+                    : 'This episode may be available in another quality. Switch to Auto or select a different quality.'}
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-3">
                   {sourceQuality !== 'auto' ? (
@@ -4429,7 +4441,7 @@ export default function DesktopWatch() {
                     to={`/nyaa?q=${encodeURIComponent(anime.title || '')}`}
                     className="inline-flex h-11 items-center rounded-xl border border-white/10 bg-white/[0.06] px-5 text-sm font-black text-white transition-colors hover:border-white/18 hover:bg-white/[0.09]"
                   >
-                    Open Sources Search
+                    Playback Options
                   </Link>
                 </div>
               </div>
@@ -4483,7 +4495,10 @@ function clampNumber(value: number, min: number, max: number) {
 
 function playbackStageMeta(playbackProgress?: DesktopPlaybackProgress | null): PlaybackStageView {
   const rawProgress = Number(playbackProgress?.buffer_percent ?? 0);
-  const message = playbackProgress?.message?.trim();
+  const rawMessage = playbackProgress?.message?.trim();
+  const message = rawMessage && !/provider|torrent|magnet|metadata|info\s*hash|tracker|dht|peer|seed/i.test(rawMessage)
+    ? rawMessage
+    : undefined;
   switch (playbackProgress?.state) {
     case 'ready':
       return {
@@ -4503,11 +4518,11 @@ function playbackStageMeta(playbackProgress?: DesktopPlaybackProgress | null): P
       };
     case 'connecting':
       return {
-        headline: 'Connecting peers',
-        detail: message || 'Peers are responding. StreamNyaa is building the first playback buffer.',
+        headline: 'Connecting stream',
+        detail: message || 'The connection is ready. StreamNyaa is building the first playback buffer.',
         progress: rawProgress > 0 ? clampNumber(rawProgress, 28, 54) : 42,
         step: 2,
-        status: 'Peers',
+        status: 'Connecting',
       };
     case 'stopped':
       return {
@@ -4520,10 +4535,10 @@ function playbackStageMeta(playbackProgress?: DesktopPlaybackProgress | null): P
     default:
       return {
         headline: 'Preparing stream',
-        detail: message || 'Reading torrent metadata and waiting for the first peers.',
+        detail: message || 'Preparing the episode and checking playback availability.',
         progress: rawProgress > 0 ? clampNumber(rawProgress, 10, 28) : 18,
         step: 1,
-        status: 'Metadata',
+        status: 'Preparing',
       };
   }
 }

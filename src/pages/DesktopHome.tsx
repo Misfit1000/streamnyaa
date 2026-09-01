@@ -450,7 +450,7 @@ function animeYear(anime: any) {
 }
 
 function heroDescription(anime: any) {
-  const text = anime?.synopsis || 'Browse anime quickly, continue recent source links, and open magnets in your default torrent app when you choose a release.';
+  const text = anime?.synopsis || 'Browse anime quickly, resume where you left off, and start watching with one click.';
   return text.length > 190 ? `${text.slice(0, 186).trim()}...` : text;
 }
 

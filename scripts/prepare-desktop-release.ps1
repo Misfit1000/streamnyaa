@@ -54,7 +54,7 @@ $sizeBytes = (Get-Item $copiedInstaller).Length
 $manifest = [ordered]@{
   product = 'StreamNyaa Desktop'
   version = $version
-  releaseRevision = 'desktop-loading-recovery-4'
+  releaseRevision = 'desktop-loading-recovery-6'
   generatedAt = (Get-Date).ToString('o')
   installer = @{
     fileName = [IO.Path]::GetFileName($copiedInstaller)
@@ -63,15 +63,17 @@ $manifest = [ordered]@{
     sha256 = $hash
   }
   notes = @(
-    'Adds adaptive click-ahead route, metadata, episode, artwork, and source preparation without downloading torrent video early.',
-    'Rebuilds Explore around the primary desktop metadata path with persistent controls and no fabricated fallback catalog.',
+    'Adds adaptive click-ahead route, episode, artwork, and playback preparation without downloading video early.',
+    'Rebuilds Explore with persistent controls, saved results, and uninterrupted background refresh.',
     'Shows verified aired and total episode counts, and hides unaired episodes from Watch selection.',
-    'Moves metadata, source, and query snapshot persistence away from interaction frames.',
+    'Moves catalog, playback-option, and query snapshot persistence away from interaction frames.',
     'Adds a resolution-aware launch sequence and complete neutral landscape artwork with real anime titles and native loading stages.',
     'Shows live playable-buffer percentage and seconds, including while stalled and recovering.',
-    'Adds bounded recovery for streams that never expose a playable MPV timeline: current-stream reload, verified backup, then manual actions.',
+    'Adds bounded recovery for streams that never expose a playable timeline: current-stream reload, automatic alternate playback, then manual actions.',
     'Adds credential-free schedule revision tracking that labels changed AniList episode slots as rescheduled without guessing cancellations.',
     'Adds a compact notification center for confirmed delays and cancellations, personal/global feed controls, and categorized desktop settings navigation.',
+    'Makes Explore resilient through saved catalogs and hedged refreshes, activates global search, adds upcoming-airing notifications, and surfaces player keybinds in simplified settings.',
+    'Closes the pre-playback freeze gap, renders live buffer percentage inside the native player, and upgrades loading art to a cinematic full-bleed composition.',
     'Run the manual desktop release checklist before publishing this installer.',
     'Code-sign the installer before distribution.',
     'Keep the previous stable installer for rollback.'

@@ -8,7 +8,9 @@ import {
 } from '../lib/desktop';
 import {
   readDesktopScheduleReminders,
+  readDesktopUpcomingAnimeWatches,
   subscribeDesktopScheduleReminders,
+  subscribeDesktopUpcomingAnimeWatches,
 } from '../lib/desktopReminders';
 import {
   loadDesktopScheduleUpdatePreferences,
@@ -48,6 +50,7 @@ export default function DesktopNotificationCenter() {
   const [updates, setUpdates] = useState(() => readDesktopScheduleUpdates());
   const [preferences, setPreferences] = useState(() => loadDesktopScheduleUpdatePreferences());
   const [reminders, setReminders] = useState(() => readDesktopScheduleReminders());
+  const [upcomingWatches, setUpcomingWatches] = useState(() => readDesktopUpcomingAnimeWatches());
   const [watchedSeries, setWatchedSeries] = useState(() => loadDesktopWatchedSeries());
   const myList = useStore((state) => state.myList);
 
@@ -57,6 +60,7 @@ export default function DesktopNotificationCenter() {
   }), []);
 
   useEffect(() => subscribeDesktopScheduleReminders(() => setReminders(readDesktopScheduleReminders())), []);
+  useEffect(() => subscribeDesktopUpcomingAnimeWatches(() => setUpcomingWatches(readDesktopUpcomingAnimeWatches())), []);
   useEffect(() => subscribeDesktopWatchProgress(() => setWatchedSeries(loadDesktopWatchedSeries())), []);
   useEffect(() => setOpen(false), [location.pathname, location.search]);
 
@@ -191,6 +195,17 @@ export default function DesktopNotificationCenter() {
             ) : (
               <p className="rounded-lg bg-white/[0.035] px-3 py-4 text-sm text-white/48">No upcoming reminders.</p>
             )}
+            {upcomingWatches.some((watch) => !watch.airingAt) ? (
+              <div className="mt-2 space-y-1">
+                {upcomingWatches.filter((watch) => !watch.airingAt).slice(0, 3).map((watch) => (
+                  <div key={watch.id} className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-white/58">
+                    <Bell className="h-4 w-4 shrink-0 text-primary" />
+                    <span className="min-w-0 flex-1 truncate">{watch.title}</span>
+                    <span className="text-xs text-white/38">Waiting for air date</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </section>
       ) : null}

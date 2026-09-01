@@ -842,6 +842,7 @@ const SAFE_DESKTOP_BACKUP_KEYS = [
   DESKTOP_WATCHED_SERIES_KEY,
   'streamnyaa.desktop.scheduleReminders.v1',
   'streamnyaa.desktop.schedule-update-preferences.v1',
+  'streamnyaa.desktop.upcomingWatches.v1',
 ] as const;
 
 export function exportDesktopSettingsBackup() {

@@ -724,6 +724,8 @@ export const fetchUpcomingAnime = async () => {
           genres
           averageScore
           popularity
+          startDate { year month day }
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -1142,6 +1144,50 @@ export const fetchAnimeEpisodes = async (id: string, page: number = 1) => {
     console.error('Failed to fetch episodes from Jikan', error);
     return { data: [], pagination: { last_visible_page: 1 } };
   }
+};
+
+export const fetchJikanExploreCatalog = async (options: {
+  mode: 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year';
+  query?: string;
+  year?: number;
+  season?: string;
+  type?: string;
+  genre?: string;
+  status?: string;
+}) => {
+  const params = new URLSearchParams({ limit: '25' });
+  const query = String(options.query || '').trim();
+  const rawType = String(options.type || '').trim().toUpperCase();
+  const type = rawType === 'TV_SHORT' ? 'tv' : rawType.toLowerCase();
+  const status = String(options.status || '').trim().toLowerCase();
+  const genreIds: Record<string, string> = {
+    action: '1', adventure: '2', comedy: '4', mystery: '7', drama: '8', fantasy: '10', romance: '22',
+    'sci-fi': '24', sports: '30', 'slice of life': '36', supernatural: '37', thriller: '41',
+  };
+  if (query) params.set('q', query);
+  if (type) params.set('type', type);
+  if (status) params.set('status', status);
+  const genreId = genreIds[String(options.genre || '').trim().toLowerCase()];
+  if (genreId) params.set('genres', genreId);
+
+  let path = `/anime?${params.toString()}`;
+  if (!query && options.mode === 'upcoming') path = '/seasons/upcoming?limit=25';
+  else if (!query && options.mode === 'seasonal' && options.year && options.season) {
+    path = `/seasons/${options.year}/${String(options.season).toLowerCase()}?limit=25`;
+  } else if (!query && options.mode === 'year' && options.year) {
+    params.set('start_date', `${options.year}-01-01`);
+    params.set('end_date', `${options.year}-12-31`);
+    params.set('order_by', 'score');
+    params.set('sort', 'desc');
+    path = `/anime?${params.toString()}`;
+  } else if (!query && options.mode === 'top') path = '/top/anime?limit=25';
+  else if (!query) path = '/top/anime?filter=airing&limit=25';
+
+  const response = await fetchJikanPath(path, 900);
+  if (!response.ok) throw new Error('The secondary catalog provider did not respond.');
+  const payload = await response.json();
+  if (!Array.isArray(payload?.data)) throw new Error('The secondary catalog returned an invalid response.');
+  return payload;
 };
 
 export const searchAnime = async (query: string, page = 1, type = '', rating = '', genres = '', sort = '', statusState = '') => {

@@ -1869,35 +1869,10 @@ fn compose_full_landscape_art(
     target_width: u32,
     target_height: u32,
 ) -> image::RgbaImage {
-    // Keep the complete artwork visible. A neutral, softly darkened copy fills
-    // any aspect-ratio remainder without stretching the image or adding tint.
-    let soft_plate = cover_fill(decoded, target_width / 4, target_height / 4);
-    let soft_plate = image::imageops::blur(&soft_plate, 3.5);
-    let mut background = image::imageops::resize(
-        &soft_plate,
-        target_width,
-        target_height,
-        FilterType::Triangle,
-    );
-    neutral_darken(&mut background, 0.42);
-
-    let (source_width, source_height) = decoded.dimensions();
-    let scale = (target_width as f64 / source_width.max(1) as f64)
-        .min(target_height as f64 / source_height.max(1) as f64)
-        .max(0.01);
-    let artwork_width = ((source_width as f64 * scale).round() as u32).clamp(1, target_width);
-    let artwork_height = ((source_height as f64 * scale).round() as u32).clamp(1, target_height);
-    let artwork =
-        image::imageops::resize(decoded, artwork_width, artwork_height, FilterType::Lanczos3);
-    let artwork_x = target_width.saturating_sub(artwork_width) / 2;
-    let artwork_y = target_height.saturating_sub(artwork_height) / 2;
-    image::imageops::overlay(
-        &mut background,
-        &artwork,
-        artwork_x.into(),
-        artwork_y.into(),
-    );
-    background
+    // A cinematic loading frame must fill the player. The previous contain
+    // layout created large blurred letterbox bands for ultrawide artwork.
+    // Center-crop with Lanczos instead, preserving the source color balance.
+    cover_fill(decoded, target_width, target_height)
 }
 
 fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage, &'static str) {
@@ -2091,7 +2066,9 @@ fn player_metadata_for(
     PlayerMetadata {
         anime_title: clean_value(Some(request.anime_title.clone()))
             .unwrap_or_else(|| title.to_string()),
-        episode_title: clean_value(Some(request.title.clone())),
+        // The playback request title is the technical release filename, not a
+        // consumer episode title. Do not expose it on the cinematic loader.
+        episode_title: None,
         episode_number: clean_value(Some(request.episode.clone())),
         cover_image: playback_cover_source(request),
         loading_image_path: cover.map(|item| path_for_player_option(&item.loading_image_path)),
@@ -3852,16 +3829,10 @@ fn update_player_stream_metrics(
     progress: Option<f64>,
     download_rate: Option<u64>,
 ) {
-    let buffer_percent = progress
-        .or_else(|| {
-            if total_bytes > 0 {
-                Some((downloaded_bytes as f64 / total_bytes as f64 * 100.0).clamp(0.0, 100.0))
-            } else {
-                None
-            }
-        })
-        .unwrap_or(0.0)
-        .clamp(0.0, 100.0);
+    // Only a caller with a real startup/playable-buffer target may update the
+    // visible percentage. Total torrent completion is not playback readiness
+    // and must never overwrite a truthful indeterminate or live buffer state.
+    let buffer_percent = progress.map(|value| value.clamp(0.0, 100.0));
 
     set_player_user_data(ipc, "state", state);
     set_player_user_data(ipc, "peers", &peers.to_string());
@@ -3884,8 +3855,10 @@ fn update_player_stream_metrics(
             format_stream_bytes(downloaded_bytes)
         },
     );
-    set_player_user_data(ipc, "buffer", &format!("{:.0}%", buffer_percent));
-    set_player_user_data(ipc, "loading_percent", &format!("{:.0}", buffer_percent));
+    if let Some(buffer_percent) = buffer_percent {
+        set_player_user_data(ipc, "buffer", &format!("{:.0}%", buffer_percent));
+        set_player_user_data(ipc, "loading_percent", &format!("{:.0}", buffer_percent));
+    }
 }
 
 fn show_player_text_with_title(ipc: &str, title: Option<&str>, text: &str) {
@@ -5857,9 +5830,20 @@ async fn get_local_playback_progress(
             .as_deref()
             .and_then(|ipc| get_player_property_bool(ipc, "demuxer-cache-state/underrun"))
             .unwrap_or(false);
-        let buffering = paused_for_cache || cache_buffering || demuxer_underrun;
+        let playback_started = player_ipc
+            .as_deref()
+            .and_then(|ipc| get_player_property_string(ipc, "user-data/streamnyaa/has_started"))
+            .map(|value| value.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let awaiting_first_frame = duration_seconds.unwrap_or(0.0) > 0.0 && !playback_started;
+        let buffering = paused_for_cache || cache_buffering || demuxer_underrun || awaiting_first_frame;
+        let buffer_target_seconds = player_ipc
+            .as_deref()
+            .and_then(|ipc| get_player_property_f64(ipc, "user-data/streamnyaa/buffer_target_seconds"))
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .unwrap_or(PLAYER_BUFFER_TARGET_SECONDS);
         let buffer_percent = buffered_seconds
-            .map(|seconds| (seconds / PLAYER_BUFFER_TARGET_SECONDS * 100.0).clamp(0.0, 100.0));
+            .map(|seconds| (seconds / buffer_target_seconds * 100.0).clamp(0.0, 100.0));
         let recovery_stage = player_ipc
             .as_deref()
             .and_then(|ipc| get_player_property_string(ipc, "user-data/streamnyaa/recovery_stage"))
@@ -5935,7 +5919,7 @@ async fn get_local_playback_progress(
                 peers.unwrap_or(0),
                 downloaded_bytes.unwrap_or(0),
                 total_bytes.unwrap_or(0),
-                progress,
+                buffer_percent,
                 download_speed.map(|value| value.max(0.0) as u64),
             );
         }
@@ -6651,11 +6635,13 @@ mod tests {
 
     #[test]
     fn landscape_player_art_preserves_original_color_balance() {
-        let source = image::RgbaImage::from_pixel(1600, 900, image::Rgba([30, 100, 210, 255]));
+        let source = image::RgbaImage::from_pixel(2400, 600, image::Rgba([30, 100, 210, 255]));
         let (composition, layout) = prepare_loading_composition(&source);
         assert_eq!(layout, "landscape");
         let center = composition.get_pixel(960, 540);
+        let upper_edge = composition.get_pixel(960, 40);
         assert_eq!([center[0], center[1], center[2]], [30, 100, 210]);
+        assert_eq!([upper_edge[0], upper_edge[1], upper_edge[2]], [30, 100, 210]);
     }
 
     #[test]
