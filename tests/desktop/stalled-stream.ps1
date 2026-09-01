@@ -35,6 +35,8 @@ try {
   $sawRetry = $false
   $sawBackup = $false
   $sawPercent = $false
+  $sawStartupRetry = $false
+  $sawStartupBackup = $false
   while ([DateTime]::UtcNow -lt $deadline -and -not $player.HasExited) {
     Start-Sleep -Milliseconds 200
     if (-not (Test-Path $logPath)) { continue }
@@ -42,10 +44,12 @@ try {
     $sawRetry = $sawRetry -or $log.Contains('Same-source stream reopen')
     $sawBackup = $sawBackup -or $log.Contains('Backup recovery requested')
     $sawPercent = $sawPercent -or ($log -match 'Buffering started percent=\d+')
-    if ($sawRetry -and $sawBackup -and $sawPercent) { break }
+    $sawStartupRetry = $sawStartupRetry -or $log.Contains('Startup stream did not expose a playable timeline')
+    $sawStartupBackup = $sawStartupBackup -or $log.Contains('Startup stream retry did not become playable')
+    if ($sawRetry -and $sawBackup -and $sawPercent -and $sawStartupRetry -and $sawStartupBackup) { break }
   }
 
-  if (-not $sawRetry -or -not $sawBackup -or -not $sawPercent) {
+  if (-not $sawRetry -or -not $sawBackup -or -not $sawPercent -or -not $sawStartupRetry -or -not $sawStartupBackup) {
     if (Test-Path $logPath) { Get-Content $logPath -Tail 100 | Write-Host }
   }
   if (-not $sawRetry) {
@@ -56,6 +60,9 @@ try {
   }
   if (-not $sawPercent) {
     throw 'The deterministic stalled stream did not expose a numeric buffering percentage.'
+  }
+  if (-not $sawStartupRetry -or -not $sawStartupBackup) {
+    throw 'The deterministic pre-playback stall did not reload and request a bounded backup.'
   }
   Write-Host 'Desktop stalled-stream integration test passed.'
 }

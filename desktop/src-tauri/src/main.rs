@@ -1864,6 +1864,42 @@ fn neutral_darken(image: &mut image::RgbaImage, amount: f32) {
     }
 }
 
+fn compose_full_landscape_art(
+    decoded: &image::RgbaImage,
+    target_width: u32,
+    target_height: u32,
+) -> image::RgbaImage {
+    // Keep the complete artwork visible. A neutral, softly darkened copy fills
+    // any aspect-ratio remainder without stretching the image or adding tint.
+    let soft_plate = cover_fill(decoded, target_width / 4, target_height / 4);
+    let soft_plate = image::imageops::blur(&soft_plate, 3.5);
+    let mut background = image::imageops::resize(
+        &soft_plate,
+        target_width,
+        target_height,
+        FilterType::Triangle,
+    );
+    neutral_darken(&mut background, 0.42);
+
+    let (source_width, source_height) = decoded.dimensions();
+    let scale = (target_width as f64 / source_width.max(1) as f64)
+        .min(target_height as f64 / source_height.max(1) as f64)
+        .max(0.01);
+    let artwork_width = ((source_width as f64 * scale).round() as u32).clamp(1, target_width);
+    let artwork_height = ((source_height as f64 * scale).round() as u32).clamp(1, target_height);
+    let artwork =
+        image::imageops::resize(decoded, artwork_width, artwork_height, FilterType::Lanczos3);
+    let artwork_x = target_width.saturating_sub(artwork_width) / 2;
+    let artwork_y = target_height.saturating_sub(artwork_height) / 2;
+    image::imageops::overlay(
+        &mut background,
+        &artwork,
+        artwork_x.into(),
+        artwork_y.into(),
+    );
+    background
+}
+
 fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage, &'static str) {
     let (source_width, source_height) = decoded.dimensions();
     let target_width = PLAYER_COVER_BACKGROUND_WIDTH;
@@ -1872,7 +1908,7 @@ fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage,
 
     if aspect_ratio >= 1.35 {
         return (
-            cover_fill(decoded, target_width, target_height),
+            compose_full_landscape_art(decoded, target_width, target_height),
             "landscape",
         );
     }
@@ -4573,6 +4609,7 @@ fn launch_or_reuse_player(
                     send_player_script_message(&ipc, "streamnyaa-reload-meta");
                 }
                 send_player_script_message(&ipc, "streamnyaa-playback-ready");
+                update_player_stream_metrics(&ipc, "Metadata", 0, 0, 0, Some(8.0), None);
                 log_info("MPV playback-ready message sent while reusing player");
                 show_player_text_with_title(&ipc, Some(title), "Switching episode...");
                 if let Some(pending_cover) = metadata_launch.pending_cover.take() {
@@ -4747,6 +4784,7 @@ fn launch_or_reuse_player(
             spawn_player_setting_request_watcher(ipc.clone(), player_setting_request_file);
         }
         send_player_script_message(&ipc, "streamnyaa-playback-ready");
+        update_player_stream_metrics(&ipc, "Metadata", 0, 0, 0, Some(8.0), None);
         log_info("MPV playback-ready message sent after IPC listener attach");
         show_player_text_with_title(&ipc, Some(title), "Preparing torrent session...");
         if let Some(pending_cover) = metadata_launch.pending_cover.take() {
@@ -5172,7 +5210,7 @@ fn wait_for_stream_with_session_guard(
                 || target_age >= STREAM_TARGET_HANDOFF_MS.saturating_mul(4);
             if ready_for_player {
                 if let Some(ipc) = player_ipc {
-                    let progress = Some(100.0);
+                    let progress = Some(96.0);
                     update_player_stream_metrics(
                         ipc,
                         "Ready",

@@ -64,6 +64,14 @@ local STALL_RECOVERY_SECONDS = 12
 local STALL_ACTION_SECONDS = 10
 local STALL_BACKUP_WAIT_SECONDS = 10
 local STALL_LOW_BUFFER_SECONDS = 2.5
+local STARTUP_STREAM_RETRY_SECONDS = 18
+local STARTUP_STREAM_BACKUP_SECONDS = 10
+local STARTUP_STREAM_ACTION_SECONDS = 10
+if script_options.stall_test_mode then
+  STARTUP_STREAM_RETRY_SECONDS = 0.2
+  STARTUP_STREAM_BACKUP_SECONDS = 0.2
+  STARTUP_STREAM_ACTION_SECONDS = 0.2
+end
 
 msg.info("[StreamNyaa Lua] streamnyaa-player.lua loaded")
 
@@ -181,6 +189,14 @@ local ui = {
   adaptive_buffer_target = BUFFER_TARGET_SECONDS,
   stall_ignore_restart_until = 0,
   recovery_restore = nil,
+  startup_stream_key = "",
+  startup_stream_started_at = 0,
+  startup_stream_retry_at = 0,
+  startup_stream_retried = false,
+  startup_stream_backup_at = 0,
+  startup_stream_backup_requested = false,
+  startup_stream_actions_visible = false,
+  last_startup_loading_percent = 0,
   skip_range_state = {},
   skip_only_rendered = false,
   last_ass_text = nil,
@@ -210,6 +226,7 @@ local cover_overlay_key = ""
 local cover_overlay_supported = true
 local debug_cover_test_data = nil
 local stall_watchdog_timer = nil
+local startup_stream_watchdog_timer = nil
 
 local menu_row_cache = {}
 local menu_cache_dirty = {
@@ -1392,6 +1409,12 @@ function normalized_player_path()
   return tostring(state.path or ""):gsub("\\", "/"):lower()
 end
 
+function is_placeholder_path(value)
+  local normalized = tostring(value or ""):gsub("\\", "/"):lower()
+  return normalized:find("streamnyaa%-loading%.bmp") ~= nil
+    or normalized:find("loading%-cover%.jpg") ~= nil
+end
+
 function is_generic_loading_media()
   return normalized_player_path():find("streamnyaa%-loading%.bmp") ~= nil
 end
@@ -1532,16 +1555,11 @@ function buffered_seconds()
 end
 
 function buffering_status_label()
-  if ui.playback_stalled then
-    return "PLAYBACK STALLED"
-  end
   local percent = buffering_display_percent()
-  local cached = buffered_seconds()
-  local label = percent and string.format("BUFFERING %d%%", percent) or "BUFFERING..."
-  if percent and cached and cached >= 1 then
-    label = string.format("%s - %ds cached", label, math.floor(cached + 0.5))
+  if ui.playback_stalled then
+    return percent and string.format("STALLED  ·  %d%% BUFFERED", percent) or "PLAYBACK STALLED"
   end
-  return label
+  return percent and string.format("BUFFERING  ·  %d%%", percent) or "CONNECTING TO STREAM"
 end
 
 function log_buffering_transition()
@@ -1586,6 +1604,69 @@ function reset_stall_watchdog(keep_position)
   ui.stall_last_pos = keep_position and (tonumber(state.pos) or 0) or nil
   ui.stall_last_buffer = buffered_seconds()
   safe_set_property("user-data/streamnyaa/recovery_stage", native_buffering_active() and "buffering" or "idle")
+end
+
+function reset_startup_stream_watchdog(clear_key)
+  if clear_key then ui.startup_stream_key = "" end
+  ui.startup_stream_started_at = 0
+  ui.startup_stream_retry_at = 0
+  ui.startup_stream_retried = false
+  ui.startup_stream_backup_at = 0
+  ui.startup_stream_backup_requested = false
+  ui.startup_stream_actions_visible = false
+end
+
+function begin_startup_stream_watchdog(path)
+  local key = tostring(path or "")
+  if key == "" or is_placeholder_path(key) then
+    reset_startup_stream_watchdog(true)
+    return
+  end
+  if ui.startup_stream_key ~= key then
+    reset_startup_stream_watchdog(false)
+    ui.startup_stream_key = key
+    ui.startup_stream_started_at = mp.get_time()
+    msg.info("[StreamNyaa Lua] Startup stream watchdog armed")
+  elseif ui.startup_stream_started_at <= 0 then
+    ui.startup_stream_started_at = mp.get_time()
+  end
+end
+
+function check_startup_stream_stall()
+  local path = tostring(state.path or "")
+  if path == "" or is_placeholder_media() or has_playable_media() then
+    if has_playable_media() then reset_startup_stream_watchdog(true) end
+    return
+  end
+  if state.paused and not state.paused_for_cache then return end
+  begin_startup_stream_watchdog(path)
+  local now = mp.get_time()
+  local waiting_for = now - (ui.startup_stream_started_at or now)
+  if waiting_for < STARTUP_STREAM_RETRY_SECONDS then return end
+
+  ui.inferred_buffering = true
+  if not ui.startup_stream_retried then
+    ui.startup_stream_retried = true
+    ui.startup_stream_retry_at = now
+    safe_set_property("user-data/streamnyaa/recovery_stage", "startup-retry")
+    msg.info("[StreamNyaa Lua] Startup stream did not expose a playable timeline; reopening current stream")
+    if not script_options.stall_test_mode then
+      safe_commandv("loadfile", path, "replace")
+    end
+  elseif not ui.startup_stream_backup_requested and now - ui.startup_stream_retry_at >= STARTUP_STREAM_BACKUP_SECONDS then
+    ui.startup_stream_backup_requested = true
+    ui.startup_stream_backup_at = now
+    msg.info("[StreamNyaa Lua] Startup stream retry did not become playable; requesting backup")
+    request_backup_source_recovery()
+  elseif ui.startup_stream_backup_requested and now - ui.startup_stream_backup_at >= STARTUP_STREAM_ACTION_SECONDS then
+    if not ui.startup_stream_actions_visible then
+      msg.info("[StreamNyaa Lua] Startup backup did not complete; showing recovery actions")
+    end
+    ui.startup_stream_actions_visible = true
+    safe_set_property("user-data/streamnyaa/recovery_stage", "failed")
+  end
+  show_overlay()
+  draw(false, "startup-stream-watchdog")
 end
 
 function native_buffering_active()
@@ -2828,8 +2909,19 @@ end
 function loading_status_text()
   if is_midplayback_buffering() then
     return buffering_status_label()
+  elseif ui.startup_stream_backup_requested then
+    return "SWITCHING TO A VERIFIED BACKUP"
+  elseif ui.startup_stream_retried then
+    return "REOPENING THE CURRENT STREAM"
   elseif is_placeholder_media() then
-    return "OPENING PLAYER"
+    local stage = tostring(mp.get_property("user-data/streamnyaa/state", "")):lower()
+    if stage:find("metadata") then return "READING TORRENT METADATA" end
+    if stage:find("matching") then return "MATCHING THE EPISODE FILE" end
+    if stage:find("buffer") then return "BUILDING THE PLAYABLE BUFFER" end
+    if stage:find("prepar") then return "PREPARING THE VIDEO STREAM" end
+    return "OPENING THE PLAYER"
+  elseif not has_playable_media() and tostring(state.path or "") ~= "" then
+    return "OPENING THE VIDEO DECODER"
   elseif state.idle or state.core_idle then
     return "STARTING TORRENT ENGINE..."
   end
@@ -2837,9 +2929,12 @@ function loading_status_text()
 end
 
 function startup_loading_percent()
-  local value = tonumber(mp.get_property("user-data/streamnyaa/loading_percent", ""))
+  local raw_value = mp.get_property("user-data/streamnyaa/loading_percent", "")
+  local value = tonumber(raw_value)
   if not value then return nil end
-  return math.floor(clamp(value, 0, 100) + 0.5)
+  local next_value = math.floor(clamp(value, 0, 96) + 0.5)
+  ui.last_startup_loading_percent = math.max(tonumber(ui.last_startup_loading_percent) or 0, next_value)
+  return ui.last_startup_loading_percent
 end
 
 function loading_episode_label()
@@ -2864,20 +2959,28 @@ function draw_loading_required_content(ass, width, height, s, status)
     local y1 = spinner_y - card_h / 2
     rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 22 * s, C.black, 120)
     rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 22 * s, C.white, 238)
-    draw_arc(ass, cx - 98 * s, spinner_y, spinner_r, 0, 360, 2.0 * s, C.white, 232)
-    draw_arc(ass, cx - 98 * s, spinner_y, spinner_r, start_angle, 284, 3.4 * s, C.accent, 0)
+    local percent = buffering_display_percent()
+    local meter_x = cx - 98 * s
+    draw_arc(ass, meter_x, spinner_y, spinner_r, 0, 360, 2.0 * s, C.white, 232)
+    if percent then
+      draw_arc(ass, meter_x, spinner_y, spinner_r, -90, 360 * clamp(percent / 100, 0, 1), 3.4 * s, C.accent, 0)
+      draw_text(ass, meter_x, spinner_y + 4 * s, 5, font_px(s, 11, 9, 13), C.white, 0, string.format("%d%%", percent), true, "Segoe UI Semibold")
+    else
+      draw_arc(ass, meter_x, spinner_y, spinner_r, start_angle, 284, 3.4 * s, C.accent, 0)
+    end
     draw_text(ass, cx - 54 * s, spinner_y - 2 * s, 4, font_px(s, 19, 16, 23), C.white, 0, status, false, "Segoe UI Semibold")
     local cached = buffered_seconds()
     local secondary
     if ui.playback_stalled then
-      secondary = ui.stall_recovery_attempted and "Automatic recovery did not restore playback" or "The local buffer is ready, but playback is not advancing"
+      secondary = ui.stall_recovery_attempted and "Recovery is trying another path" or "No buffer growth detected; recovery will start automatically"
     elseif ui.stall_started_at > 0 then
       secondary = ui.stall_recovery_attempted and "Reopening the stream at your saved position" or "Buffer is not advancing"
+    elseif percent and cached then
+      secondary = string.format("%.1f / %ds playable  ·  updating live", cached, apply_adaptive_buffer_target())
     else
-      secondary = cached and cached >= 1 and "Keeping playback smooth" or "Waiting for local buffer"
+      secondary = "Measuring playable buffer..."
     end
     draw_text(ass, cx - 54 * s, spinner_y + 24 * s, 4, font_px(s, 13, 12, 15), C.secondary, 12, secondary, false, "Segoe UI")
-    local percent = buffering_display_percent()
     local bar_x1 = x1 + 28 * s
     local bar_x2 = x1 + card_w - 28 * s
     local bar_y = spinner_y + 47 * s
@@ -2954,6 +3057,13 @@ function draw_loading_required_content(ass, width, height, s, status)
     local segment = (bar_x2 - bar_x1) * 0.22
     local pulse_x = bar_x1 + ((bar_x2 - bar_x1) - segment) * ((math.sin(t * 3.0) + 1) / 2)
     rounded_rect(ass, pulse_x, bar_y, pulse_x + segment, bar_y + 4 * s, 2 * s, C.accent, 0)
+  end
+  if ui.startup_stream_actions_visible then
+    local button_y = math.min(height - 66 * s, bar_y + 24 * s)
+    local button_w = 156 * s
+    local gap = 12 * s
+    draw_end_button(ass, mouse_pos(), "recovery_retry", bar_x1, button_y, bar_x1 + button_w, button_y + 40 * s, "RETRY STREAM", false, s)
+    draw_end_button(ass, mouse_pos(), "recovery_backup", bar_x1 + button_w + gap, button_y, bar_x1 + button_w * 2 + gap, button_y + 40 * s, "TRY BACKUP SOURCE", true, s)
   end
 end
 
@@ -3842,11 +3952,21 @@ function activate_region(region, mouse)
     hide_end_overlay()
     settings_notice("Episode finished")
   elseif id == "recovery_retry" then
-    request_same_source_recovery("manual")
+    if ui.startup_stream_actions_visible and not has_playable_media() then
+      local path = tostring(state.path or "")
+      reset_startup_stream_watchdog(false)
+      ui.startup_stream_key = path
+      ui.startup_stream_started_at = mp.get_time()
+      safe_set_property("user-data/streamnyaa/recovery_stage", "startup-retry")
+      safe_commandv("loadfile", path, "replace")
+    else
+      request_same_source_recovery("manual")
+    end
     show_overlay()
   elseif id == "recovery_backup" then
     request_backup_source_recovery()
     ui.stall_actions_visible = false
+    ui.startup_stream_actions_visible = false
     settings_notice("Requesting a same-episode backup source...")
   elseif id == "play" or id == "center_play" or id == "center_toggle" then
     if ui.end_overlay then hide_end_overlay() end
@@ -4235,6 +4355,7 @@ mp.observe_property("duration", "number", function(_, value)
   state.duration = value or 0
   if has_playable_media() then
     state.has_started_playback = true
+    reset_startup_stream_watchdog(true)
     ui.eof_candidate_key = current_media_key()
     ui.loading_override_until = 0
   end
@@ -4245,6 +4366,7 @@ mp.observe_property("time-pos", "number", function(_, value)
   state.pos = value or 0
   if has_playable_media() and state.pos >= 0 then
     state.has_started_playback = true
+    reset_startup_stream_watchdog(true)
     ui.eof_candidate_key = current_media_key()
     ui.loading_override_until = 0
   end
@@ -4298,6 +4420,14 @@ mp.observe_property("path", "string", function(_, value)
     ui.anim_started = mp.get_time()
     state.has_started_playback = false
     ui.loading_override_until = mp.get_time() + 2.5
+    if is_placeholder_path(next_path) then
+      ui.last_startup_loading_percent = 0
+      reset_startup_stream_watchdog(true)
+    elseif next_path ~= "" then
+      begin_startup_stream_watchdog(next_path)
+    else
+      reset_startup_stream_watchdog(true)
+    end
   end
   update_property("path", next_path, true)
   update_stall_watchdog_timer()
@@ -4616,6 +4746,7 @@ end)
 
 stall_watchdog_timer = mp.add_periodic_timer(STALL_SAMPLE_SECONDS, check_playback_stall)
 stall_watchdog_timer:stop()
+startup_stream_watchdog_timer = mp.add_periodic_timer(STALL_SAMPLE_SECONDS, check_startup_stream_stall)
 
 local stall_test_started = false
 if script_options.stall_test_mode then
@@ -4648,6 +4779,45 @@ if script_options.stall_test_mode then
         ui.stall_recovery_attempted = true
         ui.stall_recovery_at = mp.get_time() - STALL_ACTION_SECONDS - 1
         check_playback_stall()
+        state.path = "startup-stall-test://stream"
+        state.has_started_playback = false
+        state.duration = 0
+        state.idle = false
+        state.core_idle = false
+        state.paused = false
+        state.paused_for_cache = true
+        state.seeking = false
+        ui.startup_stream_key = state.path
+        ui.startup_stream_started_at = mp.get_time() - STARTUP_STREAM_RETRY_SECONDS - 1
+        ui.startup_stream_retried = false
+        ui.startup_stream_retry_at = 0
+        ui.startup_stream_backup_requested = false
+        ui.startup_stream_backup_at = 0
+        msg.info(string.format(
+          "[StreamNyaa Lua] Startup stall test invoking initial recovery path=%s placeholder=%s playable=%s duration=%s paused=%s",
+          tostring(state.path), tostring(is_placeholder_media()), tostring(has_playable_media()), tostring(state.duration), tostring(state.paused)
+        ))
+        local startup_ok, startup_error = pcall(check_startup_stream_stall)
+        if not startup_ok then msg.error("[StreamNyaa Lua] Startup stall test failed: " .. tostring(startup_error)) end
+        mp.add_timeout(0.4, function()
+          state.path = "startup-stall-test://stream"
+          state.has_started_playback = false
+          state.duration = 0
+          state.idle = false
+          state.core_idle = false
+          state.paused = false
+          state.paused_for_cache = true
+          state.seeking = false
+          ui.startup_stream_key = state.path
+          ui.startup_stream_started_at = math.max(0.01, mp.get_time() - STARTUP_STREAM_RETRY_SECONDS - 0.05)
+          ui.startup_stream_retried = true
+          ui.startup_stream_retry_at = mp.get_time() - STARTUP_STREAM_BACKUP_SECONDS - 1
+          ui.startup_stream_backup_requested = false
+          ui.startup_stream_backup_at = 0
+          msg.info("[StreamNyaa Lua] Startup stall test invoking backup recovery")
+          local backup_ok, backup_error = pcall(check_startup_stream_stall)
+          if not backup_ok then msg.error("[StreamNyaa Lua] Startup backup test failed: " .. tostring(backup_error)) end
+        end)
       end)
     end)
   end)

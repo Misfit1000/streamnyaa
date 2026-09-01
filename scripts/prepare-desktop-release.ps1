@@ -54,7 +54,7 @@ $sizeBytes = (Get-Item $copiedInstaller).Length
 $manifest = [ordered]@{
   product = 'StreamNyaa Desktop'
   version = $version
-  releaseRevision = 'desktop-interaction-speed-1'
+  releaseRevision = 'desktop-loading-recovery-2'
   generatedAt = (Get-Date).ToString('o')
   installer = @{
     fileName = [IO.Path]::GetFileName($copiedInstaller)
@@ -67,6 +67,9 @@ $manifest = [ordered]@{
     'Rebuilds Explore around the primary desktop metadata path with persistent controls and no fabricated fallback catalog.',
     'Shows verified aired and total episode counts, and hides unaired episodes from Watch selection.',
     'Moves metadata, source, and query snapshot persistence away from interaction frames.',
+    'Adds a resolution-aware launch sequence and complete neutral landscape artwork with real anime titles and native loading stages.',
+    'Shows live playable-buffer percentage and seconds, including while stalled and recovering.',
+    'Adds bounded recovery for streams that never expose a playable MPV timeline: current-stream reload, verified backup, then manual actions.',
     'Run the manual desktop release checklist before publishing this installer.',
     'Code-sign the installer before distribution.',
     'Keep the previous stable installer for rollback.'

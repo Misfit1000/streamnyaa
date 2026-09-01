@@ -41,14 +41,15 @@ html,body,#root{min-height:100%;margin:0;background:#070709;color:#f7f7f8}
 body{overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .sn-boot{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,rgba(177,18,42,.16),transparent 34%),#070709;transition:opacity 180ms ease,visibility 180ms ease}
 .sn-boot--leaving{opacity:0;visibility:hidden;pointer-events:none}
-.sn-boot__content{display:flex;flex-direction:column;align-items:center;gap:18px;transform:translateY(-2vh)}
-.sn-boot__mark{width:74px;height:74px;color:#f32645;filter:drop-shadow(0 8px 8px rgba(243,38,69,.18));animation:sn-boot-enter 460ms cubic-bezier(.2,.8,.2,1) both}
-.sn-boot__name{font-size:28px;font-weight:700;letter-spacing:-.04em}.sn-boot__name span{color:#f32645}
-.sn-boot__status{display:flex;width:224px;align-items:center;justify-content:space-between;gap:14px;font-size:13px;color:rgba(247,247,248,.48)}
+.sn-boot__content{display:flex;width:min(78vw,620px);flex-direction:column;align-items:center;gap:clamp(18px,2.2vmin,30px);transform:translateY(-2vh)}
+.sn-boot__mark{width:clamp(88px,10vmin,154px);height:clamp(88px,10vmin,154px);color:#f32645;filter:drop-shadow(0 8px 8px rgba(243,38,69,.18));animation:sn-boot-enter 460ms cubic-bezier(.2,.8,.2,1) both}
+.sn-boot__name{font-size:clamp(34px,4vmin,58px);font-weight:700;letter-spacing:-.04em;line-height:1}.sn-boot__name span{color:#f32645}
+.sn-boot__status{display:flex;width:min(100%,520px);align-items:center;justify-content:space-between;gap:18px;font-size:clamp(13px,1.3vmin,17px);color:rgba(247,247,248,.48)}
 .sn-boot__value{font-variant-numeric:tabular-nums;color:rgba(247,247,248,.82);font-weight:600}
-.sn-boot__track{width:184px;height:2px;overflow:hidden;background:rgba(255,255,255,.08)}
+.sn-boot__track{width:min(88%,460px);height:3px;overflow:hidden;background:rgba(255,255,255,.08)}
 .sn-boot__bar{height:100%;width:8%;background:#f32645;transition:width 260ms cubic-bezier(.2,.8,.2,1)}
 @keyframes sn-boot-enter{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+@media(max-width:700px),(max-height:560px){.sn-boot__content{width:min(84vw,460px);gap:16px}.sn-boot__mark{width:clamp(72px,12vmin,100px);height:clamp(72px,12vmin,100px)}.sn-boot__name{font-size:clamp(30px,6vmin,42px)}}
 @media(prefers-reduced-motion:reduce){.sn-boot__mark{animation:none}.sn-boot__bar{transition:none}}
 `;
 

@@ -167,12 +167,12 @@ function posterFor(anime: any) {
 }
 
 function wideImageFor(anime: any) {
-  return anime?.bannerImage
+  return anime?.trailer?.images?.maximum_image_url
+    || anime?.trailer?.images?.large_image_url
+    || anime?.bannerImage
     || anime?.banner_image
     || anime?.backdrop
     || anime?.background
-    || anime?.trailer?.images?.maximum_image_url
-    || anime?.trailer?.images?.large_image_url
     || posterFor(anime);
 }
 
