@@ -1557,9 +1557,9 @@ end
 function buffering_status_label()
   local percent = buffering_display_percent()
   if ui.playback_stalled then
-    return percent and string.format("STALLED  ·  %d%% BUFFERED", percent) or "PLAYBACK STALLED"
+    return percent and string.format("Reconnecting  ·  %d%%", percent) or "Reconnecting"
   end
-  return percent and string.format("BUFFERING  ·  %d%%", percent) or "CONNECTING TO STREAM"
+  return percent and string.format("Buffering  ·  %d%%", percent) or "Connecting"
 end
 
 function log_buffering_transition()
@@ -2798,24 +2798,23 @@ end
 
 function draw_manual_skip_button(ass, mouse, range, index, width, height, s)
   if not range then return end
-  local label = range.kind == "outro" and "SKIP OUTRO" or "SKIP INTRO"
-  local button_w = 174 * s
-  local button_h = 46 * s
+  local label = range.kind == "outro" and "Skip outro" or "Skip intro"
+  local button_w = 148 * s
+  local button_h = 40 * s
   local x2 = width - 48 * s
-  local base_offset = ui.visible and 150 or 44
-  local y2 = height - (base_offset + (index or 0) * 56) * s
+  local base_offset = ui.visible and 174 or 84
+  local y2 = height - (base_offset + (index or 0) * 50) * s
   local x1 = x2 - button_w
   local y1 = y2 - button_h
   local center_x = (x1 + x2) / 2
   local center_y = (y1 + y2) / 2
   local hot = inside(mouse, x1, y1, x2, y2)
 
-  rounded_rect(ass, x1 - 4 * s, y1 - 4 * s, x2 + 4 * s, y2 + 4 * s, 11 * s, C.accent, hot and 220 or 244)
-  rounded_rect(ass, x1, y1, x2, y2, 9 * s, C.panel, hot and 0 or 10)
-  rounded_outline(ass, x1, y1, x2, y2, 9 * s, 1.0 * s, hot and C.hover or C.white, hot and 82 or 206)
-  rounded_rect(ass, x1, y1 + 6 * s, x1 + 4 * s, y2 - 6 * s, 2 * s, C.accent, 0)
-  icon_skip_compact(ass, center_x - 55 * s, center_y, 18 * s, hot and C.hover or C.white)
-  draw_text(ass, center_x + 12 * s, center_y + 1 * s, 5, font_px(s, 14, 13, 16), C.white, 0, label, true, "Segoe UI Semibold")
+  rounded_rect(ass, x1, y1, x2, y2, 8 * s, hot and C.panel_2 or C.panel, hot and 0 or 12)
+  rounded_outline(ass, x1, y1, x2, y2, 8 * s, 1.0 * s, hot and C.accent or C.white, hot and 80 or 220)
+  rounded_rect(ass, x1, y1 + 8 * s, x1 + 3 * s, y2 - 8 * s, 1.5 * s, C.accent, 0)
+  icon_skip_compact(ass, center_x - 43 * s, center_y, 16 * s, hot and C.hover or C.white)
+  draw_text(ass, center_x + 10 * s, center_y + 1 * s, 5, font_px(s, 13, 12, 15), C.white, 0, label, true, "Segoe UI Semibold")
   add_region("manual_skip_" .. tostring(range.kind), x1, y1, x2, y2, {
     key = range.key,
     kind = range.kind,
@@ -2836,10 +2835,9 @@ function draw_end_button(ass, mouse, id, x1, y1, x2, y2, label, primary, s, disa
   local hot = not disabled and inside(mouse, x1, y1, x2, y2)
   local fill = disabled and C.muted or (primary and C.accent or C.panel_2)
   local text_color = disabled and C.secondary or C.white
-  rounded_rect(ass, x1 - 4 * s, y1 - 4 * s, x2 + 4 * s, y2 + 4 * s, 13 * s, primary and C.accent or C.white, disabled and 250 or (hot and 228 or 244))
-  rounded_rect(ass, x1, y1, x2, y2, 10 * s, fill, disabled and 55 or (hot and 0 or (primary and 8 or 18)))
-  rounded_outline(ass, x1, y1, x2, y2, 10 * s, 1.0 * s, primary and C.hover or C.white, disabled and 220 or (hot and 54 or 170))
-  draw_text(ass, (x1 + x2) / 2, y1 + 29 * s, 5, font_px(s, 14, 13, 16), text_color, 0, label, true, "Segoe UI Semibold")
+  rounded_rect(ass, x1, y1, x2, y2, 8 * s, fill, disabled and 55 or (hot and 0 or (primary and 8 or 18)))
+  rounded_outline(ass, x1, y1, x2, y2, 8 * s, 1.0 * s, primary and C.hover or C.white, disabled and 220 or (hot and 70 or 210))
+  draw_text(ass, (x1 + x2) / 2, (y1 + y2) / 2 + 1 * s, 5, font_px(s, 13, 12, 15), text_color, 0, label, true, "Segoe UI Semibold")
   if not disabled then add_region(id, x1, y1, x2, y2) end
 end
 
@@ -2872,41 +2870,40 @@ end
 
 function draw_end_overlay(ass, width, height, mouse, s)
   if not ui.end_overlay then return end
-  local panel_w = math.min(width - 72 * s, 880 * s)
-  local panel_h = 218 * s
+  local panel_w = math.min(width - 88 * s, 760 * s)
+  local panel_h = 186 * s
   local x1 = (width - panel_w) / 2
-  local y1 = height - panel_h - 58 * s
+  local y1 = height - panel_h - 116 * s
   local x2 = x1 + panel_w
   local y2 = y1 + panel_h
 
-  rect(ass, 0, 0, width, height, C.black, 162)
-  rounded_rect(ass, x1, y1, x2, y2, 12 * s, C.panel, 12)
-  rounded_outline(ass, x1, y1, x2, y2, 12 * s, 1.0 * s, C.white, 224)
-  rounded_rect(ass, x1, y1 + 20 * s, x1 + 4 * s, y2 - 20 * s, 2 * s, C.accent, 0)
+  rect(ass, 0, 0, width, height, C.black, 176)
+  rounded_rect(ass, x1, y1, x2, y2, 10 * s, C.panel, 8)
+  rounded_outline(ass, x1, y1, x2, y2, 10 * s, 1.0 * s, C.white, 226)
+  rounded_rect(ass, x1, y1 + 24 * s, x1 + 3 * s, y2 - 24 * s, 1.5 * s, C.accent, 0)
   local prompt = ui.end_next_pending and "Preparing next episode" or "Episode complete"
   local detail = ui.end_next_pending
-    and "Finding a playable source for the next aired episode."
-    or "Replay this episode or continue to the next aired episode."
-  draw_text(ass, x1 + 30 * s, y1 + 35 * s, 4, font_px(s, 12, 11, 13), C.accent, 0, "STREAMNYAA", true, "Segoe UI Semibold")
-  draw_text(ass, x1 + 30 * s, y1 + 75 * s, 4, font_px(s, 27, 24, 31), C.white, 0, prompt, true, "Segoe UI Semibold")
-  draw_text(ass, x1 + 30 * s, y1 + 105 * s, 4, font_px(s, 14, 13, 16), C.secondary, 18, detail, false, "Segoe UI")
+    and "Preparing the next aired episode without leaving the player."
+    or "Continue watching, or replay this episode from the beginning."
+  draw_text(ass, x1 + 28 * s, y1 + 43 * s, 4, font_px(s, 24, 21, 28), C.white, 0, prompt, true, "Segoe UI Semibold")
+  draw_text(ass, x1 + 28 * s, y1 + 72 * s, 4, font_px(s, 13, 12, 15), C.secondary, 10, detail, false, "Segoe UI")
   local status_x = x2 - 30 * s
-  circle(ass, status_x - 109 * s, y1 + 35 * s, 4 * s, state.autoplay and C.accent or C.muted, 0)
-  draw_text(ass, status_x, y1 + 35 * s, 6, font_px(s, 11, 10, 13), state.autoplay and C.white or C.secondary, 0, state.autoplay and "Auto next active" or "Auto next paused", true, "Segoe UI Semibold")
+  circle(ass, status_x - 105 * s, y1 + 38 * s, 3 * s, state.autoplay and C.accent or C.muted, 0)
+  draw_text(ass, status_x, y1 + 38 * s, 6, font_px(s, 11, 10, 13), state.autoplay and C.white or C.secondary, 0, state.autoplay and "Autoplay on" or "Autoplay off", true, "Segoe UI Semibold")
 
   local gap = 12 * s
   local button_h = 44 * s
-  local next_w = 220 * s
-  local replay_w = 122 * s
-  local close_w = 96 * s
-  local bx = x1 + 30 * s
-  local by = y2 - 64 * s
-  local next_label = ui.end_next_pending and "FINDING NEXT..." or "NEXT EPISODE"
+  local next_w = 210 * s
+  local replay_w = 118 * s
+  local close_w = 92 * s
+  local bx = x1 + 28 * s
+  local by = y2 - 60 * s
+  local next_label = ui.end_next_pending and "Preparing…" or "Next episode"
   draw_end_action(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, next_label, true, s, ui.end_next_pending, "next")
   bx = bx + next_w + gap
-  draw_end_action(ass, mouse, "end_replay", bx, by, bx + replay_w, by + button_h, "REPLAY", false, s, false, "replay")
+  draw_end_action(ass, mouse, "end_replay", bx, by, bx + replay_w, by + button_h, "Replay", false, s, false, "replay")
   bx = bx + replay_w + gap
-  draw_end_action(ass, mouse, "end_close", bx, by, bx + close_w, by + button_h, "CLOSE", false, s, false)
+  draw_end_action(ass, mouse, "end_close", bx, by, bx + close_w, by + button_h, "Close", false, s, false)
 end
 
 function loading_status_text()
@@ -2959,59 +2956,54 @@ function draw_loading_required_content(ass, width, height, s, status)
   local cx = width / 2
   if is_midplayback_buffering() then
     local t = (mp.get_time() - ui.anim_started)
-    local spinner_y = height * 0.48
-    local spinner_r = 20 * s
-    local start_angle = (t * 260) % 360
-    local card_w = math.min(width * 0.34, 420 * s)
-    local card_h = (ui.stall_actions_visible and 174 or 122) * s
+    local panel_y = height * 0.67
+    local card_w = math.min(width * 0.38, 400 * s)
+    local card_h = (ui.stall_actions_visible and 120 or 74) * s
     local x1 = cx - card_w / 2
-    local y1 = spinner_y - card_h / 2
-    rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 22 * s, C.black, 120)
-    rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 22 * s, C.white, 238)
+    local y1 = panel_y - card_h / 2
+    rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 9 * s, C.panel, 24)
+    rounded_outline(ass, x1, y1, x1 + card_w, y1 + card_h, 9 * s, 1.0 * s, C.white, 226)
     local percent = buffering_display_percent()
-    local meter_x = cx - 98 * s
-    draw_arc(ass, meter_x, spinner_y, spinner_r, 0, 360, 2.0 * s, C.white, 232)
-    if percent then
-      draw_arc(ass, meter_x, spinner_y, spinner_r, -90, 360 * clamp(percent / 100, 0, 1), 3.4 * s, C.accent, 0)
-      draw_text(ass, meter_x, spinner_y + 4 * s, 5, font_px(s, 11, 9, 13), C.white, 0, string.format("%d%%", percent), true, "Segoe UI Semibold")
-    else
-      draw_arc(ass, meter_x, spinner_y, spinner_r, start_angle, 284, 3.4 * s, C.accent, 0)
-    end
-    draw_text(ass, cx - 54 * s, spinner_y - 2 * s, 4, font_px(s, 19, 16, 23), C.white, 0, status, false, "Segoe UI Semibold")
+    local content_x = x1 + 18 * s
+    local content_right = x1 + card_w - 18 * s
+    local title_y = y1 + 24 * s
+    circle(ass, content_x + 4 * s, title_y, 4 * s, C.accent, 0)
+    draw_text(ass, content_x + 17 * s, title_y + 1 * s, 4, font_px(s, 14, 13, 16), C.white, 0, ui.playback_stalled and "Reconnecting" or "Buffering", true, "Segoe UI Semibold")
+    draw_text(ass, content_right, title_y + 1 * s, 6, font_px(s, 14, 13, 17), percent and C.white or C.secondary, 0, percent and string.format("%d%%", percent) or "Connecting", true, "Segoe UI Semibold")
     local cached = buffered_seconds()
     local secondary
     if ui.playback_stalled then
-      secondary = ui.stall_recovery_attempted and "Recovery is trying another path" or "No buffer growth detected; recovery will start automatically"
+      secondary = ui.stall_recovery_attempted and "Restoring playback at your saved position" or "Playback stopped advancing; recovery is automatic"
     elseif ui.stall_started_at > 0 then
-      secondary = ui.stall_recovery_attempted and "Reopening the stream at your saved position" or "Buffer is not advancing"
+      secondary = ui.stall_recovery_attempted and "Restoring playback at your saved position" or "Waiting for more video"
     elseif percent and cached then
-      secondary = string.format("%.1f / %ds playable  ·  updating live", cached, apply_adaptive_buffer_target())
+      secondary = string.format("%.1f of %ds ready", cached, apply_adaptive_buffer_target())
     else
-      secondary = "Measuring playable buffer..."
+      secondary = "Measuring playable video"
     end
-    draw_text(ass, cx - 54 * s, spinner_y + 24 * s, 4, font_px(s, 13, 12, 15), C.secondary, 12, secondary, false, "Segoe UI")
-    local bar_x1 = x1 + 28 * s
-    local bar_x2 = x1 + card_w - 28 * s
-    local bar_y = spinner_y + 47 * s
-    rounded_rect(ass, bar_x1, bar_y, bar_x2, bar_y + 4 * s, 2 * s, C.white, 220)
+    draw_text(ass, content_x, title_y + 22 * s, 4, font_px(s, 11, 10, 13), C.secondary, 8, secondary, false, "Segoe UI")
+    local bar_x1 = content_x
+    local bar_x2 = content_right
+    local bar_y = y1 + 61 * s
+    rounded_rect(ass, bar_x1, bar_y, bar_x2, bar_y + 3 * s, 1.5 * s, C.white, 224)
     if percent then
-      rounded_rect(ass, bar_x1, bar_y, bar_x1 + (bar_x2 - bar_x1) * clamp(percent / 100, 0, 1), bar_y + 4 * s, 2 * s, C.accent, 0)
+      rounded_rect(ass, bar_x1, bar_y, bar_x1 + (bar_x2 - bar_x1) * clamp(percent / 100, 0, 1), bar_y + 3 * s, 1.5 * s, C.accent, 0)
     else
       local pulse = (math.sin(t * 3.4) + 1) / 2
       local segment = (bar_x2 - bar_x1) * 0.24
       local travel = (bar_x2 - bar_x1) - segment
       local pulse_x = bar_x1 + travel * pulse
-      rounded_rect(ass, pulse_x, bar_y, pulse_x + segment, bar_y + 4 * s, 2 * s, C.accent, 0)
+      rounded_rect(ass, pulse_x, bar_y, pulse_x + segment, bar_y + 3 * s, 1.5 * s, C.accent, 0)
     end
     if ui.stall_actions_visible then
-      local gap = 12 * s
-      local button_w = 150 * s
-      local button_h = 38 * s
-      local button_y = y1 + card_h - 50 * s
+      local gap = 10 * s
+      local button_w = (card_w - 46 * s) / 2
+      local button_h = 34 * s
+      local button_y = y1 + card_h - 43 * s
       local button_x = cx - button_w - gap / 2
-      draw_end_button(ass, mouse_pos(), "recovery_retry", button_x, button_y, button_x + button_w, button_y + button_h, "RETRY STREAM", false, s)
+      draw_end_button(ass, mouse_pos(), "recovery_retry", button_x, button_y, button_x + button_w, button_y + button_h, "Retry", false, s)
       button_x = cx + gap / 2
-      draw_end_button(ass, mouse_pos(), "recovery_backup", button_x, button_y, button_x + button_w, button_y + button_h, "TRY BACKUP SOURCE", true, s)
+      draw_end_button(ass, mouse_pos(), "recovery_backup", button_x, button_y, button_x + button_w, button_y + button_h, "Try another stream", true, s)
     end
     return
   end
@@ -3030,17 +3022,8 @@ function draw_loading_required_content(ass, width, height, s, status)
   local percent = startup_loading_percent()
   local status_text = status
 
-  if artwork_layout == "landscape" then
-    -- Layered neutral bands create a restrained readability gradient without
-    -- tinting the artwork or turning half of the frame into a hard black block.
-    rect(ass, 0, height * 0.36, width, height, C.black, 232)
-    rect(ass, 0, height * 0.48, width, height, C.black, 210)
-    rect(ass, 0, height * 0.60, width, height, C.black, 178)
-    rect(ass, 0, height * 0.72, width, height, C.black, 132)
-    rect(ass, 0, height * 0.84, width, height, C.black, 82)
-  else
-    rect(ass, 0, 0, width * 0.62, height, C.black, 94)
-  end
+  -- Readability is baked into the generated full-viewport artwork with a
+  -- smooth neutral gradient. Avoid visible overlay bands and color tinting.
 
   for index, line_value in ipairs(layout.lines) do
     draw_text(

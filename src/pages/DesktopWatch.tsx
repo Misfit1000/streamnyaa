@@ -168,13 +168,23 @@ function posterFor(anime: any) {
 }
 
 function wideImageFor(anime: any) {
-  return anime?.trailer?.images?.maximum_image_url
-    || anime?.trailer?.images?.large_image_url
-    || anime?.bannerImage
+  return anime?.bannerImage
     || anime?.banner_image
     || anime?.backdrop
     || anime?.background
+    || anime?.trailer?.images?.maximum_image_url
+    || anime?.trailer?.images?.large_image_url
     || posterFor(anime);
+}
+
+function playerLandscapeFor(anime: any) {
+  return anime?.bannerImage
+    || anime?.banner_image
+    || anime?.backdrop
+    || anime?.background
+    || anime?.trailer?.images?.maximum_image_url
+    || anime?.trailer?.images?.large_image_url
+    || '';
 }
 
 function uniqueImageCandidates(values: Array<string | undefined | null>) {
@@ -2806,7 +2816,7 @@ export default function DesktopWatch() {
       seeders: source.seeders,
       image: posterFor(anime),
       poster: posterFor(anime),
-      banner: wideImageFor(anime),
+      banner: playerLandscapeFor(anime),
     };
     const checkpoint = resolveDesktopPlaybackCheckpoint(baseSource);
     const hasResumeOverride = Number.isFinite(resumeOverride);

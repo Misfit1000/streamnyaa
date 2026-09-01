@@ -581,7 +581,9 @@ const mapJikanDetailToAnime = (item: any) => ({
       large_image_url: item.image_url || '',
     },
   },
-  banner_image: item.trailer?.images?.maximum_image_url || item.images?.jpg?.large_image_url || item.images?.webp?.large_image_url,
+  // A portrait cover is not a banner. Keeping it out of this field prevents
+  // the desktop player from mistaking poster cards for cinematic loading art.
+  banner_image: item.trailer?.images?.maximum_image_url || '',
   synopsis: item.synopsis || '',
   episodes: item.episodes,
   status: item.status,

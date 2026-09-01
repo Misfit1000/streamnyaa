@@ -5,7 +5,7 @@ import { Bell, CalendarDays, ChevronRight, Heart, History, Loader2, TriangleAler
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
-import { fetchCompleteSchedule, fetchSchedule } from '../api/jikan';
+import { fetchCompleteSchedule } from '../api/jikan';
 import { animeIdentity } from '../lib/animeIdentity';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 import {
@@ -26,6 +26,11 @@ import {
 } from '../lib/desktopReminders';
 import { useStore } from '../store/useStore';
 import { readDesktopScheduleUpdates, subscribeDesktopScheduleUpdates } from '../lib/scheduleRevisions';
+import {
+  desktopScheduleCacheKey,
+  readDesktopSchedule,
+  writeDesktopSchedule,
+} from '../lib/desktopScheduleCache';
 
 type ScheduleNotice = {
   tone: 'success' | 'error' | 'info';
@@ -260,25 +265,52 @@ export default function DesktopSchedule() {
   const [notificationPermission, setNotificationPermission] = useState<ScheduleNotificationPermission>('default');
   const [scheduleUpdates, setScheduleUpdates] = useState(() => readDesktopScheduleUpdates());
   const [watchedSeries, setWatchedSeries] = useState(() => loadDesktopWatchedSeries());
-  const { isInMyList, addToMyList, removeFromMyList } = useStore();
+  const { isInMyList, addToMyList, removeFromMyList, nsfwMode } = useStore();
   const days = useMemo(scheduleDays, []);
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time', []);
   const active = days[selectedDay];
   const hasWatchHistory = watchedSeries.length > 0;
+  const activeScheduleCacheKey = useMemo(
+    () => desktopScheduleCacheKey(active.start, active.end, nsfwMode),
+    [active.end, active.start, nsfwMode],
+  );
+  const savedSchedule = useMemo(
+    () => readDesktopSchedule(activeScheduleCacheKey),
+    [activeScheduleCacheKey],
+  );
   const scheduleQuery = useQuery({
-    queryKey: ['desktop-schedule', active.start, active.end],
-    queryFn: () => fetchSchedule(1, active.start, active.end),
+    queryKey: ['desktop-schedule', active.start, active.end, nsfwMode],
+    queryFn: async () => {
+      const response = await fetchCompleteSchedule(active.start, active.end, 4);
+      writeDesktopSchedule(activeScheduleCacheKey, response);
+      return response;
+    },
     staleTime: 1000 * 60 * 10,
-    retry: 1,
-    placeholderData: (previousData) => previousData,
+    retry: 2,
+    initialData: savedSchedule?.data,
+    initialDataUpdatedAt: savedSchedule?.savedAt,
   });
   const items = scheduleQuery.data?.data || [];
+  const watchedWeekCacheKey = useMemo(
+    () => desktopScheduleCacheKey(days[0].start, days[days.length - 1].end, nsfwMode),
+    [days, nsfwMode],
+  );
+  const savedWatchedWeek = useMemo(
+    () => readDesktopSchedule(watchedWeekCacheKey),
+    [watchedWeekCacheKey],
+  );
   const watchedWeekQuery = useQuery({
-    queryKey: ['desktop-schedule-watched-week', days[0].start, days[days.length - 1].end],
-    queryFn: () => fetchCompleteSchedule(days[0].start, days[days.length - 1].end),
+    queryKey: ['desktop-schedule-watched-week', days[0].start, days[days.length - 1].end, nsfwMode],
+    queryFn: async () => {
+      const response = await fetchCompleteSchedule(days[0].start, days[days.length - 1].end);
+      writeDesktopSchedule(watchedWeekCacheKey, response);
+      return response;
+    },
     staleTime: 1000 * 60 * 10,
-    retry: 1,
+    retry: 2,
     enabled: hasWatchHistory,
+    initialData: hasWatchHistory ? savedWatchedWeek?.data : undefined,
+    initialDataUpdatedAt: hasWatchHistory ? savedWatchedWeek?.savedAt : undefined,
   });
   const watchedWeekItems = useMemo(
     () => (watchedWeekQuery.data?.data || [])
@@ -633,6 +665,19 @@ export default function DesktopSchedule() {
           <p className="mt-4 text-sm text-white/48">Watch an episode and its next scheduled release will appear here automatically.</p>
         ) : watchedWeekQuery.isLoading ? (
           <DesktopLoadingProgress className="mt-4" variant="inline" label="Matching your watch history" percent={48} detail="Checking upcoming episodes for saved series." />
+        ) : watchedWeekQuery.isError && !watchedWeekQuery.data ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white/[0.035] px-4 py-3 ring-1 ring-inset ring-white/[0.07]">
+            <p className="text-sm text-white/58">Upcoming episodes couldn’t refresh yet. Your watch history is unchanged.</p>
+            <button
+              type="button"
+              onClick={() => watchedWeekQuery.refetch()}
+              disabled={watchedWeekQuery.isFetching}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/[0.07] px-3 text-sm font-semibold text-white transition-colors hover:bg-white/[0.11] disabled:opacity-50"
+            >
+              <Loader2 className={`h-4 w-4 ${watchedWeekQuery.isFetching ? 'animate-spin' : ''}`} />
+              Retry
+            </button>
+          </div>
         ) : (
           <>
             {watchedWeekItems.length ? (
@@ -707,6 +752,27 @@ export default function DesktopSchedule() {
       </section>
 
       <section className="mt-7">
+        {scheduleQuery.isError ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/15 bg-amber-300/[0.06] px-4 py-3" role="status">
+            <div>
+              <p className="text-sm font-semibold text-amber-100">Schedule couldn’t refresh</p>
+              <p className="mt-0.5 text-xs text-white/50">
+                {scheduleQuery.data
+                  ? 'The last verified schedule is still shown below.'
+                  : 'Your saved screens remain available while the schedule reconnects.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => scheduleQuery.refetch()}
+              disabled={scheduleQuery.isFetching}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/[0.07] px-3 text-sm font-semibold text-white transition-colors hover:bg-white/[0.11] disabled:opacity-50"
+            >
+              <Loader2 className={`h-4 w-4 ${scheduleQuery.isFetching ? 'animate-spin' : ''}`} />
+              Retry
+            </button>
+          </div>
+        ) : null}
         {scheduleQuery.isLoading ? (
           <div className="sn-glass-panel p-5">
             <DesktopLoadingProgress variant="inline" label="Loading the airing schedule" percent={44} detail="Normalizing broadcast times for your time zone." />
@@ -825,6 +891,11 @@ export default function DesktopSchedule() {
                 </div>
               </div>
             ))}
+          </div>
+        ) : scheduleQuery.isError && !scheduleQuery.data ? (
+          <div className="sn-empty-state px-6 py-16 text-center">
+            <p className="text-lg font-semibold text-white">Schedule is temporarily unavailable.</p>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Retry when your connection is ready. StreamNyaa will keep this page intact.</p>
           </div>
         ) : (
           <div className="sn-empty-state px-6 py-16 text-center">

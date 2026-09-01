@@ -54,7 +54,7 @@ $sizeBytes = (Get-Item $copiedInstaller).Length
 $manifest = [ordered]@{
   product = 'StreamNyaa Desktop'
   version = $version
-  releaseRevision = 'desktop-loading-recovery-6'
+  releaseRevision = 'desktop-loading-recovery-7'
   generatedAt = (Get-Date).ToString('o')
   installer = @{
     fileName = [IO.Path]::GetFileName($copiedInstaller)
@@ -74,6 +74,9 @@ $manifest = [ordered]@{
     'Adds a compact notification center for confirmed delays and cancellations, personal/global feed controls, and categorized desktop settings navigation.',
     'Makes Explore resilient through saved catalogs and hedged refreshes, activates global search, adds upcoming-airing notifications, and surfaces player keybinds in simplified settings.',
     'Closes the pre-playback freeze gap, renders live buffer percentage inside the native player, and upgrades loading art to a cinematic full-bleed composition.',
+    'Keeps the exact saved schedule visible during connection failures and distinguishes verified empty days from refresh errors.',
+    'Refines the native player with compact live buffering feedback, raised skip controls, and a cleaner next-episode panel.',
+    'Uses genuine landscape artwork for player startup, removes poster-card composition, and applies a smooth neutral readability gradient.',
     'Run the manual desktop release checklist before publishing this installer.',
     'Code-sign the installer before distribution.',
     'Keep the previous stable installer for rollback.'

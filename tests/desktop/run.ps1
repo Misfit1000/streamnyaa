@@ -48,6 +48,7 @@ $desktopShell = Get-Content -Raw (Join-Path $repo 'src\components\DesktopShell.t
 $desktopNotificationCenter = Get-Content -Raw (Join-Path $repo 'src\components\DesktopNotificationCenter.tsx')
 $desktopScheduleRevisions = Get-Content -Raw (Join-Path $repo 'src\lib\scheduleRevisions.ts')
 $desktopExploreCache = Get-Content -Raw (Join-Path $repo 'src\lib\desktopExploreCache.ts')
+$desktopScheduleCache = Get-Content -Raw (Join-Path $repo 'src\lib\desktopScheduleCache.ts')
 $desktopPlayerShortcuts = Get-Content -Raw (Join-Path $repo 'src\lib\desktopPlayerShortcuts.ts')
 $upcomingNotifyButton = Get-Content -Raw (Join-Path $repo 'src\components\UpcomingNotifyButton.tsx')
 $desktopCss = Get-Content -Raw (Join-Path $repo 'src\index.css')
@@ -71,7 +72,7 @@ $releasePreparer = Get-Content -Raw (Join-Path $repo 'scripts\prepare-desktop-re
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
 Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.7"' 'Desktop release configuration should target version 0.1.7.'
 Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.7"' 'Rust package version should match the desktop release version.'
-Assert-Match $releasePreparer "releaseRevision\s*=\s*'desktop-loading-recovery-5'" 'The 0.1.7 release manifest must identify the loading, recovery, schedule, notification, and catalog pass.'
+Assert-Match $releasePreparer "releaseRevision\s*=\s*'desktop-loading-recovery-7'" 'The 0.1.7 release manifest must identify the current loading, recovery, schedule, notification, and catalog pass.'
 Assert-Match $releasePreparer 'auth-recovery-live-validation\.json' 'The 0.1.3 artifact must remain gated on live password-recovery validation.'
 Assert-Match $releasePreparer '2MB' 'The installer must reject growth beyond the two MiB budget.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
@@ -223,7 +224,7 @@ Assert-Match $desktopPlayerShortcuts "\['F', 'Enter or exit fullscreen'\]" 'Desk
 Assert-Match $desktopSettings 'Export desktop settings' 'Desktop Settings should expose safe settings export.'
 Assert-Match $desktopSettings 'Import desktop settings' 'Desktop Settings should expose safe settings import.'
 Assert-NotMatch $desktopSettings 'getSession\(\)|supabase\.auth|localStorage\.clear\(\)' 'Desktop Settings backup UI must not export session data or clear all storage.'
-Assert-Match $desktopSchedule 'fetchSchedule' 'Desktop Schedule should load live airing data.'
+Assert-Match $desktopSchedule 'fetchCompleteSchedule' 'Desktop Schedule should load the complete live airing day rather than one partial page.'
 Assert-Match $desktopSchedule 'Recent delay and cancellation alerts' 'Desktop Calendar should retain confirmed schedule alerts.'
 Assert-Match $desktopNotificationCenter 'No delay or cancellation alerts' 'The notification center should be scoped to delay and cancellation updates.'
 Assert-NotMatch $desktopNotificationCenter "kind === 'rescheduled'|Rescheduled" 'Reschedules should remain Calendar-only for now.'
@@ -338,7 +339,7 @@ Assert-Match $playerSkin 'string\.format\("%.1f of %ds ready"' 'Native buffering
 Assert-Match $tauriMain 'Center-crop with Lanczos' 'Landscape player art must fill the frame without blurred letterbox bands.'
 Assert-Match $playerSkin 'function is_cover_loading_media' 'StreamNyaa MPV skin should recognize cover loading images as loading media.'
 Assert-Match $playerSkin 'loading%-cover%.jpg' 'StreamNyaa MPV skin should not treat loading-cover.jpg as normal playable media.'
-Assert-Match $watchPage 'banner:\s*wideImageFor\(anime\)' 'Desktop watch playback payload should send wide artwork for player loading backgrounds.'
+Assert-Match $watchPage 'banner:\s*playerLandscapeFor\(anime\)' 'Desktop watch playback payload should prioritize genuine landscape artwork for player loading backgrounds.'
 Assert-Match $watchPage 'coverImage\?\.extraLarge' 'Desktop watch poster candidates should include AniList cover art for player loading fallback.'
 Assert-Match $watchPage 'function youtubeVideoIdFor' 'Desktop trailers should validate and canonicalize YouTube URLs before opening them.'
 Assert-Match $watchPage "url\.protocol !== 'https:'" 'Desktop trailer links must require HTTPS.'
@@ -409,11 +410,17 @@ Assert-Match $desktopHtmlWriter 'clamp\(88px,10vmin,154px\)' 'Desktop launch bra
 Assert-Match $tauriMain 'artwork_layout' 'Desktop player metadata should identify portrait and landscape loading art.'
 Assert-Match $tauriMain 'prepare_loading_composition' 'Desktop player should compose artwork according to its decoded aspect ratio.'
 Assert-Match $tauriMain 'compose_full_landscape_art' 'Landscape player artwork should remain fully visible instead of being cropped like a hero banner.'
+Assert-Match $tauriMain 'portrait_player_art_becomes_a_full_landscape_plate_without_a_card' 'Portrait fallback art should become a neutral full-viewport plate instead of a catalog card.'
+Assert-NotMatch $playerSkin 'rect\(ass, 0, height \* 0\.36' 'Player startup artwork must not use visible stacked overlay bands.'
 Assert-NotMatch $playerSkin 'rect\(ass, 0, 0, width, height, C\.accent, 248\)' 'Player loading art must not receive the old full-screen red tint.'
 Assert-Match $playerSkin 'startup_loading_percent' 'Player startup should render native playable-buffer progress.'
-Assert-Match $playerSkin 'STALLED  ·  %d%% BUFFERED' 'Player stall state should keep the live buffer percentage visible.'
-Assert-Match $playerSkin '%.1f / %ds playable  ·  updating live' 'Player buffering overlay should show real-time playable seconds against its target.'
-Assert-Match $playerSkin '360 \* clamp\(percent / 100' 'Player buffering overlay should render a determinate circular progress meter.'
+Assert-Match $playerSkin 'string\.format\("Reconnecting  ·  %d%%"' 'Player stall state should keep the live buffer percentage visible.'
+Assert-Match $playerSkin 'string\.format\("%.1f of %ds ready"' 'Player buffering overlay should show real-time playable seconds against its target.'
+Assert-Match $playerSkin 'bar_x1 \+ \(bar_x2 - bar_x1\) \* clamp\(percent / 100' 'Player buffering overlay should render a determinate compact progress bar.'
+Assert-Match $playerSkin 'local base_offset = ui\.visible and 174 or 84' 'Manual intro and outro actions should remain raised above the player edge and controls.'
+Assert-Match $playerSkin 'height - panel_h - 116 \* s' 'The next-episode panel should remain raised above the player edge.'
+Assert-Match $desktopScheduleCache 'Array\.isArray\(data\?\.data\)' 'Schedule caching must preserve verified empty days instead of confusing them with request failures.'
+Assert-Match $desktopSchedule 'scheduleQuery\.isError && !scheduleQuery\.data' 'Schedule request failures must remain distinct from verified empty days.'
 Assert-Match $playerSkin 'OPENING THE VIDEO DECODER' 'Player loading copy should follow the real native startup stage.'
 Assert-Match $desktopFallbackBuilder '--public-path=/assets' 'Desktop fallback assets should resolve from /assets on every route depth.'
 Assert-Match $desktopFallbackBuilder "'--minify'" 'Desktop production JavaScript should be minified.'

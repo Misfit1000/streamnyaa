@@ -1875,6 +1875,21 @@ fn compose_full_landscape_art(
     cover_fill(decoded, target_width, target_height)
 }
 
+fn apply_loading_readability_gradient(image: &mut image::RgbaImage) {
+    let width = image.width().max(1) as f32;
+    let height = image.height().max(1) as f32;
+    for (x, y, pixel) in image.enumerate_pixels_mut() {
+        let horizontal = 1.0 - (x as f32 / width);
+        let vertical = ((y as f32 / height) - 0.38).max(0.0) / 0.62;
+        let strength = (vertical * (0.40 + horizontal * 0.28)).clamp(0.0, 0.68);
+        let factor = 1.0 - strength;
+        pixel[0] = (pixel[0] as f32 * factor).round().clamp(0.0, 255.0) as u8;
+        pixel[1] = (pixel[1] as f32 * factor).round().clamp(0.0, 255.0) as u8;
+        pixel[2] = (pixel[2] as f32 * factor).round().clamp(0.0, 255.0) as u8;
+        pixel[3] = 255;
+    }
+}
+
 fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage, &'static str) {
     let (source_width, source_height) = decoded.dimensions();
     let target_width = PLAYER_COVER_BACKGROUND_WIDTH;
@@ -1882,58 +1897,25 @@ fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage,
     let aspect_ratio = source_width as f64 / source_height.max(1) as f64;
 
     if aspect_ratio >= 1.35 {
-        return (
-            compose_full_landscape_art(decoded, target_width, target_height),
-            "landscape",
-        );
+        let mut composition = compose_full_landscape_art(decoded, target_width, target_height);
+        apply_loading_readability_gradient(&mut composition);
+        return (composition, "landscape");
     }
 
-    // The backdrop is intentionally soft, so blur a quarter-size plate and
-    // scale it once. A full 1080p blur delayed player artwork on slower CPUs.
+    // If an upstream record has no real banner, turn its poster into a quiet,
+    // full-viewport landscape plate. Never draw the portrait as a card inside
+    // the player; that made loading look like a catalog screen.
     let soft_plate = cover_fill(decoded, target_width / 4, target_height / 4);
-    let soft_plate = image::imageops::blur(&soft_plate, 4.0);
+    let soft_plate = image::imageops::blur(&soft_plate, 2.4);
     let mut background = image::imageops::resize(
         &soft_plate,
         target_width,
         target_height,
         FilterType::Triangle,
     );
-    neutral_darken(&mut background, 0.34);
-
-    let max_poster_width = 680u32;
-    let max_poster_height = 940u32;
-    let scale = (max_poster_width as f64 / source_width as f64)
-        .min(max_poster_height as f64 / source_height as f64)
-        .max(0.01);
-    let poster_width = ((source_width as f64 * scale).round() as u32).max(1);
-    let poster_height = ((source_height as f64 * scale).round() as u32).max(1);
-    let poster =
-        image::imageops::resize(decoded, poster_width, poster_height, FilterType::Lanczos3);
-    let poster_x = target_width
-        .saturating_sub(poster_width)
-        .saturating_sub(120);
-    let poster_y = target_height.saturating_sub(poster_height) / 2;
-
-    let shadow_x1 = poster_x.saturating_sub(18);
-    let shadow_y1 = poster_y.saturating_sub(18);
-    let shadow_x2 = (poster_x + poster_width + 18).min(target_width);
-    let shadow_y2 = (poster_y + poster_height + 18).min(target_height);
-    for y in shadow_y1..shadow_y2 {
-        for x in shadow_x1..shadow_x2 {
-            if x < poster_x
-                || x >= poster_x + poster_width
-                || y < poster_y
-                || y >= poster_y + poster_height
-            {
-                let pixel = background.get_pixel_mut(x, y);
-                pixel[0] = (pixel[0] as f32 * 0.72) as u8;
-                pixel[1] = (pixel[1] as f32 * 0.72) as u8;
-                pixel[2] = (pixel[2] as f32 * 0.72) as u8;
-            }
-        }
-    }
-    image::imageops::overlay(&mut background, &poster, poster_x.into(), poster_y.into());
-    (background, "portrait")
+    neutral_darken(&mut background, 0.72);
+    apply_loading_readability_gradient(&mut background);
+    (background, "landscape")
 }
 
 fn prepare_player_cover(
@@ -5836,10 +5818,13 @@ async fn get_local_playback_progress(
             .map(|value| value.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
         let awaiting_first_frame = duration_seconds.unwrap_or(0.0) > 0.0 && !playback_started;
-        let buffering = paused_for_cache || cache_buffering || demuxer_underrun || awaiting_first_frame;
+        let buffering =
+            paused_for_cache || cache_buffering || demuxer_underrun || awaiting_first_frame;
         let buffer_target_seconds = player_ipc
             .as_deref()
-            .and_then(|ipc| get_player_property_f64(ipc, "user-data/streamnyaa/buffer_target_seconds"))
+            .and_then(|ipc| {
+                get_player_property_f64(ipc, "user-data/streamnyaa/buffer_target_seconds")
+            })
             .filter(|value| value.is_finite() && *value > 0.0)
             .unwrap_or(PLAYER_BUFFER_TARGET_SECONDS);
         let buffer_percent = buffered_seconds
@@ -6621,16 +6606,16 @@ mod tests {
     }
 
     #[test]
-    fn portrait_player_art_uses_neutral_right_aligned_composition() {
+    fn portrait_player_art_becomes_a_full_landscape_plate_without_a_card() {
         let source = image::RgbaImage::from_pixel(600, 900, image::Rgba([40, 120, 220, 255]));
         let (composition, layout) = prepare_loading_composition(&source);
-        assert_eq!(layout, "portrait");
+        assert_eq!(layout, "landscape");
         assert_eq!(composition.dimensions(), (1920, 1080));
 
         let left = composition.get_pixel(120, 540);
-        let poster = composition.get_pixel(1400, 540);
-        assert!(poster[2] > left[2]);
-        assert!(poster[2] > poster[0]);
+        let right = composition.get_pixel(1400, 540);
+        assert!(left[2] > left[0]);
+        assert!(right[2] > right[0]);
     }
 
     #[test]
@@ -6640,8 +6625,12 @@ mod tests {
         assert_eq!(layout, "landscape");
         let center = composition.get_pixel(960, 540);
         let upper_edge = composition.get_pixel(960, 40);
-        assert_eq!([center[0], center[1], center[2]], [30, 100, 210]);
-        assert_eq!([upper_edge[0], upper_edge[1], upper_edge[2]], [30, 100, 210]);
+        assert!(center[2] > center[1]);
+        assert!(center[1] > center[0]);
+        assert_eq!(
+            [upper_edge[0], upper_edge[1], upper_edge[2]],
+            [30, 100, 210]
+        );
     }
 
     #[test]
