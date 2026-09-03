@@ -1,7 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { desktopPosterCandidates, desktopSpotlightArtworkCandidates } from '../../src/lib/desktopArtwork';
+import { desktopLandscapeImageCandidates, desktopPosterCandidates, desktopSpotlightArtworkCandidates } from '../../src/lib/desktopArtwork';
 
 describe('desktop artwork candidates', () => {
+  it('tries high-resolution artwork before known thumbnail variants', () => {
+    expect(desktopLandscapeImageCandidates([
+      'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',
+      'https://image.tmdb.org/t/p/w300/test.jpg',
+    ])).toEqual([
+      'https://i.ytimg.com/vi/abcdefghijk/maxresdefault.jpg',
+      'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',
+      'https://image.tmdb.org/t/p/w1280/test.jpg',
+      'https://image.tmdb.org/t/p/w300/test.jpg',
+    ]);
+  });
+
+  it('rejects background prose and unsafe artwork URLs', () => {
+    expect(desktopLandscapeImageCandidates([
+      'An anime based on a manga.', 'file:///private/image.png',
+      'https://name:password@example.com/image.png',
+      'https://images.example/wide.jpg', 'https://images.example/wide.jpg',
+    ])).toEqual(['https://images.example/wide.jpg']);
+  });
   it('keeps portrait sources ahead of fallback artwork and removes duplicates', () => {
     const candidates = desktopPosterCandidates({
       anilist_id: 154587,

@@ -14,6 +14,7 @@ import { preloadDesktopWatchData } from '../lib/desktopRoutePreload';
 import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { totalEpisodeCount } from '../lib/animeEpisodes';
 import { desktopDataError } from '../lib/desktopData';
+import { desktopLandscapeImageCandidates } from '../lib/desktopArtwork';
 import {
   desktopEpisodeWatchState,
   formatPlaybackTime,
@@ -327,7 +328,7 @@ function playerLandscapeCandidates(anime: any, episodeImage?: string) {
       ? declaredTrailerId
       : '');
 
-  return uniqueImageCandidates([
+  return desktopLandscapeImageCandidates([
     anime?.bannerImage,
     anime?.banner_image,
     anime?.backdrop,
@@ -336,7 +337,6 @@ function playerLandscapeCandidates(anime: any, episodeImage?: string) {
     trailer?.images?.large_image_url,
     trailer?.thumbnail,
     youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : '',
-    youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/hq720.jpg` : '',
   ]);
 }
 
@@ -1816,6 +1816,7 @@ export default function DesktopWatch() {
   const playableSourcesRef = useRef<RankedNyaaItem[]>([]);
   const playableSourcesEpisodeRef = useRef(0);
   const playSourceRef = useRef<(source: RankedNyaaItem, resumeOverride?: number) => void | Promise<void>>(() => {});
+  const lastRequestedSourceRef = useRef<{ source: RankedNyaaItem; animeId: string; episode: number } | null>(null);
   const playNextEpisodeRef = useRef<(reason?: 'manual' | 'ended' | string) => void>(() => {});
   const playbackValueRef = useRef(playback);
   const playbackProgressValueRef = useRef<DesktopPlaybackProgress | null | undefined>(null);
@@ -2912,6 +2913,7 @@ export default function DesktopWatch() {
       for (let index = 0; index < retryPool.length; index += 1) {
         if (playbackRequestIdRef.current !== requestId) return;
         const candidate = retryPool[index];
+        lastRequestedSourceRef.current = { source: candidate, animeId: String(anime?.mal_id || anime?.id || ''), episode: selectedEpisode };
         const sourceId = candidate.infoHash || candidate.magnet;
         setActiveSourceId(sourceId);
         if (index > 0) {
@@ -3129,7 +3131,23 @@ export default function DesktopWatch() {
     let mounted = true;
     let unlisten: (() => void) | undefined;
     void listenDesktopPlayerRecoveryRequest((event) => {
-      if (!mounted || event.action !== 'backup') return;
+      if (!mounted || (event.action !== 'backup' && event.action !== 'retry')) return;
+      if (event.action === 'retry') {
+        const request = lastRequestedSourceRef.current;
+        if (!request || request.episode !== selectedEpisodeNumberRef.current
+          || request.animeId !== String(anime?.mal_id || anime?.id || '')) return;
+        const rawPosition = Number(event.position_seconds);
+        const position = Number.isFinite(rawPosition) ? Math.max(0, rawPosition) : undefined;
+        persistActivePlaybackCheckpoint(position);
+        playbackRequestIdRef.current += 1;
+        playActionLockRef.current = false;
+        activeSourceIdValueRef.current = null;
+        setActiveSourceId(null);
+        setRecoveryExhausted(false);
+        midstreamRecoveryCountRef.current = 0;
+        void playSourceRef.current(request.source, position);
+        return;
+      }
       const episode = selectedEpisodeNumberRef.current;
       if (playableSourcesEpisodeRef.current !== episode) {
         setPlaybackNotice({ tone: 'error', text: 'Backup sources are still being verified for this episode.' });
@@ -3191,7 +3209,7 @@ export default function DesktopWatch() {
       mounted = false;
       unlisten?.();
     };
-  }, []);
+  }, [anime?.mal_id, anime?.id, persistActivePlaybackCheckpoint]);
 
   const watchEpisodeFromCard = useCallback((episodeNumber: number) => {
     if (suppressEpisodeClickRef.current) return;

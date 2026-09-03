@@ -54,7 +54,7 @@ $sizeBytes = (Get-Item $copiedInstaller).Length
 $manifest = [ordered]@{
   product = 'StreamNyaa Desktop'
   version = $version
-  releaseRevision = 'desktop-loading-recovery-9'
+  releaseRevision = 'desktop-loading-recovery-10'
   generatedAt = (Get-Date).ToString('o')
   installer = @{
     fileName = [IO.Path]::GetFileName($copiedInstaller)
@@ -83,6 +83,8 @@ $manifest = [ordered]@{
     'Hardens native URL/path validation, bounds remote response sizes, redacts diagnostics, and narrows desktop callback routes.',
     'Uses only verified high-resolution landscape artwork for player startup and rejects blurry portrait substitutions.',
     'Keeps loading artwork visible until the first decoded frame, removes the purple handoff gap, and adds a balanced center play/pause control with refined vector icons.',
+    'Restores valid ultrawide artwork, uses the supported scaled bitmap API, and replaces buffering cards with a minimal circle and measured percentage.',
+    'Keeps recovery deadlines alive through reload/idle events, bounds continuous buffering, and stops animation when automatic recovery is exhausted.',
     'Run the manual desktop release checklist before publishing this installer.',
     'Code-sign the installer before distribution.',
     'Keep the previous stable installer for rollback.'

@@ -23,8 +23,9 @@
     "test:desktop-controls": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\desktop\\player-controls.ps1",
     "test:desktop-soak": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\desktop\\player-controls.ps1 -SoakCycles 100",
     "test:desktop-stall": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\desktop\\stalled-stream.ps1",
+    "test:desktop-state": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tests\\desktop\\player-state.ps1",
     "test:frontend": "vitest run --config vitest.config.ts",
-    "verify:desktop": "npm run lint && npm run test:frontend && npm run test:desktop && npm run test:desktop-controls && npm run test:desktop-stall && npm run test:desktop-soak && cargo test --manifest-path .\\desktop\\src-tauri\\Cargo.toml",
+    "verify:desktop": "npm run lint && npm run test:frontend && npm run test:desktop && npm run test:desktop-state && npm run test:desktop-controls && npm run test:desktop-stall && npm run test:desktop-soak && cargo test --manifest-path .\\desktop\\src-tauri\\Cargo.toml",
     "verify:desktop-release": "npm run preflight:desktop && npm run prepare:desktop-binaries && npm run verify:desktop",
     "prepare:desktop-release": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\prepare-desktop-release.ps1",
     "release:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-desktop-release.ps1"

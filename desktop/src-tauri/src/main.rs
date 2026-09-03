@@ -1832,7 +1832,8 @@ fn cover_local_path(value: &str) -> PathBuf {
 fn read_cover_bytes(source: &str) -> Result<Vec<u8>, String> {
     if is_remote_url(source) {
         let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(3))
+            .connect_timeout(Duration::from_secs(1))
+            .timeout(Duration::from_secs(2))
             .build()
             .map_err(|error| format!("Could not prepare cover downloader: {}", error))?;
         let response = client
@@ -1872,6 +1873,22 @@ fn rgba_to_bgra(image: &image::RgbaImage) -> Vec<u8> {
         bgra.push(pixel[3]);
     }
     bgra
+}
+
+fn loading_overlay_bgra(image: &image::RgbaImage) -> Vec<u8> {
+    // MPV bitmap overlays sit above ASS text. Fade to transparency before the
+    // lower title/status region so text remains legible during decoder handoff.
+    // BGRA overlays require premultiplied color channels.
+    let mut overlay = image.clone();
+    let height = overlay.height().max(1) as f32;
+    for (_, y, pixel) in overlay.enumerate_pixels_mut() {
+        let alpha = (1.0 - ((y as f32 / height - 0.26) / 0.24)).clamp(0.0, 1.0);
+        for channel in 0..3 {
+            pixel[channel] = (pixel[channel] as f32 * alpha).round() as u8;
+        }
+        pixel[3] = (255.0 * alpha).round() as u8;
+    }
+    rgba_to_bgra(&overlay)
 }
 
 fn cover_fill(
@@ -1928,7 +1945,9 @@ fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage,
 
 fn is_quality_landscape_art(decoded: &image::RgbaImage) -> bool {
     let (width, height) = decoded.dimensions();
-    width >= 960 && height >= 480 && width as f64 / height.max(1) as f64 >= 1.35
+    // AniList's full-resolution banners can be 1900x400. Height alone is not
+    // a quality test; retain wide banners and real episode stills, not posters.
+    width >= 640 && height >= 320 && width as f64 / height.max(1) as f64 >= 1.35
 }
 
 fn prepare_player_cover(
@@ -1942,7 +1961,11 @@ fn prepare_player_cover(
 
     let mut decoded_cover = None;
     let mut last_error = None;
-    for (source, source_kind) in sources {
+    let artwork_started = Instant::now();
+    for (source, source_kind) in sources.into_iter().take(8) {
+        if artwork_started.elapsed() >= Duration::from_secs(6) {
+            break;
+        }
         match read_cover_bytes(&source).and_then(|bytes| {
             image::load_from_memory(&bytes)
                 .map_err(|error| format!("Could not decode cover image: {}", error))
@@ -2022,7 +2045,7 @@ fn prepare_player_cover(
     fs::write(&cover_path, rgba_to_bgra(&resized))
         .map_err(|error| format!("Could not write player cover overlay: {}", error))?;
     let background_path = metadata_dir.join("current-cover-background.bgra");
-    fs::write(&background_path, rgba_to_bgra(&background))
+    fs::write(&background_path, loading_overlay_bgra(&background))
         .map_err(|error| format!("Could not write player cover background: {}", error))?;
     let cover_expected_bytes = resized.width() as u64 * resized.height() as u64 * 4;
     let cover_actual_bytes = fs::metadata(&cover_path)
@@ -5688,6 +5711,13 @@ fn start_stream(
     if let Err(error) = &stream_result {
         if !error.contains("superseded by a newer source") {
             remember_error(format!("{}: {}", title, error));
+            let ipc = manager()
+                .lock()
+                .ok()
+                .and_then(|guard| guard.player_ipc.clone());
+            if let Some(ipc) = ipc {
+                send_player_script_message(&ipc, "streamnyaa-playback-failed");
+            }
         } else {
             log_info(format!("Cancelled stale playback generation for {}", title));
         }
@@ -5831,10 +5861,12 @@ async fn get_local_playback_progress(
             .as_deref()
             .and_then(|ipc| get_player_property_bool(ipc, "paused-for-cache"))
             .unwrap_or(false);
-        let cache_buffering = player_ipc
+        let native_buffer_percent = player_ipc
             .as_deref()
             .and_then(|ipc| get_player_property_f64(ipc, "cache-buffering-state"))
-            .map(|value| value > 0.0 && value < 100.0)
+            .filter(|value| value.is_finite() && *value >= 0.0 && *value <= 100.0);
+        let cache_buffering = native_buffer_percent
+            .map(|value| value < 100.0)
             .unwrap_or(false);
         let demuxer_underrun = player_ipc
             .as_deref()
@@ -5855,8 +5887,16 @@ async fn get_local_playback_progress(
             })
             .filter(|value| value.is_finite() && *value > 0.0)
             .unwrap_or(PLAYER_BUFFER_TARGET_SECONDS);
-        let buffer_percent = buffered_seconds
-            .map(|seconds| (seconds / buffer_target_seconds * 100.0).clamp(0.0, 100.0));
+        let buffer_percent = if paused_for_cache || cache_buffering {
+            native_buffer_percent
+        } else {
+            None
+        }
+        .or_else(|| {
+            buffered_seconds
+                .map(|seconds| (seconds / buffer_target_seconds * 100.0).clamp(0.0, 100.0))
+        });
+        let deliberately_paused = paused.unwrap_or(false) && !paused_for_cache;
         let recovery_stage = player_ipc
             .as_deref()
             .and_then(|ipc| get_player_property_string(ipc, "user-data/streamnyaa/recovery_stage"))
@@ -5888,7 +5928,7 @@ async fn get_local_playback_progress(
                 let _download_advancing = previous
                     .map(|sample| downloaded_value > sample.downloaded_bytes)
                     .unwrap_or(downloaded_value > 0);
-                let last_advance_at = if !buffering || paused.unwrap_or(false) || advanced {
+                let last_advance_at = if !buffering || deliberately_paused || advanced {
                     now
                 } else {
                     previous.map(|sample| sample.last_advance_at).unwrap_or(now)
@@ -5900,7 +5940,7 @@ async fn get_local_playback_progress(
                     downloaded_bytes: downloaded_value,
                     last_advance_at,
                 });
-                let stalled_for = if buffering && !paused.unwrap_or(false) {
+                let stalled_for = if buffering && !deliberately_paused {
                     now.saturating_sub(last_advance_at) / 1000
                 } else {
                     0
@@ -6822,6 +6862,31 @@ mod tests {
             [upper_edge[0], upper_edge[1], upper_edge[2]],
             [30, 100, 210]
         );
+    }
+
+    #[test]
+    fn artwork_accepts_real_wide_banners_and_episode_stills() {
+        for (width, height) in [(1900, 400), (640, 360), (1280, 720)] {
+            assert!(is_quality_landscape_art(&image::RgbaImage::new(
+                width, height
+            )));
+        }
+        for (width, height) in [(900, 1350), (120, 90), (480, 270)] {
+            assert!(!is_quality_landscape_art(&image::RgbaImage::new(
+                width, height
+            )));
+        }
+    }
+
+    #[test]
+    fn bitmap_handoff_leaves_the_ass_title_region_visible() {
+        let input = image::RgbaImage::from_pixel(16, 100, image::Rgba([80, 100, 120, 255]));
+        let overlay = loading_overlay_bgra(&input);
+        assert_eq!(&overlay[..4], &[120, 100, 80, 255]);
+        let title_offset = (16 * 60) * 4;
+        assert_eq!(&overlay[title_offset..title_offset + 4], &[0, 0, 0, 0]);
+        let fade_offset = (16 * 40) * 4;
+        assert!(overlay[fade_offset] <= overlay[fade_offset + 3]);
     }
 
     #[test]
