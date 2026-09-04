@@ -1,4 +1,5 @@
 import { animeIdentity, animeTitleKey } from './animeIdentity';
+import { invokeDesktopData, type DesktopRequestOptions } from './desktopRequests';
 
 export type LocalPlaybackSource = {
   magnet: string;
@@ -136,6 +137,7 @@ export type DesktopSourceApiResponse = {
   data: unknown;
   fetched_at: number;
   cache_status?: 'memory' | 'disk' | 'network' | 'stale';
+  complete?: boolean;
   provider?: string;
   duration_ms?: number;
 };
@@ -284,7 +286,19 @@ export function subscribeDesktopWatchProgress(listener: () => void) {
 
 export type DesktopPlayerNextEpisodeEvent = {
   reason?: 'manual' | 'ended' | string;
+  request_id?: string;
 };
+
+export async function updateDesktopNextEpisodeStatus(requestId: string, status: 'preparing' | 'opening' | 'unavailable' | 'failed' | 'idle') {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) return;
+  return invoke('control_local_player', { request: { action: 'next_episode_status', key: requestId, text: status } });
+}
+
+export async function cancelDesktopNextEpisodeStartup() {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (invoke) await invoke('cancel_pending_next_episode');
+}
 
 export type DesktopPlayerAutoNextChangedEvent = {
   enabled?: boolean;
@@ -1572,10 +1586,10 @@ export async function listenDesktopPlayerReady(listener: (event: DesktopPlayerRe
   });
 }
 
-export async function fetchDesktopSourceApi(url: string): Promise<DesktopSourceApiResponse> {
+export async function fetchDesktopSourceApi(url: string, options: DesktopRequestOptions = {}): Promise<DesktopSourceApiResponse> {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (invoke) {
-    return invoke<DesktopSourceApiResponse>('fetch_desktop_source_api', { url });
+    return invokeDesktopData<DesktopSourceApiResponse>(invoke, 'fetch_desktop_source_api', { url }, { deadlineMs: 12_000, ...options });
   }
 
   const response = await fetch(url);
@@ -1585,11 +1599,11 @@ export async function fetchDesktopSourceApi(url: string): Promise<DesktopSourceA
   return { data: await response.json(), fetched_at: Date.now() };
 }
 
-export async function fetchDesktopMetadataApi(request: DesktopMetadataApiRequest) {
+export async function fetchDesktopMetadataApi(request: DesktopMetadataApiRequest, options: DesktopRequestOptions = {}) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
     throw new Error('Desktop metadata requests are only available inside the StreamNyaa desktop app.');
   }
 
-  return invoke<DesktopSourceApiResponse>('fetch_desktop_metadata_api', { request });
+  return invokeDesktopData<DesktopSourceApiResponse>(invoke, 'fetch_desktop_metadata_api', { request }, options);
 }

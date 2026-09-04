@@ -39,6 +39,16 @@ export function restoreDesktopQuerySnapshot(queryClient: QueryClient) {
       window.localStorage.removeItem(SNAPSHOT_KEY);
       return false;
     }
+    if (parsed.savedAt > Date.now() + 60_000 || !Array.isArray(parsed.state.queries)) return false;
+    parsed.state.queries = parsed.state.queries.filter(query => {
+      if (!isPublicDesktopQuery(query as Query) || query.state.status !== 'success') return false;
+      const data = query.state.data as any;
+      if (query.queryKey[0] === 'episodes' && data?.streamnyaa?.status === 'estimated') return false;
+      if (query.queryKey[0] === 'desktop-watch-sources' && !Array.isArray(data?.items)) return false;
+      if (query.queryKey[0] === 'desktop-watch-installments-graph' && !Array.isArray(data?.items)) return false;
+      return query.state.dataUpdatedAt <= Date.now() + 60_000;
+    });
+    parsed.state.mutations = [];
     hydrate(queryClient, parsed.state);
     return true;
   } catch {

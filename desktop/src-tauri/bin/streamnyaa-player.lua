@@ -171,6 +171,9 @@ local ui = {
   end_overlay = false,
   end_overlay_key = "",
   end_next_pending = false,
+  end_request_id = '',
+  end_status = 'idle',
+  end_focus = 'end_next_episode',
   end_next_pending_at = 0,
   end_next_request_token = 0,
   eof_handled_key = "",
@@ -2223,31 +2226,40 @@ function reset_end_overlay_state()
   ui.end_overlay = false
   ui.end_overlay_key = ""
   ui.end_next_pending = false
-  ui.end_next_pending_at = 0
-  ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
+  ui.end_request_id = ""
+  ui.end_status = "idle"
+  ui.end_focus = "end_next_episode"
   ui.eof_handled_key = ""
   ui.last_next_episode_request_key = ""
 end
 
-function hide_end_overlay()
+function emit_next_request(reason, request_id)
+  local request_file = tostring(script_options.next_episode_request_file or "")
+  if request_file ~= "" then
+    local file = io.open(request_file, "w")
+    if file then
+      file:write(reason .. "|" .. request_id .. "\n")
+      file:close()
+    end
+  end
+  safe_commandv("script-message", "streamnyaa-next-episode-request", reason, request_id)
+end
+
+function hide_end_overlay(cancel_pending)
+  if cancel_pending and ui.end_request_id ~= "" then emit_next_request("cancel", ui.end_request_id) end
   ui.end_overlay = false
   ui.end_overlay_key = ""
   ui.end_next_pending = false
-  ui.end_next_pending_at = 0
-  ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
+  ui.end_request_id = ""
+  ui.end_status = "idle"
 end
 
 function scaled(width, height)
-  return clamp(math.min(width / 1920, height / 1080), 0.72, 1.35)
+  return clamp(math.min(width / 1920, height / 1080), 0.72, 2.0)
 end
 
 function draw_gradient_top(ass, width, height, s)
-  local h = 92 * s
-  for i = 0, 9 do
-    local y1 = i * h / 10
-    local y2 = (i + 1) * h / 10
-    rect(ass, 0, y1, width, y2, C.black, 218 + i * 3)
-  end
+  -- Intentionally transparent. No full-width OSD backplate.
 end
 
 function request_external_subtitle_import()
@@ -2269,51 +2281,27 @@ function request_external_subtitle_import()
 end
 
 function request_next_episode(reason)
-  local next_reason = tostring(reason or "manual")
-  if next_reason ~= "ended" and next_reason ~= "manual" then
-    next_reason = "manual"
-  end
+  if ui.end_next_pending or ui.end_status == "unavailable" then return end
+  local next_reason = reason == "ended" and "ended" or "manual"
   local key = current_media_key()
   local request_key = next_reason .. ":" .. key
-  if next_reason == "ended" and request_key == ui.last_next_episode_request_key then
-    msg.info("[StreamNyaa Lua] Duplicate EOF next request ignored key=" .. request_key)
-    return
-  end
-  if next_reason == "ended" then
-    ui.last_next_episode_request_key = request_key
-  else
-    ui.last_next_episode_request_key = ""
-  end
-  local request_file = tostring(script_options.next_episode_request_file or "")
-  if request_file ~= "" then
-    local file, error_message = io.open(request_file, "w")
-    if file then
-      file:write(next_reason .. "|" .. tostring(mp.get_time()) .. "|" .. tostring(key) .. "\n")
-      file:close()
-      msg.info("[StreamNyaa Lua] Wrote next-episode request file reason=" .. next_reason)
-    else
-      msg.warn("Could not write next-episode request file: " .. tostring(error_message))
-    end
-  end
-  msg.info("[StreamNyaa Lua] Sending next episode request reason=" .. next_reason .. " key=" .. tostring(key))
-  if next_reason == "manual" or state.autoplay then
-    ui.end_next_pending = true
-    ui.end_next_pending_at = mp.get_time()
-    ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
-    local request_token = ui.end_next_request_token
-    mp.add_timeout(8, function()
-      if request_token ~= ui.end_next_request_token or not ui.end_overlay then return end
-      ui.end_next_pending = false
-      ui.end_next_pending_at = 0
-      settings_notice("The next episode is not ready yet. You can try again.")
-      draw(true, "end-next-timeout")
-    end)
-  end
-  safe_commandv("script-message", "streamnyaa-next-episode-request", next_reason)
-  if next_reason ~= "ended" or state.autoplay then
-    settings_notice(next_reason == "ended" and "Opening next episode..." or "Next episode requested")
-  end
+  if next_reason == "ended" and request_key == ui.last_next_episode_request_key then return end
+  ui.last_next_episode_request_key = next_reason == "ended" and request_key or ""
+  ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
+  ui.end_request_id = string.format("next-%d-%d", math.floor(mp.get_time() * 1000), ui.end_next_request_token)
+  ui.end_next_pending = next_reason == "manual" or state.autoplay
+  ui.end_status = ui.end_next_pending and "preparing" or "idle"
+  emit_next_request(next_reason, ui.end_request_id)
 end
+
+mp.register_script_message("streamnyaa-next-episode-status", function(request_id, status)
+  if tostring(request_id or "") ~= ui.end_request_id or ui.end_request_id == "" then return end
+  if status ~= "preparing" and status ~= "opening" and status ~= "unavailable" and status ~= "failed" and status ~= "idle" then return end
+  ui.end_status = status
+  ui.end_next_pending = status == "preparing" or status == "opening"
+  if status == "unavailable" then ui.end_focus = "end_replay" end
+  draw(true, "next-episode-status")
+end)
 
 function handle_episode_eof()
   local key = tostring(ui.eof_candidate_key or "")
@@ -2342,16 +2330,7 @@ function maybe_handle_episode_end()
 end
 
 function draw_gradient_bottom(ass, width, height, s)
-  local h = 164 * s
-  local start = height - h
-  for i = 0, 11 do
-    local t1 = i / 12
-    local t2 = (i + 1) / 12
-    local y1 = start + h * t1
-    local y2 = start + h * t2
-    local alpha = 246 - i * 3
-    rect(ass, 0, y1, width, y2, C.black, clamp(alpha, 210, 248))
-  end
+  -- Intentionally transparent. Never paint stepped horizontal bands over video.
 end
 
 function icon_point(cx, cy, size, x, y)
@@ -2480,16 +2459,15 @@ function icon_typography(ass, cx, cy, size, color)
 end
 
 function icon_gear(ass, cx, cy, size, color)
-  local t = math.max(2.1, size * 0.078)
-  icon_line(ass, cx, cy, size, 4.2, 7.2, 19.8, 7.2, color, t)
-  icon_line(ass, cx, cy, size, 4.2, 12, 19.8, 12, color, t)
-  icon_line(ass, cx, cy, size, 4.2, 16.8, 19.8, 16.8, color, t)
-  local k1x, k1y = icon_point(cx, cy, size, 9.0, 7.2)
-  local k2x, k2y = icon_point(cx, cy, size, 15.0, 12)
-  local k3x, k3y = icon_point(cx, cy, size, 11.5, 16.8)
-  circle(ass, k1x, k1y, size * 0.105, color, 0)
-  circle(ass, k2x, k2y, size * 0.105, color, 0)
-  circle(ass, k3x, k3y, size * 0.105, color, 0)
+  local points = {}
+  for index = 0, 31 do
+    local angle = (index * 11.25 - 90) * math.pi / 180
+    local radius = (index % 4 == 1 or index % 4 == 2) and 9.2 or 7.2
+    points[#points + 1] = {12 + math.cos(angle) * radius, 12 + math.sin(angle) * radius}
+  end
+  points[#points + 1] = points[1]
+  icon_polyline(ass, cx, cy, size, points, color, size * 0.065)
+  icon_ring(ass, cx, cy, size, 12, 12, 3.1, color, size * 0.065)
 end
 
 function icon_mini(ass, cx, cy, size, color)
@@ -2592,11 +2570,10 @@ end
 function button(ass, mouse, id, cx, cy, hit, icon_size, draw_icon, active)
   hit = math.max(44, tonumber(hit) or 44)
   local hot = inside(mouse, cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
-  if hot or active then
-    circle(ass, cx, cy + 1, hit * 0.43, C.black, 112)
-    circle(ass, cx, cy, hit * 0.40, active and C.accent or C.white, hot and 218 or 204)
-  end
-  draw_icon(ass, cx, cy, icon_size, active and C.accent or C.white)
+  -- A glyph-local dark edge keeps white controls visible on bright video without a bar.
+  draw_icon(ass, cx, cy + 0.6, icon_size + 2.4, C.black)
+  draw_icon(ass, cx, cy, icon_size, (active or hot) and C.accent or C.white)
+  if active then line(ass, cx - 6, cy + hit * 0.36, cx + 6, cy + hit * 0.36, 2, C.accent, 0) end
   add_region(id, cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
 end
 
@@ -2612,14 +2589,27 @@ function pill_button(ass, mouse, id, cx, cy, width, height, label, active, s)
   add_region(id, x1, y1, x2, y2)
 end
 
+function control_layout(width, height, s)
+  local margin, hit = math.max(18, 32 * s), math.max(44, 44 * s)
+  local step = hit + math.max(4, 10 * s)
+  local compact = width < 760 * s
+  local left = margin + hit / 2
+  return { margin = margin, hit = hit, step = step, left = left, right = width - margin - hit / 2,
+    compact = compact, y = height - math.max(30, 34 * s) }
+end
+
 function seek_bounds(width, height, s)
-  local y = height - 96 * s
-  return 44 * s, y, width - 44 * s, y
+  local layout = control_layout(width, height, s)
+  local y = layout.y - layout.hit / 2 - math.max(20, 24 * s)
+  return layout.margin, y, width - layout.margin, y
 end
 
 function volume_bounds(width, height, s)
-  local y = height - 42 * s
-  return 376 * s, y, math.min(526 * s, width * 0.42), y
+  local layout = control_layout(width, height, s)
+  local x = layout.left + layout.step * (layout.compact and 2 or 4) + layout.hit / 2 + 10 * s
+  local right_start = layout.right - layout.step * 4 - 40 * s
+  local end_x = math.min(x + 110 * s, right_start - 155 * s)
+  return x, layout.y, math.max(x, end_x), layout.y
 end
 
 function slider_hit_half_height(s)
@@ -2754,37 +2744,35 @@ function draw_timeline(ass, width, height, mouse, s)
 end
 
 function draw_controls(ass, width, height, mouse, s)
-  local y = height - 42 * s
-  local left = 54 * s
-  local right = width - 62 * s
-  local hit = 48 * s
-  local icon = 30 * s
-  local skip_icon = 31 * s
-  local play_icon = 37 * s
-
-  button(ass, mouse, "play", left, y, 56 * s, play_icon, icon_play_pause)
-  button(ass, mouse, "back", left + 82 * s, y, hit, skip_icon, function(a, x, yy, size, color) icon_skip(a, x, yy, size, color, false) end)
-  button(ass, mouse, "forward", left + 158 * s, y, hit, skip_icon, function(a, x, yy, size, color) icon_skip(a, x, yy, size, color, true) end)
-  button(ass, mouse, "next_episode", left + 226 * s, y, hit, icon, icon_next_episode)
-  button(ass, mouse, "mute", left + 294 * s, y, hit, icon, icon_volume)
-
+  local layout = control_layout(width, height, s)
+  local y, x, hit, step = layout.y, layout.left, layout.hit, layout.step
+  local icon = math.max(20, 26 * s)
+  button(ass, mouse, "play", x, y, hit, icon * 1.12, icon_play_pause)
+  x = x + step
+  if not layout.compact then
+    button(ass, mouse, "back", x, y, hit, icon, function(a, xx, yy, size, color) icon_skip(a, xx, yy, size, color, false) end)
+    x = x + step
+    button(ass, mouse, "forward", x, y, hit, icon, function(a, xx, yy, size, color) icon_skip(a, xx, yy, size, color, true) end)
+    x = x + step
+  end
+  button(ass, mouse, "next_episode", x, y, hit, icon, icon_next_episode)
+  x = x + step
+  button(ass, mouse, "mute", x, y, hit, icon, icon_volume)
   local vx1, vy, vx2 = volume_bounds(width, height, s)
-  if vx2 > vx1 + 68 * s then
+  if vx2 > vx1 + 40 * s then
     local volume_dragging = ui.dragging == "volume"
     local vr = volume_dragging and (current_drag_ratio() or 0) or clamp((state.volume or 0) / 130, 0, 1)
-    local vh = volume_dragging and 6 * s or 4 * s
-    rounded_rect(ass, vx1, vy - vh / 2, vx2, vy + vh / 2, vh / 2, C.track, 184)
-    rounded_rect(ass, vx1, vy - vh / 2, vx1 + (vx2 - vx1) * vr, vy + vh / 2, vh / 2, C.accent, 0)
-    circle(ass, vx1 + (vx2 - vx1) * vr, vy, volume_dragging and 9.5 * s or 6 * s, C.accent, 0)
-    local volume_hit_y = slider_hit_half_height(s)
-    add_region("volume", vx1 - 10 * s, vy - volume_hit_y, vx2 + 10 * s, vy + volume_hit_y)
+    rounded_rect(ass, vx1, vy - 2 * s, vx2, vy + 2 * s, 2 * s, C.track, 150)
+    rounded_rect(ass, vx1, vy - 2 * s, vx1 + (vx2 - vx1) * vr, vy + 2 * s, 2 * s, C.accent, 0)
+    circle(ass, vx1 + (vx2 - vx1) * vr, vy, 5 * s, C.accent, 0)
+    add_region("volume", vx1 - 8 * s, vy - 22, vx2 + 8 * s, vy + 22)
   end
-
-  button(ass, mouse, "subs", right - 356 * s, y, hit, icon, icon_cc, state.sub_visible and state.sid ~= "no")
-  button(ass, mouse, "settings", right - 286 * s, y, hit, icon, icon_gear, ui.settings_open)
-  pill_button(ass, mouse, "speed", right - 196 * s, y, 92 * s, 40 * s, speed_label(), ui.settings_open and ui.submenu == "speed", s)
-  button(ass, mouse, "mini", right - 94 * s, y, hit, icon, icon_mini, state.mini_player)
-  button(ass, mouse, "fullscreen", right - 24 * s, y, hit, icon, icon_fullscreen, state.fullscreen)
+  local right = layout.right
+  button(ass, mouse, "fullscreen", right, y, hit, icon, icon_fullscreen, state.fullscreen)
+  button(ass, mouse, "mini", right - step, y, hit, icon, icon_mini, state.mini_player)
+  pill_button(ass, mouse, "speed", right - step * 2 - 5 * s, y, step + 10 * s, hit, speed_label(), ui.settings_open and ui.submenu == "speed", s)
+  button(ass, mouse, "settings", right - step * 3 - 10 * s, y, hit, icon, icon_gear, ui.settings_open)
+  button(ass, mouse, "subs", right - step * 4 - 10 * s, y, hit, icon, icon_cc, state.sub_visible and state.sid ~= "no")
 end
 
 function manual_skip_range(kind)
@@ -2930,42 +2918,44 @@ function draw_end_action(ass, mouse, id, x1, y1, x2, y2, label, primary, s, disa
   if not disabled then add_region(id, x1, y1, x2, y2) end
 end
 
+function end_overlay_layout(width, height, s)
+  local scale = math.min(s, (width - 32) / 520, (height - 32) / 246)
+  return { x = (width - 520 * scale) / 2, y = (height - 246 * scale) / 2, w = 520 * scale, h = 246 * scale, s = scale }
+end
+
 function draw_end_overlay(ass, width, height, mouse, s)
   if not ui.end_overlay then return end
-  local panel_w = math.min(width - 88 * s, 760 * s)
-  local panel_h = 186 * s
-  local x1 = (width - panel_w) / 2
-  local y1 = height - panel_h - 116 * s
-  local x2 = x1 + panel_w
-  local y2 = y1 + panel_h
-
-  rect(ass, 0, 0, width, height, C.black, 176)
-  rounded_rect(ass, x1, y1, x2, y2, 10 * s, C.panel, 8)
-  rounded_outline(ass, x1, y1, x2, y2, 10 * s, 1.0 * s, C.white, 226)
-  rounded_rect(ass, x1, y1 + 24 * s, x1 + 3 * s, y2 - 24 * s, 1.5 * s, C.accent, 0)
-  local prompt = ui.end_next_pending and "Preparing next episode" or "Episode complete"
-  local detail = ui.end_next_pending
-    and "Preparing the next aired episode without leaving the player."
-    or "Continue watching, or replay this episode from the beginning."
-  draw_text(ass, x1 + 28 * s, y1 + 43 * s, 4, font_px(s, 24, 21, 28), C.white, 0, prompt, true, "Segoe UI Semibold")
-  draw_text(ass, x1 + 28 * s, y1 + 72 * s, 4, font_px(s, 13, 12, 15), C.secondary, 10, detail, false, "Segoe UI")
-  local status_x = x2 - 30 * s
-  circle(ass, status_x - 105 * s, y1 + 38 * s, 3 * s, state.autoplay and C.accent or C.muted, 0)
-  draw_text(ass, status_x, y1 + 38 * s, 6, font_px(s, 11, 10, 13), state.autoplay and C.white or C.secondary, 0, state.autoplay and "Autoplay on" or "Autoplay off", true, "Segoe UI Semibold")
-
-  local gap = 12 * s
-  local button_h = 44 * s
-  local next_w = 210 * s
-  local replay_w = 118 * s
-  local close_w = 92 * s
-  local bx = x1 + 28 * s
-  local by = y2 - 60 * s
-  local next_label = ui.end_next_pending and "Preparing…" or "Next episode"
-  draw_end_action(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, next_label, true, s, ui.end_next_pending, "next")
-  bx = bx + next_w + gap
-  draw_end_action(ass, mouse, "end_replay", bx, by, bx + replay_w, by + button_h, "Replay", false, s, false, "replay")
-  bx = bx + replay_w + gap
-  draw_end_action(ass, mouse, "end_close", bx, by, bx + close_w, by + button_h, "Close", false, s, false)
+  local p = end_overlay_layout(width, height, s)
+  s = p.s
+  local x, y, w, h = p.x, p.y, p.w, p.h
+  rect(ass, 0, 0, width, height, C.black, 180)
+  rounded_rect(ass, x, y, x + w, y + h, 14 * s, C.panel, 0)
+  rounded_outline(ass, x, y, x + w, y + h, 14 * s, s, C.white, 220)
+  local unavailable = ui.end_status == "unavailable"
+  draw_text(ass, x + 28 * s, y + 36 * s, 4, 25 * s, C.white, 0, unavailable and "You're caught up" or "Episode complete", true, "Segoe UI Semibold")
+  local title = tostring(player_meta.animeTitle ~= "" and player_meta.animeTitle or state.title or ""):gsub("[\r\n]", " ")
+  draw_text(ass, x + 28 * s, y + 72 * s, 4, 16 * s, C.white, 8, truncate_to_width(title, w - 56 * s, 16 * s, 0), true, "Segoe UI Semibold")
+  local detail = unavailable and "No next aired episode yet."
+    or ui.end_status == "opening" and "Opening the next episode…"
+    or ui.end_status == "preparing" and "Preparing the next episode…"
+    or ui.end_status == "failed" and "Couldn't prepare the next episode. Try again."
+    or "Continue with the next episode, or watch this one again."
+  draw_text(ass, x + 28 * s, y + 103 * s, 4, 13 * s, C.secondary, 0, detail, false, "Segoe UI")
+  draw_text(ass, x + 28 * s, y + 130 * s, 4, 12 * s, C.secondary, 0, state.autoplay and "Autoplay on" or "Autoplay off", false, "Segoe UI")
+  local bx, by = x + 28 * s, y + 168 * s
+  if not unavailable then
+    local label = ui.end_status == "opening" and "Opening…" or ui.end_next_pending and "Preparing…" or ui.end_status == "failed" and "Try again" or "Next episode"
+    draw_end_action(ass, mouse, "end_next_episode", bx, by, bx + 196 * s, by + 48 * s, label, true, s, ui.end_next_pending, "next")
+    bx = bx + 208 * s
+  end
+  draw_end_action(ass, mouse, "end_replay", bx, by, bx + 118 * s, by + 48 * s, "Replay", unavailable, s, false, "replay")
+  bx = bx + 130 * s
+  draw_end_action(ass, mouse, "end_close", bx, by, bx + 126 * s, by + 48 * s, "Close", false, s, false)
+  for _, region in ipairs(regions) do
+    if region.id == ui.end_focus then
+      rounded_outline(ass, region.x1 - 3 * s, region.y1 - 3 * s, region.x2 + 3 * s, region.y2 + 3 * s, 10 * s, 1.5 * s, C.white, 32)
+    end
+  end
 end
 
 function loading_status_text()
@@ -3706,8 +3696,7 @@ function draw(immediate, reason)
     return
   end
 
-  draw_gradient_top(ass, width, height, s)
-  draw_gradient_bottom(ass, width, height, s)
+  -- Top and bottom backgrounds stay completely transparent.
   draw_title_area(ass, width, height, s)
   draw_center_play(ass, width, height, mouse, s)
   draw_settings_panel(ass, width, height, mouse, s)
@@ -4009,7 +3998,7 @@ function activate_region(region, mouse)
   if id == "end_next_episode" then
     request_next_episode("manual")
   elseif id == "end_replay" then
-    hide_end_overlay()
+    hide_end_overlay(true)
     ui.eof_handled_key = ""
     ui.last_next_episode_request_key = ""
     note_explicit_seek(0)
@@ -4017,7 +4006,7 @@ function activate_region(region, mouse)
     safe_set_property_bool("pause", false)
     settings_notice("Replaying episode")
   elseif id == "end_close" then
-    hide_end_overlay()
+    hide_end_overlay(true)
     settings_notice("Episode finished")
   elseif id == "recovery_retry" then
     if not request_same_source_recovery("manual") then
@@ -4036,7 +4025,7 @@ function activate_region(region, mouse)
     ui.startup_stream_actions_visible = false
     settings_notice("Requesting a same-episode backup source...")
   elseif id == "play" or id == "center_play" or id == "center_toggle" then
-    if ui.end_overlay then hide_end_overlay() end
+    if ui.end_overlay then hide_end_overlay(true) end
     mp.commandv("cycle", "pause")
   elseif id == "back" then
     seek_relative(-10)
@@ -4392,7 +4381,7 @@ function close_menu_or_overlay()
   clear_drag_preview()
   ui.mouse_down_region = nil
   if ui.end_overlay then
-    hide_end_overlay()
+    hide_end_overlay(true)
     draw(true, "escape-end-overlay")
     return
   end
@@ -4635,10 +4624,19 @@ function keyboard_action(reason, fn)
 end
 
 function keyboard_toggle_pause(reason)
+  if ui.end_overlay then activate_region({ id = ui.end_focus }, nil); draw(true, reason); return end
   keyboard_action(reason, function() safe_commandv("cycle", "pause") end)
 end
 
 function keyboard_seek(seconds, reason)
+  if ui.end_overlay then
+    local choices = ui.end_status == "unavailable" and {"end_replay", "end_close"} or ui.end_next_pending and {"end_replay", "end_close"} or {"end_next_episode", "end_replay", "end_close"}
+    local current = 1
+    for i, id in ipairs(choices) do if id == ui.end_focus then current = i end end
+    ui.end_focus = choices[((current - 1 + (seconds > 0 and 1 or -1)) % #choices) + 1]
+    draw(true, reason)
+    return
+  end
   keyboard_action(reason, function() seek_relative(seconds) end)
 end
 
@@ -4665,6 +4663,12 @@ function keyboard_toggle_mute(reason)
   end)
 end
 
+bind_key("TAB", "streamnyaa-end-focus", function()
+  if ui.end_overlay then keyboard_seek(1, "end-focus") end
+end)
+bind_key("ENTER", "streamnyaa-end-activate", function()
+  if ui.end_overlay then activate_region({ id = ui.end_focus }, nil); draw(true, "end-activate") end
+end)
 bind_key("SPACE", "streamnyaa-space", function() keyboard_toggle_pause("key-space") end)
 bind_key("k", "streamnyaa-k", function() keyboard_toggle_pause("key-k") end)
 bind_key("K", "streamnyaa-k-shift", function() keyboard_toggle_pause("key-k-shift") end)

@@ -201,6 +201,48 @@ local ok, error_message = pcall(function()
   check(update_cover_overlay(true, 1280, 720, 1) ~= nil, "A temporary video-output error must not permanently remove artwork")
   clear_cover_overlay()
   os.remove(fixture)
+
+  reset()
+  ui.end_overlay, state.autoplay = true, true
+  request_next_episode("ended")
+  local request_id = ui.end_request_id
+  local sent = #commands
+  request_next_episode("manual")
+  check(#commands == sent, "Duplicate Next must not dispatch another request")
+  messages["streamnyaa-next-episode-status"]("old-request", "failed")
+  check(ui.end_next_pending, "Stale request status must not modify the current prompt")
+  messages["streamnyaa-next-episode-status"](request_id, "opening")
+  check(ui.end_status == "opening" and ui.end_next_pending, "Prompt must reflect actual opening status")
+  messages["streamnyaa-next-episode-status"](request_id, "failed")
+  check(not ui.end_next_pending and ui.end_status == "failed", "A failed preparation enables retry")
+  request_next_episode("manual")
+  local retry_id = ui.end_request_id
+  check(retry_id ~= request_id, "Retry needs its own request identity")
+  hide_end_overlay(true)
+  check(commands[#commands][3] == "cancel" and commands[#commands][4] == retry_id, "Dismiss must cancel the exact pending request")
+  messages["streamnyaa-next-episode-status"](retry_id, "opening")
+  check(not ui.end_overlay and not ui.end_next_pending, "Late status cannot resurrect a dismissed prompt")
+  ui.end_overlay, ui.end_request_id = true, "final-episode"
+  messages["streamnyaa-next-episode-status"]("final-episode", "unavailable")
+  reset_regions()
+  local ass = require("mp.assdraw").ass_new()
+  draw_end_overlay(ass, 1280, 720, nil, 1)
+  check(ass.text:find("You're caught up", 1, true) ~= nil, "Final episode must show caught-up state")
+  check(ass.text:find("Next episode", 1, true) == nil, "Final episode must not show an unusable Next action")
+  ui.end_status, ui.end_focus = "idle", "end_next_episode"
+  for _, viewport in ipairs({{640,360,1}, {1280,720,1}, {1920,1080,2}, {3840,2160,2}}) do
+    local p = end_overlay_layout(viewport[1], viewport[2], viewport[3])
+    check(p.x >= 16 and p.y >= 16 and p.x + p.w <= viewport[1] - 16 and p.y + p.h <= viewport[2] - 16, "Completion panel must fit the viewport")
+    check(math.abs(p.x * 2 + p.w - viewport[1]) < 0.1 and math.abs(p.y * 2 + p.h - viewport[2]) < 0.1, "Completion panel must be centered")
+  end
+  ass = require("mp.assdraw").ass_new()
+  draw_gradient_top(ass, 1280, 720, 1)
+  draw_gradient_bottom(ass, 1280, 720, 1)
+  check(ass.text == "", "Top and bottom control backgrounds must be fully transparent")
+  keyboard_seek(1, "test-focus")
+  check(ui.end_focus == "end_replay", "Arrow navigation must move between completion actions")
+  keyboard_toggle_pause("test-activate")
+  check(not ui.end_overlay, "Space must activate the focused replay action")
 end)
 
 if ok then

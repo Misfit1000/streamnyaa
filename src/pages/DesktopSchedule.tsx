@@ -5,7 +5,7 @@ import { Bell, CalendarDays, ChevronRight, Heart, History, Loader2, TriangleAler
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
-import { fetchCompleteSchedule } from '../api/jikan';
+import { desktopWeekQuery } from '../lib/desktopScheduleQuery';
 import { animeIdentity } from '../lib/animeIdentity';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 import {
@@ -270,48 +270,9 @@ export default function DesktopSchedule() {
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time', []);
   const active = days[selectedDay];
   const hasWatchHistory = watchedSeries.length > 0;
-  const activeScheduleCacheKey = useMemo(
-    () => desktopScheduleCacheKey(active.start, active.end, nsfwMode),
-    [active.end, active.start, nsfwMode],
-  );
-  const savedSchedule = useMemo(
-    () => readDesktopSchedule(activeScheduleCacheKey),
-    [activeScheduleCacheKey],
-  );
-  const scheduleQuery = useQuery({
-    queryKey: ['desktop-schedule', active.start, active.end, nsfwMode],
-    queryFn: async () => {
-      const response = await fetchCompleteSchedule(active.start, active.end, 4);
-      writeDesktopSchedule(activeScheduleCacheKey, response);
-      return response;
-    },
-    staleTime: 1000 * 60 * 10,
-    retry: 2,
-    initialData: savedSchedule?.data,
-    initialDataUpdatedAt: savedSchedule?.savedAt,
-  });
-  const items = scheduleQuery.data?.data || [];
-  const watchedWeekCacheKey = useMemo(
-    () => desktopScheduleCacheKey(days[0].start, days[days.length - 1].end, nsfwMode),
-    [days, nsfwMode],
-  );
-  const savedWatchedWeek = useMemo(
-    () => readDesktopSchedule(watchedWeekCacheKey),
-    [watchedWeekCacheKey],
-  );
-  const watchedWeekQuery = useQuery({
-    queryKey: ['desktop-schedule-watched-week', days[0].start, days[days.length - 1].end, nsfwMode],
-    queryFn: async () => {
-      const response = await fetchCompleteSchedule(days[0].start, days[days.length - 1].end);
-      writeDesktopSchedule(watchedWeekCacheKey, response);
-      return response;
-    },
-    staleTime: 1000 * 60 * 10,
-    retry: 2,
-    enabled: hasWatchHistory,
-    initialData: hasWatchHistory ? savedWatchedWeek?.data : undefined,
-    initialDataUpdatedAt: hasWatchHistory ? savedWatchedWeek?.savedAt : undefined,
-  });
+  const scheduleQuery = useQuery(desktopWeekQuery());
+  const items = (scheduleQuery.data?.data || []).filter((item: any) => Number(item.airingAt) >= active.start && Number(item.airingAt) <= active.end);
+  const watchedWeekQuery = scheduleQuery;
   const watchedWeekItems = useMemo(
     () => (watchedWeekQuery.data?.data || [])
       .filter((anime: any) => watchedSeries.some((record) => desktopWatchedSeriesMatchesAnime(record, anime)))

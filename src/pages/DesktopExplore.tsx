@@ -110,64 +110,56 @@ type ExploreCatalogArgs = {
   sort: string;
 };
 
-async function loadPrimaryExploreCatalog(args: ExploreCatalogArgs) {
+async function loadPrimaryExploreCatalog(args: ExploreCatalogArgs, options: { signal?: AbortSignal } = {}) {
   const { mode, query, year, format, genre, status, sort } = args;
   const currentSeason = getCurrentAnimeSeason();
   const type = providerFormat(format);
   const providerGenre = genre === 'Any' ? '' : genre;
   const providerSort = sort === 'best' ? '' : sort;
   const state = providerStatus(status);
-  if (query) return searchAnime(query, 1, type, '', providerGenre, providerSort, state);
-  if (mode === 'new') return fetchRecentEpisodesWithLimit(48);
-  if (mode === 'airing') return fetchTopAiring();
-  if (mode === 'popular') return fetchPopularAnime();
-  if (mode === 'upcoming') return fetchUpcomingAnime();
-  if (mode === 'seasonal') return fetchAnimeSeason(currentSeason.season, currentSeason.year, 1);
-  if (mode === 'year') return fetchTopAnimeByYear(year, 1);
-  if (mode === 'top') return searchAnime('', 1, type, '', providerGenre, 'score', state);
-  return searchAnime('', 1, type, '', providerGenre, 'popular', state || 'airing');
+  if (query) return searchAnime(query, 1, type, '', providerGenre, providerSort, state, options);
+  if (mode === 'new') return fetchRecentEpisodesWithLimit(48, options);
+  if (mode === 'airing') return fetchTopAiring(options);
+  if (mode === 'popular') return fetchPopularAnime(options);
+  if (mode === 'upcoming') return fetchUpcomingAnime(options);
+  if (mode === 'seasonal') return fetchAnimeSeason(currentSeason.season, currentSeason.year, 1, options);
+  if (mode === 'year') return fetchTopAnimeByYear(year, 1, options);
+  if (mode === 'top') return searchAnime('', 1, type, '', providerGenre, 'score', state, options);
+  return searchAnime('', 1, type, '', providerGenre, 'popular', state || 'airing', options);
 }
 
-function loadExploreCatalog(args: ExploreCatalogArgs) {
+export function loadExploreCatalog(args: ExploreCatalogArgs, signal?: AbortSignal) {
   const currentSeason = getCurrentAnimeSeason();
-  const allowEmpty = Boolean(args.query);
   return new Promise<any>((resolve, reject) => {
-    let settled = false;
-    let secondaryStarted = false;
-    let failures = 0;
+    const primary = new AbortController(), secondary = new AbortController();
+    let settled = false, secondaryStarted = false;
     const errors: unknown[] = [];
-    const accept = (value: any) => {
+    const cleanup = () => { clearTimeout(timer); primary.abort(); secondary.abort(); signal?.removeEventListener('abort', cancel); };
+    const finish = (error?: unknown, data?: any) => {
       if (settled) return;
-      if (!Array.isArray(value?.data) || (!allowEmpty && !value.data.length)) {
-        fail(new Error('The anime catalog returned no usable entries.'));
-        return;
-      }
-      settled = true;
-      resolve(value);
+      settled = true; cleanup();
+      if (error) reject(error); else resolve(data);
     };
+    const cancel = () => finish(new DOMException('Cancelled', 'AbortError'));
+    const accept = (data: any) => Array.isArray(data?.data) ? finish(undefined, data) : fail(new Error('Invalid catalog response.'));
     const fail = (error: unknown) => {
       if (settled) return;
-      failures += 1;
       errors.push(error);
+      if ((error as { code?: string })?.code === 'rate-limited') { finish(error); return; }
       if (!secondaryStarted) startSecondary();
-      else if (failures >= 2) reject(errors[0] || error);
+      else if (errors.length >= 2) finish(errors[0]);
     };
     const startSecondary = () => {
       if (secondaryStarted || settled) return;
       secondaryStarted = true;
-      void fetchJikanExploreCatalog({
-        mode: args.mode,
-        query: args.query,
-        year: args.year,
-        season: currentSeason.season,
-        type: providerFormat(args.format),
-        genre: args.genre === 'Any' ? '' : args.genre,
-        status: providerStatus(args.status),
-      }).then(accept, fail);
+      void fetchJikanExploreCatalog({ mode: args.mode, query: args.query, year: args.year, season: currentSeason.season,
+        type: providerFormat(args.format), genre: args.genre === 'Any' ? '' : args.genre, status: providerStatus(args.status),
+      }, { signal: secondary.signal }).then(accept, fail);
     };
-
-    void loadPrimaryExploreCatalog(args).then(accept, fail);
-    window.setTimeout(startSecondary, 850);
+    const timer = window.setTimeout(startSecondary, 1500);
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) { cancel(); return; }
+    void loadPrimaryExploreCatalog(args, { signal: primary.signal }).then(accept, fail);
   });
 }
 
@@ -332,8 +324,8 @@ export default function DesktopExplore() {
 
   const catalogQuery = useQuery({
     queryKey: ['desktop-explore-v2', mode, query, year, format, genre, status, sort],
-    queryFn: async () => {
-      const response = await loadExploreCatalog({ mode, query, year, format, genre, status, sort });
+    queryFn: async ({ signal }) => {
+      const response = await loadExploreCatalog({ mode, query, year, format, genre, status, sort }, signal);
       writeDesktopExploreCatalog(catalogCacheKey, response);
       return response;
     },
@@ -341,7 +333,7 @@ export default function DesktopExplore() {
     initialDataUpdatedAt: () => readDesktopExploreCatalog(catalogCacheKey)?.savedAt,
     staleTime: query ? 1000 * 60 * 10 : 1000 * 60 * 25,
     gcTime: 1000 * 60 * 90,
-    retry: (count, error) => count < 2 && !/invalid|cancel/i.test(String((error as Error)?.message || '')),
+    retry: false,
     retryDelay: (attempt) => 250 + attempt * 500,
     refetchOnReconnect: true,
   });

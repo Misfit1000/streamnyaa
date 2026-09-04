@@ -1,3 +1,4 @@
+import { isDesktopApp } from './desktop';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeSeason } from '../api/jikan';
@@ -100,8 +101,8 @@ export function useSeasonalAnimeQuery({
   const savedCatalog = readDesktopCatalog(cacheKey);
   const query = useQuery({
     queryKey: [queryKeyPrefix, currentSeason.season, currentSeason.year, limit],
-    queryFn: async () => {
-      const response = await fetchAnimeSeason(currentSeason.season, currentSeason.year);
+    queryFn: async ({ signal }) => {
+      const response = await fetchAnimeSeason(currentSeason.season, currentSeason.year, 1, { signal, priority: 'background' });
       const normalized = {
         ...response,
         data: uniqueSeasonalAnime(response?.data || []).slice(0, limit),
@@ -109,7 +110,7 @@ export function useSeasonalAnimeQuery({
       writeDesktopCatalog(cacheKey, normalized);
       return normalized;
     },
-    retry,
+    retry: isDesktopApp() ? false : retry,
     staleTime,
     refetchOnWindowFocus: false,
     initialData: savedCatalog?.data,

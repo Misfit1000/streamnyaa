@@ -57,7 +57,10 @@ function loadPersistentSourceCache() {
     const parsed = JSON.parse(window.localStorage.getItem(SEARCH_CACHE_STORAGE_KEY) || '[]') as Array<[string, SearchCacheEntry]>;
     const now = Date.now();
     parsed.forEach(([key, entry]) => {
-      if (!key || !Array.isArray(entry?.items) || now - Number(entry.savedAt || 0) > SEARCH_CACHE_MAX_STALE) return;
+      if (typeof key !== 'string' || !key || !Array.isArray(entry?.items) || !Number.isFinite(entry.savedAt)
+        || entry.savedAt > now + 60_000 || now - entry.savedAt > SEARCH_CACHE_MAX_STALE
+        || !entry.items.every(item => typeof item?.title === 'string' && typeof item?.link === 'string'
+          && Boolean(normalizeInfoHash(item.infoHash)) && Number.isFinite(item.rawSeeders) && Number.isFinite(item.rawSize))) return;
       inMemorySearchCache.set(key, entry);
     });
   } catch {
@@ -154,8 +157,9 @@ export async function searchNyaa(
   category: string = '1_2',
   filter: string = '0',
   page: string = '1',
-  options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal } = {}
+options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal; deadlineMs?: number; priority?: 'foreground' | 'prefetch' | 'background' } = {}
 ): Promise<NyaaItem[]> {
+  if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
   const desktopRuntime = isDesktopApp();
   if (desktopRuntime) loadPersistentSourceCache();
   const normalizedQuery = query.replace(/\s+/g, ' ').trim();
@@ -167,7 +171,8 @@ export async function searchNyaa(
   }
   const staleCached = desktopRuntime && cached && Date.now() - cached.savedAt < SEARCH_CACHE_MAX_STALE ? cached.items : null;
 
-  const existingRequest = inFlightSearches.get(cacheKey);
+  if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
+  const existingRequest = desktopRuntime ? undefined : inFlightSearches.get(cacheKey);
   if (existingRequest) return searchResultUnlessAborted(existingRequest, options.signal);
 
   const request = (async () => {
@@ -184,16 +189,19 @@ export async function searchNyaa(
     let data: unknown;
     let sourceCacheStatus = '';
     let sourceQueryCount = 1;
+    let complete = true;
     let sourceFetchedAt = Date.now();
 
     if (desktop) {
       try {
-        const desktopResponse = await fetchDesktopSourceApi(url.toString());
+const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
         data = desktopResponse.data;
+        complete = desktopResponse.complete !== false;
         sourceFetchedAt = desktopResponse.fetched_at || Date.now();
         sourceCacheStatus = String(desktopResponse.cache_status || 'NETWORK').toUpperCase();
       } catch (error) {
-        if (staleCached) return staleCached;
+        if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
+        if (staleCached) return Object.assign([...staleCached], { complete: false });
         throw desktopDataError('nyaa', error);
       }
     } else {
@@ -252,17 +260,21 @@ export async function searchNyaa(
       });
     }
 
-    inMemorySearchCache.set(cacheKey, { items: results, savedAt: Date.now() });
+    if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
+    // Never erase a verified source set because a refresh returns an empty lane.
+    if (!results.length && staleCached?.length) return staleCached;
+    if (complete) inMemorySearchCache.set(cacheKey, { items: results, savedAt: Date.now() });
     while (inMemorySearchCache.size > SEARCH_CACHE_MAX_ENTRIES) {
       const oldestKey = inMemorySearchCache.keys().next().value;
       if (!oldestKey) break;
       inMemorySearchCache.delete(oldestKey);
     }
     if (desktop) schedulePersistSourceCache();
-    return results;
+    return Object.assign(results, { complete });
   })();
 
   const handledRequest = request.catch((error) => {
+    if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
     if (staleCached) return staleCached;
     if (!desktopRuntime) {
       console.error('Source search failed:', String((error as Error)?.message || 'unknown error').slice(0, 160));
@@ -270,7 +282,7 @@ export async function searchNyaa(
     }
     throw desktopDataError('nyaa', error);
   });
-  inFlightSearches.set(cacheKey, handledRequest);
+  if (!desktopRuntime) inFlightSearches.set(cacheKey, handledRequest);
   const clearInFlight = () => {
     if (inFlightSearches.get(cacheKey) === handledRequest) inFlightSearches.delete(cacheKey);
   };

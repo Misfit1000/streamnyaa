@@ -10,7 +10,7 @@ afterEach(() => {
 describe('desktop source request coordination', () => {
   it('rejects an aborted request instead of reporting a valid empty result', async () => {
     let resolveBridge: ((value: unknown) => void) | undefined;
-    const invoke = vi.fn(() => new Promise((resolve) => {
+    const invoke = vi.fn((_command?: string, _args?: unknown) => new Promise((resolve) => {
       resolveBridge = resolve;
     }));
     window.__STREAMNYAA_DESKTOP__ = true;
@@ -25,7 +25,7 @@ describe('desktop source request coordination', () => {
     controller.abort();
 
     await expect(request).rejects.toMatchObject({ provider: 'nyaa', code: 'cancelled' });
-    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls.filter(([command]) => command === 'fetch_desktop_source_api')).toHaveLength(0);
     resolveBridge?.({ data: [], fetched_at: Date.now() });
   });
 

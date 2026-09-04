@@ -11,6 +11,7 @@ import { desktopPageLoaders } from './lib/desktopRoutePreload';
 import { installDesktopQuerySnapshot, restoreDesktopQuerySnapshot } from './lib/desktopQuerySnapshot';
 import { completeDesktopBoot, updateDesktopBoot } from './lib/desktopBoot';
 import { redactDesktopDiagnostic } from './lib/desktopSecurity';
+import { installDesktopAutoRecovery } from './lib/desktopAutoRecovery';
 
 const DesktopHome = lazy(desktopPageLoaders.home);
 const DesktopWatch = lazy(desktopPageLoaders.watch);
@@ -127,16 +128,7 @@ function DesktopBootBridge() {
 }
 
 function DesktopMetadataRefreshBridge() {
-  useEffect(() => {
-    const handleRefresh = () => {
-      void queryClient.invalidateQueries({
-        predicate: (query) => ['anime', 'episodes', 'desktop-watch-installments-graph'].includes(String(query.queryKey[0] || '')),
-        refetchType: 'active',
-      });
-    };
-    window.addEventListener('streamnyaa:metadata-refreshed', handleRefresh);
-    return () => window.removeEventListener('streamnyaa:metadata-refreshed', handleRefresh);
-  }, []);
+  useEffect(() => installDesktopAutoRecovery(queryClient), []);
   return null;
 }
 

@@ -209,7 +209,7 @@ export default function DesktopSources() {
     },
     enabled: query.trim().length >= 2,
     staleTime: 1000 * 60 * 3,
-    retry: 1,
+    retry: false,
   });
 
   const results = useMemo(() => {

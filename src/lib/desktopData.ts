@@ -10,6 +10,7 @@ export type DesktopDataErrorDetails = {
   message: string;
   retryable: boolean;
   statusCode?: number;
+  retryAfterMs?: number;
 };
 
 export type DesktopDataResult<T> = {
@@ -21,6 +22,8 @@ export type DesktopDataResult<T> = {
   fetchedAt: number;
   durationMs?: number;
   error?: DesktopDataErrorDetails;
+  complete?: boolean;
+  refreshing?: boolean;
 };
 
 export class DesktopDataError extends Error {
@@ -28,6 +31,7 @@ export class DesktopDataError extends Error {
   readonly provider: string;
   readonly retryable: boolean;
   readonly statusCode?: number;
+  readonly retryAfterMs?: number;
 
   constructor(details: DesktopDataErrorDetails) {
     super(details.message);
@@ -36,11 +40,18 @@ export class DesktopDataError extends Error {
     this.provider = details.provider;
     this.retryable = details.retryable;
     this.statusCode = details.statusCode;
+    this.retryAfterMs = details.retryAfterMs;
   }
 }
 
 export function desktopDataError(provider: string, error: unknown, statusCode?: number) {
   if (error instanceof DesktopDataError) return error;
+  if (error && typeof error === 'object' && 'code' in error && 'message' in error) {
+    const native = error as DesktopDataErrorDetails;
+    if (['offline', 'timeout', 'rate-limited', 'invalid', 'cancelled', 'error'].includes(native.code)) {
+      return new DesktopDataError({ ...native, provider: native.provider || provider });
+    }
+  }
   const message = error instanceof Error ? error.message : String(error || 'Data request failed.');
   const normalized = message.toLowerCase();
   const offline = typeof navigator !== 'undefined' && navigator.onLine === false;

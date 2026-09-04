@@ -753,23 +753,26 @@ function buildRailItems(liveItems: any[], count: number, softBlocked: Set<string
   return result.slice(0, count);
 }
 
+function secondaryPriority(key: string): 'foreground' | 'background' { return /popular|upcoming|year/.test(key) ? 'background' : 'foreground'; }
+
 function useHomeCatalogQuery(
   cacheKey: string,
   queryKey: readonly unknown[],
-  queryFn: () => Promise<any>,
+  queryFn: (options: { signal: AbortSignal; priority: 'foreground' | 'background' }) => Promise<any>,
   { enabled = true, staleTime = 1000 * 60 * 10 }: { enabled?: boolean; staleTime?: number } = {},
 ) {
   const saved = readDesktopCatalog(cacheKey);
   return useQuery({
     queryKey,
-    queryFn: async () => {
-      const response = await queryFn();
+    queryFn: async ({ signal }) => {
+      const response = await queryFn({ signal, priority: secondaryPriority(cacheKey) });
+      if (!Array.isArray(response?.data)) throw new Error('Invalid home response.');
       const normalized = { ...response, data: uniqueAnimeById(response?.data || []).slice(0, 18) };
       writeDesktopCatalog(cacheKey, normalized);
       return normalized;
     },
     enabled,
-    retry: (count, error) => count < 2 && !/invalid|cancel/i.test(String((error as Error)?.message || '')),
+    retry: false,
     retryDelay: (attempt) => 250 + attempt * 500,
     staleTime,
     gcTime: 1000 * 60 * 90,
@@ -817,13 +820,13 @@ export default function DesktopHome() {
     staleTime: 1000 * 60 * 10,
   });
   const { currentSeason, data: seasonalData } = seasonalQuery;
-  const trendingQuery = useHomeCatalogQuery('home:trending', ['desktop-trending-airing'], () => searchAnime('', 1, '', '', '', '', 'airing'));
+  const trendingQuery = useHomeCatalogQuery('home:trending', ['desktop-trending-airing'], (options) => searchAnime('', 1, '', '', '', '', 'airing', options));
   const recentEpisodeQuery = useHomeCatalogQuery('home:recent', ['desktop-recent-episodes'], fetchRecentEpisodes, { staleTime: 1000 * 60 * 2 });
   const popularQuery = useHomeCatalogQuery('home:popular', ['desktop-popular'], fetchPopularAnime, { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 15 });
   const topAiringQuery = useHomeCatalogQuery('home:top-airing', ['desktop-top-airing'], fetchTopAiring);
   const upcomingQuery = useHomeCatalogQuery('home:upcoming', ['desktop-upcoming'], fetchUpcomingAnime, { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 30 });
   const topYear = new Date().getFullYear() - 1;
-  const yearlyTopQuery = useHomeCatalogQuery(`home:year:${topYear}`, ['desktop-top-year', topYear], () => fetchTopAnimeByYear(topYear), { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 60 });
+  const yearlyTopQuery = useHomeCatalogQuery(`home:year:${topYear}`, ['desktop-top-year', topYear], (options) => fetchTopAnimeByYear(topYear, 1, options), { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 60 });
   const trendingData = trendingQuery.data;
   const recentEpisodeData = recentEpisodeQuery.data;
   const popularData = popularQuery.data;

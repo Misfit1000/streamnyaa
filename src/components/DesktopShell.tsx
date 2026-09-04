@@ -3,7 +3,8 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
 import DesktopNotificationCenter from './DesktopNotificationCenter';
-import { fetchCompleteSchedule } from '../api/jikan';
+import { desktopWeekQuery } from '../lib/desktopScheduleQuery';
+import { desktopQueryClient } from '../lib/desktopQueryClient';
 import { useAuth } from '../context/AuthContext';
 import {
   listenDesktopPlayerAutoNextChanged,
@@ -218,16 +219,7 @@ export default function DesktopShell() {
       const preferences = loadDesktopScheduleUpdatePreferences();
       if (cancelled || (!preferences.personal && !preferences.global)) return;
       lastRefreshAt = Date.now();
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 7);
-      end.setHours(23, 59, 59, 999);
-      const schedule = await fetchCompleteSchedule(
-        Math.floor(start.getTime() / 1000),
-        Math.floor(end.getTime() / 1000),
-        4,
-      ).catch(() => null);
+      const schedule = await desktopQueryClient.fetchQuery(desktopWeekQuery('background')).catch(() => null);
       if (schedule?.data) resolveDesktopUpcomingAnimeWatches(schedule.data);
     };
     const refreshWhenStale = () => {
@@ -242,37 +234,7 @@ export default function DesktopShell() {
     };
   }, []);
 
-  useEffect(() => {
-    if (isWatch || typeof window === 'undefined') return;
-    const connection = navigator as Navigator & { connection?: { saveData?: boolean } };
-    if (connection.connection?.saveData) return;
-    let cancelled = false;
-    const prepareVisibleLinks = () => {
-      if (cancelled || document.visibilityState === 'hidden') return;
-      const links = [...(contentRef.current?.querySelectorAll<HTMLAnchorElement>('a[href]') || [])]
-        .filter((link) => {
-          const url = new URL(link.href, window.location.href);
-          if (!/^\/(?:watch|anime)\//.test(url.pathname)) return false;
-          const rect = link.getBoundingClientRect();
-          return rect.bottom > 70 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
-        })
-        .slice(0, 6);
-      let cursor = 0;
-      const worker = async () => {
-        while (!cancelled && cursor < links.length) {
-          const link = links[cursor++];
-          const url = new URL(link.href, window.location.href);
-          await preloadDesktopWatchData(`${url.pathname}${url.search}`, false);
-        }
-      };
-      void Promise.all([worker(), worker()]);
-    };
-    const timer = window.setTimeout(prepareVisibleLinks, 280);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [isWatch, location.key, location.pathname, location.search]);
+  // Only intentional hover/focus/pointer-down prefetches; no competing visible-card scan.
 
   useEffect(() => () => {
     if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);

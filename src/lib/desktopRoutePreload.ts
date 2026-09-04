@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { desktopAnimeQueryKey } from './desktopRequests';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { searchNyaa, warmDesktopSourceCache } from '../api/nyaa';
 import { desktopQueryClient } from './desktopQueryClient';
@@ -94,24 +95,25 @@ export function preloadDesktopWatchData(pathWithSearch: string, includeSources =
 
   const anilistId = url.searchParams.get('anilistId') || url.searchParams.get('aid') || '';
   const malIdHint = url.searchParams.get('malId') || url.searchParams.get('mid') || '';
-  const detailsKey = ['anime', routeId, anilistId, malIdHint] as const;
+  const detailsKey = desktopAnimeQueryKey(routeId, anilistId, malIdHint);
   const preload = desktopQueryClient.fetchQuery({
     queryKey: detailsKey,
-    queryFn: () => fetchAnimeDetails(routeId, {
+    queryFn: ({ signal }) => fetchAnimeDetails(routeId, {
+      signal, priority: includeSources ? 'foreground' : 'prefetch',
       anilistId: anilistId || undefined,
       malId: malIdHint || undefined,
       routeTitle: routeId.replace(/^\d+-?/, '').replace(/-/g, ' '),
     }),
     staleTime: 1000 * 60 * 15,
   }).then(async ({ data }) => {
-    const malId = String(data?.mal_id || malIdHint || routeId).match(/\d+/)?.[0];
+    const malId = data?.mal_id ? String(data.mal_id) : undefined;
     const title = String(data?.title_english || data?.title_romaji || data?.title || '').trim();
     const tasks: Promise<unknown>[] = [];
     if (malId) {
       const page = Math.max(1, Math.ceil(episode / 100));
       tasks.push(desktopQueryClient.prefetchQuery({
         queryKey: ['episodes', malId, page],
-        queryFn: () => fetchAnimeEpisodes(malId, page),
+        queryFn: ({ signal }) => fetchAnimeEpisodes(malId, page, { signal, priority: 'prefetch' }),
         staleTime: 1000 * 60 * 10,
       }));
     }
@@ -120,6 +122,7 @@ export function preloadDesktopWatchData(pathWithSearch: string, includeSources =
         deep: false,
         pages: 1,
         wide: false,
+        priority: 'prefetch',
       }));
     }
     await Promise.allSettled(tasks);

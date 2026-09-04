@@ -54,7 +54,7 @@ $sizeBytes = (Get-Item $copiedInstaller).Length
 $manifest = [ordered]@{
   product = 'StreamNyaa Desktop'
   version = $version
-  releaseRevision = 'desktop-loading-recovery-10'
+  releaseRevision = 'desktop-loading-reliability-12'
   generatedAt = (Get-Date).ToString('o')
   installer = @{
     fileName = [IO.Path]::GetFileName($copiedInstaller)
@@ -85,6 +85,16 @@ $manifest = [ordered]@{
     'Keeps loading artwork visible until the first decoded frame, removes the purple handoff gap, and adds a balanced center play/pause control with refined vector icons.',
     'Restores valid ultrawide artwork, uses the supported scaled bitmap API, and replaces buffering cards with a minimal circle and measured percentage.',
     'Keeps recovery deadlines alive through reload/idle events, bounds continuous buffering, and stops animation when automatic recovery is exhausted.',
+    'Coordinates and cancels shared desktop data requests with bounded deadlines, provider rate limits, and automatic active-screen recovery.',
+    'Preserves verified partial results so slow or interrupted metadata and source refreshes never erase usable content.',
+    'Traverses the complete verified series timeline across bounded resumable batches without collapsing distinct installments.',
+    'Removes player control backplates, scales controls to the viewport, and replaces the end card with a compact centered status-driven prompt.',
+    'Applies patched dependency overrides and ships with a zero-vulnerability npm audit.',
+    'Resumes and verifies cached torrent media instead of rejecting existing files during source replay or recovery.',
+    'Prevents stale player cleanup from stopping a newer torrent session and tracks the native engine by process ownership.',
+    'Reads rqbit 8 telemetry correctly so playable-buffer bytes, live peers, and transfer speed no longer remain at zero.',
+    'Never opens a zero-data stream after a timer; bounded recovery now fails over before the player can buffer indefinitely.',
+    'Keeps local engine errors out of release-health history and shows each source-health badge only once.',
     'Run the manual desktop release checklist before publishing this installer.',
     'Code-sign the installer before distribution.',
     'Keep the previous stable installer for rollback.'

@@ -5,13 +5,17 @@ import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Downloa
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
-import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
+import { fetchAnimeDetails, fetchAnimeEpisodes, fetchAnimeInstallments } from '../api/jikan';
+import { loadSeriesTimeline, type TimelineResult } from '../lib/desktopSeriesTimeline';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { episodeRangeContains, isEpisodeInteractiveTarget, isIntentionalHorizontalDrag } from '../lib/desktopEpisodeInteraction';
 import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 import { preloadDesktopWatchData } from '../lib/desktopRoutePreload';
 import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
+import { desktopAnimeQueryKey } from '../lib/desktopRequests';
+import { verifiedAiredEpisodeCount } from '../lib/animeEpisodes';
+import { SourceAccumulator, type SourceDiscovery } from '../lib/desktopSourceDiscovery';
 import { totalEpisodeCount } from '../lib/animeEpisodes';
 import { desktopDataError } from '../lib/desktopData';
 import { desktopLandscapeImageCandidates } from '../lib/desktopArtwork';
@@ -21,6 +25,8 @@ import {
   controlLocalPlayer,
   getLocalPlaybackProgress,
   listenDesktopPlayerNextEpisode,
+  updateDesktopNextEpisodeStatus,
+  cancelDesktopNextEpisodeStartup,
   listenDesktopPlayerRecoveryRequest,
   loadDesktopWatchProgress,
   loadDesktopPlayerPreferences,
@@ -67,7 +73,7 @@ type EpisodeMetaEntry = {
 };
 type InstallmentKind = 'season' | 'movie' | 'ova' | 'ona' | 'special' | 'other';
 type InstallmentItem = {
-  mal_id: string | number;
+  mal_id: string | number | null;
   anilist_id: string | number | null;
   name: string;
   current: boolean;
@@ -125,33 +131,11 @@ type SourceFailureRecord = {
   animeId?: string | number;
   episode?: number;
   failureCount?: number;
+  consecutiveFailures?: number;
   successAt?: number;
   successCount?: number;
   averageStartupMs?: number;
 };
-
-function resolveWithin<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      resolve(fallback);
-    }, Math.max(250, timeoutMs));
-
-    promise.then((value) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      resolve(value);
-    }).catch((error) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      reject(error);
-    });
-  });
-}
 
 function posterFor(anime: any) {
   const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
@@ -261,29 +245,10 @@ function titleFromRoute(id = '') {
   return raw.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function fallbackAnimeFromRoute(id = '') {
-  const numeric = Number(String(id).match(/^\d+/)?.[0] || 0);
-  const title = titleFromRoute(id);
-  return {
-    id: numeric || id,
-    mal_id: numeric || id,
-    anilist_id: numeric || null,
-    title,
-    title_romaji: title,
-    title_english: title,
-    images: { jpg: {}, webp: {} },
-    banner_image: '',
-    synopsis: '',
-    episodes: null,
-    status: '',
-    score: 0,
-    type: '',
-    year: null,
-    genres: [],
-    streamingEpisodes: [],
-    nextAiringEpisode: null,
-    relations: [],
-  };
+function fallbackAnimeFromRoute(_id = '') {
+  // Empty shell only: never infer either provider's identity or availability from a slug.
+  return { title: 'Loading anime…', images: { jpg: {}, webp: {} }, relations: [], episodes: null,
+    streamingEpisodes: [], mal_id: null, anilist_id: null, id: null, status: '' };
 }
 
 function formatCompactLabel(value: unknown) {
@@ -585,14 +550,24 @@ function isObsoleteLargeSourceFailure(message = '') {
   return /too large for reliable desktop streaming|choose a smaller release|large_source/i.test(message);
 }
 
+export function isLocalPlaybackFailure(message = '') {
+  return /(?:127\.0\.0\.1|localhost|allow_overwrite|file exists|os error 80|local stream engine|torrent engine|stream engine|local stream request|playback shutdown is busy|cleanup is busy|operation lock|source switch|superseded|stale|cancelled|canceled|user selected|player handoff|native player|\bmpv\b|ipc)/i.test(message);
+}
+
+export function isSourceSpecificFailure(message = '') {
+  if (!message.trim() || isObsoleteLargeSourceFailure(message) || isLocalPlaybackFailure(message)) return false;
+  return /(?:no playable (?:video|media)|no matching (?:playable )?(?:video|media)(?: file)?|invalid (?:torrent|magnet|metadata)|info hash mismatch|unsupported (?:codec|container|video)|decoder (?:failed|error)|no peers?|no seeds?|zero peers?|metadata (?:unavailable|timed out)|peer discovery timed out|midstream buffer stopped advancing|buffer stalled)/i.test(message);
+}
+
 function compactSourceFailures(records: Record<string, SourceFailureRecord>) {
   const now = Date.now();
   const entries = Object.entries(records)
     .map(([key, record]) => {
       const cleaned = { ...record };
-      if (isObsoleteLargeSourceFailure(cleaned.message || '')) {
+      if (!isSourceSpecificFailure(cleaned.message || '')) {
         cleaned.failedAt = 0;
         cleaned.message = '';
+        cleaned.consecutiveFailures = 0;
       }
       return [key, cleaned] as const;
     })
@@ -633,8 +608,7 @@ function rememberSourceFailure(
 ) {
   const key = sourceFailureKey(source);
   if (!key) return;
-  if (isObsoleteLargeSourceFailure(message)) return;
-  if (/superseded|stale|cancelled|canceled|user selected|playback request was superseded|source switch/i.test(message)) return;
+  if (!isSourceSpecificFailure(message)) return;
   const records = loadSourceFailureRecords();
   const previous = records[key] || {};
   records[key] = {
@@ -644,6 +618,7 @@ function rememberSourceFailure(
     animeId: context.animeId,
     episode: context.episode,
     failureCount: Math.min(20, Number(previous.failureCount || 0) + 1),
+    consecutiveFailures: Math.min(10, Number(previous.consecutiveFailures || 0) + 1),
   };
   saveSourceFailureRecords(records);
 }
@@ -657,6 +632,7 @@ function rememberSourceSuccess(source: RankedNyaaItem, startupMs?: number) {
     ...previous,
     failedAt: 0,
     message: '',
+    consecutiveFailures: 0,
     successAt: Date.now(),
     successCount: Math.min(50, Number(previous.successCount || 0) + 1),
     averageStartupMs: Number.isFinite(startupMs)
@@ -672,6 +648,7 @@ function sourceFailureFor(source: RankedNyaaItem, records: Record<string, Source
   if (!record?.failedAt) return null;
   if (Date.now() - Number(record.failedAt) > FAILED_SOURCE_MEMORY_TTL) return null;
   if (record.successAt && Number(record.successAt) > Number(record.failedAt)) return null;
+  if (Number(record.consecutiveFailures || 0) < 2) return null;
   return record;
 }
 
@@ -1138,12 +1115,8 @@ function installmentTitleScore(item: Omit<InstallmentItem, 'label'>) {
 }
 
 function installmentIdentity(item: Omit<InstallmentItem, 'label'>) {
-  if (item.kind === 'season') {
-    if (item.seasonNumber && item.partNumber) return `season:${item.seasonNumber}:part:${item.partNumber}`;
-    if (item.seasonNumber) return `season:${item.seasonNumber}`;
-  }
-  const normalizedTitle = cleanTitle(stripSeasonDecorators(item.name || '')).toLowerCase();
-  return `${item.kind}:${normalizedTitle || item.year || item.mal_id}`;
+  // Different verified installments can have identical translated titles or season labels.
+  return item.anilist_id ? 'anilist:' + item.anilist_id : 'mal:' + item.mal_id;
 }
 
 function preferInstallmentCandidate(
@@ -1159,26 +1132,7 @@ function preferInstallmentCandidate(
 }
 
 function knownAiredEpisodeCount(anime: any, episodeItems: any[] = []) {
-  const now = Date.now();
-  const pageMax = episodeItems.length
-    ? Math.max(...episodeItems.map((episode: any) => Number(episode?.mal_id) || 0))
-    : 0;
-  const verifiedPageMax = episodeItems.length
-    ? Math.max(0, ...episodeItems
-        .filter((episode: any) => {
-          const airedAt = Date.parse(String(episode?.aired || ''));
-          return Number.isFinite(airedAt) && airedAt <= now;
-        })
-        .map((episode: any) => Number(episode?.mal_id) || 0))
-    : 0;
-  const nextEpisode = Number(anime?.nextAiringEpisode?.episode || 0);
-  const explicitLatest = Number(anime?.latestEpisode || anime?.latest_episode || 0);
-  const streamCount = Number(anime?.streamingEpisodes?.length || 0);
-  const status = String(anime?.status || '').toUpperCase();
-  if (nextEpisode > 0) return Math.max(nextEpisode - 1, explicitLatest, verifiedPageMax, streamCount, 0);
-  if (/FINISHED|COMPLETED/.test(status)) return Math.max(Number(anime?.episodes || 1), pageMax, 1);
-  if (/RELEASING|AIRING/.test(status)) return Math.max(explicitLatest, verifiedPageMax, streamCount, 0);
-  return Math.max(explicitLatest, verifiedPageMax, pageMax, Number(anime?.episodes || 0), 0);
+  return verifiedAiredEpisodeCount(anime, episodeItems);
 }
 
 function episodeNumberFromTitle(value = '') {
@@ -1312,7 +1266,6 @@ function sourceConfidenceBadges(
   audioMode: AudioMode,
 ) {
   const badges: string[] = [];
-  if (sourceSuccessFor(source, records)) badges.push('Worked before');
   if (source.rawSeeders >= 50) badges.push('Healthy peers');
   else if (source.rawSeeders > 0) badges.push('Has seeders');
   if (source.matchReasons.includes('Exact episode') || source.matchReasons.includes('Movie match')) badges.push('Exact episode');
@@ -1517,7 +1470,7 @@ function shouldSkipInstallment(item: any, kind: InstallmentKind, current: boolea
   const status = String(item?.status || '').toUpperCase();
   if (!current && (!ALLOWED_INSTALLMENT_KINDS.has(kind) || !displayKinds.has(kind))) return true;
   if (!current && mediaType && !['ANIME', 'TV', 'TV_SHORT', 'OVA', 'ONA', 'SPECIAL', 'MOVIE'].includes(mediaType)) return true;
-  if (!current && status === 'NOT_YET_RELEASED') return true;
+  // Upcoming related entries belong in the timeline; their Watch page gates playback.
   if (kind === 'season' && /\b(director'?s cut|recap|compilation|digest|summary|tv edit(?:ion)?)\b/i.test(title)) return true;
   return false;
 }
@@ -1530,7 +1483,10 @@ function isSameTitleLineInstallment(rootAnime: any, item: any, kind: Installment
 
   const rootTitle = titleForInstallment(rootAnime);
   const nextTitle = titleForInstallment(item);
-  if (!sameSeriesFamily(rootTitle, nextTitle)) return false;
+  if (relationType === 'PREQUEL' || relationType === 'SEQUEL' || relationType === 'PARENT') return true;
+  const rootTitles = [rootTitle, rootAnime?.title_romaji, rootAnime?.title_english, ...(rootAnime?.synonyms || [])].filter(Boolean);
+  const nextTitles = [nextTitle, item?.title_romaji, item?.title_english, ...(item?.synonyms || [])].filter(Boolean);
+  if (!rootTitles.some(a => nextTitles.some(b => sameSeriesFamily(a, b)))) return false;
   if (kind !== 'season') return true;
   if (relationType === 'PREQUEL' || relationType === 'SEQUEL' || relationType === 'PARENT') return true;
   if (hasSeasonTitleSignal(nextTitle)) return true;
@@ -1542,16 +1498,15 @@ function buildInstallmentItems(anime: any, discoveredItems: any[] = []): Install
   const displayKinds = displayKindsFor(currentKind);
   const deduped = new Map<string, Omit<InstallmentItem, 'label'>>();
   const pushItem = (item: any, current: boolean, relation?: string) => {
-    const malId = String(item?.mal_id || item?.id || '');
-    if (!malId) return;
+    if (!item?.mal_id && !item?.anilist_id) return;
     const format = normalizeInstallmentFormat(item?.format || item?.type || anime?.type || 'TV');
     const kind = installmentKindFor(format);
     if (shouldSkipInstallment(item, kind, current, displayKinds)) return;
     if (!isSameTitleLineInstallment(anime, item, kind, current, relation)) return;
     const title = titleForInstallment(item);
     const nextItem: Omit<InstallmentItem, 'label'> = {
-      mal_id: item?.mal_id || item?.id,
-      anilist_id: item?.anilist_id || item?.id || null,
+      mal_id: item?.mal_id || null,
+      anilist_id: item?.anilist_id || null,
       name: title || 'Untitled',
       current,
       format,
@@ -1588,16 +1543,16 @@ function buildInstallmentItems(anime: any, discoveredItems: any[] = []): Install
 
   (anime?.relations || []).forEach((relation: any) => {
     (relation?.entry || [])
-      .filter((entry: any) => entry?.mal_id)
+      .filter((entry: any) => entry?.mal_id || entry?.anilist_id)
       .filter((entry: any) => relationTypeAllowed({ ...entry, relation: relation?.relation }, currentKind))
       .forEach((entry: any) => pushItem(entry, false, relation?.relation));
   });
 
   discoveredItems
-    .filter((entry: any) => entry?.mal_id || entry?.id)
+    .filter((entry: any) => entry?.mal_id || entry?.anilist_id)
     .forEach((entry: any) => pushItem(
       entry,
-      String(entry?.mal_id || entry?.id) === String(anime?.mal_id || anime?.id || ''),
+      Boolean(entry?.anilist_id && entry.anilist_id === anime?.anilist_id) || Boolean(entry?.mal_id && entry.mal_id === anime?.mal_id),
       entry?.relation || 'SEQUEL',
     ));
 
@@ -1825,6 +1780,11 @@ export default function DesktopWatch() {
   const midstreamRecoveryCountRef = useRef(0);
   const preparedNextEpisodeRef = useRef('');
   const sourceProgressTokenRef = useRef(0);
+  const nextRequestRef = useRef<{ id: string; episode: number } | null>(null);
+  const reportNextStatus = useCallback((status: 'preparing' | 'opening' | 'unavailable' | 'failed' | 'idle') => {
+    const request = nextRequestRef.current;
+    if (request) void updateDesktopNextEpisodeStatus(request.id, status).catch(() => undefined);
+  }, []);
 
   const toggleSourceDetails = useCallback((sourceId: string) => {
     setExpandedSourceIds((current) => {
@@ -1924,8 +1884,9 @@ export default function DesktopWatch() {
   }, [searchParams, setSearchParams]);
 
   const detailsQuery = useQuery({
-    queryKey: ['anime', id, routeAniListId, routeMalId],
-    queryFn: () => fetchAnimeDetails(id!, {
+queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
+    queryFn: ({ signal }) => fetchAnimeDetails(id!, {
+      signal,
       anilistId: routeAniListId,
       malId: routeMalId,
       routeTitle: titleFromRoute(id),
@@ -1934,7 +1895,7 @@ export default function DesktopWatch() {
     staleTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    retry: 2,
+    retry: false,
     retryDelay: (attempt) => 250 + attempt * 450,
   });
 
@@ -1951,8 +1912,8 @@ export default function DesktopWatch() {
   const metadataLoading = Boolean(id)
     && !metadataFailed
     && (detailsQuery.isLoading || usingPlaceholderDetails || (detailsQuery.isFetching && !hasFullMetadata));
-  const episodeLookupId = String(routeMalId || anime?.mal_id || id || '').trim();
-  const canFetchEpisodeMetadata = /\d/.test(episodeLookupId);
+  const episodeLookupId = String(resolvedAnime?.mal_id || routeMalId || (fallbackAnime?.anilist_id !== fallbackAnime?.mal_id ? fallbackAnime?.mal_id : '') || '').trim();
+  const canFetchEpisodeMetadata = /^[1-9]\d*$/.test(episodeLookupId);
   const currentInstallmentKind = useMemo(
     () => installmentKindFor(normalizeInstallmentFormat(anime?.type || 'TV')),
     [anime?.type],
@@ -1965,141 +1926,46 @@ export default function DesktopWatch() {
   const estimatedEpisode = requestedEpisode || knownAiredEpisodeCount(anime) || 1;
   const episodePage = Math.max(1, Math.ceil(estimatedEpisode / 100));
   const timelineCacheKey = useMemo(
-    () => String(
-      anime?.mal_id
-        || routeMalId
-        || anime?.anilist_id
-        || routeAniListId
-        || anime?.id
-        || id
-        || '',
-    ).trim(),
+    () => desktopAnimeQueryKey(id || '', anime?.anilist_id || routeAniListId, anime?.mal_id || routeMalId)[1],
     [anime?.anilist_id, anime?.id, anime?.mal_id, id, routeAniListId, routeMalId],
   );
 
   const installmentGraphQuery = useQuery({
     queryKey: ['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind],
-    queryFn: async () => {
-      type GraphQueueEntry = {
-        routeId: string;
-        malId: string;
-        anilistId: string;
-        title: string;
-        relation: string;
-      };
-      const identityFor = (value: { malId?: string; anilistId?: string; routeId?: string }) =>
-        value.anilistId
-          ? `aid:${value.anilistId}`
-          : value.malId
-            ? `mid:${value.malId}`
-            : `route:${value.routeId || ''}`;
-      const seen = new Set<string>([
-        identityFor({
-          malId: String(anime?.mal_id || ''),
-          anilistId: String(anime?.anilist_id || anime?.id || ''),
-          routeId: String(id || ''),
-        }),
-      ]);
-      const preferredQueue: GraphQueueEntry[] = [];
-      const secondaryQueue: GraphQueueEntry[] = [];
-      const enqueue = (entry: any) => {
-        const queueEntry: GraphQueueEntry = {
-          routeId: String(entry?.mal_id || entry?.id || ''),
-          malId: String(entry?.mal_id || ''),
-          anilistId: String(entry?.anilist_id || entry?.id || ''),
-          title: titleForInstallment(entry),
-          relation: String(entry?.relation || ''),
-        };
-        const identity = identityFor(queueEntry);
-        if (!queueEntry.routeId || seen.has(identity)) return;
-        if (preferredQueue.some((item) => identityFor(item) === identity) || secondaryQueue.some((item) => identityFor(item) === identity)) return;
-        if (installmentDiscoveryPriority(entry, currentDisplayKinds) === 0) preferredQueue.push(queueEntry);
-        else secondaryQueue.push(queueEntry);
-      };
-      const graphEntryAllowed = (entry: any) => {
-        const format = normalizeInstallmentFormat(entry?.format || entry?.type || 'TV');
-        const kind = installmentKindFor(format);
+    queryFn: async ({ signal }) => loadSeriesTimeline({
+      root: anime,
+      previous: queryClient.getQueryData<TimelineResult>(['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind]),
+      signal,
+      children: relationEntriesForGraph,
+      allowed: (entry) => {
+        const kind = installmentKindFor(normalizeInstallmentFormat(entry?.format || entry?.type || 'TV'));
         return relationTypeAllowed(entry, currentInstallmentKind)
           && !shouldSkipInstallment(entry, kind, false, currentDisplayKinds)
           && isSameTitleLineInstallment(anime, entry, kind, false, entry?.relation);
-      };
-
-      relationEntriesForGraph(anime)
-        .filter(graphEntryAllowed)
-        .forEach(enqueue);
-      const discovered: any[] = [];
-      const maxNodes = 36;
-      const batchSize = 6;
-      let depth = 0;
-
-      while ((preferredQueue.length || secondaryQueue.length) && discovered.length < maxNodes && depth < 8) {
-        const batch: GraphQueueEntry[] = [];
-        while (batch.length < batchSize && (preferredQueue.length || secondaryQueue.length) && discovered.length + batch.length < maxNodes) {
-          const nextEntry = preferredQueue.shift() || secondaryQueue.shift();
-          if (!nextEntry) continue;
-          const nextIdentity = identityFor(nextEntry);
-          if (seen.has(nextIdentity)) continue;
-          seen.add(nextIdentity);
-          batch.push(nextEntry);
+      },
+      fetchBatch: async (entries, requestSignal) => {
+        const results = await fetchAnimeInstallments(entries.filter(entry => entry.anilist_id), { signal: requestSignal, priority: 'background' });
+        for (const entry of entries.filter(entry => !entry.anilist_id && entry.mal_id)) {
+          const detail = await fetchAnimeDetails(String(entry.mal_id), { malId: entry.mal_id, signal: requestSignal, priority: 'background' });
+          results.push(detail.data);
         }
-        if (!batch.length) break;
-
-        const details = await Promise.allSettled(batch.map((nextEntry) => fetchAnimeDetails(nextEntry.routeId, {
-          anilistId: nextEntry.anilistId,
-          malId: nextEntry.malId,
-          routeTitle: nextEntry.title,
-        }).then((detail) => ({ detail, nextEntry }))));
-
-        details.forEach((result) => {
-          if (result.status !== 'fulfilled') return;
-          const { detail, nextEntry } = result.value;
-          const relatedAnime = detail?.data;
-          if (!relatedAnime) return;
-          discovered.push({ ...relatedAnime, relation: nextEntry.relation });
-
-          relationEntriesForGraph(relatedAnime)
-            .filter(graphEntryAllowed)
-            .forEach(enqueue);
-        });
-        depth += 1;
-      }
-
-      return discovered;
-    },
+        return results;
+      },
+      onPartial: (result) => queryClient.setQueryData(['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind], result),
+    }),
     enabled: Boolean(timelineCacheKey) && hasFullMetadata,
     staleTime: 1000 * 60 * 15,
     gcTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
   });
-  const installmentGraphData = installmentGraphQuery.data;
+  const installmentGraphData = installmentGraphQuery.data?.items;
   const installmentGraphInitialLoading = Boolean(hasFullMetadata && !metadataFailed && installmentGraphQuery.isLoading);
 
   const episodeQuery = useQuery({
     queryKey: ['episodes', episodeLookupId, episodePage],
-    queryFn: async () => {
-      if (!canFetchEpisodeMetadata) {
-        return {
-          data: [],
-          pagination: { last_visible_page: 1 },
-          streamnyaa: { status: 'estimated', provider: 'anime-count' },
-        };
-      }
-      try {
-        return await fetchAnimeEpisodes(episodeLookupId, episodePage);
-      } catch (error) {
-        const estimatedCount = Math.max(knownAiredEpisodeCount(anime), requestedEpisode, 1);
-        return {
-          data: [],
-          pagination: { last_visible_page: Math.max(1, Math.ceil(estimatedCount / 100)) },
-          streamnyaa: {
-            status: 'estimated',
-            provider: 'anime-count',
-            error: error instanceof Error ? error.message : 'Episode titles are temporarily unavailable.',
-          },
-        };
-      }
-    },
+    queryFn: ({ signal }) => fetchAnimeEpisodes(episodeLookupId, episodePage, { signal }),
     enabled: canFetchEpisodeMetadata,
+    retry: false,
     staleTime: 1000 * 60 * 10,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
@@ -2108,10 +1974,8 @@ export default function DesktopWatch() {
 
   const pageItems = episodeData?.data || [];
   const airedCount = knownAiredEpisodeCount(anime, pageItems);
-  const selectedEpisode = airedCount > 0
-    ? Math.min(Math.max(1, requestedEpisode || airedCount), airedCount)
-    : 1;
-  const episodeCatalogEstimated = episodeData?.streamnyaa?.status === 'estimated';
+  const selectedEpisode = requestedEpisode > 0 ? requestedEpisode : (airedCount || 1);
+  const episodeCatalogEstimated = !episodeData?.data?.length && !animeNotYetAired;
   const selectedEpisodeWatchState = desktopEpisodeWatchState(anime, selectedEpisode, watchProgressRecords);
   const sourceBrowserPath = useMemo(() => {
     const query = new URLSearchParams({
@@ -2145,7 +2009,7 @@ export default function DesktopWatch() {
     return new Map(entries);
   }, [anime?.streamingEpisodes]);
   const allEpisodes = useMemo(() => {
-    const count = Math.max(airedCount, 0);
+    const count = Math.max(airedCount ?? 0, 0);
     return Array.from({ length: count }, (_, index) => {
       const number = index + 1;
       const pageEpisode = pageEpisodeMap.get(number);
@@ -2257,7 +2121,7 @@ export default function DesktopWatch() {
       primaryMeta: [
         year ? String(year) : '',
         type,
-        `Latest aired ${airedCount || 0}/${totalEpisodes ?? '?'}`,
+        `Latest aired ${airedCount ?? '?'}/${totalEpisodes ?? '?'}`,
       ].filter(Boolean),
       secondaryMeta: [
         score ? `Rating ${score.toFixed(1)}` : '',
@@ -2291,8 +2155,8 @@ export default function DesktopWatch() {
   }, [anime?.mal_id, anime?.id, leftPanelInfo.trailerUrl]);
 
   const sourceSearchReady = useMemo(() => {
-    if (animeNotYetAired) return false;
-    if (airedCount <= 0) return false;
+    if (animeNotYetAired || (!anime?.anilist_id && !anime?.mal_id)) return false;
+    if (airedCount === 0) return false;
     if (selectedEpisode <= 0) return false;
     return sourceSearchTitleVariants(anime, id, selectedInstallment).some((title) => {
       const cleaned = cleanTitle(title).trim().toLowerCase();
@@ -2301,17 +2165,9 @@ export default function DesktopWatch() {
   }, [airedCount, anime, animeNotYetAired, id, selectedEpisode, selectedInstallment]);
 
   const sourceQueryKey = useMemo(() => [
-    'desktop-watch-sources',
-    anime?.title,
-    anime?.title_english,
-    anime?.title_romaji,
-    selectedInstallment?.mal_id,
-    selectedInstallment?.label,
-    selectedEpisode,
-    audioMode,
-    audioPreference,
-    sourceMode,
-  ] as const, [anime?.title, anime?.title_english, anime?.title_romaji, audioMode, audioPreference, selectedEpisode, selectedInstallment?.label, selectedInstallment?.mal_id, sourceMode]);
+    'desktop-watch-sources', anime?.anilist_id ? 'anilist:' + anime.anilist_id : 'mal:' + anime?.mal_id,
+    selectedEpisode, audioMode, audioPreference, sourceMode,
+  ] as const, [anime?.anilist_id, anime?.mal_id, selectedEpisode, audioMode, audioPreference, sourceMode]);
 
   const { data: sources, error: sourcesError, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
     queryKey: sourceQueryKey,
@@ -2335,6 +2191,7 @@ export default function DesktopWatch() {
       const elapsedMs = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
       const remainingBudgetMs = () => Math.max(0, SOURCE_SEARCH_BUDGET_MS - elapsedMs());
       const isAborted = () => Boolean(signal?.aborted);
+      const accumulator = new SourceAccumulator<RankedNyaaItem>((items) => dedupeNyaaItems(items) as RankedNyaaItem[]);
       let completedSourceQueries = 0;
       let timedOutSourceQueries = 0;
       let failedSourceQueries = 0;
@@ -2345,6 +2202,8 @@ export default function DesktopWatch() {
         if (!items.length && completedSourceQueries === 0 && (timedOutSourceQueries > 0 || failedSourceQueries > 0)) {
           throw desktopDataError('nyaa', new Error('Playback preparation could not complete before the connection limit.'));
         }
+        accumulator.add(items);
+        if (timedOutSourceQueries || failedSourceQueries || remainingBudgetMs() <= 0) accumulator.interrupt();
         reportProgress(96);
         debugSourceLoading('done', {
           request: requestId,
@@ -2356,7 +2215,7 @@ export default function DesktopWatch() {
           totalMs: elapsedMs(),
           aborted: isAborted(),
         });
-        return items;
+        return accumulator.result();
       };
 
       debugSourceLoading('start', {
@@ -2396,7 +2255,8 @@ export default function DesktopWatch() {
       const publishPartial = (items: RankedNyaaItem[], stage: string) => {
         if (isAborted() || !items.length) return;
         const partial = combineSources(items);
-        queryClient.setQueryData<RankedNyaaItem[]>(sourceQueryKey, partial);
+        accumulator.add(partial);
+        queryClient.setQueryData<SourceDiscovery<RankedNyaaItem>>(sourceQueryKey, { items: accumulator.result().items, complete: false });
         reportProgress(stage === 'exact' ? 54 : stage === 'season' ? 74 : 88);
         debugSourceLoading('partial', { request: requestId, stage, count: partial.length, totalMs: elapsedMs() });
       };
@@ -2407,11 +2267,7 @@ export default function DesktopWatch() {
         const timeoutMs = Math.min(SOURCE_QUERY_TIMEOUT_MS, remainingBudgetMs());
         let result: NyaaItem[] | null;
         try {
-          result = await resolveWithin<NyaaItem[] | null>(
-            searchNyaa(query, '1_2', '0', '1', { ...options, signal }),
-            timeoutMs,
-            null,
-          );
+          result = await searchNyaa(query, '1_2', '0', '1', { ...options, signal, deadlineMs: timeoutMs });
         } catch (error) {
           if (isAborted()) throw error;
           failedSourceQueries += 1;
@@ -2428,6 +2284,7 @@ export default function DesktopWatch() {
           debugSourceLoading('query-timeout', { request: requestId, query, ms: queryMs });
           return [];
         }
+        if ((result as NyaaItem[] & { complete?: boolean }).complete === false) accumulator.interrupt();
         completedSourceQueries += 1;
         const normalized = normalizeSourcePool(result);
         debugSourceLoading('provider', { request: requestId, query, raw: result.length, usable: normalized.length, ms: queryMs });
@@ -2455,7 +2312,7 @@ export default function DesktopWatch() {
 
         let accumulated: RankedNyaaItem[] = [];
         for (let index = 0; index < pending.length; index += SOURCE_QUERY_BATCH_SIZE) {
-          if (isAborted() || remainingBudgetMs() <= 0) return [];
+          if (isAborted() || remainingBudgetMs() <= 0) { accumulator.interrupt(); return accumulated; }
           const batch = pending.slice(index, index + SOURCE_QUERY_BATCH_SIZE);
           const results = await Promise.all(batch.map(async (query) => ({ query, items: await runQuery(query, options) })));
           if (isAborted()) return [];
@@ -2486,10 +2343,11 @@ export default function DesktopWatch() {
           `${cleanedTitle} ep ${selectedEpisode}${audioSuffix}`,
         ];
       });
-      const exact = await tryQueries([...seasonCodeEpisodeQueries, ...exactEpisodeQueries], { pages: 1, wide: false, deep: false }, 16, 'exact');
+      const exactQueries = [...seasonCodeEpisodeQueries.slice(0, 1), ...exactEpisodeQueries.slice(0, 1), ...seasonCodeEpisodeQueries.slice(1), ...exactEpisodeQueries.slice(1)];
+      const exact = await tryQueries(exactQueries, { pages: 1, wide: false, deep: false }, 6, 'exact');
       if (isAborted()) return finish([], 'aborted-after-exact');
       publishPartial(exact, 'exact');
-      if (exact.filter((source) => source.matchTier === 'exact' && source.playable).length >= 3) return finish(exact, 'exact');
+      if (exact.filter((source) => source.matchTier === 'exact' && source.playable && source.rawSeeders > 0).length >= 3) return finish(exact, 'exact');
       if (remainingBudgetMs() <= 0) return finish(exact, 'budget-after-exact');
 
       const seasonEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
@@ -2532,22 +2390,19 @@ export default function DesktopWatch() {
       if (isAborted()) return finish([], 'aborted-after-fallback');
       if (fallback.length) return finish(combineSources([...combinedEpisode, ...fallback]), 'fallback');
 
-      return finish([], 'empty');
+      return finish(combinedEpisode, 'empty');
     },
     enabled: sourceSearchReady,
     staleTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
-    retry: (failureCount, error) => {
-      const code = String((error as { code?: string })?.code || '');
-      return failureCount < 2 && code !== 'invalid' && code !== 'cancelled';
-    },
+    retry: false,
     retryDelay: (attempt) => 350 + attempt * 600,
   });
 
   const failedSourceRecords = useMemo(() => loadSourceFailureRecords(), [failedSourceVersion]);
   const allRankedSources = useMemo<RankedNyaaItem[]>(() => {
-    const items = [...((sources || []) as RankedNyaaItem[])];
+    const items = [...(sources?.items || [])];
     return items.sort((a, b) => {
       if (sortBy === 'seeders') return b.rawSeeders - a.rawSeeders;
       if (sortBy === 'size') return a.rawSize - b.rawSize;
@@ -2628,7 +2483,7 @@ export default function DesktopWatch() {
   }, [sourceMode, visibleTierCounts]);
   const sourceSectionTitle = animeNotYetAired
     ? 'Still not aired'
-    : sourcesLoading || (sourcesFetching && !sources?.length)
+    : sourcesLoading || (sourcesFetching && !sources?.items.length)
     ? `Preparing Episode ${selectedEpisode}...`
     : sortedSources.length
       ? `Playback options for Episode ${selectedEpisode}`
@@ -2639,7 +2494,7 @@ export default function DesktopWatch() {
     ? 'This title is upcoming. StreamNyaa will enable playback after episodes are released.'
     : sortedSources.length
     ? 'Optimized by episode accuracy, quality, startup speed, and audio preference.'
-    : sourcesLoading || (sourcesFetching && !sources?.length)
+    : sourcesLoading || (sourcesFetching && !sources?.items.length)
       ? 'Checking episode match, connection health, audio preference, and video quality.'
     : sourcesError
       ? 'StreamNyaa could not finish preparing playback. Saved options remain available; retry when the connection recovers.'
@@ -2961,6 +2816,7 @@ export default function DesktopWatch() {
       throw new Error(errors[errors.length - 1] || 'Source link could not open.');
     } catch (error) {
       if (playbackRequestIdRef.current !== requestId) return;
+      reportNextStatus('failed');
       const fallbackHint = retryPool.length > 1
         ? ` StreamNyaa also tried ${Math.min(retryPool.length - 1, SOURCE_RETRY_LIMIT - 1)} backup source${retryPool.length > 2 ? 's' : ''}.`
         : '';
@@ -3055,6 +2911,7 @@ export default function DesktopWatch() {
       ? playableSourcesRef.current[0]
       : undefined;
     if (bestSource) {
+      reportNextStatus('opening');
       void playSourceRef.current(bestSource);
       return;
     }
@@ -3069,10 +2926,12 @@ export default function DesktopWatch() {
     const nextEpisode = currentEpisode + 1;
     console.info(`[StreamNyaa Watch] Received next episode event reason=${normalizedReason} autoNext=${autoPlayNextEpisodeRef.current}`);
     if (nextEpisode > maxEpisode) {
+      reportNextStatus('unavailable');
       setPlaybackNotice({ tone: 'error', text: 'No next aired episode is available yet.' });
       return;
     }
     if (normalizedReason === 'ended' && !autoPlayNextEpisodeRef.current) {
+      reportNextStatus('idle');
       console.info('[StreamNyaa Watch] Ignored ended request because autoNext=false');
       setPlaybackNotice({ tone: 'success', text: 'Episode finished. Use the next-episode button or enable Auto-play next episode in Settings.' });
       return;
@@ -3088,6 +2947,7 @@ export default function DesktopWatch() {
       console.info('[StreamNyaa Watch] Manual next requested');
       lastNextEpisodeRequestRef.current = { episode: nextEpisode, reason: normalizedReason, at: Date.now() };
     }
+    reportNextStatus('preparing');
     console.info(`[StreamNyaa Watch] Resolved next episode current=${currentEpisode} next=${nextEpisode}`);
     setPlaybackNotice({
       tone: 'loading',
@@ -3102,7 +2962,7 @@ export default function DesktopWatch() {
     setActiveSourceId(null);
     setPlayback(null);
     playEpisodeNumber(nextEpisode);
-  }, [persistActivePlaybackCheckpoint, playEpisodeNumber]);
+  }, [persistActivePlaybackCheckpoint, playEpisodeNumber, reportNextStatus]);
 
   useEffect(() => {
     playNextEpisodeRef.current = playNextEpisode;
@@ -3113,6 +2973,20 @@ export default function DesktopWatch() {
     let unlisten: (() => void) | undefined;
     void listenDesktopPlayerNextEpisode((event) => {
       if (!mounted) return;
+      if (event.reason === 'cancel') {
+        if (event.request_id && nextRequestRef.current?.id !== event.request_id) return;
+        nextRequestRef.current = null;
+        pendingAutoPlayEpisodeRef.current = null;
+        setPendingAutoPlayEpisode(null);
+        playbackRequestIdRef.current++;
+        playActionLockRef.current = false;
+        void queryClient.cancelQueries({ queryKey: ['desktop-watch-sources'] });
+        void cancelDesktopNextEpisodeStartup().catch(() => undefined);
+        return;
+      }
+      const token = event.request_id || 'legacy';
+      if (nextRequestRef.current?.id === token) return;
+      nextRequestRef.current = { id: token, episode: selectedEpisodeNumberRef.current + 1 };
       playNextEpisodeRef.current(event.reason || 'manual');
     }).then((cleanup) => {
       if (!mounted) {
@@ -3307,15 +3181,17 @@ export default function DesktopWatch() {
     if (pendingAutoPlayEpisode === null) return;
     if (pendingAutoPlayEpisode !== selectedEpisode) return;
     if (activeSourceId || playActionLockRef.current) return;
-    if (sourcesBusy) return;
     if (playableSourcesEpisodeRef.current !== selectedEpisode) return;
     if (playableSources[0]) {
+      reportNextStatus('opening');
       const bestSource = playableSources[0];
       setPendingAutoPlayEpisode(null);
       console.info('[StreamNyaa Watch] Starting the prepared next episode source.');
       void playSource(bestSource);
       return;
     }
+    if (sourcesBusy) return;
+    reportNextStatus('failed');
     setPendingAutoPlayEpisode(null);
     setPlaybackNotice({ tone: 'error', text: 'This episode could not start automatically. Switch to Balanced or review playback options.' });
   }, [activeSourceId, pendingAutoPlayEpisode, playSource, playableSources, selectedEpisode, sourcesBusy]);
@@ -3503,7 +3379,7 @@ export default function DesktopWatch() {
                   </p>
                   <p className="mt-2 text-xs font-semibold text-white/38">
                     Chronological related entries for this anime line.
-                    <span className="ml-2 text-white/24">- {seasonItems.length} {installmentTitle.toLowerCase()}</span>
+                    <span className="ml-2 text-white/50">{installmentGraphQuery.data?.complete ? `${seasonItems.length} entries` : 'Updating related seasons…'}</span>
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
@@ -3611,7 +3487,7 @@ export default function DesktopWatch() {
                     </button>
                   ) : (
                     <Link
-                      key={season.mal_id || season.name}
+                      key={season.anilist_id ? 'anilist:' + season.anilist_id : 'mal:' + season.mal_id}
                       to={desktopWatchPath(
                         {
                           mal_id: season.mal_id,
@@ -3640,7 +3516,7 @@ export default function DesktopWatch() {
                 <Download className="h-4 w-4 text-primary" />
                 <span>
                   <span className="block text-lg font-bold">{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'}</span>
-                  <span className="mt-0.5 block text-xs font-semibold text-white/46">Latest aired {airedCount || 0} · Total {totalEpisodeCount(anime) ?? '?'}</span>
+                  <span className="mt-0.5 block text-xs font-semibold text-white/60">{airedCount == null ? 'Checking aired episodes' : 'Latest aired ' + airedCount} · Total {totalEpisodeCount(anime) ?? '?'}</span>
                 </span>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-3">
@@ -3793,17 +3669,9 @@ export default function DesktopWatch() {
               </div>
             </div>
             {episodeCatalogEstimated ? (
-              <div className="mb-3 flex items-center justify-between gap-4 rounded-lg border border-amber-300/15 bg-amber-200/[0.045] px-4 py-2.5 text-sm text-amber-50/72" role="status">
-                <span>Episode selection is available. Titles are refreshing in the background.</span>
-                <button
-                  type="button"
-                  onClick={() => void episodeQuery.refetch()}
-                  className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md bg-white/[0.07] px-3 font-semibold text-white transition-colors hover:bg-white/[0.11]"
-                >
-                  <RotateCw className="h-3.5 w-3.5" />
-                  Refresh
-                </button>
-              </div>
+              <p className="mb-3 text-sm text-white/60" role="status">
+                {airedCount == null ? 'Checking episode availability…' : episodeQuery.isFetching ? 'Updating episode titles…' : 'Episode titles will update automatically.'}
+              </p>
             ) : null}
             {episodeSearchTerm && !displayedEpisodes.length ? (
               <div className="rounded-xl border border-white/[0.10] bg-white/[0.04] p-6 text-sm font-bold text-white/58">
@@ -4385,7 +4253,6 @@ export default function DesktopWatch() {
                   const quality = sourceQualityLabel(sourceQualityBucket(source.title));
                   const codec = /\b(hevc|h\.?265|x265)\b/i.test(source.title) ? 'HEVC' : /\b(avc|h\.?264|x264)\b/i.test(source.title) ? 'H.264' : 'Video';
                   const audioLabel = isDualAudioSource(source.title) ? 'Dual Audio' : isDubOnlySource(source.title) ? 'Dub' : 'Sub';
-                  const failure = sourceFailureFor(source, failedSourceRecords);
                   const previousTier = sortedSources[index - 1]?.matchTier;
                   return (
                     <Fragment key={sourceId}>
@@ -4419,14 +4286,6 @@ export default function DesktopWatch() {
                             <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${source.playable ? sourceConfidenceClassName(confidence.band) : playableStatusClassName(source.playableStatus)}`}>
                               {source.playable ? confidence.label : source.playableLabel}
                             </span>
-                            {failure ? (
-                              <span
-                                title={failure.message}
-                                className="rounded-full border border-red-400/20 bg-red-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-200"
-                              >
-                                Recently failed
-                              </span>
-                            ) : null}
                             <span className="text-emerald-400">{sourceHealth(source.rawSeeders)}</span>
                             <span>{source.seeders} seeders</span>
                             {visibleReasons.map((reason) => (

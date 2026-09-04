@@ -61,7 +61,7 @@ $supabaseAuth = Get-Content -Raw (Join-Path $repo 'src\lib\supabaseAuth.ts')
 $nyaaApi = Get-Content -Raw (Join-Path $repo 'src\api\nyaa.ts')
 $metadataApi = Get-Content -Raw (Join-Path $repo 'src\api\jikan.ts')
 $streamSourcesApi = Get-Content -Raw (Join-Path $repo 'api\stream-sources.ts')
-$tauriMain = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\src\main.rs')
+$tauriMain = (Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\src\main.rs')) + (Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\src\data_requests.rs'))
 $workflow = Get-Content -Raw (Join-Path $repo '.github\workflows\desktop-release.yml')
 $packageJson = Get-Content -Raw (Join-Path $repo 'package.json')
 $desktopHtmlWriter = Get-Content -Raw (Join-Path $repo 'scripts\write-desktop-html.mjs')
@@ -75,7 +75,7 @@ $releasePreparer = Get-Content -Raw (Join-Path $repo 'scripts\prepare-desktop-re
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
 Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.7"' 'Desktop release configuration should target version 0.1.7.'
 Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.7"' 'Rust package version should match the desktop release version.'
-Assert-Match $releasePreparer "releaseRevision\s*=\s*'desktop-loading-recovery-10'" 'The 0.1.7 release manifest must identify the current buffering and artwork recovery pass.'
+Assert-Match $releasePreparer "releaseRevision\s*=\s*'desktop-loading-reliability-12'" 'The 0.1.7 release manifest must identify the current coordinated loading reliability pass.'
 Assert-Match $releasePreparer 'auth-recovery-live-validation\.json' 'The 0.1.3 artifact must remain gated on live password-recovery validation.'
 Assert-Match $releasePreparer '2MB' 'The installer must reject growth beyond the two MiB budget.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
@@ -156,12 +156,12 @@ Assert-Match $watchPage 'sourceSearchTitleVariants' 'Desktop watch page should w
 Assert-Match $watchPage 'sourceMatchesInstallment' 'Desktop watch page should filter torrent sources by the selected installment.'
 Assert-Match $watchPage 'TIMELINE_RELATIONS' 'Desktop watch page should build a complete related-series timeline instead of only direct sequel pills.'
 Assert-Match $watchPage "'SIDE_STORY'" 'Desktop watch page should allow OVA/special timeline entries while still filtering non-anime media.'
-Assert-Match $watchPage 'Promise\.allSettled' 'Desktop watch page should expand related installments in batches so the timeline appears complete.'
+Assert-Match $watchPage 'loadSeriesTimeline' 'Desktop watch page must progressively traverse the verified relation graph.'
 Assert-Match $watchPage 'sameSeriesFamily' 'Desktop watch page should keep season traversal inside the same title family.'
 Assert-Match $watchPage 'hasSeasonTitleSignal' 'Desktop watch page should avoid fake season labels for unlabeled TV relations.'
 Assert-Match $watchPage 'sourceSeasonNumber' 'Desktop watch page should keep hidden season ordinals for torrent source matching without fake season labels.'
 Assert-Match $watchPage 'installment\?\.sourceSeasonNumber' 'Desktop source search should use hidden season ordinals when visible labels stay title-based.'
-Assert-Match $watchPage 'status === ''NOT_YET_RELEASED''' 'Desktop watch page should not include unreleased relation entries in aired installment rails.'
+Assert-Match $watchPage 'Upcoming related entries belong in the timeline' 'The complete series timeline should include verified upcoming installments while gating their playback.'
 Assert-Match $watchPage 'isAncillarySource' 'Desktop watch page should reject OP/ED and other ancillary torrent files.'
 Assert-Match $watchPage 'classifySource' 'Desktop watch page should classify sources before playback.'
 Assert-Match $watchPage 'parseSourceAnimeTitle' 'Desktop watch page should parse torrent titles before comparing anime titles.'
@@ -180,7 +180,7 @@ Assert-Match $watchPage 'isFetching:\s*sourcesFetching' 'Desktop watch page shou
 Assert-Match $watchPage 'SOURCE_SEARCH_BUDGET_MS\s*=\s*12_000' 'Desktop source discovery must have a fast bounded total search budget.'
 Assert-Match $watchPage 'SOURCE_RETRY_LIMIT\s*=\s*4' 'Desktop playback should try the selected source plus no more than three automatic backups.'
 Assert-Match $watchPage 'publishPartial' 'Desktop source discovery should publish compatible results before broad fallback finishes.'
-Assert-Match $watchPage '\{ \.\.\.options, signal \}' 'Desktop source discovery should consume React Query cancellation signals.'
+Assert-Match $watchPage 'signal, deadlineMs' 'Desktop source discovery must propagate cancellation and remaining deadline to native work.'
 Assert-Match $watchPage 'query-timeout' 'Desktop source discovery should report and recover from a slow provider query.'
 Assert-Match $watchPage 'sourcesBusy\s*=\s*sourcesLoading\s*\|\|\s*sourcesFetching' 'Desktop autoplay should wait until the selected episode source query is fully settled.'
 Assert-Match $watchPage 'playableSourcesEpisodeRef\.current\s*!==\s*selectedEpisode' 'Desktop autoplay should reject stale sources from the previous episode.'
@@ -227,7 +227,7 @@ Assert-Match $desktopPlayerShortcuts "\['F', 'Enter or exit fullscreen'\]" 'Desk
 Assert-Match $desktopSettings 'Export desktop settings' 'Desktop Settings should expose safe settings export.'
 Assert-Match $desktopSettings 'Import desktop settings' 'Desktop Settings should expose safe settings import.'
 Assert-NotMatch $desktopSettings 'getSession\(\)|supabase\.auth|localStorage\.clear\(\)' 'Desktop Settings backup UI must not export session data or clear all storage.'
-Assert-Match $desktopSchedule 'fetchCompleteSchedule' 'Desktop Schedule should load the complete live airing day rather than one partial page.'
+Assert-Match $desktopSchedule 'desktopWeekQuery' 'Desktop Schedule should load the complete live airing day rather than one partial page.'
 Assert-Match $desktopSchedule 'Recent delay and cancellation alerts' 'Desktop Calendar should retain confirmed schedule alerts.'
 Assert-Match $desktopNotificationCenter 'No delay or cancellation alerts' 'The notification center should be scoped to delay and cancellation updates.'
 Assert-NotMatch $desktopNotificationCenter "kind === 'rescheduled'|Rescheduled" 'Reschedules should remain Calendar-only for now.'
@@ -443,7 +443,7 @@ Assert-Match $playerSkin 'string\.format\("Reconnecting  ·  %d%%"' 'Player stal
 Assert-Match $playerSkin 'string\.format\("%.1fs buffered"' 'Player startup should show real-time playable seconds.'
 Assert-Match $playerSkin 'bar_x1 \+ \(bar_x2 - bar_x1\) \* clamp\(percent / 100' 'Player buffering overlay should render a determinate compact progress bar.'
 Assert-Match $playerSkin 'local base_offset = ui\.visible and 174 or 84' 'Manual intro and outro actions should remain raised above the player edge and controls.'
-Assert-Match $playerSkin 'height - panel_h - 116 \* s' 'The next-episode panel should remain raised above the player edge.'
+Assert-Match $playerSkin 'end_overlay_layout' 'The compact next-episode prompt must use centered resolution-aware layout.'
 Assert-Match $desktopScheduleCache 'Array\.isArray\(data\?\.data\)' 'Schedule caching must preserve verified empty days instead of confusing them with request failures.'
 Assert-Match $desktopSchedule 'scheduleQuery\.isError && !scheduleQuery\.data' 'Schedule request failures must remain distinct from verified empty days.'
 Assert-Match $playerSkin 'OPENING THE VIDEO DECODER' 'Player loading copy should follow the real native startup stage.'
