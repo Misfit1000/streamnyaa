@@ -1,4 +1,4 @@
-export type DesktopDataStatus = 'fresh' | 'stale' | 'empty' | 'offline' | 'timeout' | 'rate-limited' | 'invalid' | 'cancelled' | 'error';
+export type DesktopDataStatus = 'fresh' | 'stale' | 'empty' | 'offline' | 'timeout' | 'rate-limited' | 'access-denied' | 'invalid' | 'cancelled' | 'error';
 
 export type DesktopDataCacheState = 'memory' | 'disk' | 'network' | 'none';
 
@@ -48,14 +48,14 @@ export function desktopDataError(provider: string, error: unknown, statusCode?: 
   if (error instanceof DesktopDataError) return error;
   if (error && typeof error === 'object' && 'code' in error && 'message' in error) {
     const native = error as DesktopDataErrorDetails;
-    if (['offline', 'timeout', 'rate-limited', 'invalid', 'cancelled', 'error'].includes(native.code)) {
+    if (['offline', 'timeout', 'rate-limited', 'access-denied', 'invalid', 'cancelled', 'error'].includes(native.code)) {
       return new DesktopDataError({ ...native, provider: native.provider || provider });
     }
   }
   const message = error instanceof Error ? error.message : String(error || 'Data request failed.');
   const normalized = message.toLowerCase();
   const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-  const code: DesktopDataErrorCode = offline
+  const code: DesktopDataErrorCode = statusCode === 403 ? 'access-denied' : offline
     ? 'offline'
     : statusCode === 429
       ? 'rate-limited'
@@ -70,7 +70,7 @@ export function desktopDataError(provider: string, error: unknown, statusCode?: 
     code,
     provider,
     message,
-    retryable: !['invalid', 'cancelled'].includes(code),
+    retryable: !['invalid', 'cancelled', 'access-denied'].includes(code),
     statusCode,
   });
 }

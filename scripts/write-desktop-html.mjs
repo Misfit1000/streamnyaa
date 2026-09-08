@@ -41,16 +41,19 @@ html,body,#root{min-height:100%;margin:0;background:#070709;color:#f7f7f8}
 body{overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .sn-boot{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,rgba(177,18,42,.16),transparent 34%),#070709;transition:opacity 180ms ease,visibility 180ms ease}
 .sn-boot--leaving{opacity:0;visibility:hidden;pointer-events:none}
-.sn-boot__content{display:flex;width:min(78vw,620px);flex-direction:column;align-items:center;gap:clamp(18px,2.2vmin,30px);transform:translateY(-2vh)}
+.sn-boot__content{display:flex;width:min(82vw,760px);flex-direction:column;align-items:center;gap:clamp(20px,2.8vmin,38px);transform:translateY(-2vh)}
+.sn-boot__brand{display:flex;align-items:center;justify-content:center;gap:clamp(20px,3vmin,46px)}
 .sn-boot__mark{width:clamp(88px,10vmin,154px);height:clamp(88px,10vmin,154px);color:#f32645;filter:drop-shadow(0 8px 8px rgba(243,38,69,.18));animation:sn-boot-enter 460ms cubic-bezier(.2,.8,.2,1) both}
-.sn-boot__name{font-size:clamp(34px,4vmin,58px);font-weight:700;letter-spacing:-.04em;line-height:1}.sn-boot__name span{color:#f32645}
+.sn-boot__name{font-size:clamp(42px,6vmin,88px);font-weight:650;letter-spacing:-.04em;line-height:1.05}.sn-boot__name span{color:#f32645}
 .sn-boot__status{display:flex;width:min(100%,520px);align-items:center;justify-content:space-between;gap:18px;font-size:clamp(13px,1.3vmin,17px);color:rgba(247,247,248,.48)}
 .sn-boot__value{font-variant-numeric:tabular-nums;color:rgba(247,247,248,.82);font-weight:600}
-.sn-boot__track{width:min(88%,460px);height:3px;overflow:hidden;background:rgba(255,255,255,.08)}
-.sn-boot__bar{height:100%;width:8%;background:#f32645;transition:width 260ms cubic-bezier(.2,.8,.2,1)}
+.sn-boot__track{width:min(100%,520px);height:4px;border-radius:4px;overflow:hidden;background:rgba(255,255,255,.09)}
+.sn-boot__bar{height:100%;width:8%;border-radius:inherit;background:linear-gradient(90deg,#98152e,#f32645);transition:width 260ms cubic-bezier(.2,.8,.2,1)}
+.sn-boot__caption{margin:0;color:rgba(247,247,248,.38);font-size:clamp(12px,1.2vmin,16px);line-height:1.5;text-align:center}
 @keyframes sn-boot-enter{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
 @media(max-width:700px),(max-height:560px){.sn-boot__content{width:min(84vw,460px);gap:16px}.sn-boot__mark{width:clamp(72px,12vmin,100px);height:clamp(72px,12vmin,100px)}.sn-boot__name{font-size:clamp(30px,6vmin,42px)}}
-@media(prefers-reduced-motion:reduce){.sn-boot__mark{animation:none}.sn-boot__bar{transition:none}}
+@media(max-width:480px){.sn-boot__brand{flex-direction:column;gap:18px}}
+@media(prefers-reduced-motion:reduce){.sn-boot__mark{animation:none}.sn-boot__bar,.sn-boot{transition:none}}
 `;
 
 const html = `<!doctype html>
@@ -65,13 +68,16 @@ const html = `<!doctype html>
   <body>
     <div id="streamnyaa-desktop-boot" class="sn-boot" role="progressbar" aria-live="polite" aria-label="Starting StreamNyaa Desktop" aria-valuemin="0" aria-valuemax="100" aria-valuenow="8" data-progress="8">
       <div class="sn-boot__content">
+        <div class="sn-boot__brand">
         <svg class="sn-boot__mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 5c.67 0 1.35.09 2 .26 1.78-2 5.03-2.84 6.42-2.26 1.4.58-.42 7-.42 7 .57 1.07 1 2.24 1 3.44C21 17.9 16.97 21 12 21s-9-3-9-7.56c0-1.25.5-2.4 1-3.44 0 0-1.89-6.42-.5-7 1.39-.58 4.72.23 6.5 2.23A9.04 9.04 0 0 1 12 5Z"/>
           <path d="M8 14v.5M16 14v.5M11.25 16.25h1.5L12 17l-.75-.75Z"/>
         </svg>
         <div class="sn-boot__name">Stream<span>Nyaa</span></div>
+        </div>
         <div class="sn-boot__track" aria-hidden="true"><div class="sn-boot__bar"></div></div>
         <div class="sn-boot__status"><span class="sn-boot__status-label">Reading saved app data</span><span class="sn-boot__value">8%</span></div>
+        <p class="sn-boot__caption">Getting your space ready.</p>
       </div>
     </div>
     <div id="root"></div>

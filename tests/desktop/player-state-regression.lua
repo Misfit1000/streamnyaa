@@ -3,6 +3,7 @@ local actual_command = mp.commandv
 local now = 1000
 local callbacks, properties, commands, messages, observers = {}, {}, {}, {}, {}
 local last_ass = ""
+local key_callbacks = {}
 
 -- Load the real skin against a deterministic MPV boundary. Event callbacks,
 -- reloads, cache telemetry, and time are exercised without fetching a torrent.
@@ -16,7 +17,7 @@ mp.register_script_message = function(name, callback) messages[name] = callback 
 mp.add_periodic_timer = function() return { stop = function() end, resume = function() end } end
 mp.add_timeout = function() return { kill = function() end } end
 mp.add_key_binding = function() end
-mp.add_forced_key_binding = function() end
+mp.add_forced_key_binding = function(key, _, callback) key_callbacks[key] = callback end
 mp.get_property = function(name, default) return properties[name] or default end
 mp.get_property_number = function(name, default) return properties[name] or default end
 mp.get_property_native = function(name, default) return properties[name] or default end
@@ -243,6 +244,215 @@ local ok, error_message = pcall(function()
   check(ui.end_focus == "end_replay", "Arrow navigation must move between completion actions")
   keyboard_toggle_pause("test-activate")
   check(not ui.end_overlay, "Space must activate the focused replay action")
+
+  reset()
+  state.paused_for_cache, state.paused = false, true
+  for _, viewport in ipairs({{640,360,1}, {980,600,2}, {1280,720,1}, {1920,1080,2}, {3840,2160,2}}) do
+    local width, height, dpi = viewport[1], viewport[2], viewport[3]
+    properties["display-hidpi-scale"] = dpi
+    reset_regions()
+    ass = require("mp.assdraw").ass_new()
+    draw_controls(ass, width, height, nil, scaled(width, height))
+    local toolbar = upvalue(add_region, "regions")
+    local found = {}
+    for i, region in ipairs(toolbar) do
+      found[region.id] = true
+      check(region.x1 >= 0 and region.y1 >= 0 and region.x2 <= width and region.y2 <= height,
+        "Toolbar action must fit the viewport: " .. region.id)
+      for j = i + 1, #toolbar do
+        local other = toolbar[j]
+        check(region.x2 <= other.x1 or other.x2 <= region.x1 or region.y2 <= other.y1 or other.y2 <= region.y1,
+          "Toolbar hit areas must not overlap: " .. region.id .. "/" .. other.id)
+      end
+    end
+    check(found.play and found.next_episode and found.mute and found.settings and found.fullscreen,
+      "Essential controls must remain reachable at every supported scale")
+    reset_regions()
+    draw_center_play(ass, width, height, nil, scaled(width, height))
+    local center = upvalue(add_region, "regions")[1]
+    check(center and math.abs(center.x1 + center.x2 - width) < 0.1 and math.abs(center.y1 + center.y2 - height) < 0.1,
+      "Central play action must be centered in the viewport")
+    check(center.x2 - center.x1 == 64 * controls_scale(scaled(width, height)), "Central hit target must use logical display scale")
+  end
+  ass = require("mp.assdraw").ass_new()
+  draw_title_area(ass, 1280, 720, 1)
+  check(ass.text:find("\\bord1.43", 1, true) ~= nil, "Video title must have a readable outline on bright footage")
+  reset()
+  properties["window-maximized"] = true
+  local function last_window_command(name)
+    for i = #commands, 1, -1 do
+      if commands[i][1] == "set" and commands[i][2] == name then return commands[i][3] end
+    end
+  end
+  set_window_mode("mini")
+  check(last_window_command("window-maximized") == "no" and state.mini_player, "Mini mode must be an explicit window action")
+  set_window_mode("normal")
+  check(last_window_command("window-maximized") == "yes" and not state.mini_player, "Exiting mini mode must restore maximized state")
+  reset()
+  properties["fullscreen"] = true
+  set_window_mode("mini")
+  set_window_mode("normal")
+  check(last_window_command("fullscreen") == "yes", "Exiting mini mode must restore prior fullscreen")
+  check(input_draw_interval(false, false, "mouse-hover") == 1 / 60, "Pointer hover must not be capped at eight FPS")
+  check(input_draw_interval(false, "seek", "timer") == 1 / 60, "Dragging must use the interaction frame budget")
+  check(input_draw_interval(false, false, "property:time-pos") == 0.066, "Idle telemetry should keep its efficient redraw budget")
+  reset()
+  local original_redraw = redraw_for_input
+  redraw_for_input = function() return {id = "settings"}, {x = 10, y = 10} end
+  local before_double = #commands
+  handle_double_click()
+  check(#commands == before_double, "Double clicking a toolbar action must not toggle fullscreen")
+  redraw_for_input = function() return nil, {x = 500, y = 200} end
+  handle_double_click()
+  local fullscreen_requested = false
+  for i = before_double + 1, #commands do
+    if commands[i][1] == "cycle" and commands[i][2] == "fullscreen" then fullscreen_requested = true end
+  end
+  check(fullscreen_requested, "Double clicking bare video must retain fullscreen")
+  redraw_for_input = original_redraw
+  reset()
+  check(seek_step_seconds() == 10, "Seek buttons must default to ten seconds")
+  apply_player_preference("seekStepSeconds", "20")
+  check(seek_step_seconds() == 20, "Saved seek preference must update the button number")
+  local _, options = build_submenu_rows("seek_step")
+  check(#options == 12 and options[1].value == 5 and options[12].value == 60, "Seek menu must provide five through sixty seconds")
+  check(options[4].active, "Selected twenty-second option must be marked active")
+  local glyph = require("mp.assdraw").ass_new()
+  icon_skip(glyph, 50, 50, 24, "FFFFFF", false)
+  check(glyph.text:find("20", 1, true) ~= nil, "Seek icon must render the current number")
+  apply_player_preference("seekStepSeconds", "100")
+  check(seek_step_seconds() == 60, "Seek preference cannot exceed sixty seconds")
+  apply_player_preference("seekStepSeconds", "1")
+  check(seek_step_seconds() == 5, "Seek preference cannot fall below five seconds")
+  messages["streamnyaa-download-status"]("20%")
+  check(build_main_settings_rows()[1].label == "Cancel download", "Active download must offer cancellation")
+  check(build_main_settings_rows()[1].value == "20%", "Download must show measured progress")
+  messages["streamnyaa-download-status"]("")
+  check(build_main_settings_rows()[1].label == "Download episode", "Completed download must allow another save")
+
+  reset()
+  messages["streamnyaa-reload-meta"]()
+  check(state.has_started_playback, "Metadata refresh during buffering must retain playback ownership")
+  state.paused_for_cache = false
+  ui.recovery_terminal = true
+  properties["vo-configured"] = true
+  properties["video-out-params"] = {w = 1920, h = 1080}
+  observers["time-pos"]("time-pos", 120.5)
+  check(not ui.recovery_terminal, "Advancing decoded video must dismiss an obsolete Retry screen")
+  reset()
+  state.paused_for_cache = false
+  ui.recovery_terminal = true
+  observers["time-pos"]("time-pos", 120.5)
+  check(ui.recovery_terminal, "Audio position alone must not hide a video failure")
+  messages["streamnyaa-source-generation"]("7")
+  messages["streamnyaa-source-generation"]("6")
+  messages["streamnyaa-playback-failed"]("6")
+  check(not ui.recovery_terminal, "Late source failures must not replace the current stream")
+  messages["streamnyaa-playback-failed"]("7")
+  check(ui.recovery_terminal, "Current source failures must remain actionable")
+  begin_first_video_frame_handoff()
+  check(not hold_cover_for_first_video_frame(), "Decoded video must not retain a timed artwork layer")
+
+  reset()
+  state.paused_for_cache = false
+  ui.visible = false
+  ui.recovery_terminal = true
+  draw(true, "test-failure")
+  check(last_ass ~= "", "Failure fixture must paint a visible overlay")
+  ui.recovery_terminal = false
+  draw(false, "test-recovered-hidden-controls")
+  check(last_ass == "", "Loading-to-playing transition must clear artwork even with hidden controls")
+
+  local function point_at(id)
+    for _, region in ipairs(upvalue(add_region, "regions")) do
+      if region.id == id then
+        properties["mouse-pos"] = {x = (region.x1 + region.x2) / 2, y = (region.y1 + region.y2) / 2}
+        return
+      end
+    end
+    error("Missing clickable control: " .. id)
+  end
+  reset()
+  state.paused_for_cache = false
+  ui.visible = true
+  draw(true, "test-controls")
+  for cycle = 1, 30 do
+    point_at("settings")
+    handle_mouse_down()
+    handle_mouse_up()
+    check(ui.settings_open, "Settings click must open immediately without a timer")
+    point_at("settings:seek_step")
+    handle_mouse_down()
+    -- Simulate telemetry landing between the two halves of a click.
+    state.paused_for_cache = true
+    draw(true, "test-buffer-between-click")
+    handle_mouse_up()
+    check(ui.submenu == "seek_step", "Buffering must not steal the pressed settings row")
+    point_at("seek_step:20")
+    handle_mouse_down()
+    handle_mouse_up()
+    check(seek_step_seconds() == 20, "Seek selection must take effect in the release handler")
+    state.paused_for_cache = false
+    ui.settings_open = false
+    ui.submenu = "main"
+    draw(true, "test-next-click")
+  end
+  ui.settings_open = true
+  ui.submenu = "seek_step"
+  draw(true, "test-all-seek-options")
+  local before_scroll = #commands
+  for i = 1, 12 do handle_wheel(1) end
+  point_at("seek_step:60")
+  handle_mouse_down()
+  handle_mouse_up()
+  check(seek_step_seconds() == 60, "The final seek option must remain clickable in a scrollable menu")
+  for i = before_scroll + 1, #commands do
+    check(not (commands[i][1] == "add" and commands[i][2] == "volume"), "Scrolling settings must never change volume")
+  end
+  reset()
+  state.autoplay = true
+  check(set_sleep_timer(15), "Sleep timer must accept an offered duration")
+  check(not set_sleep_timer(-1), "Invalid sleep duration must be rejected")
+  now = now + 899
+  check_sleep_timer()
+  check(not ui.sleep_expired, "Sleep timer must not expire early")
+  now = now + 1
+  check_sleep_timer()
+  check(ui.sleep_expired and state.paused and properties.pause == true, "Sleep timer must really pause playback")
+  check(state.autoplay, "Sleep timer must preserve the saved autoplay preference")
+  local before_next = #commands
+  request_next_episode("ended")
+  check(#commands == before_next, "Expired timer must prevent automatic next-episode requests")
+  set_sleep_timer(0)
+  check(not ui.sleep_deadline and not ui.sleep_expired, "Off must cancel and clear the sleep timer")
+  reset()
+  meta.subtitleOffsetKey = "subtitleOffset.0123456789abcdef0123456789abcdef01234567.2"
+  set_release_subtitle_delay(0.4)
+  check(properties["sub-delay"] == 0.4, "Subtitle adjustment must apply to MPV immediately")
+  local saved = commands[#commands]
+  check(saved[2] == "streamnyaa-player-setting-changed" and saved[3] == meta.subtitleOffsetKey, "Subtitle adjustment must persist under release and episode identity")
+  set_release_subtitle_delay(1000)
+  check(properties["sub-delay"] == 120, "Subtitle delay must be bounded")
+  set_release_subtitle_delay(0)
+  check(properties["sub-delay"] == 0, "Subtitle timing reset must be saved")
+  key_callbacks["x"]()
+  check(math.abs(properties["sub-delay"] - 0.1) < 0.001, "Keyboard subtitle later must apply immediately")
+  check(commands[#commands][3] == meta.subtitleOffsetKey, "Keyboard subtitle timing must use release persistence")
+  key_callbacks["z"]()
+  check(math.abs(properties["sub-delay"]) < 0.001, "Keyboard subtitle earlier must reverse the adjustment")
+  apply_custom_shortcuts({ pause = "Ctrl+b", fullscreen = "Ctrl+f", mute = "Ctrl+m", back = "Ctrl+j", forward = "Ctrl+l", settings = "Ctrl+s" })
+  check(type(key_callbacks["Ctrl+b"]) == "function", "Custom pause must register a real action")
+  local before_custom = #commands
+  key_callbacks["Ctrl+f"]()
+  check(#commands > before_custom, "Custom fullscreen must issue a player command")
+  local found_fullscreen = false
+  for index = before_custom + 1, #commands do
+    if commands[index][1] == "cycle" and commands[index][2] == "fullscreen" then found_fullscreen = true end
+  end
+  check(found_fullscreen, "Custom fullscreen must change fullscreen, not merely show controls")
+  ui.settings_open = false
+  key_callbacks["Ctrl+s"]()
+  check(ui.settings_open, "Custom Settings must open its real menu")
 end)
 
 if ok then

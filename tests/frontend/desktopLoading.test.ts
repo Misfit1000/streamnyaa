@@ -32,6 +32,9 @@ describe('desktop boot milestones', () => {
     updateDesktopBoot({ percent: 22, label: 'Late cache task' });
     expect(document.querySelector<HTMLElement>('.sn-boot__bar')?.style.width).toBe('64%');
     expect(document.querySelector('.sn-boot__value')?.textContent).toBe('64%');
+    expect(document.querySelector('.sn-boot__status-label')?.textContent).toBe('Restoring session');
+    updateDesktopBoot({ percent: NaN, label: 'Invalid' });
+    expect(document.querySelector('.sn-boot__value')?.textContent).toBe('64%');
   });
 
   it('reaches 100 before dismissing the pre-React screen', () => {
@@ -49,4 +52,3 @@ describe('desktop boot milestones', () => {
     vi.useRealTimers();
   });
 });
-

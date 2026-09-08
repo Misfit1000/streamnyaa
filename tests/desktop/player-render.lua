@@ -47,7 +47,37 @@ mp.add_timeout(0.7, function()
     draw(true, "render-buffering")
     mp.add_timeout(0.4, function()
       mp.commandv("screenshot-to-file", output .. "/buffering.png", "window")
-      mp.commandv("quit")
+      state.paused_for_cache, state.cache_buffering_active = false, false
+      state.paused, state.core_idle, state.idle = true, false, false
+      ui.visible, ui.settings_open, ui.end_overlay = true, false, false
+      ui.last_interaction = mp.get_time()
+      draw(true, "render-controls-dark")
+      mp.add_timeout(0.4, function()
+        mp.commandv("screenshot-to-file", output .. "/controls-dark.png", "window")
+        mp.set_property_number("brightness", 100)
+        draw(true, "render-controls-bright")
+        mp.add_timeout(0.4, function()
+          mp.commandv("screenshot-to-file", output .. "/controls-bright.png", "window")
+          ui.end_overlay, ui.end_status = true, "idle"
+          draw(true, "render-complete")
+          mp.add_timeout(0.4, function()
+            mp.commandv("screenshot-to-file", output .. "/complete.png", "window")
+            ui.end_overlay, ui.settings_open, ui.submenu = false, true, "main"
+            state.paused_for_cache, state.cache_buffering_active = true, true
+            draw(true, "render-settings-buffering")
+            mp.add_timeout(0.4, function()
+              mp.commandv("screenshot-to-file", output .. "/settings-buffering.png", "window")
+              ui.submenu = "seek_step"
+              draw(true, "render-settings-scroll")
+              for i = 1, 12 do handle_wheel(1) end
+              mp.add_timeout(0.4, function()
+                mp.commandv("screenshot-to-file", output .. "/settings-scroll.png", "window")
+                mp.commandv("quit")
+              end)
+            end)
+          end)
+        end)
+      end)
     end)
   end)
 end)

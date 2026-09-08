@@ -3,13 +3,40 @@ import {
   describeDesktopPlaybackError,
   resolveDesktopPlaybackCheckpoint,
   saveDesktopWatchProgress,
+  loadDesktopPlayerPreferences,
+  saveDesktopPlayerSetting,
+  saveLocalPlaybackHistoryItem,
+  findLocalPlaybackHistoryItem,
+  updateLocalPlaybackHistoryProgress,
 } from '../../src/lib/desktop';
 
 describe('desktop playback compatibility behavior', () => {
+  it('preserves resume position on missing telemetry but accepts an explicit restart', () => {
+    const source = { magnet: 'magnet:?xt=urn:btih:test', title: 'Release A', animeId: 1, animeTitle: 'Example', episode: 4 };
+    saveLocalPlaybackHistoryItem({ ...source, resumeSeconds: 300, durationSeconds: 1440, progressPercent: 20.8 });
+    for (const currentSeconds of [undefined, null, NaN, Infinity, -1]) {
+      updateLocalPlaybackHistoryProgress(source, { currentSeconds });
+      expect(findLocalPlaybackHistoryItem(source)?.resumeSeconds).toBe(300);
+    }
+    updateLocalPlaybackHistoryProgress(source, { currentSeconds: 0 });
+    expect(findLocalPlaybackHistoryItem(source)?.resumeSeconds).toBe(0);
+  });
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
     vi.restoreAllMocks();
+  });
+
+  it('persists a bounded seek step without changing other playback preferences', () => {
+    expect(loadDesktopPlayerPreferences().seekStepSeconds).toBe(10);
+    saveDesktopPlayerSetting('seekStepSeconds', '20');
+    expect(loadDesktopPlayerPreferences().seekStepSeconds).toBe(20);
+    const speed = loadDesktopPlayerPreferences().speed;
+    saveDesktopPlayerSetting('seekStepSeconds', '100');
+    expect(loadDesktopPlayerPreferences().seekStepSeconds).toBe(60);
+    saveDesktopPlayerSetting('seekStepSeconds', '-1');
+    expect(loadDesktopPlayerPreferences().seekStepSeconds).toBe(5);
+    expect(loadDesktopPlayerPreferences().speed).toBe(speed);
   });
 
   it('keeps the newest canonical checkpoint even when it is a deliberate backward seek', () => {

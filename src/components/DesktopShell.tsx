@@ -1,5 +1,5 @@
-import { memo, Suspense, useEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
 import DesktopNotificationCenter from './DesktopNotificationCenter';
@@ -25,22 +25,26 @@ import {
 import { preloadDesktopRoute, preloadDesktopWatchData, warmCoreDesktopRoutes } from '../lib/desktopRoutePreload';
 import { loadDesktopScheduleUpdatePreferences } from '../lib/scheduleRevisions';
 import { desktopPlayerShortcuts } from '../lib/desktopPlayerShortcuts';
+import { desktopSearchPath } from '../lib/desktopSearchRoute';
+import { restoreDesktopScroll } from '../lib/desktopScrollRestore';
+import { useDesktopInterfaceScale } from '../lib/desktopAppearance';
 
 const desktopNav = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/search', label: 'Explore', icon: Compass },
   { to: '/schedule', label: 'Calendar', icon: CalendarDays },
-  { to: '/nyaa', label: 'Sources', icon: Download },
   { to: '/my-list', label: 'Library', icon: Library },
 ];
 
 const desktopLibrary = [
+  { to: '/nyaa', label: 'Playback options', icon: Download },
   { to: '/my-list', label: 'Favorites', icon: Heart },
   { to: '/dashboard', label: 'History', icon: History },
   { to: '/desktop-settings', label: 'Settings', icon: Settings },
 ];
 
 const SIDEBAR_STORAGE_KEY = 'streamnyaa.desktop.sidebarCollapsed';
+const desktopScrollPositions = new Map<string, number>();
 const HOVER_PRELOAD_DELAY_MS = 80;
 const HOVER_SOURCE_PRELOAD_DELAY_MS = 360;
 
@@ -91,7 +95,7 @@ function ShortcutHelpOverlay({ onClose }: { onClose: () => void }) {
       <div className="sn-glass-panel w-full max-w-2xl overflow-hidden rounded-xl border border-white/[0.08] shadow-sm">
         <div className="flex items-center justify-between gap-4 border-b border-white/[0.08] px-5 py-4">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-primary/16 text-primary">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary/16 text-primary">
               <Keyboard className="h-5 w-5" />
             </span>
             <div>
@@ -139,14 +143,14 @@ const DesktopNavItem = memo(function DesktopNavItem({
         'group relative flex h-11 items-center overflow-hidden rounded-xl text-[15px] font-semibold transition-all duration-200',
         collapsed ? 'justify-center px-0' : 'gap-3 px-4',
         isActive
-          ? 'bg-[linear-gradient(135deg,rgba(255,63,95,0.36),rgba(255,63,95,0.16))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_18px_42px_rgba(255,47,79,0.18)]'
+          ? 'bg-primary/15 text-white'
           : 'text-white/58 hover:bg-white/[0.060] hover:text-white',
       ].join(' ')}
     >
       {({ isActive }) => (
         <>
           <span
-            className={`absolute left-0 top-2 h-7 w-1 rounded-r-full bg-primary shadow-[0_0_18px_rgba(244,63,94,0.65)] transition-opacity duration-200 ${
+            className={`absolute left-0 top-2 h-7 w-1 rounded-r-full bg-primary transition-opacity duration-200 ${
               isActive ? 'opacity-100' : 'opacity-0'
             }`}
             aria-hidden="true"
@@ -166,7 +170,9 @@ const DesktopNavItem = memo(function DesktopNavItem({
 });
 
 export default function DesktopShell() {
+  useDesktopInterfaceScale();
   const location = useLocation();
+  const navigationType = useNavigationType();
   const navigate = useNavigate();
   const { user } = useAuth();
   const isWatch = location.pathname.startsWith('/watch/');
@@ -178,6 +184,20 @@ export default function DesktopShell() {
   const hoverSourcePreloadTimer = useRef<number | undefined>(undefined);
   const hoverPreloadHref = useRef('');
   const contentRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    setTopSearchValue(location.pathname === '/search' ? new URLSearchParams(location.search).get('q') || '' : '');
+  }, [location.pathname, location.search]);
+  useLayoutEffect(() => {
+    const element = contentRef.current;
+    if (!element) return;
+    const saved = navigationType === 'POP' ? desktopScrollPositions.get(location.key) || 0 : 0;
+    const stopRestore = restoreDesktopScroll(element, saved);
+    return () => {
+      stopRestore();
+      desktopScrollPositions.set(location.key, element.scrollTop);
+      if (desktopScrollPositions.size > 100) desktopScrollPositions.delete(desktopScrollPositions.keys().next().value!);
+    };
+  }, [location.key, navigationType]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -189,13 +209,13 @@ export default function DesktopShell() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isTypingTarget(event.target)) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         topSearchInputRef.current?.focus();
         topSearchInputRef.current?.select();
         return;
       }
+      if (isTypingTarget(event.target)) return;
       if (event.key === '?' || (event.shiftKey && event.key === '/')) {
         event.preventDefault();
         setShortcutsOpen(true);
@@ -367,27 +387,26 @@ export default function DesktopShell() {
 
   return (
     <div className="desktop-app-shell min-h-screen overflow-hidden text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_66%_6%,rgba(139,8,30,0.16),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.018),transparent_36%)]" />
-      <div className={`relative grid min-h-screen w-screen overflow-hidden bg-black/20 shadow-2xl shadow-black/40 transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? 'grid-cols-[86px_minmax(0,1fr)]' : 'grid-cols-[258px_minmax(0,1fr)]'}`}>
+      <div className={`relative grid min-h-screen w-screen overflow-hidden bg-black/20 shadow-none shadow-black/40 transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? 'grid-cols-[86px_minmax(0,1fr)]' : 'grid-cols-[258px_minmax(0,1fr)]'}`}>
         <aside className={`sn-sidebar-panel flex h-screen flex-col py-6 transition-[padding] duration-300 ${sidebarCollapsed ? 'px-3' : 'px-5'}`}>
           <Link to="/" className={`flex h-[58px] items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-1'}`}>
             {logoFailed ? (
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[18px] bg-primary text-[21px] font-black text-white">S</span>
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary text-[21px] font-semibold text-white">S</span>
             ) : (
               <img
                 src={desktopLogo}
                 alt="StreamNyaa"
-                className="h-11 w-11 shrink-0 rounded-[18px] object-contain drop-shadow-[0_10px_24px_rgba(244,63,94,0.18)]"
+                className="h-11 w-11 shrink-0 rounded-xl object-contain drop-shadow-[0_10px_24px_rgba(244,63,94,0.18)]"
                 loading="eager"
                 decoding="async"
                 onError={() => setLogoFailed(true)}
               />
             )}
             {!sidebarCollapsed ? <span className="flex min-w-0 flex-col justify-center">
-              <span className="block text-[23px] font-black leading-none tracking-[-0.052em] text-white">
+              <span className="block text-[23px] font-semibold leading-none tracking-[-0.052em] text-white">
                 Stream<span className="text-primary">Nyaa</span>
               </span>
-              <span className="mt-1.5 block text-[11px] font-bold uppercase leading-[1.1] tracking-[0.32em] text-white/42">Desktop Cinema</span>
+              <span className="mt-1.5 block text-[11px] font-semibold normal-case leading-[1.1] tracking-normal text-white/42">Desktop Cinema</span>
             </span> : null}
           </Link>
 
@@ -396,7 +415,7 @@ export default function DesktopShell() {
           </nav>
 
           <div className="mt-7 border-t border-white/[0.06] pt-5">
-            {!sidebarCollapsed ? <p className="mb-3 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/38">Library</p> : null}
+            {!sidebarCollapsed ? <p className="mb-3 px-3 text-[11px] font-semibold normal-case tracking-normal text-white/38">Library</p> : null}
             <nav className="space-y-2">
               {desktopLibrary.map((item) => <DesktopNavItem key={`${item.to}-${item.label}`} {...item} collapsed={sidebarCollapsed} />)}
             </nav>
@@ -424,16 +443,17 @@ export default function DesktopShell() {
               <Menu className="h-5 w-5" />
             </button>
             <form
-              className="sn-input flex h-11 min-w-[340px] max-w-[600px] flex-1 items-center gap-3 px-4 text-sm text-white/48 focus-within:ring-2 focus-within:ring-primary/60"
+              className="sn-input flex h-11 min-w-0 max-w-[600px] flex-1 items-center gap-3 px-4 text-sm text-white/60 focus-within:ring-2 focus-within:ring-primary/60"
               role="search"
               onSubmit={(event) => {
                 event.preventDefault();
                 const query = topSearchValue.trim();
-                navigate(query ? `/search?q=${encodeURIComponent(query)}` : '/search');
+                navigate(desktopSearchPath(query, location.pathname, location.search));
               }}
             >
               <Search className="h-5 w-5" />
               <input
+                id="desktop-global-search"
                 ref={topSearchInputRef}
                 value={topSearchValue}
                 onChange={(event) => setTopSearchValue(event.target.value)}
@@ -441,7 +461,8 @@ export default function DesktopShell() {
                 placeholder="Search anime titles..."
                 aria-label="Search anime"
               />
-              <kbd className="ml-auto rounded-md bg-white/8 px-2 py-1 text-[11px] font-bold text-white/42">Ctrl K</kbd>
+              {topSearchValue ? <button type="button" aria-label="Clear search" onClick={() => { setTopSearchValue(''); topSearchInputRef.current?.focus(); }} className="sn-icon-action h-8 w-8"><X className="h-4 w-4" /></button> : null}
+              <kbd className="ml-auto hidden shrink-0 rounded-md bg-white/8 px-2 py-1 text-[11px] text-white/55 xl:block">Ctrl K</kbd>
             </form>
             <div className="ml-auto flex items-center gap-3">
               <DesktopNotificationCenter />

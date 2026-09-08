@@ -25,13 +25,14 @@ impl DataError {
                 "Updates are temporarily delayed. StreamNyaa will retry automatically."
             }
             "invalid" => "The response could not be verified.",
+            "access-denied" => "Catalog access was declined. Your internet connection may still be working.",
             _ => "The connection was interrupted. StreamNyaa will reconnect.",
         };
         Self {
             code: code.into(),
             provider: provider.into(),
             message: message.into(),
-            retryable: !matches!(code, "cancelled" | "invalid"),
+            retryable: !matches!(code, "cancelled" | "invalid" | "access-denied"),
             status_code: None,
             retry_after_ms: None,
         }
@@ -133,6 +134,7 @@ struct Lane {
     active: usize,
     last: Option<Instant>,
     blocked_until: Option<Instant>,
+    denied_until: Option<Instant>,
 }
 fn lanes() -> &'static Mutex<HashMap<String, Lane>> {
     static VALUE: OnceLock<Mutex<HashMap<String, Lane>>> = OnceLock::new();
@@ -177,6 +179,11 @@ async fn slot(provider: &str, priority: Arc<AtomicU8>) -> Result<Ticket, DataErr
                 .map_err(|_| DataError::new(provider, "error"))?;
             let lane = all.entry(provider.into()).or_default();
             let now = Instant::now();
+            if lane.denied_until.is_some_and(|until| until > now) {
+                let mut error = DataError::new(provider, "access-denied");
+                error.status_code = Some(403);
+                return Err(error);
+            }
             while lane
                 .starts
                 .front()
@@ -201,6 +208,17 @@ async fn slot(provider: &str, priority: Arc<AtomicU8>) -> Result<Ticket, DataErr
                 _ => 350,
             };
             let minute_limit = if provider == "anilist" { 30 } else { 60 };
+            // A locally exhausted budget is not a broken connection. Return the
+            // remaining wait so subscribers recover after the window resets.
+            if lane.starts.len() >= minute_limit {
+                let mut error = DataError::new(provider, "rate-limited");
+                error.retry_after_ms = lane.starts.front().map(|first| {
+                    Duration::from_secs(60)
+                        .saturating_sub(now.duration_since(*first))
+                        .as_millis() as u64 + 1
+                });
+                return Err(error);
+            }
             if first == Some(id)
                 && lane.active < 2
                 && lane.starts.len() < minute_limit
@@ -298,6 +316,15 @@ async fn fetch_bytes(
         match result {
             Ok(mut response) => {
                 let status = response.status();
+                if status.as_u16() == 403 {
+                    if let Ok(mut all) = lanes().lock() {
+                        all.entry(provider.into()).or_default().denied_until =
+                            Some(Instant::now() + Duration::from_secs(300));
+                    }
+                    let mut error = DataError::new(provider, "access-denied");
+                    error.status_code = Some(403);
+                    return Err(error);
+                }
                 if status.as_u16() == 429 {
                     let wait = retry_delay(response.headers()).as_secs();
                     if let Ok(mut all) = lanes().lock() {
@@ -352,6 +379,11 @@ async fn fetch_bytes(
                 }
             }
             Err(error) => {
+                log_info(format!(
+                    "Data transport provider={} attempt={} timeout={} connect={} body={} decode={}",
+                    provider, attempt + 1, error.is_timeout(), error.is_connect(),
+                    error.is_body(), error.is_decode()
+                ));
                 if attempt == 1 {
                     return Err(DataError::new(
                         provider,
@@ -502,11 +534,14 @@ async fn sources(
                 .unwrap_or_else(|_| Err(DataError::new("nyaa", "timeout")));
                 match bytes {
                     Ok(bytes) => {
-                        let xml = String::from_utf8(bytes)
-                            .map_err(|_| DataError::new("nyaa", "invalid"))?;
-                        if !xml.contains("<rss") || !xml.contains("<channel") {
-                            return Err(DataError::new("nyaa", "invalid"));
-                        }
+                        let xml = match String::from_utf8(bytes) {
+                            Ok(xml) if xml.contains("<rss") && xml.contains("<channel") => xml,
+                            _ => {
+                                complete = false;
+                                failed = Some(DataError::new("nyaa", "invalid"));
+                                break 'queries;
+                            }
+                        };
                         items.extend(parse_nyaa_rss_items(&xml, &variant, category, p, 1));
                     }
                     Err(error) => {
@@ -672,20 +707,20 @@ pub async fn execute(
             let worker_tx = tx.clone();
             let worker_provider = provider.clone();
             let task = tokio::spawn(async move {
+                let started = Instant::now();
                 let result = tokio::time::timeout(duration, run(job, worker_priority, duration))
                     .await
                     .unwrap_or_else(|_| Err(DataError::new(&worker_provider, "timeout")));
                 log_info(format!(
-                    "Data request provider={} outcome={} duration_ms={}",
+                    "Data request provider={} outcome={} duration_ms={} http_status={} retry_after_ms={}",
                     worker_provider,
                     result
                         .as_ref()
                         .map(|r| r.cache_status)
                         .unwrap_or_else(|e| e.code.as_str()),
-                    result
-                        .as_ref()
-                        .map(|r| r.duration_ms)
-                        .unwrap_or(duration.as_millis())
+                    started.elapsed().as_millis(),
+                    result.as_ref().err().and_then(|e| e.status_code).unwrap_or(0),
+                    result.as_ref().err().and_then(|e| e.retry_after_ms).unwrap_or(0)
                 ));
                 worker_tx.send_replace(Some(result));
             });
@@ -722,6 +757,37 @@ pub async fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn denied_endpoint_is_not_retried_by_other_consumers() {
+        let provider = "test-denied";
+        lanes().lock().unwrap().entry(provider.into()).or_default().denied_until =
+            Some(Instant::now() + Duration::from_secs(300));
+        let error = slot(provider, Arc::new(AtomicU8::new(0))).await.err().unwrap();
+        assert_eq!(error.code, "access-denied");
+        assert_eq!(error.status_code, Some(403));
+        assert!(!error.retryable);
+        let mut all = lanes().lock().unwrap();
+        let lane = all.remove(provider).unwrap();
+        assert!(lane.pending.is_empty());
+        assert_eq!(lane.active, 0);
+        assert!(lane.starts.is_empty());
+    }
+    #[tokio::test]
+    async fn exhausted_local_budget_reports_retry_after_without_waiting() {
+        let provider = "test-budget";
+        lanes().lock().unwrap().entry(provider.into()).or_default().starts =
+            std::iter::repeat(Instant::now()).take(60).collect();
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            slot(provider, Arc::new(AtomicU8::new(0))),
+        ).await.expect("budget exhaustion must not wait for the HTTP deadline");
+        let error = result.err().expect("budget should be exhausted");
+        assert_eq!(error.code, "rate-limited");
+        assert!(error.retry_after_ms.unwrap() > 59_000);
+        let mut all = lanes().lock().unwrap();
+        assert!(all.get(provider).unwrap().pending.is_empty());
+        all.remove(provider);
+    }
     #[test]
     fn restricts_transport_destinations() {
         assert!(allowed_url("https://api.jikan.moe/v4/anime/1"));

@@ -469,7 +469,7 @@ export default function DesktopSchedule() {
       <section className="sn-hero-panel overflow-hidden p-6">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div className="flex items-center gap-4">
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/12 text-primary shadow-lg shadow-primary/10">
+            <span className="grid h-12 w-12 place-items-center rounded-xl bg-primary/12 text-primary shadow-none shadow-primary/10">
               <CalendarDays className="h-6 w-6" />
             </span>
             <div>
@@ -530,7 +530,7 @@ export default function DesktopSchedule() {
             <button type="button" onClick={testNotification} className="sn-category-chip px-3 py-1.5 hover:text-white">
               Test notification
             </button>
-            <span className="basis-full text-right text-[11px] font-bold normal-case tracking-normal text-white/40">
+            <span className="basis-full text-right text-[11px] font-semibold normal-case tracking-normal text-white/40">
               Saved bells use native Windows notifications outside the app window while StreamNyaa is running.
             </span>
           </div>
@@ -539,7 +539,7 @@ export default function DesktopSchedule() {
 
       {notice ? (
         <div
-          className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-bold shadow-lg ${
+          className={`mt-4 rounded-xl border px-4 py-3 text-sm font-semibold shadow-none ${
             notice.tone === 'error'
               ? 'border-red-400/25 bg-red-500/10 text-red-100 shadow-red-950/20'
               : notice.tone === 'success'
@@ -593,7 +593,7 @@ export default function DesktopSchedule() {
             onClick={() => setSelectedDay(index)}
             className={`min-w-[120px] rounded-xl px-4 py-3 text-left transition-all hover:-translate-y-0.5 ${
               selectedDay === index
-                ? 'bg-primary text-white shadow-lg shadow-primary/12'
+                ? 'bg-primary text-white shadow-none shadow-primary/12'
                 : 'bg-white/[0.045] text-white/62 hover:bg-white/[0.07] hover:text-white'
             }`}
           >
@@ -650,7 +650,7 @@ export default function DesktopSchedule() {
                 <Link
                   key={`watched-${anime.scheduleId || animeIdentity(anime)}`}
                   to={desktopWatchOrBrowsePath(anime)}
-                  className="group relative h-[118px] w-[280px] shrink-0 overflow-hidden rounded-xl bg-black/35 shadow-lg shadow-black/20 ring-1 ring-inset ring-white/[0.08] transition duration-200 hover:-translate-y-0.5 hover:ring-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
+                  className="group relative h-[118px] w-[280px] shrink-0 overflow-hidden rounded-xl bg-black/35 shadow-none shadow-black/20 ring-1 ring-inset ring-white/[0.08] transition duration-200 hover:-translate-y-0.5 hover:ring-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
                 >
                   {artwork ? (
                     <img
@@ -799,7 +799,7 @@ export default function DesktopSchedule() {
                             disabled={reminderPending || (!notified && !canAddReminder)}
                             className={`grid h-8 w-8 place-items-center rounded-lg border backdrop-blur transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:cursor-not-allowed disabled:opacity-45 ${
                               notified
-                                ? 'border-primary/45 bg-primary/22 text-primary shadow-lg shadow-primary/20'
+                                ? 'border-primary/45 bg-primary/22 text-primary shadow-none shadow-primary/20'
                                 : 'border-white/10 bg-black/60 text-white/70 hover:border-primary/30 hover:bg-primary/14 hover:text-white'
                             }`}
                             aria-label={

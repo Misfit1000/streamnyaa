@@ -338,7 +338,7 @@ const fetchAniListDirect = (body: Record<string, unknown>) => fetch(ANILIST_URL,
   body: JSON.stringify(body),
 });
 
-const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600, options: DesktopRequestOptions = {}) => {
+export const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600, options: DesktopRequestOptions = {}) => {
   if (options.signal?.aborted) throw desktopDataError('anilist', new DOMException('Cancelled', 'AbortError'));
   const cacheKey = cacheKeyFor('anilist', body);
   return fetchWithLocalMetadataCache('anilist', cacheKey, ttlSeconds, async () => {
@@ -370,7 +370,7 @@ const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600, o
 
 const fetchJikanPathDirect = (path: string) => fetch(`https://api.jikan.moe/v4${path}`);
 
-const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: DesktopRequestOptions = {}) => {
+export const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: DesktopRequestOptions = {}) => {
   if (options.signal?.aborted) throw desktopDataError('jikan', new DOMException('Cancelled', 'AbortError'));
   const cacheKey = cacheKeyFor('jikan', path);
   return fetchWithLocalMetadataCache('jikan', cacheKey, ttlSeconds, async () => {
@@ -487,7 +487,7 @@ export const fetchAniDbAnimeMetadata = async (aid: number, ttlSeconds = 604800) 
   });
 };
 
-const mapAnilistToJikan = (m: any) => ({
+export const mapAnilistToJikan = (m: any) => ({
   id: m.id,
   mal_id: m.idMal || null,
   anilist_id: m.id,

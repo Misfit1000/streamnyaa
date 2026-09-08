@@ -136,9 +136,12 @@ async function parseResponse(response: Response) {
 
 async function desktopRest(session: AuthSession, path: string, options: RequestInit = {}) {
   const config = await getAuthConfig();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
   try {
     const response = await fetch(`${config.supabaseUrl}/rest/v1/${path}`, {
       ...options,
+      signal: controller.signal,
       headers: {
         apikey: config.publishableKey,
         Authorization: `Bearer ${session.access_token}`,
@@ -150,6 +153,18 @@ async function desktopRest(session: AuthSession, path: string, options: RequestI
     return await parseResponse(response);
   } catch (error) {
     throw normalizeFetchError(error);
+  } finally { clearTimeout(timer); }
+}
+
+async function readCollection(session: AuthSession, path: string) {
+  const rows: any[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const page = await desktopRest(session, `${path}&limit=500&offset=${offset}`);
+    if (!Array.isArray(page)) throw new AccountSyncError('service-error', 'Account data was incomplete. Local changes remain saved.');
+    rows.push(...page);
+    if (page.length < 500) return rows;
+    // Explicit failure is safer than silently applying a truncated collection.
+    if (rows.length >= 100_000) throw new AccountSyncError('service-error', 'Account collection exceeds the safe sync limit. Local data was not replaced.');
   }
 }
 
@@ -158,8 +173,8 @@ async function fetchDesktopAccountSync(session: AuthSession): Promise<AccountSyn
   const userFilter = encodeURIComponent(user.id);
   const [profiles, library, watchHistory] = await Promise.all([
     desktopRest(session, `user_profiles?user_id=eq.${userFilter}&select=*&limit=1`),
-    desktopRest(session, `user_library?user_id=eq.${userFilter}&select=*&order=updated_at.desc&limit=500`),
-    desktopRest(session, `user_watch_history?user_id=eq.${userFilter}&select=*&order=updated_at.desc&limit=500`),
+    readCollection(session, `user_library?user_id=eq.${userFilter}&select=*&order=anime_id.asc`),
+    readCollection(session, `user_watch_history?user_id=eq.${userFilter}&select=*&order=history_key.asc`),
   ]);
   return {
     profile: Array.isArray(profiles) ? profiles[0] || null : null,
@@ -185,7 +200,7 @@ export async function fetchAccountSync(session?: AuthSession | null): Promise<Ac
 }
 
 function libraryRows(userId: string, rows: AccountLibraryItem[]) {
-  return rows.slice(0, 500).map((item) => ({
+  return rows.map((item) => ({
     user_id: userId,
     anime_id: item.animeId,
     anime_title: item.animeTitle,
@@ -198,7 +213,7 @@ function libraryRows(userId: string, rows: AccountLibraryItem[]) {
 }
 
 function watchRows(userId: string, rows: AccountWatchHistoryItem[]) {
-  return rows.slice(0, 500).map((item) => ({
+  return rows.map((item) => ({
     user_id: userId,
     history_key: item.key,
     source: null,
@@ -231,7 +246,7 @@ export async function replaceAccountSyncData(
   }
 
   const user = session.user?.id ? session.user : await fetchSessionUser(session);
-  const writes: Promise<unknown>[] = [desktopRest(session, 'user_profiles?on_conflict=user_id', {
+  await desktopRest(session, 'user_profiles?on_conflict=user_id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify([{
@@ -240,21 +255,20 @@ export async function replaceAccountSyncData(
       ...(payload.displayName !== undefined ? { display_name: payload.displayName } : {}),
       updated_at: new Date().toISOString(),
     }]),
-  })];
-  if (payload.library?.length) {
-    writes.push(desktopRest(session, 'user_library?on_conflict=user_id,anime_id', {
+  });
+  for (let offset = 0; offset < (payload.library?.length || 0); offset += 500) {
+    await desktopRest(session, 'user_library?on_conflict=user_id,anime_id', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(libraryRows(user.id, payload.library)),
-    }));
+      body: JSON.stringify(libraryRows(user.id, payload.library!.slice(offset, offset + 500))),
+    });
   }
-  if (payload.watchHistory?.length) {
-    writes.push(desktopRest(session, 'user_watch_history?on_conflict=user_id,history_key', {
+  for (let offset = 0; offset < (payload.watchHistory?.length || 0); offset += 500) {
+    await desktopRest(session, 'user_watch_history?on_conflict=user_id,history_key', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(watchRows(user.id, payload.watchHistory)),
-    }));
+      body: JSON.stringify(watchRows(user.id, payload.watchHistory!.slice(offset, offset + 500))),
+    });
   }
-  await Promise.all(writes);
   return { ok: true };
 }

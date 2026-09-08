@@ -128,7 +128,7 @@ function PreviewImage({
   if (!current || failed) {
     return (
       <div className="flex h-full w-full items-end bg-[radial-gradient(circle_at_35%_20%,rgba(244,63,94,0.32),transparent_38%),linear-gradient(145deg,#1b1118,#07070a)] p-3">
-        <span className="line-clamp-2 text-sm font-black leading-tight text-white/78">{title}</span>
+        <span className="line-clamp-2 text-sm font-semibold leading-tight text-white/78">{title}</span>
       </div>
     );
   }
@@ -169,9 +169,9 @@ function StatCard({
         <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/12 text-primary">
           <Icon className="h-5 w-5" />
         </div>
-        <span className="text-2xl font-black tracking-[-0.04em] text-white">{value}</span>
+        <span className="text-2xl font-semibold tracking-[-0.04em] text-white">{value}</span>
       </div>
-      <p className="mt-4 text-sm font-black text-white">{label}</p>
+      <p className="mt-4 text-sm font-semibold text-white">{label}</p>
       <p className="mt-1 text-xs leading-5 text-white/46">{detail}</p>
     </article>
   );
@@ -198,7 +198,7 @@ function ActionCard({
           <Icon className="h-5 w-5" />
         </span>
         <span className="min-w-0">
-          <span className="block text-sm font-black text-white">{title}</span>
+          <span className="block text-sm font-semibold text-white">{title}</span>
           <span className="mt-1 line-clamp-1 block text-xs text-white/48">{description}</span>
         </span>
       </span>
@@ -257,16 +257,16 @@ export default function DesktopProfile() {
     <div className="sn-page py-6">
       <Seo title="Profile | StreamNyaa Desktop" description="StreamNyaa Desktop profile and sync." canonicalPath="/profile" robots="noindex, nofollow" />
 
-      <section className="sn-hero-panel overflow-hidden rounded-3xl">
+      <section className="sn-hero-panel overflow-hidden rounded-xl">
         <div className="relative p-6 md:p-8">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_22%,rgba(244,63,94,0.22),transparent_30%),radial-gradient(circle_at_16%_12%,rgba(99,102,241,0.16),transparent_32%)]" />
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div className="flex min-w-0 items-center gap-5">
-              <div className="grid h-20 w-20 shrink-0 place-items-center rounded-3xl border border-primary/30 bg-[linear-gradient(135deg,rgba(244,63,94,0.36),rgba(255,255,255,0.08))] text-2xl font-black text-white shadow-2xl shadow-primary/16">
+              <div className="grid h-20 w-20 shrink-0 place-items-center rounded-xl border border-primary/30 bg-[linear-gradient(135deg,rgba(244,63,94,0.36),rgba(255,255,255,0.08))] text-2xl font-semibold text-white shadow-none shadow-primary/16">
                 {initials}
               </div>
               <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-[0.24em] text-primary">
+                <p className="text-[11px] font-semibold normal-case tracking-normal text-primary">
                   {isAdmin ? 'Desktop admin profile' : 'Desktop profile'}
                 </p>
                 <h1 className="mt-2 truncate text-3xl font-semibold tracking-[-0.04em] text-white md:text-4xl">{displayName}</h1>
@@ -306,16 +306,16 @@ export default function DesktopProfile() {
         <StatCard icon={Cloud} label="Last sync" value={lastSyncedAt ? 'Live' : 'Idle'} detail={formatSyncTime(lastSyncedAt)} />
       </section>
 
-      <section className={`mt-5 rounded-2xl border px-4 py-3 text-sm font-semibold ${syncTone}`}>
+      <section className={`mt-5 rounded-xl border px-4 py-3 text-sm font-semibold ${syncTone}`}>
         {syncMessage || 'Sign-in is active. Desktop sync will keep library and watch history aligned when the service is available.'}
       </section>
 
       <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-        <div className="sn-glass-panel rounded-2xl p-5">
+        <div className="sn-glass-panel rounded-xl p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Data Sync</p>
-              <h2 className="mt-2 text-xl font-black text-white">Synced desktop data</h2>
+              <p className="text-[11px] font-semibold normal-case tracking-normal text-primary">Data Sync</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Synced desktop data</h2>
             </div>
             <ShieldCheck className="h-6 w-6 text-primary" />
           </div>
@@ -327,11 +327,11 @@ export default function DesktopProfile() {
           </div>
 
           {isAdmin ? (
-            <div className="mt-5 rounded-2xl border border-primary/25 bg-primary/10 p-4">
+            <div className="mt-5 rounded-xl border border-primary/25 bg-primary/10 p-4">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                 <div>
-                  <p className="text-sm font-black text-white">Admin status recognized</p>
+                  <p className="text-sm font-semibold text-white">Admin status recognized</p>
                   <p className="mt-1 text-sm leading-6 text-white/55">
                     This desktop page keeps the admin identity available for synced account data, but it does not load the web admin dashboard inside the desktop app.
                   </p>
@@ -341,13 +341,13 @@ export default function DesktopProfile() {
           ) : null}
         </div>
 
-        <div className="sn-glass-panel rounded-2xl p-5">
+        <div className="sn-glass-panel rounded-xl p-5">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Recent History</p>
-              <h2 className="mt-2 text-xl font-black text-white">Continue from account data</h2>
+              <p className="text-[11px] font-semibold normal-case tracking-normal text-primary">Recent History</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Continue from account data</h2>
             </div>
-            <Link to="/dashboard" className="text-xs font-black uppercase tracking-[0.18em] text-white/42 transition-colors hover:text-primary">
+            <Link to="/dashboard" className="text-xs font-semibold normal-case tracking-normal text-white/42 transition-colors hover:text-primary">
               View all
             </Link>
           </div>
@@ -369,9 +369,9 @@ export default function DesktopProfile() {
                     </div>
                   </div>
                   <div className="min-w-0 flex-1 py-1">
-                    <p className="line-clamp-1 text-sm font-black text-white">{title}</p>
+                    <p className="line-clamp-1 text-sm font-semibold text-white">{title}</p>
                     <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/42">{source.title}</p>
-                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-black text-white/46">
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold text-white/46">
                       {source.episode ? <span>Episode {source.episode}</span> : null}
                       <span>{source.resumeSeconds ? `Resume ${formatPlaybackTime(source.resumeSeconds)}` : `${Math.round(progress)}% watched`}</span>
                     </div>
@@ -380,7 +380,7 @@ export default function DesktopProfile() {
               );
             }) : (
               <div className="sn-empty-state px-4 py-8 text-center">
-                <p className="text-sm font-black text-white">No synced watch history yet.</p>
+                <p className="text-sm font-semibold text-white">No synced watch history yet.</p>
                 <p className="mt-2 text-sm leading-6 text-white/48">Open a source from a watch page and it will appear here after sync.</p>
               </div>
             )}
@@ -388,13 +388,13 @@ export default function DesktopProfile() {
         </div>
       </section>
 
-      <section className="sn-glass-panel mt-5 rounded-2xl p-5">
+      <section className="sn-glass-panel mt-5 rounded-xl p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Library Preview</p>
-            <h2 className="mt-2 text-xl font-black text-white">Bookmarks and favorites</h2>
+            <p className="text-[11px] font-semibold normal-case tracking-normal text-primary">Library Preview</p>
+            <h2 className="mt-2 text-xl font-semibold text-white">Bookmarks and favorites</h2>
           </div>
-          <Link to="/my-list" className="text-xs font-black uppercase tracking-[0.18em] text-white/42 transition-colors hover:text-primary">
+          <Link to="/my-list" className="text-xs font-semibold normal-case tracking-normal text-white/42 transition-colors hover:text-primary">
             Open library
           </Link>
         </div>
@@ -405,13 +405,13 @@ export default function DesktopProfile() {
               <Link
                 key={`profile-library-${animeIdentity(anime)}`}
                 to={animeWatchPath(anime)}
-                className="sn-card-hover group overflow-hidden rounded-2xl"
+                className="sn-card-hover group overflow-hidden rounded-xl"
               >
                 <div className="aspect-[2/3] overflow-hidden bg-white/[0.04]">
                   <PreviewImage candidates={animeImageCandidates(anime)} title={animeTitle(anime)} portrait />
                 </div>
                 <div className="p-3">
-                  <p className="line-clamp-2 min-h-[2.5rem] text-sm font-black leading-tight text-white">{animeTitle(anime)}</p>
+                  <p className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-tight text-white">{animeTitle(anime)}</p>
                   <p className="mt-2 text-xs font-semibold text-white/42">
                     {anime.type || anime.format || 'Anime'} {anime.year ? `- ${anime.year}` : ''}
                   </p>
@@ -421,7 +421,7 @@ export default function DesktopProfile() {
           </div>
         ) : (
           <div className="sn-empty-state mt-5 px-4 py-10 text-center">
-            <p className="text-sm font-black text-white">No saved anime yet.</p>
+            <p className="text-sm font-semibold text-white">No saved anime yet.</p>
             <p className="mt-2 text-sm leading-6 text-white/48">Use Explore or a watch page to bookmark anime into your synced desktop library.</p>
             <Link to="/search" className="sn-primary-action mt-5 h-11 px-5">
               Explore anime

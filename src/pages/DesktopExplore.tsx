@@ -1,9 +1,11 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { CalendarDays, Check, ChevronDown, Clapperboard, Grid2X2, List, Loader2, Play, RefreshCw, Search, SlidersHorizontal, Sparkles, Star, TrendingUp, Tv, X } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Seo from '../components/Seo';
+import { readExplorePresets, writeExplorePresets } from '../lib/desktopExplorePresets';
+import { libraryOrganizationEvent, organizationIdentity, readLibraryOrganization } from '../lib/desktopLibraryOrganization';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
 import { fetchAnimeSeason, fetchJikanExploreCatalog, fetchPopularAnime, fetchRecentEpisodesWithLimit, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
@@ -14,8 +16,10 @@ import { episodeAvailabilityLabel } from '../lib/animeEpisodes';
 import { preloadDesktopRoute, preloadDesktopWatchData } from '../lib/desktopRoutePreload';
 import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { exploreCatalogCacheKey, readDesktopExploreCatalog, writeDesktopExploreCatalog } from '../lib/desktopExploreCache';
+import { fetchExplorePage, type ExplorePage, type ExploreRequest } from '../api/desktopExplore';
+import { useStore } from '../store/useStore';
 
-type ExploreMode = 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year';
+type ExploreMode = 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year' | 'ranking';
 type ExploreDensity = 'poster' | 'compact' | 'list';
 type SelectOption = { label: string; value: string };
 
@@ -26,6 +30,7 @@ const modes: Array<{ mode: ExploreMode; label: string; icon: typeof Sparkles }> 
   { mode: 'seasonal', label: 'This season', icon: CalendarDays },
   { mode: 'popular', label: 'Popular', icon: Star },
   { mode: 'top', label: 'Top rated', icon: TrendingUp },
+  { mode: 'ranking', label: 'Top 100', icon: Star },
   { mode: 'upcoming', label: 'Upcoming', icon: CalendarDays },
   { mode: 'year', label: 'Top by year', icon: Clapperboard },
 ];
@@ -85,8 +90,9 @@ function formatFor(anime: any) {
 
 function statusFor(anime: any) {
   const value = String(anime?.status || '').toUpperCase();
-  if (/RELEASING|AIRING/.test(value)) return 'Airing';
+  if (/NOT_YET|UPCOMING/.test(value)) return 'Upcoming';
   if (/FINISHED|COMPLETED/.test(value)) return 'Completed';
+  if (/RELEASING|AIRING/.test(value)) return 'Airing';
   if (/NOT_YET|UPCOMING/.test(value)) return 'Upcoming';
   return '';
 }
@@ -152,7 +158,7 @@ export function loadExploreCatalog(args: ExploreCatalogArgs, signal?: AbortSigna
     const startSecondary = () => {
       if (secondaryStarted || settled) return;
       secondaryStarted = true;
-      void fetchJikanExploreCatalog({ mode: args.mode, query: args.query, year: args.year, season: currentSeason.season,
+      void fetchJikanExploreCatalog({ mode: args.mode === 'ranking' ? 'top' : args.mode, query: args.query, year: args.year, season: currentSeason.season,
         type: providerFormat(args.format), genre: args.genre === 'Any' ? '' : args.genre, status: providerStatus(args.status),
       }, { signal: secondary.signal }).then(accept, fail);
     };
@@ -297,7 +303,7 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
 
 function ExploreSkeleton() {
   return (
-    <DesktopLoadingProgress label="Loading anime catalog" percent={46} detail="Restoring saved titles while the catalog refreshes.">
+    <DesktopLoadingProgress label="Loading anime catalog" detail="Restoring saved titles while the catalog refreshes.">
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6">
         {Array.from({ length: 12 }).map((_, index) => <div key={index} className="aspect-[2/3] animate-pulse rounded-xl bg-white/[0.045] motion-reduce:animate-none" />)}
       </div>
@@ -306,6 +312,16 @@ function ExploreSkeleton() {
 }
 
 export default function DesktopExplore() {
+  const [presets, setPresets] = useState(readExplorePresets);
+  const [presetName, setPresetName] = useState('');
+  const [presetError, setPresetError] = useState('');
+  const [organization, setOrganization] = useState(readLibraryOrganization);
+  useEffect(() => {
+    const refresh = () => setOrganization(readLibraryOrganization());
+    window.addEventListener(libraryOrganizationEvent, refresh);
+    window.addEventListener('storage', refresh);
+    return () => { window.removeEventListener(libraryOrganizationEvent, refresh); window.removeEventListener('storage', refresh); };
+  }, []);
   const [searchParams, setSearchParams] = useSearchParams();
   const currentSeason = getCurrentAnimeSeason();
   const currentYear = new Date().getFullYear();
@@ -315,21 +331,39 @@ export default function DesktopExplore() {
   const format = searchParams.get('format') || 'Any';
   const status = searchParams.get('status') || 'Any';
   const sort = searchParams.get('order') || 'best';
-  const year = Math.max(1960, Math.min(currentYear + 1, Number(searchParams.get('year') || currentYear)));
+  const year = Math.max(1960, Math.min(currentYear + 1, Math.floor(Number(searchParams.get('year')) || currentYear)));
   const density = (['poster', 'compact', 'list'].includes(searchParams.get('view') || '') ? searchParams.get('view') : 'poster') as ExploreDensity;
-  const [input, setInput] = useState(query);
-  const catalogCacheKey = useMemo(() => exploreCatalogCacheKey({ mode, query, year, format, genre, status, sort }), [format, genre, mode, query, sort, status, year]);
-
-  useEffect(() => setInput(query), [query]);
-
-  const catalogQuery = useQuery({
-    queryKey: ['desktop-explore-v2', mode, query, year, format, genre, status, sort],
-    queryFn: async ({ signal }) => {
-      const response = await loadExploreCatalog({ mode, query, year, format, genre, status, sort }, signal);
-      writeDesktopExploreCatalog(catalogCacheKey, response);
-      return response;
+  const ranking = mode === 'ranking';
+  const hideCompleted = searchParams.get('hideCompleted') === '1';
+  const service = ranking && searchParams.get('ranking') === 'mal' ? 'mal' : 'anilist';
+  const block = Math.max(1, Math.min(1000, Math.floor(Number(searchParams.get('page')) || 1)));
+  const adult = useStore((state) => state.nsfwMode);
+  const season = searchParams.get('season') || currentSeason.season;
+  const request = useMemo<ExploreRequest>(() => ({ mode, query, genre, format, status, sort, service, adult,
+    year: ['seasonal', 'year'].includes(mode) ? year : undefined,
+    season: mode === 'seasonal' ? season : undefined,
+  }), [mode, query, genre, format, status, sort, service, adult, year, season]);
+  const catalogCacheKey = exploreCatalogCacheKey({ ...request, block: ranking ? block : 1, version: 3 });
+  const snapshot = useRef({ key: '', before: 0 });
+  if (snapshot.current.key !== catalogCacheKey) {
+    const saved = readDesktopExploreCatalog(catalogCacheKey)?.data?.pages?.[0]?.before;
+    snapshot.current = { key: catalogCacheKey, before: Number.isSafeInteger(saved) && saved > 0 && saved <= Date.now() / 1000 ? saved : Math.floor(Date.now() / 1000) };
+  }
+  const sentinel = useRef<HTMLDivElement>(null);
+  const requestBefore = snapshot.current.before;
+  const firstPage = ranking ? (block - 1) * 4 + 1 : 1;
+  const catalogQuery = useInfiniteQuery({
+    queryKey: ['desktop-explore-v3', catalogCacheKey],
+    initialPageParam: firstPage,
+    queryFn: ({ signal, pageParam }) => fetchExplorePage({ ...request, before: requestBefore }, pageParam, signal),
+    getNextPageParam: (last, pages) => last.hasNextPage && (!ranking || pages.length < 4) ? last.page + 1 : undefined,
+    initialData: () => {
+      const cached = readDesktopExploreCatalog(catalogCacheKey)?.data;
+      if (!Array.isArray(cached?.pages) || !cached.pages.length || !Array.isArray(cached.pageParams)) return undefined;
+      if (!cached.pages.every((page: ExplorePage, i: number) => page.service === service && page.page === firstPage + i
+        && Array.isArray(page.data) && typeof page.hasNextPage === 'boolean') || cached.pages.length !== cached.pageParams.length) return undefined;
+      return { pages: cached.pages as ExplorePage[], pageParams: cached.pageParams as number[] };
     },
-    initialData: () => readDesktopExploreCatalog(catalogCacheKey)?.data,
     initialDataUpdatedAt: () => readDesktopExploreCatalog(catalogCacheKey)?.savedAt,
     staleTime: query ? 1000 * 60 * 10 : 1000 * 60 * 25,
     gcTime: 1000 * 60 * 90,
@@ -338,16 +372,49 @@ export default function DesktopExplore() {
     refetchOnReconnect: true,
   });
 
+  useEffect(() => {
+    if (!catalogQuery.data) return;
+    const pages = catalogQuery.data.pages.slice(0, 12);
+    writeDesktopExploreCatalog(catalogCacheKey, { data: pages.flatMap((page) => page.data), pages,
+      pageParams: catalogQuery.data.pageParams.slice(0, 12) });
+  }, [catalogCacheKey, catalogQuery.data]);
+
+  useEffect(() => {
+    if (!catalogQuery.hasNextPage || catalogQuery.isFetching || catalogQuery.isError || navigator.onLine === false) return;
+    if (ranking) { void catalogQuery.fetchNextPage(); return; }
+    if (!sentinel.current || typeof IntersectionObserver === 'undefined') return;
+    // Do not drain an entire filtered schedule while the sentinel stays visible.
+    // A deliberate Load more action can continue when three lanes add no match.
+    const recentPages = catalogQuery.data?.pages.slice(-3) || [];
+    const matches = (anime: any) => (genre === 'Any' || genresFor(anime).some((item) => item.toLowerCase() === genre.toLowerCase()))
+      && (format === 'Any' || formatFor(anime).toLowerCase() === format.toLowerCase())
+      && (status === 'Any' || statusFor(anime) === status);
+    if (recentPages.length === 3 && recentPages.every((page) => !page.data.some(matches))) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) void catalogQuery.fetchNextPage({ cancelRefetch: false });
+    }, { rootMargin: '500px' });
+    observer.observe(sentinel.current);
+    return () => observer.disconnect();
+  }, [ranking, genre, format, status, catalogQuery.hasNextPage, catalogQuery.isFetching, catalogQuery.isError, catalogQuery.fetchNextPage, catalogQuery.data]);
+
+  const loadedItems = useMemo(() => uniqueAnime(catalogQuery.data?.pages.flatMap((page) => page.data) || []), [catalogQuery.data]);
+  const rankPositions = useMemo(() => new Map(loadedItems.map((anime, index) => [organizationIdentity(anime), (block - 1) * 100 + index + 1])), [loadedItems, block]);
   const results = useMemo(() => {
-    let items = uniqueAnime(catalogQuery.data?.data || []);
+    // Preserve item references so appending a page does not invalidate every
+    // memoized poster card just to attach its rank.
+    let items = loadedItems;
+    if (hideCompleted) items = items.filter((anime) => organization.entries[organizationIdentity(anime)]?.status !== 'Completed');
+    if (ranking) return items; // Service filters run before ranking/pagination.
     if (genre !== 'Any') items = items.filter((anime) => genresFor(anime).some((item) => item.toLowerCase() === genre.toLowerCase()));
     if (format !== 'Any') items = items.filter((anime) => formatFor(anime).toLowerCase() === format.toLowerCase());
     if (status !== 'Any') items = items.filter((anime) => statusFor(anime) === status);
-    return localSort(items, sort);
-  }, [catalogQuery.data?.data, format, genre, sort, status]);
+    return items;
+  }, [loadedItems, format, genre, status, ranking, hideCompleted, organization]);
 
   const setParam = (key: string, value: string, defaultValue = '') => {
     const next = new URLSearchParams(searchParams);
+    if (!['page', 'view'].includes(key)) next.delete('page');
+    if (key === 'ranking' && value === 'mal' && format === 'TV Short') next.delete('format');
     if (!value || value === defaultValue) next.delete(key);
     else next.set(key, value);
     setSearchParams(next, { replace: true });
@@ -357,22 +424,14 @@ export default function DesktopExplore() {
     const next = new URLSearchParams(searchParams);
     next.set('mode', nextMode);
     next.delete('q');
+    next.delete('page');
     if (nextMode === 'year') next.set('year', String(year));
-    setSearchParams(next);
-  };
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const next = new URLSearchParams(searchParams);
-    const value = input.trim();
-    if (value) next.set('q', value);
-    else next.delete('q');
     setSearchParams(next);
   };
 
   const clearFilters = () => {
     const next = new URLSearchParams(searchParams);
-    ['genre', 'format', 'status', 'order'].forEach((key) => next.delete(key));
+    ['genre', 'format', 'status', 'order', 'page'].forEach((key) => next.delete(key));
     setSearchParams(next, { replace: true });
   };
 
@@ -385,11 +444,10 @@ export default function DesktopExplore() {
       <Seo title="Explore anime - StreamNyaa" description="Search and browse current anime." />
       <section className="rounded-xl border border-white/[0.07] bg-[#0d0d10] p-5">
         <div className="flex flex-wrap items-end justify-between gap-5">
-          <div><h1 className="text-3xl font-semibold tracking-tight">Explore anime</h1><p className="mt-1 text-sm text-white/52">Live categories, exact search, and aired-episode availability.</p></div>
-          <form onSubmit={submit} className="flex w-full max-w-2xl items-center gap-2" role="search">
-            <label className="sn-input flex h-11 min-w-0 flex-1 items-center gap-3 px-4"><Search className="h-5 w-5 shrink-0 text-white/42" /><input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Search titles and aliases" className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/36" />{input ? <button type="button" onClick={() => setInput('')} className="grid h-8 w-8 place-items-center rounded-md text-white/48 hover:bg-white/[0.06] hover:text-white" aria-label="Clear search"><X className="h-4 w-4" /></button> : null}</label>
-            <button type="submit" className="h-11 rounded-lg bg-primary px-5 text-sm font-semibold text-white hover:bg-[#ff3558]">Search</button>
-          </form>
+          <div><h1 className="text-3xl font-semibold tracking-tight">Explore anime</h1><p className="mt-1 text-sm text-white/52">Find something worth watching.</p></div>
+          <button type="button" onClick={() => { const input = document.getElementById('desktop-global-search') as HTMLInputElement | null; input?.focus(); input?.select(); }} className="sn-secondary-action">
+            <Search className="h-4 w-4" />{query ? 'Edit search' : 'Search anime'}
+          </button>
         </div>
       </section>
 
@@ -399,11 +457,14 @@ export default function DesktopExplore() {
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-3">
           <SlidersHorizontal className="mx-1 h-4 w-4 text-white/38" />
+          <label className="flex items-center gap-2 px-2 text-sm text-white/65"><input type="checkbox" checked={hideCompleted} onChange={(event) => setParam('hideCompleted', event.target.checked ? '1' : '')} />Hide marked completed</label>
           <PremiumSelect ariaLabel="Genre" value={genre} options={genreOptions.map((value) => ({ label: value === 'Any' ? 'All genres' : value, value }))} onChange={(value) => setParam('genre', value, 'Any')} />
-          <PremiumSelect ariaLabel="Format" value={format} options={formatOptions.map((value) => ({ label: value === 'Any' ? 'All formats' : value, value }))} onChange={(value) => setParam('format', value, 'Any')} />
+          <PremiumSelect ariaLabel="Format" value={format} options={formatOptions.filter((value) => service !== 'mal' || value !== 'TV Short').map((value) => ({ label: value === 'Any' ? 'All formats' : value, value }))} onChange={(value) => setParam('format', value, 'Any')} />
           <PremiumSelect ariaLabel="Status" value={status} options={statusOptions.map((value) => ({ label: value === 'Any' ? 'Any status' : value, value }))} onChange={(value) => setParam('status', value, 'Any')} />
           <PremiumSelect ariaLabel="Sort" value={sort} options={sortOptions} onChange={(value) => setParam('order', value, 'best')} />
-          {mode === 'year' ? <PremiumSelect ariaLabel="Year" value={String(year)} options={Array.from({ length: 30 }, (_, index) => ({ label: String(currentYear + 1 - index), value: String(currentYear + 1 - index) }))} onChange={(value) => setParam('year', value)} /> : null}
+          {['year', 'seasonal'].includes(mode) ? <PremiumSelect ariaLabel="Year" value={String(year)} options={Array.from({ length: 70 }, (_, index) => ({ label: String(currentYear + 1 - index), value: String(currentYear + 1 - index) }))} onChange={(value) => setParam('year', value)} /> : null}
+          {mode === 'seasonal' ? <PremiumSelect ariaLabel="Season" value={season.toUpperCase()} options={['WINTER', 'SPRING', 'SUMMER', 'FALL'].map((value) => ({ value, label: value[0] + value.slice(1).toLowerCase() }))} onChange={(value) => setParam('season', value)} /> : null}
+          {ranking ? <div className="flex gap-1 rounded-lg bg-white/5 p-1" aria-label="Ranking service">{(['anilist', 'mal'] as const).map((value) => <button key={value} type="button" aria-pressed={service === value} onClick={() => setParam('ranking', value)} className={`rounded-md px-3 py-2 text-sm font-semibold ${service === value ? 'bg-primary text-white' : 'text-white/60'}`}>{value === 'mal' ? 'MyAnimeList' : 'AniList'}</button>)}</div> : null}
           {activeFilters.length ? <button type="button" onClick={clearFilters} className="h-10 rounded-lg px-3 text-sm font-semibold text-primary hover:bg-primary/10">Clear filters</button> : null}
           <div className="ml-auto flex rounded-lg bg-white/[0.045] p-1" aria-label="Result layout">
             {([['poster', Grid2X2, 'Poster grid'], ['compact', Grid2X2, 'Compact grid'], ['list', List, 'List']] as const).map(([value, Icon, label]) => <button key={value} type="button" onClick={() => setParam('view', value, 'poster')} className={`grid h-8 w-9 place-items-center rounded-md ${density === value ? 'bg-white/[0.12] text-white' : 'text-white/42 hover:text-white'}`} aria-label={label}><Icon className={value === 'compact' ? 'h-3.5 w-3.5' : 'h-4 w-4'} /></button>)}
@@ -411,15 +472,37 @@ export default function DesktopExplore() {
         </div>
       </section>
 
+      <details className="mt-3 text-sm text-white/65">
+        <summary className="w-fit cursor-pointer rounded-md px-2 py-2 focus-visible:outline focus-visible:outline-primary">Saved filters{presets.length ? ` (${presets.length})` : ''}</summary>
+        <div className="flex flex-wrap items-center gap-2 py-2">
+          {presets.map((preset) => <div key={preset.name} className="flex items-center rounded-lg bg-white/5">
+            <button type="button" className="px-3 py-2 hover:text-white" onClick={() => setSearchParams(preset.query)}>{preset.name}</button>
+            <button type="button" aria-label={`Remove saved filter ${preset.name}`} className="p-2 hover:text-white" onClick={() => { try { setPresets(writeExplorePresets(presets.filter((item) => item.name !== preset.name))); setPresetError(''); } catch { setPresetError('Saved filters could not be updated. Storage may be full.'); } }}><X className="h-4 w-4" /></button>
+          </div>)}
+          <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); const name = presetName.trim(); if (!name) return; if (presets.length >= 12 && !presets.some((item) => item.name === name)) { setPresetError('Remove a saved filter before adding another (maximum 12).'); return; } try { setPresets(writeExplorePresets([...presets.filter((item) => item.name !== name), { name, query: searchParams.toString() }])); setPresetName(''); setPresetError(''); } catch { setPresetError('Filters could not be saved. Storage may be full.'); } }}>
+            <input aria-label="Saved filter name" maxLength={40} value={presetName} onChange={(event) => setPresetName(event.target.value)} placeholder="Name these filters" className="rounded-lg bg-white/5 px-3 py-2 text-white outline-none focus:ring-1 focus:ring-primary" />
+            <button type="submit" disabled={!presetName.trim()} className="sn-secondary-action disabled:opacity-40">Save filters</button>
+          </form>
+          {presetError ? <p role="status">{presetError}</p> : null}
+        </div>
+      </details>
+
       <div className="mt-6 flex items-end justify-between gap-4">
         <div><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-semibold">{query ? `Results for “${query}”` : selectedMode.label}</h2>{catalogQuery.isFetching && catalogQuery.data ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/46"><Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />Refreshing</span> : null}</div><p className="mt-1 text-sm text-white/48">{results.length ? `${results.length} anime title${results.length === 1 ? '' : 's'}` : `${currentSeason.season} ${currentSeason.year}`}</p></div>
         {catalogQuery.isError ? <button type="button" onClick={() => void catalogQuery.refetch()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-sm font-semibold text-white/72 hover:bg-white/[0.09]"><RefreshCw className="h-4 w-4" />Retry</button> : null}
       </div>
 
       {catalogQuery.isLoading && !catalogQuery.data ? <div className="mt-5"><ExploreSkeleton /></div> : null}
-      {catalogQuery.isError && !catalogQuery.data ? <div className="mt-5"><DesktopLoadingProgress label="Reconnecting to the anime catalog" percent={68} detail="The page remains usable while the catalog refreshes." /><div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-3"><span className="text-sm text-white/52">Refresh paused. Filters and search remain available.</span><button type="button" onClick={() => void catalogQuery.refetch()} className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4" />Retry now</button></div></div> : null}
-      {catalogQuery.data && !results.length ? <div className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-6 py-12 text-center"><Search className="mx-auto h-6 w-6 text-white/34" /><h3 className="mt-3 font-semibold text-white">No matching anime</h3><p className="mt-1 text-sm text-white/48">Clear a filter or try another title.</p></div> : null}
-      {results.length ? <div className={`${gridClass} mt-5`}>{results.map((anime, index) => <ExploreAnimeCard key={anime?.anilist_id || anime?.id || anime?.mal_id || anime?.title} anime={anime} index={index} density={density} />)}</div> : null}
+      {catalogQuery.isError && !catalogQuery.data ? <div className="mt-5 rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-3"><span className="text-sm text-white/52">Connection interrupted. Filters and search remain available.</span><button type="button" onClick={() => void catalogQuery.refetch()} className="ml-3 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4" />Retry now</button></div> : null}
+      {catalogQuery.data && !results.length ? <div className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-6 py-12 text-center"><Search className="mx-auto h-6 w-6 text-white/34" /><h3 className="mt-3 font-semibold text-white">{catalogQuery.hasNextPage || catalogQuery.isError ? 'No matches in the loaded results yet' : 'No matching anime'}</h3><p className="mt-1 text-sm text-white/48">{catalogQuery.hasNextPage ? 'Load more results or adjust your filters.' : 'Clear a filter or try another title.'}</p></div> : null}
+      {ranking ? <p className="mt-3 text-sm text-white/60">{service === 'mal' ? 'MyAnimeList' : 'AniList'} · Positions {(block - 1) * 100 + 1}–{block * 100} · {sort === 'popular' ? 'Most popular' : sort === 'title' ? 'Title A–Z' : sort === 'recent' ? 'Newest first' : 'Highest score'}{catalogQuery.data?.pages[0]?.fetchedAt ? ` · Updated ${new Date(catalogQuery.data.pages[0].fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</p> : null}
+      {results.length ? <div className={`${gridClass} mt-5`}>{results.map((anime, index) => <div key={`${anime.anilist_id ? 'anilist' : 'mal'}:${anime?.anilist_id || anime?.mal_id}`} className="min-w-0">{ranking ? <div className="mb-2 flex justify-between text-sm font-semibold"><span>#{rankPositions.get(organizationIdentity(anime))}</span><span className="text-white/60">{anime.rankingScore ?? '—'}{service === 'mal' ? '/10 MAL' : '/100 AniList'}</span></div> : null}<ExploreAnimeCard anime={anime} index={index} density={density} /></div>)}</div> : null}
+      <div ref={sentinel} className="mt-6 flex min-h-12 items-center justify-center gap-3" aria-live="polite">
+        {catalogQuery.isFetchingNextPage ? <span className="flex items-center gap-2 text-sm text-white/60"><Loader2 className="h-4 w-4 animate-spin" />Loading more anime…</span> : null}
+        {catalogQuery.hasNextPage && !catalogQuery.isFetchingNextPage ? <button className="sn-secondary-action" onClick={() => void catalogQuery.fetchNextPage()}>Load more</button> : null}
+        {ranking ? <><button className="sn-secondary-action" disabled={block === 1 || catalogQuery.isFetching} onClick={() => setParam('page', String(block - 1))}>Previous 100</button><button className="sn-primary-action" disabled={catalogQuery.isFetching || catalogQuery.isError || (catalogQuery.data?.pages.length || 0) < 4 || !catalogQuery.data?.pages.at(-1)?.hasNextPage} onClick={() => setParam('page', String(block + 1))}>Next 100</button></> : null}
+        {!catalogQuery.hasNextPage && !catalogQuery.isFetching && results.length > 0 && !ranking ? <span className="text-sm text-white/50">You’ve reached the end.</span> : null}
+      </div>
 
       <section className="mt-8 grid gap-3 md:grid-cols-3">
         <button type="button" onClick={() => chooseMode('new')} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-white/[0.025] p-4 text-left hover:bg-white/[0.05]"><CalendarDays className="h-5 w-5 text-primary" /><span><span className="block font-semibold">Latest aired episodes</span><span className="mt-0.5 block text-xs text-white/46">See what became available most recently.</span></span></button>

@@ -53,10 +53,10 @@ function copyFolderContent(sourceDir, targetDir) {
     const sourcePath = path.join(sourceDir, entry.name);
     const targetPath = path.join(targetDir, entry.name);
     if (entry.isDirectory()) {
-      changed ||= copyFolderContent(sourcePath, targetPath);
+      changed = copyFolderContent(sourcePath, targetPath) || changed;
       continue;
     }
-    changed ||= copyFileIfChanged(sourcePath, targetPath);
+    changed = copyFileIfChanged(sourcePath, targetPath) || changed;
   }
   return changed;
 }

@@ -1,4 +1,5 @@
 import { animeIdentity, animeTitleKey } from './animeIdentity';
+import { clearInterruptedPlayback, markInterruptedPlayback } from './desktopInterruptedSession';
 import { invokeDesktopData, type DesktopRequestOptions } from './desktopRequests';
 
 export type LocalPlaybackSource = {
@@ -114,6 +115,7 @@ export type DesktopPlayerPreferences = {
   autoSkipIntro: boolean;
   autoSkipOutro: boolean;
   rememberSpeed: boolean;
+  seekStepSeconds: number;
   playbackSpeed: number;
   volume: number;
   muted: boolean;
@@ -223,6 +225,7 @@ export const DEFAULT_DESKTOP_PLAYER_PREFERENCES: DesktopPlayerPreferences = {
   autoSkipIntro: false,
   autoSkipOutro: false,
   rememberSpeed: true,
+  seekStepSeconds: 10,
   playbackSpeed: 1,
   volume: 100,
   muted: false,
@@ -806,8 +809,15 @@ export function updateLocalPlaybackHistoryProgress(
   const existing = findLocalPlaybackHistoryItem(source);
   if (!existing) return;
 
-  const currentSeconds = Math.max(0, Number(progress.currentSeconds || 0));
-  const durationSeconds = Math.max(0, Number(progress.durationSeconds || existing.durationSeconds || 0));
+  // Missing telemetry during opening/reconnection is not a seek to zero.
+  // Preserve an explicit zero (a deliberate restart), but never write NaN/Infinity.
+  if (typeof progress.currentSeconds !== 'number' || !Number.isFinite(progress.currentSeconds)
+    || progress.currentSeconds < 0) return;
+  const currentSeconds = progress.currentSeconds;
+  if (currentSeconds > 0) markInterruptedPlayback(existing.animeId || existing.animeTitle, existing.episode);
+  const reportedDuration = progress.durationSeconds;
+  const durationSeconds = typeof reportedDuration === 'number' && Number.isFinite(reportedDuration)
+    && reportedDuration > 0 ? reportedDuration : Math.max(0, Number(existing.durationSeconds || 0));
   // Torrent completion and watched completion are independent metrics. Watch
   // progress must always come from the media timeline when duration is known.
   const percent = durationSeconds > 0
@@ -956,6 +966,7 @@ function normalizeDesktopPlayerPreferences(value: DesktopPlayerPreferencesPatch 
     autoSkipIntro: asBooleanPreference(value.autoSkipIntro, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoSkipIntro),
     autoSkipOutro: asBooleanPreference(value.autoSkipOutro, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoSkipOutro),
     rememberSpeed: asBooleanPreference(value.rememberSpeed, DEFAULT_DESKTOP_PLAYER_PREFERENCES.rememberSpeed),
+    seekStepSeconds: Math.round(asNumberPreference(value.seekStepSeconds, 10, 5, 60) / 5) * 5,
     playbackSpeed: asNumberPreference(value.playbackSpeed, DEFAULT_DESKTOP_PLAYER_PREFERENCES.playbackSpeed, 0.25, 4),
     volume: asNumberPreference(value.volume, DEFAULT_DESKTOP_PLAYER_PREFERENCES.volume, 0, 130),
     muted: asBooleanPreference(value.muted, DEFAULT_DESKTOP_PLAYER_PREFERENCES.muted),
@@ -1024,6 +1035,8 @@ export function saveDesktopPlayerSetting(key: string, value: unknown) {
     case 'rememberSpeed':
     case 'remember_speed':
       return saveDesktopPlayerPreferences({ rememberSpeed: asBooleanPreference(value, current.rememberSpeed) });
+    case 'seekStepSeconds':
+      return saveDesktopPlayerPreferences({ seekStepSeconds: Math.round(asNumberPreference(value, 10, 5, 60) / 5) * 5 });
     case 'playbackSpeed':
     case 'playback_speed':
       return saveDesktopPlayerPreferences({ playbackSpeed: asNumberPreference(value, current.playbackSpeed, 0.25, 4) });
@@ -1237,7 +1250,9 @@ export async function stopDesktopPlayback(settings = loadDesktopPlaybackSettings
     throw new Error('Stopping playback is only available inside the StreamNyaa desktop app.');
   }
 
-  return invoke<DesktopPlaybackStatus>('stop_local_playback', { settings });
+  const result = await invoke<DesktopPlaybackStatus>('stop_local_playback', { settings });
+  if (result.ok) clearInterruptedPlayback();
+  return result;
 }
 
 export async function getDesktopDiagnostics(settings = loadDesktopPlaybackSettings()) {
@@ -1254,21 +1269,21 @@ export function buildDesktopDiagnosticsReport(diagnostics: DesktopDiagnosticsSta
     return 'StreamNyaa desktop diagnostics are unavailable.';
   }
 
-  const activeSession = diagnostics.active_session
-    ? `Active session: ${diagnostics.active_session.torrent_id} (${diagnostics.active_session.session_dir}, ${diagnostics.active_session.cache_bytes} bytes${diagnostics.active_session.media_url ? `, ${diagnostics.active_session.media_url}` : ''})`
-    : 'Active session: none';
+  // Shareable reports deliberately allow-list scalar health data. Never copy
+  // raw errors, personal paths, stream URLs or account/session identifiers.
+  const safeNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  const version = /^\d+\.\d+\.\d+$/.test(diagnostics.app_version) ? diagnostics.app_version : 'unknown';
 
   return [
-    `StreamNyaa desktop v${diagnostics.app_version}`,
+    `StreamNyaa desktop v${version}`,
     `Runtime ready: ${diagnostics.runtime.ready ? 'yes' : 'no'}`,
-    `Engine path: ${diagnostics.runtime.torrent_engine_path || 'auto bundled lookup'}`,
-    `Native player path: ${diagnostics.runtime.player_path || 'auto bundled lookup'}`,
-    `Cache dir: ${diagnostics.cache.cache_dir}`,
-    `Cache usage: ${diagnostics.cache.total_bytes}/${diagnostics.cache.max_bytes}`,
-    `Cache pressure: ${diagnostics.cache.pressure}`,
-    `Logs dir: ${diagnostics.logs_dir}`,
-    activeSession,
-    diagnostics.recent_errors?.length ? `Recent error: ${diagnostics.recent_errors[0]}` : 'Recent error: none',
+    `Engine located: ${diagnostics.runtime.torrent_engine_path ? 'yes' : 'no'}`,
+    `Player located: ${diagnostics.runtime.player_path ? 'yes' : 'no'}`,
+    `Cache usage: ${safeNumber(diagnostics.cache.total_bytes)}/${safeNumber(diagnostics.cache.max_bytes)} bytes`,
+    `Active session: ${diagnostics.active_session ? 'yes' : 'no'}`,
+    `Active cache bytes: ${safeNumber(diagnostics.active_session?.cache_bytes)}`,
+    `Recorded errors: ${diagnostics.recent_errors?.length || 0}`,
+    'Privacy: paths, raw logs, account data and stream identifiers excluded.',
   ].join('\n');
 }
 
@@ -1346,6 +1361,7 @@ export async function syncDesktopPlayerPreferencesToPlayer(preferences = loadDes
   await run('autoSkipIntro', () => controlLocalPlayerPreference('autoSkipIntro', preferences.autoSkipIntro));
   await run('autoSkipOutro', () => controlLocalPlayerPreference('autoSkipOutro', preferences.autoSkipOutro));
   await run('rememberSpeed', () => controlLocalPlayerPreference('rememberSpeed', preferences.rememberSpeed));
+  await run('seekStepSeconds', () => controlLocalPlayerPreference('seekStepSeconds', preferences.seekStepSeconds));
   await run('playbackSpeed', () => controlLocalPlayerPreference('playbackSpeed', preferences.playbackSpeed));
   await run('volume', () => controlLocalPlayerPreference('volume', preferences.volume));
   await run('muted', () => controlLocalPlayerPreference('muted', preferences.muted));

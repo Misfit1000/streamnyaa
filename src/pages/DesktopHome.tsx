@@ -408,10 +408,10 @@ function DesktopImage({
     return (
       <div className={fallbackClassName || className}>
         <div className="flex h-full w-full flex-col justify-between bg-[radial-gradient(circle_at_34%_18%,rgba(244,63,94,0.40),transparent_38%),radial-gradient(circle_at_88%_82%,rgba(79,70,229,0.20),transparent_32%),linear-gradient(145deg,#1a1016,#07070a)] p-4">
-          <span className="grid h-12 w-12 place-items-center rounded-2xl border border-white/[0.08] bg-black/30 text-sm font-black tracking-[0.08em] text-white/76 shadow-lg shadow-black/24 backdrop-blur">
+          <span className="grid h-12 w-12 place-items-center rounded-xl border border-white/[0.08] bg-black/30 text-sm font-semibold tracking-normal text-white/76 shadow-none shadow-black/24 backdrop-blur">
             {fallbackInitials(alt)}
           </span>
-          <span className="line-clamp-3 text-sm font-black leading-tight text-white/78 drop-shadow">{alt || 'Anime'}</span>
+          <span className="line-clamp-3 text-sm font-semibold leading-tight text-white/78 drop-shadow">{alt || 'Anime'}</span>
         </div>
       </div>
     );
@@ -512,11 +512,11 @@ const RailHeader = memo(function RailHeader({
   return (
     <div className="mb-3 flex items-end justify-between gap-4">
       <div className="min-w-0">
-        <h2 className="text-[20px] font-black tracking-[-0.025em] text-white">{title}</h2>
+        <h2 className="text-[20px] font-semibold tracking-[-0.025em] text-white">{title}</h2>
         {subtitle ? <p className="mt-1 text-[12px] font-semibold text-white/46">{subtitle}</p> : null}
       </div>
       {to ? (
-        <Link to={to} className="mb-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[13px] font-bold text-white/58 transition-colors hover:bg-white/[0.055] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
+        <Link to={to} className="mb-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[13px] font-semibold text-white/58 transition-colors hover:bg-white/[0.055] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
           View All
           <ChevronRight className="h-4 w-4" />
         </Link>
@@ -611,7 +611,7 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
       onPointerEnter={() => primeDesktopWatchSnapshot(to, anime)}
       onFocus={() => primeDesktopWatchSnapshot(to, anime)}
       onPointerDown={() => primeDesktopWatchSnapshot(to, anime)}
-      className="sn-card-hover group w-[190px] shrink-0 cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 2xl:w-[210px]"
+      className="sn-card-hover group w-[190px] shrink-0 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 2xl:w-[210px]"
     >
       <div className="sn-poster-card relative h-[278px] transition-all duration-200 group-focus-visible:ring-primary/40 2xl:h-[304px]">
         <DesktopImage
@@ -623,21 +623,21 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
         <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(5,6,10,0.86)_0%,rgba(5,6,10,0.38)_38%,rgba(5,6,10,0.03)_76%)]" />
         <div className="absolute left-3 top-3 flex max-w-[calc(100%-24px)] items-center gap-1.5">
           {badges.length ? (
-            <span className="max-w-full truncate rounded-full bg-black/58 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-white shadow-lg shadow-black/20 backdrop-blur">
+            <span className="max-w-full truncate rounded-full bg-black/58 px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white shadow-none shadow-black/20 backdrop-blur">
               {badges.join(' / ')}
             </span>
           ) : null}
         </div>
-        <span className="absolute right-3 top-3 grid h-8 w-8 translate-y-1 place-items-center rounded-full border border-white/[0.10] bg-black/56 text-white opacity-0 shadow-lg shadow-black/22 backdrop-blur transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+        <span className="absolute right-3 top-3 grid h-8 w-8 translate-y-1 place-items-center rounded-full border border-white/[0.10] bg-black/56 text-white opacity-0 shadow-none shadow-black/22 backdrop-blur transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
           <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
         </span>
         <div className="absolute inset-x-0 bottom-0 p-3.5">
-          <p className="line-clamp-2 text-[14px] font-black leading-tight tracking-[-0.02em] text-white drop-shadow">{anime.title}</p>
+          <p className="line-clamp-2 text-[14px] font-semibold leading-tight tracking-[-0.02em] text-white drop-shadow">{anime.title}</p>
           <p className="mt-1 line-clamp-1 text-[12px] font-semibold text-white/58">{animeGenre(anime)}{year ? ` - ${year}` : ''}</p>
           <div className="mt-2 flex items-center justify-between gap-3">
-            <span className="rounded-full bg-white/[0.09] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-white/68 backdrop-blur">{type}</span>
+            <span className="rounded-full bg-white/[0.09] px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-white/68 backdrop-blur">{type}</span>
             {anime?.score ? (
-              <span className="inline-flex items-center gap-1 text-[12px] font-black text-white">
+              <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-white">
                 <Star className="h-3.5 w-3.5 fill-primary text-primary" />
                 {scoreText(anime.score)}
               </span>
@@ -671,7 +671,7 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
   };
   return (
     <div
-      className="sn-card-hover group w-[282px] shrink-0 cursor-pointer rounded-2xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 2xl:w-[302px]"
+      className="sn-card-hover group w-[282px] shrink-0 cursor-pointer rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 2xl:w-[302px]"
     >
       <div className="sn-landscape-card relative aspect-video transition-all duration-200">
         <button
@@ -686,13 +686,13 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
             className="absolute inset-0 h-full w-full object-cover opacity-95 transition-transform duration-500 group-hover:scale-[1.045]"
           />
           <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.84),rgba(7,8,12,0.34)_42%,rgba(7,8,12,0.02)_78%)]" />
-          <span className="absolute left-3 top-3 grid h-9 w-9 place-items-center rounded-full border border-white/[0.10] bg-black/58 text-white shadow-lg shadow-black/18 backdrop-blur transition-all group-hover:bg-primary group-hover:shadow-primary/20">
+          <span className="absolute left-3 top-3 grid h-9 w-9 place-items-center rounded-full border border-white/[0.10] bg-black/58 text-white shadow-none shadow-black/18 backdrop-blur transition-all group-hover:bg-primary group-hover:shadow-primary/20">
             <Play className="ml-0.5 h-4 w-4 fill-current" />
           </span>
           <span className="absolute inset-x-0 bottom-0 block p-3.5">
-            <span className="block line-clamp-1 text-[13px] font-black text-white drop-shadow">{source.animeTitle || source.title}</span>
+            <span className="block line-clamp-1 text-[13px] font-semibold text-white drop-shadow">{source.animeTitle || source.title}</span>
             <span className="mt-1 block line-clamp-1 text-[11px] font-semibold text-white/64">{episodeLabel} - {resumeText}</span>
-            <span className="mt-0.5 block line-clamp-1 text-[10px] font-bold uppercase tracking-[0.08em] text-white/42">{lastWatchedText}</span>
+            <span className="mt-0.5 block line-clamp-1 text-[10px] font-semibold normal-case tracking-normal text-white/42">{lastWatchedText}</span>
             <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-white/14">
               <span className="block h-full rounded-full bg-gradient-to-r from-primary to-[#ff647d]" style={{ width: `${progressWidth}%` }} />
             </span>
@@ -705,7 +705,7 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
               event.stopPropagation();
               resume();
             }}
-            className="sn-ghost-action min-h-0 rounded-full px-2 py-1 text-[10px] font-bold tracking-wide"
+            className="sn-ghost-action min-h-0 rounded-full px-2 py-1 text-[10px] font-semibold tracking-wide"
             aria-label={`Resume ${source.animeTitle || source.title}`}
           >
             Resume
@@ -713,7 +713,7 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
           <Link
             to={detailsPath}
             onClick={(event) => event.stopPropagation()}
-            className="sn-ghost-action inline-flex min-h-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold tracking-wide"
+            className="sn-ghost-action inline-flex min-h-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold tracking-wide"
             aria-label={`Open sources for ${source.animeTitle || source.title}`}
           >
             <Info className="h-3 w-3" />
@@ -725,7 +725,7 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
               event.stopPropagation();
               removeLocalPlaybackHistoryItem(source);
             }}
-            className="sn-ghost-action min-h-0 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] hover:bg-primary"
+            className="sn-ghost-action min-h-0 rounded-full px-2 py-1 text-[10px] font-semibold normal-case tracking-normal hover:bg-primary"
             aria-label={`Remove ${source.animeTitle || source.title} from Continue Watching`}
           >
             Remove
@@ -902,26 +902,6 @@ export default function DesktopHome() {
   }, [heroPool]);
 
   useEffect(() => {
-    if (heroCount < 2) return undefined;
-    let timer: number | undefined;
-    const schedule = () => {
-      if (timer !== undefined) window.clearTimeout(timer);
-      if (document.visibilityState === 'hidden') return;
-      timer = window.setTimeout(() => {
-        setHeroIndex((index) => (index + 1) % heroCount);
-        schedule();
-      }, 7000);
-    };
-    const handleVisibility = () => schedule();
-    schedule();
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => {
-      if (timer !== undefined) window.clearTimeout(timer);
-      document.removeEventListener('visibilitychange', handleVisibility);
-    };
-  }, [heroCount]);
-
-  useEffect(() => {
     if (!heroCount || typeof window === 'undefined') return;
     const nextHero = heroPool[(heroIndex + 1) % heroCount];
     const image = heroImageCandidates(nextHero)[0];
@@ -942,7 +922,9 @@ export default function DesktopHome() {
 
       {homeRefreshFailed ? (
         <div className="mb-4 flex min-h-12 items-center justify-between gap-4 border border-amber-300/15 bg-amber-300/[0.055] px-4 py-3 text-sm text-white/72">
-          <span>{homeHasSavedContent ? 'Saved titles are ready while Home reconnects.' : 'Home is reconnecting. Your Library and History remain available.'}</span>
+          <span>{homeQueries.some(query => (query.error as { code?: string } | null)?.code === 'access-denied')
+            ? 'Some catalog updates are unavailable. Saved titles, Library and History remain available.'
+            : homeHasSavedContent ? 'Some titles could not refresh. Your saved titles are still available.' : 'Home could not refresh yet. Your Library and History remain available.'}</span>
           <button type="button" onClick={retryHome} className="sn-ghost-action shrink-0 gap-2 px-3 py-2 text-xs font-semibold">
             {homeQueries.some((query) => query.isFetching) ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw className="h-4 w-4" />}
             Retry
@@ -950,108 +932,28 @@ export default function DesktopHome() {
         </div>
       ) : null}
 
-      <section className="sn-hero-panel relative">
-        <div className="relative h-[326px]">
-          {heroPool.map((item: any, index: number) => (
-            <div
-              key={animeIdentity(item) || `${item?.title || 'hero'}-${index}`}
-              className={`absolute inset-0 transition-opacity duration-700 ease-out ${index === heroIndex ? 'opacity-100' : 'opacity-0'}`}
-            >
-              <DesktopImage
-                candidates={heroImageCandidates(item)}
-                alt={item.title}
-                className={`absolute inset-y-0 right-0 h-full w-[82%] object-cover object-[68%_center] saturate-[1.06] contrast-[1.03] transition-transform duration-700 ease-out ${index === heroIndex ? 'scale-100' : 'scale-[1.012]'}`}
-                loading={index === heroIndex || index === (heroIndex + 1) % Math.max(heroCount, 1) ? 'eager' : 'lazy'}
-                forceKey={`${item?.mal_id || item?.id || item?.title || index}-${index}`}
-              />
-            </div>
-          ))}
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,6,10,0.98)_0%,rgba(5,6,10,0.91)_31%,rgba(5,6,10,0.48)_57%,rgba(5,6,10,0.12)_100%),linear-gradient(0deg,rgba(5,6,10,0.46)_0%,rgba(5,6,10,0.02)_54%,rgba(5,6,10,0.10)_100%)]" />
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_82%_28%,rgba(244,63,94,0.10),transparent_30%),radial-gradient(circle_at_12%_82%,rgba(244,63,94,0.11),transparent_31%)]" />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-
-          <div className="relative flex h-full items-center px-9 xl:px-12">
-            <div
-              key={animeIdentity(hero) || heroIndex}
-              className="flex h-[282px] w-full max-w-[610px] flex-col animate-[desktop-hero-copy_520ms_cubic-bezier(0.25,1,0.5,1)]"
-            >
-              <div className="min-h-0 overflow-hidden">
-                <p className="mb-3 text-[10px] font-black uppercase tracking-[0.36em] text-primary">Featured Anime</p>
-                <h1 className="line-clamp-2 max-w-[570px] overflow-hidden break-words text-[27px] font-black leading-[1.06] tracking-[-0.03em] text-white drop-shadow-[0_5px_20px_rgba(0,0,0,0.58)] md:text-[30px] xl:text-[32px]">
-                  {hero?.title || 'Loading your home'}
-                </h1>
-                <p className="mt-2 line-clamp-1 max-w-[520px] overflow-hidden text-[13px] font-semibold leading-5 text-white/72">
-                  {hero?.title_english || hero?.title_japanese || 'Restoring saved titles and recent activity'}
-                </p>
-                <div className="mt-3 flex max-h-[28px] max-w-[520px] gap-2 overflow-hidden">
-                  {heroMetadata(hero).slice(0, 4).map((item) => (
-                    <span key={item} className="shrink-0 rounded-md bg-white/[0.09] px-2.5 py-1 text-[11px] font-bold text-white/76 backdrop-blur ring-1 ring-white/[0.045]">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-4 line-clamp-2 max-w-[540px] overflow-hidden text-[13px] leading-5 text-white/78">{hero ? heroDescription(hero) : 'The app shell is ready. Home content will appear here as soon as verified data is restored.'}</p>
-                {!hero ? <DesktopLoadingProgress className="mt-5 max-w-[520px]" variant="inline" label="Loading Home" percent={homeLoadPercent} detail="Restoring the fastest available verified data." /> : null}
-              </div>
-              <div className="hero-cta mt-auto flex shrink-0 items-end pt-5">
-                {hero ? (
-                  <Link
-                    to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))}
-                    className="sn-primary-action group/watch h-[50px] min-w-[176px] rounded-[16px] px-7 text-[15px]"
-                  >
-                    <span className="grid h-7 w-7 place-items-center rounded-full bg-white/18 ring-1 ring-white/14 transition-colors group-hover/watch:bg-white/24">
-                      <Play className="ml-0.5 h-[14px] w-[14px] fill-current" />
-                    </span>
-                    Watch Now
-                  </Link>
-                ) : (
-                  <button type="button" onClick={retryHome} className="sn-primary-action h-[50px] min-w-[176px] gap-2 px-7 text-[15px]">
-                    {homeQueries.some((query) => query.isFetching) ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw className="h-4 w-4" />}
-                    {homeRefreshFailed ? 'Retry Home' : 'Loading Home'}
-                  </button>
-                )}
-              </div>
-            </div>
+      <section className="sn-spotlight" aria-label="Featured anime">
+        {hero ? <DesktopImage candidates={heroImageCandidates(hero)} alt={hero.title} className="sn-spotlight-art" loading="eager" forceKey={animeIdentity(hero)} /> : null}
+        <div className="sn-spotlight-shade" />
+        <div className="sn-spotlight-copy">
+          <p className="text-sm text-white/65">In the spotlight</p>
+          <h1 className="mt-2 line-clamp-2 text-3xl font-semibold leading-tight xl:text-4xl">{hero?.title || 'Find your next favorite'}</h1>
+          <p className="mt-3 text-sm text-white/70">{heroMetadata(hero).slice(0, 4).join(' · ')}</p>
+          <p className="mt-3 line-clamp-2 text-sm leading-6 text-white/70">{hero ? heroDescription(hero) : 'Your anime collection is getting ready.'}</p>
+          <div className="mt-5 flex items-center gap-3">
+            {hero ? <Link to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))} className="sn-primary-action"><Play className="h-4 w-4 fill-current" />Watch now</Link>
+              : <button type="button" onClick={retryHome} className="sn-secondary-action"><RefreshCw className="h-4 w-4" />{homeRefreshFailed ? 'Try again' : 'Refresh Home'}</button>}
+            {heroCount > 1 ? <div className="flex items-center gap-1">
+              <button type="button" onClick={() => moveHero(-1)} className="sn-icon-action h-11 w-11" aria-label="Previous seasonal pick"><ChevronLeft className="h-5 w-5" /></button>
+              <button type="button" onClick={() => moveHero(1)} className="sn-icon-action h-11 w-11" aria-label="Next seasonal pick"><ChevronRight className="h-5 w-5" /></button>
+            </div> : null}
           </div>
-
-          {heroCount > 1 ? <div className="absolute right-9 top-1/2 flex -translate-y-1/2 gap-3">
-            <button
-              type="button"
-              onClick={() => moveHero(-1)}
-              className="sn-icon-action h-11 w-11 rounded-full"
-              aria-label="Previous seasonal pick"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => moveHero(1)}
-              className="sn-icon-action h-11 w-11 rounded-full"
-              aria-label="Next seasonal pick"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div> : null}
-
-          {heroCount > 1 ? (
-            <div className="absolute bottom-7 left-1/2 flex -translate-x-1/2 gap-3">
-              {heroPool.map((anime: any, item: number) => (
-                <button
-                  key={animeIdentity(anime) || item}
-                  type="button"
-                  onClick={() => setHeroIndex(item)}
-                  className={`h-2 rounded-full transition-all duration-300 ${item === heroIndex ? 'w-7 bg-primary shadow-lg shadow-primary/30' : 'w-2 bg-white/30 hover:bg-white/60'}`}
-                  aria-label={`Show seasonal pick ${item + 1}`}
-                />
-              ))}
-            </div>
-          ) : null}
         </div>
       </section>
 
       {recentSources.length ? (
-        <section className="mt-8 desktop-section-enter">
-          <RailHeader title="Continue Watching" subtitle="Pick up from local playback history" to="/dashboard" count={recentSources.length} />
+        <section className="mt-7 desktop-section-enter">
+          <RailHeader title="Continue Watching" subtitle="Your next episode is waiting" to="/dashboard" count={recentSources.length} />
           <MediaRail>
             {recentSources.map((source) => <SourceCard key={source.magnet} source={source} />)}
           </MediaRail>
@@ -1070,7 +972,20 @@ export default function DesktopHome() {
               showNew
             />
           ))}
-          {!latestEpisodes.length ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-2xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
+          {!latestEpisodes.length ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
+        </MediaRail>
+      </section>
+
+      <section className="mt-7 desktop-section-enter">
+        <RailHeader title="This Season" subtitle={`${currentSeason.label} picks`} to="/search?mode=seasonal" count={seasonalPicks.length} />
+        <MediaRail>
+          {seasonalPicks.map((anime: any, index: number) => (
+            <PosterAnimeCard
+              key={`seasonal-${anime.mal_id || anime.id || index}`}
+              anime={anime}
+              to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
+            />
+          ))}
         </MediaRail>
       </section>
 
@@ -1084,7 +999,7 @@ export default function DesktopHome() {
               to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
             />
           ))}
-          {!trending.length ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-2xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
+          {!trending.length ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
         </MediaRail>
       </section>
 
@@ -1094,19 +1009,6 @@ export default function DesktopHome() {
           {topAiring.map((anime: any, index: number) => (
             <PosterAnimeCard
               key={`top-airing-${anime.mal_id || anime.id || index}`}
-              anime={anime}
-              to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
-            />
-          ))}
-        </MediaRail>
-      </section>
-
-      <section className="mt-7 desktop-section-enter">
-        <RailHeader title="Seasonal Anime" subtitle={`${currentSeason.label} picks`} to="/search?mode=seasonal" count={seasonalPicks.length} />
-        <MediaRail>
-          {seasonalPicks.map((anime: any, index: number) => (
-            <PosterAnimeCard
-              key={`seasonal-${anime.mal_id || anime.id || index}`}
               anime={anime}
               to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
             />
@@ -1135,7 +1037,7 @@ export default function DesktopHome() {
               to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
             />
           ))}
-          {!popular.length ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-2xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
+          {!popular.length ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
         </MediaRail>
       </section>
 

@@ -2,10 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { invokeDesktopData, stableRequestKey, desktopAnimeQueryKey } from '../../src/lib/desktopRequests';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { installDesktopAutoRecovery } from '../../src/lib/desktopAutoRecovery';
+import { desktopDataError } from '../../src/lib/desktopData';
 
 afterEach(() => vi.useRealTimers());
 const deferred = () => { let resolve!: (v: any) => void; const promise = new Promise<any>(r => { resolve = r; }); return { promise, resolve }; };
 describe('shared native request lifecycle', () => {
+  it('preserves access denial rather than retrying it as a connection error', () => {
+    const error = desktopDataError('anilist', { code: 'access-denied', message: 'Catalog access declined', statusCode: 403, retryable: false });
+    expect(error.code).toBe('access-denied');
+    expect(error.statusCode).toBe(403);
+    expect(error.retryable).toBe(false);
+    expect(desktopDataError('anilist', new Error('Declined'), 403).retryable).toBe(false);
+  });
   it('deduplicates keys without conflating identity namespaces', () => {
     expect(stableRequestKey({ b: 2, a: { x: 1 } })).toBe(stableRequestKey({ a: { x: 1 }, b: 2 }));
     expect(desktopAnimeQueryKey('1', 1)).not.toEqual(desktopAnimeQueryKey('1', null, 1));
@@ -58,6 +66,17 @@ describe('shared native request lifecycle', () => {
   });
 });
 describe('active-screen recovery', () => {
+  it('does not retry permanent failures or bypass a fresh cooldown', async () => {
+    vi.useFakeTimers();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const query = vi.fn().mockRejectedValue({ code: 'invalid', retryable: false });
+    const observer = new QueryObserver(client, { queryKey: ['anime', 'bad'], queryFn: query });
+    const unsubscribe = observer.subscribe(() => {});
+    const stop = installDesktopAutoRecovery(client);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(query).toHaveBeenCalledTimes(1);
+    stop(); unsubscribe(); client.clear();
+  });
   it('resumes incomplete timelines automatically without refreshing unrelated queries', async () => {
     vi.useFakeTimers();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

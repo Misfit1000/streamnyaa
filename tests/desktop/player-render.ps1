@@ -23,7 +23,7 @@ try {
   if ($log -match 'Lua error:|cover overlay update failed|failed to create overlay|Error parsing command') {
     throw "Native player render failed. Inspect $output\render.log"
   }
-  foreach ($name in @('artwork.png', 'buffering.png')) {
+  foreach ($name in @('artwork.png', 'buffering.png', 'controls-dark.png', 'controls-bright.png', 'complete.png', 'settings-buffering.png', 'settings-scroll.png')) {
     $path = Join-Path $output $name
     if (-not (Test-Path -LiteralPath $path) -or (Get-Item -LiteralPath $path).Length -lt 1000) {
       throw "Native player did not capture $name"

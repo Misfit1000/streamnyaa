@@ -40,7 +40,7 @@ try {
   $writer.AutoFlush = $true
   $requestId = 0
 
-  function Invoke-MpvCommand([object[]]$Command) {
+  function Invoke-MpvCommand([object[]]$Command, [switch]$AllowUnavailable) {
     $script:requestId += 1
     $writer.WriteLine((@{ command = $Command; request_id = $script:requestId } | ConvertTo-Json -Compress))
     do {
@@ -48,15 +48,18 @@ try {
       if ($null -eq $line) { throw 'MPV IPC closed before returning a response.' }
       $response = $line | ConvertFrom-Json
     } while ($response.request_id -ne $script:requestId)
-    if ($response.error -ne 'success') { throw "MPV command failed: $($response.error)" }
+    if ($AllowUnavailable -and $response.error -eq 'property unavailable') { return $null }
+    if ($response.error -ne 'success') { throw "MPV command '$($Command -join ' ')' failed: $($response.error)" }
     return $response.data
   }
 
+  $duration = $null
   for ($attempt = 0; $attempt -lt 30; $attempt += 1) {
-    $duration = Invoke-MpvCommand @('get_property', 'duration')
+    $duration = Invoke-MpvCommand -Command @('get_property', 'duration') -AllowUnavailable
     if ([double]$duration -gt 0) { break }
     Start-Sleep -Milliseconds 100
   }
+  if ([double]$duration -le 0) { throw 'MPV did not expose a playable duration within the startup deadline.' }
 
   if ((Invoke-MpvCommand @('get_property', 'pause')) -ne $true) {
     throw 'The control test must start with playback paused.'

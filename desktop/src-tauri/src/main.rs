@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod data_requests;
+mod player_download;
+mod player_shortcuts;
 
 use image::imageops::FilterType;
 use serde::{Deserialize, Serialize};
@@ -9,7 +11,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     env, fs,
     hash::{Hash, Hasher},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
@@ -336,6 +338,9 @@ struct PlaybackRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PlayerMetadata {
+    shortcuts: HashMap<String, String>,
+    subtitle_offset_key: Option<String>,
+    subtitle_offset_seconds: f64,
     anime_title: String,
     episode_title: Option<String>,
     episode_number: Option<String>,
@@ -502,6 +507,8 @@ static METADATA_CACHE: OnceLock<Mutex<HashMap<String, SourceCacheEntry>>> = Once
 static RQBIT_HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
 static PLAYER_PREFERENCES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static SUBTITLE_IMPORT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+static PLAYER_DOWNLOAD_RUNNING: AtomicBool = AtomicBool::new(false);
+static PLAYER_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 static APP_EXITING: AtomicBool = AtomicBool::new(false);
 static TRAY_SUSPEND_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
@@ -855,17 +862,17 @@ fn player_preferences() -> &'static Mutex<HashMap<String, String>> {
 
 fn persist_player_preference(key: &str, value: &str) {
     let key = key.trim();
-    if key.is_empty() {
+    if key.is_empty() || key.len() > 160 || value.len() > 2048 {
         return;
     }
-    let snapshot = {
-        let Ok(mut preferences) = player_preferences().lock() else {
+    // Serialize disk publication as well as in-memory mutation. Two setting
+    // events must not race on the same temporary file or publish older data.
+    let Ok(mut preferences) = player_preferences().lock() else {
             log_info("Could not lock the desktop player preference cache");
             return;
-        };
-        preferences.insert(key.to_string(), value.to_string());
-        preferences.clone()
     };
+    preferences.insert(key.to_string(), value.to_string());
+    let snapshot = &*preferences;
     let path = player_preferences_path();
     if let Some(parent) = path.parent() {
         if let Err(error) = fs::create_dir_all(parent) {
@@ -882,9 +889,6 @@ fn persist_player_preference(key: &str, value: &str) {
     };
     if fs::write(&temporary, payload).is_err() {
         return;
-    }
-    if path.exists() {
-        let _ = fs::remove_file(&path);
     }
     if let Err(error) = fs::rename(&temporary, &path) {
         log_info(format!("Could not persist player preferences: {}", error));
@@ -1063,20 +1067,37 @@ fn is_temp_cache_path(path: &Path) -> bool {
 }
 
 fn is_safe_cache_path(path: &Path) -> bool {
-    let full = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let allowed = [
-        env::var("LOCALAPPDATA").ok().map(PathBuf::from),
-        env::var("APPDATA").ok().map(PathBuf::from),
-        Some(env::temp_dir()),
-    ];
+    let Ok(full) = path.canonicalize() else { return false; };
+    // Do not follow a cache junction/symlink into another application's data.
+    for ancestor in path.ancestors() {
+        if let Ok(meta) = fs::symlink_metadata(ancestor) {
+            if meta.file_type().is_symlink() { return false; }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if meta.file_attributes() & 0x400 != 0 { return false; }
+            }
+        }
+    }
+    let mut roots = old_appdata_cache_roots();
+    roots.push(cache_root());
+    roots.push(env::temp_dir().join("streamnyaa-desktop"));
+    if roots.into_iter().filter_map(|root| root.canonicalize().ok())
+        .any(|root| full.starts_with(root)) { return true; }
 
-    allowed
-        .into_iter()
-        .flatten()
-        .any(|root| full.starts_with(root.canonicalize().unwrap_or(root)))
+    // Custom temporary cache roots are supported, but only generated session
+    // directories may be removed there, never arbitrary sibling files/root.
+    let Ok(temp) = env::temp_dir().canonicalize() else { return false; };
+    if !full.starts_with(&temp) { return false; }
+    let name = path.file_name().and_then(|value| value.to_str()).unwrap_or("");
+    path.is_dir() && path.parent().and_then(|parent| parent.canonicalize().ok())
+        .map(|parent| parent != temp).unwrap_or(false)
+        && (name.starts_with("session-") || name.starts_with("source-"))
 }
 
 fn legacy_cache_dirs(active_root: &Path) -> Vec<PathBuf> {
+    // Tests use isolated roots and must not erase the installed app's cache.
+    if cfg!(test) { return Vec::new(); }
     let mut paths = vec![
         env::temp_dir().join("streamnyaa-desktop"),
         env::temp_dir().join("StreamNyaa"),
@@ -1434,6 +1455,8 @@ fn rqbit_http_client() -> reqwest::blocking::Client {
     RQBIT_HTTP_CLIENT
         .get_or_init(|| {
             reqwest::blocking::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(Duration::from_millis(900))
                 .pool_idle_timeout(Duration::from_secs(120))
                 .pool_max_idle_per_host(12)
@@ -1448,11 +1471,39 @@ fn rqbit_http_client() -> reqwest::blocking::Client {
         .clone()
 }
 
+thread_local! {
+    static RQBIT_DEADLINE: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+}
+
+struct RqbitDeadline(Option<Instant>);
+impl RqbitDeadline {
+    fn enter(budget: Duration) -> Self {
+        Self(RQBIT_DEADLINE.with(|slot| {
+            let previous = slot.get();
+            let next = Instant::now() + budget;
+            slot.set(Some(previous.map(|old| old.min(next)).unwrap_or(next)));
+            previous
+        }))
+    }
+}
+impl Drop for RqbitDeadline {
+    fn drop(&mut self) { RQBIT_DEADLINE.with(|slot| slot.set(self.0)); }
+}
+fn rqbit_request_timeout(default: Duration) -> Result<Duration, String> {
+    RQBIT_DEADLINE.with(|slot| match slot.get() {
+        Some(deadline) => deadline.checked_duration_since(Instant::now())
+            .filter(|remaining| !remaining.is_zero())
+            .map(|remaining| remaining.min(default))
+            .ok_or_else(|| "Local stream preparation timed out. Try another release.".to_string()),
+        None => Ok(default),
+    })
+}
+
 fn rqbit_get(path: &str) -> Result<String, String> {
     let url = format!("{}{}", RQBIT_URL, path);
     rqbit_http_client()
         .get(url)
-        .timeout(Duration::from_secs(35))
+        .timeout(rqbit_request_timeout(Duration::from_secs(35))?)
         .send()
         .and_then(|response| response.error_for_status())
         .map_err(|error| format!("Local stream request failed: {}", error))?
@@ -1464,7 +1515,7 @@ fn rqbit_post(path: &str, body: &str) -> Result<String, String> {
     let url = format!("{}{}", RQBIT_URL, path);
     let response = rqbit_http_client()
         .post(url)
-        .timeout(Duration::from_secs(60))
+        .timeout(rqbit_request_timeout(Duration::from_secs(60))?)
         .header(reqwest::header::CONTENT_TYPE, "text/plain; charset=utf-8")
         .body(body.to_string())
         .send()
@@ -1501,19 +1552,30 @@ fn rqbit_post_json(path: &str, body: &serde_json::Value) -> Result<String, Strin
     let url = format!("{}{}", RQBIT_URL, path);
     let response = rqbit_http_client()
         .post(url)
-        .timeout(Duration::from_secs(12))
+        .timeout(rqbit_request_timeout(Duration::from_secs(12))?)
         .json(body)
         .send()
         .map_err(|error| format!("Could not update local stream selection: {}", error))?;
     let status = response.status();
-    let text = response
-        .text()
-        .map_err(|error| format!("Could not read local stream selection response: {}", error))?;
+    let mut text = String::new();
+    response.take(65_537).read_to_string(&mut text)
+        .map_err(|_| "Local engine: could not read file-selection response.".to_string())?;
+    if text.len() > 65_536 { return Err("Local engine: file-selection response exceeded its size limit.".to_string()); }
     if status.is_success() {
         Ok(text)
     } else {
-        Err(format!("Local stream selection failed: HTTP {}", status))
+        Err(format!("Local engine: file selection failed: HTTP {}. {}", status.as_u16(), safe_engine_error_category(&text)))
     }
+}
+
+fn safe_engine_error_category(body: &str) -> &'static str {
+    let lower = body.to_ascii_lowercase();
+    if lower.contains("permission denied") || lower.contains("access is denied") { "Cache access denied." }
+    else if lower.contains("no space") || lower.contains("disk full") { "Insufficient cache space." }
+    else if lower.contains("not live") || lower.contains("initializ") { "Torrent is not ready for file selection." }
+    else if lower.contains("file index") || lower.contains("out of bounds") { "Invalid selected-file index." }
+    else if lower.contains("not found") || lower.contains("cannot find") { "Torrent or cached file was not found." }
+    else { "The stream engine rejected the operation." }
 }
 
 fn rqbit_delete(path: &str) -> Result<(), String> {
@@ -1575,9 +1637,27 @@ fn start_rqbit(
         .arg(cache_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("Could not start local stream engine: {}", error))?;
+    if let Some(mut stderr) = child.stderr.take() {
+        thread::spawn(move || {
+            let started = Instant::now();
+            let mut buffer = [0u8; 2048];
+            let mut previous_category = String::new();
+            while let Ok(count) = stderr.read(&mut buffer) {
+                if count == 0 { break; }
+                let chunk = String::from_utf8_lossy(&buffer[..count]);
+                if chunk.contains("ERROR") || chunk.contains("error:") || chunk.contains("WARN") {
+                    let category = safe_engine_error_category(&chunk);
+                    if previous_category != category {
+                        log_info(format!("Engine diagnostic generation={} stage=session elapsed_ms={} category={}", playback_generation, started.elapsed().as_millis(), category));
+                        previous_category = category.to_string();
+                    }
+                }
+            }
+        });
+    }
     match manager().lock() {
         Ok(mut guard) => {
             guard.engine = Some(child);
@@ -1611,27 +1691,10 @@ fn stop_rqbit_server(engine_path: Option<&str>) {
         ACTIVE_ENGINE_GENERATION.store(0, Ordering::SeqCst);
         return;
     }
-    let Some(engine_path) = engine_path else {
-        return;
-    };
-    let _ = prepared_command(engine_path)
-        .arg("server")
-        .arg("stop")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .output();
-
-    #[cfg(windows)]
-    {
-        let _ = prepared_command("taskkill")
-            .args(["/F", "/T", "/IM", "rqbit.exe"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .output();
+    // A responding process is not necessarily ours. Never kill by image name.
+    if engine_path.is_some() {
+        log_info("No owned torrent process to stop; leaving untracked processes untouched");
     }
-    ACTIVE_ENGINE_GENERATION.store(0, Ordering::SeqCst);
 }
 
 fn json_string(value: &str) -> String {
@@ -1998,7 +2061,15 @@ fn player_metadata_for(
     title: &str,
     cover: Option<&PreparedCover>,
 ) -> PlayerMetadata {
+    let offset_key = request.info_hash.as_deref().and_then(normalize_info_hash)
+        .or_else(|| magnet_info_hash(&request.magnet))
+        .and_then(|hash| request.episode.trim().parse::<u32>().ok().map(|episode| format!("subtitleOffset.{}.{}", hash, episode)));
+    let subtitle_offset_seconds = offset_key.as_deref().and_then(persisted_player_preference)
+        .and_then(|value| value.parse::<f64>().ok()).filter(|value| value.is_finite() && value.abs() <= 120.0).unwrap_or(0.0);
     PlayerMetadata {
+        shortcuts: player_shortcuts::load(),
+        subtitle_offset_key: offset_key,
+        subtitle_offset_seconds,
         anime_title: clean_value(Some(request.anime_title.clone()))
             .unwrap_or_else(|| title.to_string()),
         // The playback request title is the technical release filename, not a
@@ -3116,23 +3187,44 @@ fn select_stream_target(
     })
 }
 
-fn prioritize_stream_target(torrent_id: &str, target: &ResolvedStreamTarget) {
+fn prioritize_stream_target(torrent_id: &str, target: &ResolvedStreamTarget) -> Result<(), String> {
     if target.selected_file_indices.is_empty() {
-        return;
+        return Err("Local engine: selected video has no verified file index.".to_string());
     }
     let path = format!("/torrents/{}/update_only_files", percent_encode(torrent_id));
     let body = serde_json::json!({ "only_files": target.selected_file_indices });
-    match rqbit_post_json(&path, &body) {
-        Ok(_) => log_info(format!(
-            "Prioritized selected media file '{}' with {} companion file(s)",
-            target.selected_file_name,
-            target.selected_file_indices.len().saturating_sub(1)
-        )),
-        Err(error) => log_info(format!(
-            "Selected-file prioritization was unavailable; continuing safely: {}",
-            error
-        )),
+    rqbit_post_json(&path, &body)?;
+    let extension = Path::new(&target.selected_file_name).extension().and_then(|v| v.to_str()).unwrap_or("").to_ascii_lowercase();
+    let format = match extension.as_str() { "mkv" => "mkv", "mp4" => "mp4", "webm" => "webm", _ => "video" };
+    log_info(format!("Selected {} indices={:?}", format, target.selected_file_indices));
+    Ok(())
+}
+
+fn torrent_is_live(json: &serde_json::Value) -> Result<bool, String> {
+    let state = json.get("state").and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
+    if state == "error" || json.get("error").is_some_and(|v| !v.is_null() && v != "") {
+        return Err("Local engine: torrent entered an error state. Retry the stream to recreate its session.".to_string());
     }
+    Ok(state == "live")
+}
+
+fn probe_local_video(media_url: &str) -> Result<(), String> {
+    let url = reqwest::Url::parse(media_url).map_err(|_| "Local engine: invalid video address.".to_string())?;
+    if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port() != Some(3030)
+        || !url.path().starts_with("/torrents/") || !url.username().is_empty() || url.password().is_some() {
+        return Err("Local engine: untrusted video address.".to_string());
+    }
+    let mut response = rqbit_http_client().get(url)
+        .header(reqwest::header::RANGE, "bytes=0-1023")
+        .timeout(rqbit_request_timeout(Duration::from_secs(3))?)
+        .send().map_err(|_| "Local engine: video read timed out or disconnected.".to_string())?;
+    let status = response.status();
+    if status != reqwest::StatusCode::OK && status != reqwest::StatusCode::PARTIAL_CONTENT {
+        return Err(format!("Local engine: selected video returned HTTP {}.", status.as_u16()));
+    }
+    let mut first = [0u8; 1];
+    response.read_exact(&mut first).map_err(|_| "Local engine: selected video returned no readable bytes.".to_string())?;
+    Ok(())
 }
 
 fn playlist_target(
@@ -3863,6 +3955,77 @@ fn spawn_subtitle_import_task(ipc: String) {
     });
 }
 
+fn spawn_player_download(ipc: String) {
+    if PLAYER_DOWNLOAD_RUNNING.swap(true, Ordering::SeqCst) {
+        PLAYER_DOWNLOAD_CANCEL.store(true, Ordering::SeqCst);
+        return;
+    }
+    PLAYER_DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
+    let session = manager().lock().ok().and_then(|guard| guard.active.clone());
+    let Some(session) = session else {
+        PLAYER_DOWNLOAD_RUNNING.store(false, Ordering::SeqCst);
+        show_player_text(&ipc, "Start playback before downloading an episode.");
+        return;
+    };
+    thread::spawn(move || {
+        let active = || player_ipc_is_active(&ipc)
+            && playback_generation_current(session.playback_generation)
+            && !PLAYER_DOWNLOAD_CANCEL.load(Ordering::SeqCst);
+        send_player_script_message_arg(&ipc, "streamnyaa-download-status", "Choosing location");
+        let last_percent = std::cell::Cell::new(101u64);
+        let result = open_video_save_picker().and_then(|selected| {
+            let Some(path) = selected else { return Err("Download cancelled.".into()); };
+            player_download::save(&session.media_url, &path, &active, |bytes, total| {
+                let percent = bytes.saturating_mul(100) / total.max(1);
+                if active() && percent != last_percent.get() {
+                    last_percent.set(percent);
+                    send_player_script_message_arg(&ipc, "streamnyaa-download-status", &format!("{}%", percent));
+                }
+            })
+        });
+        PLAYER_DOWNLOAD_RUNNING.store(false, Ordering::SeqCst);
+        if player_ipc_is_active(&ipc) {
+            send_player_script_message_arg(&ipc, "streamnyaa-download-status", "");
+            if playback_generation_current(session.playback_generation) {
+                show_player_text(&ipc, result.as_ref().err().map(String::as_str).unwrap_or("Episode downloaded."));
+            }
+        }
+    });
+}
+
+#[cfg(windows)]
+fn open_video_save_picker() -> Result<Option<PathBuf>, String> {
+    // Static script only: no titles, torrent names or paths interpolated as shell code.
+    let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$dialog = New-Object System.Windows.Forms.SaveFileDialog
+$dialog.Title = 'Download episode (keep playback open)'
+$dialog.Filter = 'Matroska video (*.mkv)|*.mkv|MP4 video (*.mp4)|*.mp4|All files (*.*)|*.*'
+$dialog.FileName = 'StreamNyaa episode.mkv'
+$dialog.CheckPathExists = $true
+$dialog.OverwritePrompt = $true
+$owner = New-Object System.Windows.Forms.Form
+$owner.ShowInTaskbar = $false
+$owner.TopMost = $true
+$owner.Opacity = 0
+$owner.Show()
+if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.FileName }
+$dialog.Dispose()
+$owner.Dispose()
+"#;
+    let output = prepared_command("powershell").args(["-NoProfile", "-STA", "-Command", script])
+        .stdin(Stdio::null()).output().map_err(|_| "Could not open download location picker.")?;
+    if !output.status.success() { return Err("Could not open download location picker.".into()); }
+    let value = String::from_utf8_lossy(&output.stdout).trim().trim_start_matches('\u{feff}').to_string();
+    Ok((!value.is_empty()).then(|| PathBuf::from(value)))
+}
+
+#[cfg(not(windows))]
+fn open_video_save_picker() -> Result<Option<PathBuf>, String> {
+    Err("Episode downloads are currently supported on Windows.".into())
+}
+
 fn spawn_subtitle_import_request_watcher(ipc: String, request_file: PathBuf) {
     thread::spawn(move || {
         let mut last_token = fs::read_to_string(&request_file).unwrap_or_default();
@@ -4061,6 +4224,10 @@ fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
                 serde_json::to_string(args).unwrap_or_else(|_| "[]".to_string())
             ));
         }
+    }
+    if message == Some("streamnyaa-download-request") {
+        if player_ipc_is_active(ipc) { spawn_player_download(ipc.to_string()); }
+        return;
     }
     if message == Some("streamnyaa-lua-ready") {
         log_info("[StreamNyaa Rust] MPV Lua ready; emitting streamnyaa-player-ready");
@@ -4366,12 +4533,13 @@ fn stop_player_stream_only(ipc: &str) {
     let _ = send_mpv(ipc, r#"{"command":["stop"],"request_id":33}"#);
 }
 
-fn notify_player_source_switch(title: &str) {
+fn notify_player_source_switch(title: &str, generation: u64) {
     let player_ipc = manager()
         .lock()
         .ok()
         .and_then(|guard| guard.player_ipc.clone());
     if let Some(ipc) = player_ipc {
+        send_player_script_message_arg(&ipc, "streamnyaa-source-generation", &generation.to_string());
         show_player_text_with_title(&ipc, Some(title), "Switching source...");
         stop_player_stream_only(&ipc);
     }
@@ -4488,6 +4656,9 @@ fn launch_or_reuse_player(
     command
         .arg("--no-config")
         .arg("--force-window=yes")
+        .arg("--window-maximized=yes")
+        .arg("--auto-window-resize=no")
+        .arg("--ytdl=no")
         .arg("--idle=yes")
         .arg("--keep-open=yes")
         .arg("--image-display-duration=inf")
@@ -4782,6 +4953,7 @@ fn spawn_player_watchdog() {
                         let still_current = guard.active.as_ref().map(|current| {
                             current.torrent_id == active.torrent_id
                                 && current.session_dir == active.session_dir
+                                && current.playback_generation == active.playback_generation
                         }) == Some(true);
                         if still_current {
                             let active = guard.active.take().expect("active session exists");
@@ -4814,10 +4986,13 @@ fn spawn_player_watchdog() {
                             .map(Path::to_path_buf)
                             .unwrap_or_else(cache_root);
                         if let Ok(_operation_guard) = playback_operation_lock().lock() {
+                            if ACTIVE_ENGINE_GENERATION.load(Ordering::SeqCst) != active.playback_generation {
+                                continue;
+                            }
                             cleanup_session(active, false);
+                            cleanup_transient_sessions(&cache_dir, None);
+                            prune_cache(&cache_dir, None);
                         }
-                        cleanup_transient_sessions(&cache_dir, None);
-                        prune_cache(&cache_dir, None);
                         log_info("Closed playback session and retained reusable cached media");
                     }
                     WatchdogAction::GuardTrip {
@@ -4830,16 +5005,19 @@ fn spawn_player_watchdog() {
                             .parent()
                             .map(Path::to_path_buf)
                             .unwrap_or_else(cache_root);
-                        if let Some(ipc) = ipc.as_deref() {
-                            show_player_text(ipc, &reason);
-                            stop_player_stream_only(ipc);
-                        }
-                        remember_error(reason);
                         if let Ok(_operation_guard) = playback_operation_lock().lock() {
+                            if ACTIVE_ENGINE_GENERATION.load(Ordering::SeqCst) != active.playback_generation {
+                                continue;
+                            }
+                            if let Some(ipc) = ipc.as_deref() {
+                                show_player_text(ipc, &reason);
+                                stop_player_stream_only(ipc);
+                            }
+                            remember_error(reason);
                             cleanup_session(active, true);
+                            cleanup_abandoned_sessions(&cache_dir, None);
+                            prune_cache(&cache_dir, None);
                         }
-                        cleanup_abandoned_sessions(&cache_dir, None);
-                        prune_cache(&cache_dir, None);
                         log_info("Stopped playback session after runtime storage guard trip");
                     }
                 }
@@ -4961,10 +5139,13 @@ fn wait_for_stream_with_session_guard(
     cache_limit_bytes: u64,
     playback_generation: u64,
 ) -> Result<ResolvedStreamTarget, String> {
+    let _deadline = RqbitDeadline::enter(Duration::from_millis(STREAM_READY_TIMEOUT_MS as u64));
     let started_at = now_millis();
     let mut saw_peer = false;
     let mut selected_target: Option<ResolvedStreamTarget> = None;
     let mut selected_target_at: Option<u128> = None;
+    let mut selected_prioritized = false;
+    let mut last_probe_error: Option<String> = None;
     let mut previous_downloaded_bytes = 0u64;
     let mut previous_sample_at = started_at;
 
@@ -4988,6 +5169,7 @@ fn wait_for_stream_with_session_guard(
         }
 
         let json = torrent_stats(torrent_id)?;
+        let live = torrent_is_live(&json)?;
         let downloaded_bytes = torrent_downloaded_bytes(&json).unwrap_or(0);
         let total_bytes = find_number(
             &json,
@@ -5031,12 +5213,26 @@ fn wait_for_stream_with_session_guard(
         };
 
         if let Some(target) = selected_target.clone() {
+            if live && !selected_prioritized {
+                prioritize_stream_target(torrent_id, &target)?;
+                ensure_playback_generation_current(playback_generation)?;
+                selected_prioritized = true;
+            }
             let target_age = selected_target_at
                 .map(|value| now_millis().saturating_sub(value))
                 .unwrap_or(0);
             let ready_for_player =
                 stream_ready_for_player(downloaded_bytes, target_buffer, saw_peer, target_age);
-            if ready_for_player {
+            if live && selected_prioritized && ready_for_player {
+                match probe_local_video(&target.media_url) {
+                    Ok(()) => {},
+                    Err(error) => {
+                        last_probe_error = Some(error);
+                        thread::sleep(Duration::from_millis(450));
+                        continue;
+                    }
+                }
+                ensure_playback_generation_current(playback_generation)?;
                 if let Some(ipc) = player_ipc {
                     let progress = Some(96.0);
                     update_player_stream_metrics(
@@ -5104,13 +5300,7 @@ fn wait_for_stream_with_session_guard(
             } else {
                 0.0
             };
-            let stage_floor: f64 = match (selected_target.is_some(), peers > 0) {
-                (false, false) => 12.0,
-                (false, true) => 28.0,
-                (true, false) => 42.0,
-                (true, true) => 48.0,
-            };
-            let progress = Some(stage_floor.max(48.0 + buffer_progress * 0.48).min(96.0));
+            let progress = selected_target.as_ref().map(|_| buffer_progress);
             update_player_stream_metrics(
                 ipc,
                 status_label,
@@ -5125,30 +5315,26 @@ fn wait_for_stream_with_session_guard(
         thread::sleep(Duration::from_millis(450));
     }
 
-    if let Some(target) = selected_target {
-        if let Some(ipc) = player_ipc {
-            show_player_text_with_title(
-                ipc,
-                Some(&request.anime_title),
-                "Opening the player while the source keeps buffering...",
-            );
-        }
-        return Ok(target);
-    }
+    // A playlist is metadata, not proof of playable bytes. Only the guarded
+    // handoff inside the loop may report successful preparation.
+    Err(last_probe_error.unwrap_or_else(|| stream_preparation_timeout(saw_peer, previous_downloaded_bytes, selected_target.is_some())))
+}
 
-    if !saw_peer && previous_downloaded_bytes == 0 {
-        return Err(
+fn stream_preparation_timeout(saw_peer: bool, downloaded_bytes: u64, has_target: bool) -> String {
+    if !saw_peer && downloaded_bytes == 0 {
+        return
             "No peers responded within 20 seconds. StreamNyaa will try another verified release."
-                .to_string(),
-        );
+                .to_string();
     }
-    if saw_peer && previous_downloaded_bytes == 0 {
-        return Err(
+    if downloaded_bytes == 0 {
+        return
             "Peers connected, but this release delivered no video data. StreamNyaa will try another source."
-                .to_string(),
-        );
+                .to_string();
     }
-    Err("Torrent data arrived, but no matching playable episode file was exposed in time. Try another release.".to_string())
+    if has_target {
+        return "This release did not build a playable buffer in time. StreamNyaa will try another source.".to_string();
+    }
+    "Torrent data arrived, but no matching playable episode file was exposed in time. Try another release.".to_string()
 }
 
 fn stream_ready_for_player(
@@ -5385,6 +5571,8 @@ fn start_stream(
         ensure_playback_generation_current(playback_generation)?;
         let player_open_started = Instant::now();
         let player_ipc = launch_or_reuse_player(player_path, &cache_dir, &request, &title)?;
+        ensure_playback_generation_current(playback_generation)?;
+        send_player_script_message_arg(&player_ipc, "streamnyaa-source-generation", &playback_generation.to_string());
         show_player_text_with_title(&player_ipc, Some(&title), "Preparing torrent session...");
         log_info(format!(
             "Playback perf: player visible before engine prep in {} ms",
@@ -5421,6 +5609,9 @@ fn start_stream(
         let mut add_payload = None;
         let last_index = source_inputs.len().saturating_sub(1);
         let add_started = Instant::now();
+        // All metadata candidates share one budget; each fallback must not
+        // restart another full minute of blocking work.
+        let add_deadline = RqbitDeadline::enter(Duration::from_secs(60));
         for (index, source_input) in source_inputs.iter().enumerate() {
             ensure_playback_generation_current(playback_generation)?;
             match rqbit_post(&add_path, source_input) {
@@ -5440,6 +5631,7 @@ fn start_stream(
         }
         let add_payload = add_payload
             .ok_or_else(|| "Desktop streaming could not add a playable source.".to_string())?;
+        drop(add_deadline);
         ensure_playback_generation_current(playback_generation)?;
         log_info(format!(
             "Playback perf: torrent accepted in {} ms",
@@ -5487,7 +5679,6 @@ fn start_stream(
             session_cache_limit,
             playback_generation,
         )?;
-        prioritize_stream_target(&torrent_id, &target);
         log_info(format!(
             "Playback perf: stream target ready in {} ms",
             target_started.elapsed().as_millis()
@@ -5539,20 +5730,20 @@ fn start_stream(
     })();
 
     if let Err(error) = &stream_result {
-        if !error.contains("superseded by a newer source") {
+        if playback_generation_current(playback_generation) {
             remember_error(format!("{}: {}", title, error));
             let ipc = manager()
                 .lock()
                 .ok()
                 .and_then(|guard| guard.player_ipc.clone());
             if let Some(ipc) = ipc {
-                send_player_script_message(&ipc, "streamnyaa-playback-failed");
+                send_player_script_message_arg(&ipc, "streamnyaa-playback-failed", &playback_generation.to_string());
             }
+            stop_active_session(false);
+            prune_cache(&cache_dir, None);
         } else {
             log_info(format!("Cancelled stale playback generation for {}", title));
         }
-        stop_active_session(false);
-        prune_cache(&cache_dir, None);
     }
 
     stream_result
@@ -5566,7 +5757,7 @@ async fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, 
         "Playback generation {} requested for {}",
         playback_generation, title
     ));
-    notify_player_source_switch(&title);
+    notify_player_source_switch(&title, playback_generation);
     tauri::async_runtime::spawn_blocking(move || start_stream(request, playback_generation))
         .await
         .map_err(|error| {
@@ -5590,7 +5781,7 @@ async fn get_local_playback_progress(
             RQBIT_URL,
             percent_encode(&torrent_id)
         );
-        let (media_url, player_ipc, still_active) = manager()
+        let (media_url, player_ipc, generation) = manager()
             .lock()
             .ok()
             .map(|guard| {
@@ -5602,13 +5793,14 @@ async fn get_local_playback_progress(
                     (
                         Some(active.media_url.clone()).filter(|value| !value.trim().is_empty()),
                         guard.player_ipc.clone(),
-                        true,
+                        Some(active.playback_generation),
                     )
                 } else {
-                    (None, guard.player_ipc.clone(), false)
+                    (None, guard.player_ipc.clone(), None)
                 }
             })
-            .unwrap_or((None, None, false));
+            .unwrap_or((None, None, None));
+        let still_active = generation.is_some();
         let payload = match rqbit_get(&format!(
             "/torrents/{}/stats/v1",
             percent_encode(&torrent_id)
@@ -5648,6 +5840,14 @@ async fn get_local_playback_progress(
                 return Err(error);
             }
         };
+        let _operation_guard = playback_operation_lock().lock()
+            .map_err(|_| "Playback session lock unavailable.".to_string())?;
+        let current = manager().lock().ok().and_then(|guard| {
+            guard.active.as_ref().map(|active| (active.torrent_id.clone(), active.playback_generation))
+        });
+        if current != generation.map(|value| (torrent_id.clone(), value)) || generation.is_none() {
+            return Err(playback_superseded_error());
+        }
         let json: serde_json::Value = serde_json::from_str(&payload)
             .map_err(|error| format!("Could not parse stream status: {}", error))?;
         let downloaded_bytes = torrent_downloaded_bytes(&json);
@@ -6212,7 +6412,9 @@ fn main() {
             log_info("StreamNyaa desktop app starting");
             let _ = APP_HANDLE.set(app.handle().clone());
             #[cfg(any(windows, target_os = "linux"))]
-            app.deep_link().register_all()?;
+            if !(cfg!(debug_assertions) && env::var("STREAMNYAA_ISOLATED_VALIDATION").as_deref() == Ok("1")) {
+                app.deep_link().register_all()?;
+            }
             let deep_link_app = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 for url in event.urls() {
@@ -6246,6 +6448,8 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            player_shortcuts::get_player_shortcuts,
+            player_shortcuts::save_player_shortcuts,
             begin_desktop_google_oauth,
             take_pending_desktop_oauth_callback,
             fetch_desktop_metadata_api,
@@ -6654,7 +6858,32 @@ mod tests {
     }
 
     #[test]
+    fn cached_bytes_do_not_make_an_unhealthy_torrent_live() {
+        assert!(torrent_is_live(&serde_json::json!({"state":"live"})).unwrap());
+        assert!(!torrent_is_live(&serde_json::json!({"state":"initializing", "progress_bytes":90000000})).unwrap());
+        assert!(!torrent_is_live(&serde_json::json!({"progress_bytes":90000000})).unwrap());
+        assert!(torrent_is_live(&serde_json::json!({"state":"error", "progress_bytes":90000000})).is_err());
+    }
+
+    #[test]
+    fn engine_error_categories_never_echo_untrusted_credentials_or_paths() {
+        assert_eq!(safe_engine_error_category("access is denied C:\\Users\\Private token=secret"), "Cache access denied.");
+        assert_eq!(safe_engine_error_category("magnet:?xt=secret https://secret.test/path"), "The stream engine rejected the operation.");
+        assert_eq!(safe_engine_error_category("torrent is not live"), "Torrent is not ready for file selection.");
+    }
+
+    #[test]
+    fn video_probe_rejects_nonlocal_or_wrong_service_addresses() {
+        for url in ["https://example.com/video", "http://127.0.0.1:1234/torrents/0/stream/0", "http://user:secret@127.0.0.1:3030/torrents/0/stream/0", "http://127.0.0.1:3030/admin"] {
+            assert!(probe_local_video(url).is_err());
+        }
+    }
+
+    #[test]
     fn stream_handoff_never_opens_a_zero_data_source_after_a_timer() {
+        assert!(stream_preparation_timeout(false, 0, true).contains("No peers"));
+        assert!(stream_preparation_timeout(true, 0, true).contains("no video data"));
+        assert!(stream_preparation_timeout(true, 1, true).contains("playable buffer"));
         assert!(!stream_ready_for_player(
             0,
             INITIAL_PLAYBACK_BUFFER_BYTES,
@@ -6673,6 +6902,35 @@ mod tests {
             false,
             0
         ));
+    }
+
+    #[test]
+    fn nested_local_http_deadlines_expire_and_restore_the_parent_scope() {
+        let parent = RqbitDeadline::enter(Duration::from_secs(2));
+        assert!(rqbit_request_timeout(Duration::from_secs(35)).unwrap() <= Duration::from_secs(2));
+        {
+            let _expired = RqbitDeadline::enter(Duration::ZERO);
+            assert!(rqbit_request_timeout(Duration::from_secs(35)).is_err());
+        }
+        assert!(rqbit_request_timeout(Duration::from_secs(35)).is_ok());
+        drop(parent);
+        assert_eq!(rqbit_request_timeout(Duration::from_secs(35)).unwrap(), Duration::from_secs(35));
+    }
+
+    #[test]
+    fn cache_deletion_rejects_unowned_roots_and_sibling_files() {
+        let root = env::temp_dir().join(format!("streamnyaa-safety-test-{}", now_millis()));
+        let session = root.join("source-test");
+        fs::create_dir_all(&session).unwrap();
+        let unrelated = root.join("important.txt");
+        fs::write(&unrelated, b"keep").unwrap();
+        assert!(!is_safe_cache_path(&env::temp_dir()));
+        assert!(!is_safe_cache_path(&root));
+        assert!(!is_safe_cache_path(&unrelated));
+        assert!(is_safe_cache_path(&session));
+        safe_delete_file(&unrelated);
+        assert!(unrelated.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

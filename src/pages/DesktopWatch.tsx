@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
 import Seo from '../components/Seo';
@@ -210,7 +211,7 @@ function SafeImage({
     return (
       <div className={fallbackClassName || className}>
         <div className="flex h-full w-full items-end bg-[radial-gradient(circle_at_34%_18%,rgba(225,29,72,0.38),transparent_36%),linear-gradient(145deg,#1a1016,#060609)] p-4">
-          <span className="line-clamp-3 text-sm font-black leading-tight text-white/76">{alt || 'Anime'}</span>
+          <span className="line-clamp-3 text-sm font-semibold leading-tight text-white/76">{alt || 'Anime'}</span>
         </div>
       </div>
     );
@@ -551,6 +552,7 @@ function isObsoleteLargeSourceFailure(message = '') {
 }
 
 export function isLocalPlaybackFailure(message = '') {
+  if (/^local engine:/i.test(message)) return true;
   return /(?:127\.0\.0\.1|localhost|allow_overwrite|file exists|os error 80|local stream engine|torrent engine|stream engine|local stream request|playback shutdown is busy|cleanup is busy|operation lock|source switch|superseded|stale|cancelled|canceled|user selected|player handoff|native player|\bmpv\b|ipc)/i.test(message);
 }
 
@@ -1629,11 +1631,11 @@ function TimelineSkeletonCard() {
   return (
     <div
       aria-hidden="true"
-      className="relative h-[118px] overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] shadow-lg shadow-black/18"
+      className="relative h-[118px] overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] shadow-none shadow-black/18"
     >
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_46%,rgba(255,255,255,0.04)),radial-gradient(circle_at_86%_0%,rgba(244,63,94,0.14),transparent_46%)]" />
       <div className="relative flex h-full gap-4 p-4">
-        <div className="h-14 w-14 shrink-0 animate-pulse rounded-2xl bg-white/10" />
+        <div className="h-14 w-14 shrink-0 animate-pulse rounded-xl bg-white/10" />
         <div className="min-w-0 flex-1">
           <div className="h-5 w-28 animate-pulse rounded bg-white/10" />
           <div className="mt-3 h-3 w-40 animate-pulse rounded bg-white/8" />
@@ -1703,7 +1705,7 @@ function EpisodeWatchIndicator({ state }: { state: DesktopEpisodeWatchState }) {
   if (!state.started) return null;
   return (
     <>
-      <span className="absolute right-2 top-2 z-20 inline-flex h-7 items-center gap-1.5 rounded-md bg-black/72 px-2 text-[10px] font-bold uppercase text-white shadow-lg shadow-black/25 backdrop-blur-md">
+      <span className="absolute right-2 top-2 z-20 inline-flex h-7 items-center gap-1.5 rounded-md bg-black/72 px-2 text-[10px] font-semibold normal-case text-white shadow-none shadow-black/25 backdrop-blur-md">
         {state.completed ? <Check className="h-3.5 w-3.5 text-primary" strokeWidth={2.5} /> : null}
         {state.completed ? 'Watched' : `${Math.max(1, Math.round(state.progressPercent))}%`}
       </span>
@@ -1717,6 +1719,8 @@ function EpisodeWatchIndicator({ state }: { state: DesktopEpisodeWatchState }) {
 }
 
 export default function DesktopWatch() {
+  const hideEpisodeSpoilers = useHideEpisodeSpoilers();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1755,6 +1759,7 @@ export default function DesktopWatch() {
   const episodeDragRef = useRef({ dragging: false, moved: false, pointerId: 0, startX: 0, startY: 0, scrollLeft: 0 });
   const suppressEpisodeClickRef = useRef(false);
   const sourceSectionRef = useRef<HTMLElement | null>(null);
+  const playbackOptionsRef = useRef<HTMLDetailsElement>(null);
   const selectedSeasonRef = useRef<HTMLButtonElement | null>(null);
   const selectedEpisodeRef = useRef<HTMLDivElement | null>(null);
   const playActionLockRef = useRef(false);
@@ -2598,9 +2603,9 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     const progress = playbackProgressValueRef.current;
     if (!activePlayback || !progress?.ok || progress.state === 'stopped') return;
 
-    const positionSeconds = Math.max(0, Number(
-      Number.isFinite(positionOverride) ? positionOverride : progress.current_seconds || 0,
-    ));
+    const measuredPosition = Number.isFinite(positionOverride) ? positionOverride : progress.current_seconds;
+    if (typeof measuredPosition !== 'number' || !Number.isFinite(measuredPosition) || measuredPosition < 0) return;
+    const positionSeconds = measuredPosition;
     const durationSeconds = Math.max(0, Number(progress.duration_seconds || activePlayback.source.durationSeconds || 0));
     if (positionSeconds <= 0 && durationSeconds <= 0) return;
     const watchedPercent = durationSeconds > 0
@@ -3212,33 +3217,25 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   if (!id) return <div className="py-24 text-center text-white">Select an anime to continue.</div>;
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#06070A] text-white">
+    <div className="sn-watch-page relative min-h-screen overflow-x-hidden text-white">
       <Seo title={`${anime.title} Watch | StreamNyaa Desktop`} description="Desktop watch source screen." canonicalPath={`/watch/${id}`} robots="noindex, nofollow" />
-      <SafeImage candidates={imageCandidatesFor(anime, true)} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-[0.11] blur-2xl" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_14%,rgba(14,165,233,0.12),transparent_28%),radial-gradient(circle_at_64%_38%,rgba(244,63,94,0.14),transparent_36%),linear-gradient(90deg,#050507_0%,rgba(5,5,8,0.97)_29%,rgba(6,7,10,0.90)_100%)]" />
-
-      <div className="sn-page relative grid min-h-screen grid-cols-[360px_1fr] gap-7 py-6">
-        <aside className="sn-glass-panel rounded-[24px] p-5">
-          <Link to="/" className="sn-icon-action mb-6 h-11 w-11 rounded-full">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
+      <div className="sn-watch-layout sn-page relative grid min-h-screen gap-7 py-6">
+        <aside className="sn-glass-panel rounded-xl p-5">
+          <button type="button" onClick={() => { if (Number(window.history.state?.idx) > 0) navigate(-1); else navigate('/search', { replace: true }); }} className="sn-ghost-action mb-4 min-h-11 gap-2 px-2" aria-label="Back to browsing"><ArrowLeft className="h-4 w-4" />Back</button>
           <div className="relative">
-            <div className="pointer-events-none absolute -inset-4 overflow-hidden rounded-[2rem] opacity-30 blur-2xl">
-              <SafeImage candidates={imageCandidatesFor(anime)} alt="" className="h-full w-full object-cover" fallbackClassName="h-full w-full" />
-            </div>
-            <div className="sn-poster-card relative rounded-[22px] shadow-2xl shadow-black/50">
+            <div className="sn-poster-card relative rounded-xl shadow-none">
               <SafeImage candidates={imageCandidatesFor(anime)} alt={anime.title} className="aspect-[2/3] w-full object-cover" />
             </div>
           </div>
           <>
             {selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? (
-              <p className="mt-7 text-[11px] font-black uppercase tracking-[0.22em] text-primary">{selectedInstallment.label}</p>
+              <p className="mt-7 text-[11px] font-semibold normal-case tracking-normal text-primary">{selectedInstallment.label}</p>
             ) : null}
-            <h1 className={`${selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? 'mt-2' : 'mt-7'} break-words text-[31px] font-black leading-[1.05] tracking-[-0.04em] text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)]`}>{anime.title}</h1>
+            <h1 className={`${selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? 'mt-2' : 'mt-7'} break-words text-[31px] font-semibold leading-[1.05] tracking-[-0.04em] text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)]`}>{anime.title}</h1>
             {metadataLoading && !leftPanelInfo.primaryMeta.length && !leftPanelInfo.secondaryMeta.length && !leftPanelInfo.detailMeta.length ? (
               <DesktopLoadingProgress className="mt-4" variant="inline" label="Loading anime details" percent={detailsQuery.data ? 82 : 44} detail="Identity is available; episode metadata is refreshing." />
             ) : null}
-            <div className="mt-3 space-y-1.5 text-sm font-bold text-white/64">
+            <div className="mt-3 space-y-1.5 text-sm font-semibold text-white/64">
               {leftPanelInfo.primaryMeta.length ? (
                 <p>{leftPanelInfo.primaryMeta.join(' - ')}</p>
               ) : null}
@@ -3262,10 +3259,10 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             {leftPanelInfo.genres.length ? (
               <div className="mt-4 flex flex-wrap gap-2">
                 {leftPanelInfo.genres.map((genre: any) => (
-                  <span key={genre.name} className="rounded-full bg-white/[0.07] px-3 py-1.5 text-xs font-bold text-white/82 shadow-sm shadow-black/20">{genre.name}</span>
+                  <span key={genre.name} className="rounded-full bg-white/[0.07] px-3 py-1.5 text-xs font-semibold text-white/82 shadow-sm shadow-black/20">{genre.name}</span>
                 ))}
                 {leftPanelInfo.extraGenreCount > 0 ? (
-                  <span className="rounded-full bg-white/[0.045] px-3 py-1.5 text-xs font-bold text-white/46">+{leftPanelInfo.extraGenreCount} more</span>
+                  <span className="rounded-full bg-white/[0.045] px-3 py-1.5 text-xs font-semibold text-white/46">+{leftPanelInfo.extraGenreCount} more</span>
                 ) : null}
               </div>
             ) : null}
@@ -3278,7 +3275,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   <button
                     type="button"
                     onClick={() => setSynopsisExpanded((value) => !value)}
-                    className="mt-3 text-xs font-black uppercase tracking-[0.16em] text-primary transition-colors hover:text-primary/80"
+                    className="mt-3 text-xs font-semibold normal-case tracking-normal text-primary transition-colors hover:text-primary/80"
                   >
                     {synopsisExpanded ? 'Show less' : 'Read more'}
                   </button>
@@ -3286,20 +3283,20 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
               </div>
             ) : null}
             {leftPanelInfo.trailerUrl ? (
-              <div className="sn-glass-card mt-5 overflow-hidden rounded-[18px]">
+              <div className="sn-glass-card mt-5 overflow-hidden rounded-xl">
                 <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] px-3.5 py-2.5">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-primary/30 bg-primary/16 text-primary">
                       <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-black uppercase tracking-[0.20em] text-primary">Trailer</p>
-                      <p className="mt-0.5 line-clamp-1 text-xs font-bold text-white/48">{anime.title}</p>
+                      <p className="text-[10px] font-semibold normal-case tracking-normal text-primary">Trailer</p>
+                      <p className="mt-0.5 line-clamp-1 text-xs font-semibold text-white/48">{anime.title}</p>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {leftPanelInfo.trailerYear ? (
-                      <span className="rounded-full border border-white/[0.10] bg-black/30 px-2 py-1 text-[10px] font-black text-white/56">
+                      <span className="rounded-full border border-white/[0.10] bg-black/30 px-2 py-1 text-[10px] font-semibold text-white/56">
                         {leftPanelInfo.trailerYear}
                       </span>
                     ) : null}
@@ -3307,7 +3304,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       <button
                         type="button"
                         onClick={() => setTrailerOpen(false)}
-                        className="rounded-full border border-white/[0.10] bg-white/[0.045] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/58 transition-colors hover:border-white/18 hover:text-white"
+                        className="rounded-full border border-white/[0.10] bg-white/[0.045] px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/58 transition-colors hover:border-white/18 hover:text-white"
                       >
                         Close
                       </button>
@@ -3337,13 +3334,13 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   >
                     <SafeImage candidates={trailerPreviewImages} alt={`${anime.title} trailer`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.035]" />
                     <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.76),rgba(0,0,0,0.22)_62%),radial-gradient(circle_at_50%_50%,rgba(244,63,94,0.22),transparent_36%)]" />
-                    <span className="absolute left-1/2 top-1/2 grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/16 bg-black/48 text-white shadow-lg shadow-black/30 transition-all group-hover:border-primary/45 group-hover:bg-primary group-hover:shadow-primary/24">
+                    <span className="absolute left-1/2 top-1/2 grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/16 bg-black/48 text-white shadow-none shadow-black/30 transition-all group-hover:border-primary/45 group-hover:bg-primary group-hover:shadow-primary/24">
                       <Play className="ml-0.5 h-4 w-4 fill-current" />
                     </span>
                     <span className="absolute bottom-2.5 left-3 right-3 flex items-end justify-between gap-3">
                       <span className="min-w-0">
-                        <span className="block line-clamp-1 text-xs font-black text-white">{anime.title}</span>
-                        <span className="mt-0.5 block text-[10px] font-black uppercase tracking-[0.16em] text-white/48">
+                        <span className="block line-clamp-1 text-xs font-semibold text-white">{anime.title}</span>
+                        <span className="mt-0.5 block text-[10px] font-semibold normal-case tracking-normal text-white/48">
                           {trailerEmbedUrl ? 'Play trailer' : 'Open trailer'}
                         </span>
                       </span>
@@ -3370,10 +3367,10 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             </div>
           ) : null}
           <section>
-            <div className="sn-glass-panel mb-5 overflow-hidden rounded-[28px] p-5">
+            <div className="sn-glass-panel mb-5 overflow-hidden rounded-xl p-5">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-primary">
+                  <p className="flex items-center gap-2 text-[11px] font-semibold normal-case tracking-normal text-primary">
                     <SlidersHorizontal className="h-4 w-4" />
                     Series Timeline
                   </p>
@@ -3401,7 +3398,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         next.set('type', mode);
                         setSearchParams(next);
                       }}
-                      className={`rounded-full px-5 py-2 text-sm font-black transition-all active:scale-[0.98] ${audioMode === mode ? 'bg-primary text-white shadow-lg shadow-primary/24' : 'text-white/62 hover:bg-white/[0.06] hover:text-white'}`}
+                      className={`rounded-full px-5 py-2 text-sm font-semibold transition-all active:scale-[0.98] ${audioMode === mode ? 'bg-primary text-white shadow-none shadow-primary/24' : 'text-white/62 hover:bg-white/[0.06] hover:text-white'}`}
                     >
                       {mode === 'dub' ? 'Dual / Dub' : 'Sub'}
                     </button>
@@ -3433,7 +3430,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 className="grid max-h-[274px] grid-cols-[repeat(auto-fill,minmax(278px,1fr))] gap-3 overflow-y-auto pr-1 custom-scrollbar"
               >
                 {seasonItems.map((season) => {
-                  const sharedClassName = `group relative h-[118px] overflow-hidden rounded-2xl border text-left shadow-lg transition-all duration-200 hover:-translate-y-0.5 ${
+                  const sharedClassName = `group relative h-[118px] overflow-hidden rounded-xl border text-left shadow-none transition-all duration-200 hover:-translate-y-0.5 ${
                     season.current
                       ? 'border-primary/72 bg-primary/[0.13] shadow-primary/22 ring-1 ring-primary/35'
                       : 'border-white/[0.095] bg-white/[0.035] shadow-black/20 hover:border-primary/45 hover:bg-primary/[0.065] hover:ring-1 hover:ring-primary/20'
@@ -3448,22 +3445,22 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       />
                       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,5,8,0.95),rgba(5,5,8,0.70)_49%,rgba(5,5,8,0.36)),radial-gradient(circle_at_86%_0%,rgba(244,63,94,0.22),transparent_46%)]" />
                       <div className="relative flex h-full gap-4 p-4">
-                        <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl border text-sm font-black uppercase tracking-[-0.02em] ${
+                        <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-xl border text-sm font-semibold normal-case tracking-[-0.02em] ${
                           season.current
-                            ? 'border-primary/45 bg-primary text-white shadow-lg shadow-primary/32'
+                            ? 'border-primary/45 bg-primary text-white shadow-none shadow-primary/32'
                             : 'border-white/[0.13] bg-black/46 text-white/86 group-hover:border-primary/45 group-hover:text-white'
                         }`}>
                           {installmentSequenceBadge(season)}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <p className="line-clamp-1 text-lg font-black tracking-[-0.025em] text-white drop-shadow">{installmentPrimaryLabel(season)}</p>
+                            <p className="line-clamp-1 text-lg font-semibold tracking-[-0.025em] text-white drop-shadow">{installmentPrimaryLabel(season)}</p>
                             {season.current ? (
-                              <span className="rounded-full bg-primary/18 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-primary">Now</span>
+                              <span className="rounded-full bg-primary/18 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-primary">Now</span>
                             ) : null}
                           </div>
-                          <p className="mt-1 line-clamp-1 text-xs font-bold text-white/62">{season.name}</p>
-                          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/50">
+                          <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/62">{season.name}</p>
+                          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-semibold normal-case tracking-normal text-white/50">
                             {installmentMetaParts(season).map((part, index) => (
                               <Fragment key={`${season.mal_id}-${part}`}>
                                 {index > 0 ? <span className="text-white/20">-</span> : null}
@@ -3511,11 +3508,11 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
               </div>
             </div>
 
-            <div className="sn-glass-card sticky top-3 z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-2xl px-3 py-3">
+            <div className="sn-glass-card sticky top-3 z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-xl px-3 py-3">
               <div className="flex items-center gap-2">
                 <Download className="h-4 w-4 text-primary" />
                 <span>
-                  <span className="block text-lg font-bold">{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'}</span>
+                  <span className="block text-lg font-semibold">{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'}</span>
                   <span className="mt-0.5 block text-xs font-semibold text-white/60">{airedCount == null ? 'Checking aired episodes' : 'Latest aired ' + airedCount} · Total {totalEpisodeCount(anime) ?? '?'}</span>
                 </span>
               </div>
@@ -3531,7 +3528,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         submitEpisodeSearch();
                       }
                     }}
-                    className="w-48 bg-transparent text-sm font-bold text-white outline-none placeholder:text-white/36"
+                    className="w-48 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/36"
                     placeholder="Search episode number or title"
                   />
                 </div>
@@ -3542,7 +3539,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         key={mode}
                         type="button"
                         onClick={() => setEpisodeViewMode(mode)}
-                        className={`rounded-lg px-3 py-2 text-xs font-black uppercase tracking-[0.16em] ${
+                        className={`rounded-lg px-3 py-2 text-xs font-semibold normal-case tracking-normal ${
                           episodeViewMode === mode
                             ? 'bg-primary text-white shadow-md shadow-primary/18'
                             : 'text-white/58 hover:bg-white/[0.06] hover:text-white'
@@ -3567,7 +3564,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     <select
                       value={String(episodeGridStart)}
                       onChange={(event) => setEpisodeGridStart(Number(event.target.value) || 1)}
-                      className="rounded-xl border border-white/[0.12] bg-black/48 px-4 py-3 text-sm font-black text-white outline-none"
+                      className="rounded-xl border border-white/[0.12] bg-black/48 px-4 py-3 text-sm font-semibold text-white outline-none"
                     >
                       {episodeRanges.map((range) => (
                         <option key={range.start} value={range.start}>{range.label}</option>
@@ -3586,7 +3583,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 ) : null}
                 {longEpisodeRun ? (
                   <div className="hidden items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 px-3 py-2 md:flex">
-                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-white/44">Jump</span>
+                    <span className="text-[11px] font-semibold normal-case tracking-normal text-white/44">Jump</span>
                     <input
                       value={episodeJumpValue}
                       onChange={(event) => setEpisodeJumpValue(event.target.value.replace(/[^\d]/g, '').slice(0, 4))}
@@ -3597,7 +3594,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         }
                       }}
                       inputMode="numeric"
-                      className="w-20 rounded-lg border border-white/[0.10] bg-white/[0.055] px-3 py-2 text-sm font-black text-white outline-none"
+                      className="w-20 rounded-lg border border-white/[0.10] bg-white/[0.055] px-3 py-2 text-sm font-semibold text-white outline-none"
                       placeholder="Episode"
                     />
                     <button
@@ -3613,7 +3610,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   type="button"
                   disabled={animeNotYetAired || Boolean(activeSourceId) || sourcesBusy}
                   onClick={() => playEpisodeNumber(selectedEpisode)}
-                  className="hidden rounded-xl bg-primary px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white shadow-lg shadow-primary/24 transition-all hover:bg-[#ff3345] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
+                  className="hidden rounded-xl bg-primary px-4 py-3 text-xs font-semibold normal-case tracking-normal text-white shadow-none shadow-primary/24 transition-all hover:bg-[#ff3345] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
                   aria-label={`Play episode ${selectedEpisode}`}
                 >
                   {animeNotYetAired ? 'Not aired yet' : Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : 'Play Episode'}
@@ -3624,7 +3621,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   aria-pressed={selectedEpisodeWatchState.completed}
                   aria-label={`${selectedEpisodeWatchState.completed ? 'Mark unwatched' : 'Mark watched'} episode ${selectedEpisode}`}
                   title={selectedEpisodeWatchState.completed ? 'Mark this episode as unwatched' : 'Mark this episode as watched'}
-                  className={`hidden min-h-11 items-center gap-2 rounded-xl px-4 text-xs font-black uppercase tracking-[0.14em] transition-all active:scale-[0.98] md:inline-flex ${
+                  className={`hidden min-h-11 items-center gap-2 rounded-xl px-4 text-xs font-semibold normal-case tracking-normal transition-all active:scale-[0.98] md:inline-flex ${
                     selectedEpisodeWatchState.completed
                       ? 'bg-emerald-400/[0.12] text-emerald-200 shadow-inner shadow-emerald-300/[0.08] hover:bg-emerald-400/[0.18]'
                       : 'bg-white/[0.065] text-white/66 hover:bg-white/[0.11] hover:text-white'
@@ -3640,7 +3637,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     setAutoOpenBestSource(next);
                     saveDesktopAutoOpenBestSource(next);
                   }}
-                  className={`hidden rounded-xl border px-4 py-3 text-xs font-black uppercase tracking-[0.16em] transition-all active:scale-[0.98] md:inline-flex ${
+                  className={`hidden rounded-xl border px-4 py-3 text-xs font-semibold normal-case tracking-normal transition-all active:scale-[0.98] md:inline-flex ${
                     autoOpenBestSource
                       ? 'border-primary/45 bg-primary text-white shadow-md shadow-primary/18'
                       : 'border-white/[0.12] bg-black/38 text-white/56 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
@@ -3674,7 +3671,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
               </p>
             ) : null}
             {episodeSearchTerm && !displayedEpisodes.length ? (
-              <div className="rounded-xl border border-white/[0.10] bg-white/[0.04] p-6 text-sm font-bold text-white/58">
+              <div className="rounded-xl border border-white/[0.10] bg-white/[0.04] p-6 text-sm font-semibold text-white/58">
                 No episodes matched that search. Try a title keyword or an episode number.
               </div>
             ) : episodeViewMode === 'grid' && longEpisodeRun ? (
@@ -3685,7 +3682,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
                     className={`group relative rounded-xl border px-3 py-3 text-left transition-all focus-within:ring-1 focus-within:ring-primary/40 ${
                       episode.number === selectedEpisode
-                        ? 'border-primary/55 bg-primary/[0.11] shadow-lg shadow-primary/14 ring-1 ring-primary/30'
+                        ? 'border-primary/55 bg-primary/[0.11] shadow-none shadow-primary/14 ring-1 ring-primary/30'
                         : 'border-white/[0.10] bg-white/[0.035] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/[0.045]'
                     }`}
                   >
@@ -3707,8 +3704,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       aria-label={`Watch episode ${episode.number}`}
                     >
                       <EpisodeWatchIndicator state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} />
-                      <p className={`text-base font-black ${episode.number === selectedEpisode ? 'text-white' : 'text-white/86'}`}>Ep {episode.number}</p>
-                      <p className="mt-1 line-clamp-2 text-[11px] font-bold leading-5 text-white/48">{episode.title}</p>
+                      <p className={`text-base font-semibold ${episode.number === selectedEpisode ? 'text-white' : 'text-white/86'}`}>Ep {episode.number}</p>
+                      <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-5 text-white/48">{hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title}</p>
                     </button>
                     <button
                       type="button"
@@ -3719,7 +3716,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         event.stopPropagation();
                         playEpisodeNumber(episode.number);
                       }}
-                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition-all hover:bg-primary hover:text-white active:scale-[0.98] group-focus-within:bg-primary/90"
+                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[11px] font-semibold normal-case tracking-normal text-white transition-all hover:bg-primary hover:text-white active:scale-[0.98] group-focus-within:bg-primary/90"
                       aria-label={`Play episode ${episode.number}`}
                     >
                       <Play className="h-3 w-3 fill-current" />
@@ -3742,7 +3739,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   <div
                     key={episode.number}
                     ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
-                    className={`group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-xl border text-left shadow-lg shadow-black/18 transition-all focus-within:ring-1 focus-within:ring-primary/42 ${
+                    className={`group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-xl border text-left shadow-none shadow-black/18 transition-all focus-within:ring-1 focus-within:ring-primary/42 ${
                       episode.number === selectedEpisode
                         ? 'border-primary/70 bg-primary/[0.10] ring-1 ring-primary/32'
                         : 'border-white/[0.10] hover:-translate-y-0.5 hover:border-primary/42'
@@ -3766,11 +3763,11 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       className="absolute inset-0 cursor-pointer text-left outline-none focus-visible:ring-1 focus-visible:ring-primary/45"
                       aria-label={`Watch episode ${episode.number}`}
                     >
-                      <SafeImage candidates={uniqueImageCandidates([episode.image, wideImageFor(anime), posterFor(anime)])} alt={episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
+                      <SafeImage candidates={uniqueImageCandidates([...(hideEpisodeSpoilers ? [] : [episode.image]), wideImageFor(anime), posterFor(anime)])} alt={hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
                       <div className={`absolute inset-0 ${episode.number === selectedEpisode ? 'bg-[linear-gradient(0deg,rgba(48,8,16,0.90),rgba(0,0,0,0.06)_62%)]' : 'bg-[linear-gradient(0deg,rgba(0,0,0,0.80),rgba(0,0,0,0.08)_62%)]'}`} />
-                      <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-black shadow-md shadow-black/25 ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/72 text-white'}`}>{episode.number}</span>
+                      <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-semibold shadow-md shadow-black/25 ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/72 text-white'}`}>{episode.number}</span>
                       <EpisodeWatchIndicator state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} />
-                      <p className="absolute bottom-3 left-3 right-14 line-clamp-1 text-sm font-black">{episode.title}</p>
+                      <p className="absolute bottom-3 left-3 right-14 line-clamp-1 text-sm font-semibold">{hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title}</p>
                     </button>
                     <button
                       type="button"
@@ -3785,7 +3782,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         event.preventDefault();
                         event.stopPropagation();
                       }}
-                      className="absolute bottom-2.5 right-2.5 grid h-9 w-9 place-items-center rounded-full border border-white/[0.14] bg-black/62 text-white shadow-lg shadow-black/30 backdrop-blur transition-all hover:border-primary/55 hover:bg-primary hover:shadow-primary/24 active:scale-[0.94]"
+                      className="absolute bottom-2.5 right-2.5 grid h-9 w-9 place-items-center rounded-full border border-white/[0.14] bg-black/62 text-white shadow-none shadow-black/30 backdrop-blur transition-all hover:border-primary/55 hover:bg-primary hover:shadow-primary/24 active:scale-[0.94]"
                       aria-label={`Play episode ${episode.number}`}
                     >
                       <Play className="h-3.5 w-3.5 fill-current" />
@@ -3806,11 +3803,11 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
           </section>
 
           <section ref={sourceSectionRef} className="mt-8 pb-24">
-            <div className="sn-glass-panel mb-5 rounded-[28px] p-5">
+            <div className="sn-glass-panel mb-5 rounded-xl p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Playback</p>
-                  <h2 className="mt-1 text-2xl font-black tracking-[-0.03em] text-white">{sourceSectionTitle}</h2>
+                  <p className="text-[10px] font-semibold normal-case tracking-normal text-primary">Playback</p>
+                  <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{sourceSectionTitle}</h2>
                   <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/52">{sourceSectionSubtitle}</p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-3">
@@ -3830,7 +3827,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         type="button"
                         disabled={!playableSources[0] || Boolean(activeSourceId) || sourcesBusy}
                         onClick={() => playableSources[0] && void playSource(playableSources[0])}
-                        className="sn-primary-action h-12 rounded-2xl px-5 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                        className="sn-primary-action h-12 rounded-xl px-5 text-sm disabled:cursor-not-allowed disabled:opacity-45"
                         aria-label={`Play episode ${selectedEpisode}`}
                       >
                         <Play className="mr-2 h-4 w-4 fill-current" />
@@ -3838,8 +3835,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       </button>
                       <button
                         type="button"
-                        onClick={() => sourceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                        className="sn-secondary-action h-12 rounded-2xl px-5 text-sm"
+                        onClick={() => { if (playbackOptionsRef.current) { playbackOptionsRef.current.open = true; playbackOptionsRef.current.scrollIntoView({ block: 'nearest' }); } }}
+                        className="sn-secondary-action h-12 rounded-xl px-5 text-sm"
                         aria-label={`View playback options for episode ${selectedEpisode}`}
                       >
                         <SlidersHorizontal className="mr-2 h-4 w-4" />
@@ -3851,8 +3848,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
               </div>
 
               {animeNotYetAired ? (
-                <div className="mt-5 rounded-2xl bg-black/28 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.06]">
-                  <p className="text-sm font-black text-white">Episodes are not available yet.</p>
+                <div className="mt-5 rounded-xl bg-black/28 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.06]">
+                  <p className="text-sm font-semibold text-white">Episodes are not available yet.</p>
                   <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/48">
                     This title can be saved now. Playback becomes available after the first episode airs.
                   </p>
@@ -3860,8 +3857,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
               ) : (
                 <>
               <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
-                <div className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
-                  <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Match</p>
+                <div className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
+                  <p className="mb-2 px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Match</p>
                   <div className="flex rounded-xl bg-black/34 p-1">
                     {(['strict', 'balanced', 'broad'] as SourceFilterMode[]).map((mode) => (
                       <button
@@ -3869,7 +3866,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         type="button"
                         onClick={() => setSourceMode(mode)}
                         aria-pressed={sourceMode === mode}
-                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-black capitalize transition-all active:scale-[0.98] ${
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold capitalize transition-all active:scale-[0.98] ${
                           sourceMode === mode
                             ? 'bg-primary text-white shadow-md shadow-primary/24'
                             : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
@@ -3881,8 +3878,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
-                  <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Audio</p>
+                <div className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
+                  <p className="mb-2 px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Audio</p>
                   <div className="flex rounded-xl bg-black/34 p-1">
                     {([
                       { label: 'Sub', preference: 'sub-preferred' },
@@ -3894,7 +3891,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         type="button"
                         onClick={() => setSourceAudioPreference(option.preference)}
                         aria-pressed={audioPreference === option.preference}
-                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all active:scale-[0.98] ${
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-all active:scale-[0.98] ${
                           audioPreference === option.preference
                             ? 'bg-primary text-white shadow-md shadow-primary/24'
                             : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
@@ -3906,8 +3903,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
-                  <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Quality</p>
+                <div className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
+                  <p className="mb-2 px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Quality</p>
                   <div className="flex flex-wrap gap-1 rounded-xl bg-black/34 p-1">
                     {sourceQualityOptions.map((quality) => {
                       const active = sourceQuality === quality;
@@ -3918,7 +3915,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                           type="button"
                           onClick={() => setSourceQuality(quality)}
                           aria-pressed={active}
-                          className={`rounded-lg px-3 py-2 text-xs font-black transition-all active:scale-[0.98] ${
+                          className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all active:scale-[0.98] ${
                             active
                               ? 'bg-primary text-white shadow-md shadow-primary/24'
                               : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
@@ -3932,10 +3929,10 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   </div>
                 </div>
 
-                <label className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
-                  <span className="mb-2 block px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Order</span>
+                <label className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
+                  <span className="mb-2 block px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Order</span>
                   <span className="flex h-[42px] items-center rounded-xl bg-black/34 px-3">
-                    <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SourceSort)} className="w-full bg-transparent text-sm font-black text-white outline-none">
+                    <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SourceSort)} className="w-full bg-transparent text-sm font-semibold text-white outline-none">
                       <option value="best">Best Match</option>
                       <option value="seeders">Seeders</option>
                       <option value="size">Smaller Files</option>
@@ -3946,7 +3943,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-4 text-sm">
-                <p className="font-bold text-white/56">{sourceMatchSummary}</p>
+                <p className="font-semibold text-white/56">{sourceMatchSummary}</p>
                 <p className="text-xs font-semibold text-white/36">StreamNyaa automatically chooses the fastest compatible option.</p>
               </div>
                 </>
@@ -3954,7 +3951,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             </div>
 
             {playbackNotice ? (
-              <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-bold shadow-lg shadow-black/14 ${
+              <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-semibold shadow-none shadow-black/14 ${
                 playbackNotice.tone === 'error'
                   ? 'border-red-400/25 bg-red-500/10 text-red-100'
                   : playbackNotice.tone === 'success'
@@ -4018,7 +4015,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 posterFor(anime),
               ]);
               return (
-                <div className="mb-5 overflow-hidden rounded-[28px] border border-white/10 bg-[#07070A] shadow-2xl shadow-black/35 ring-1 ring-white/[0.025]">
+                <div className="mb-5 overflow-hidden rounded-xl border border-white/10 bg-[#07070A] shadow-none shadow-black/35 ring-1 ring-white/[0.025]">
                   <div className="relative min-h-[320px]">
                     <SafeImage
                       candidates={artworkCandidates}
@@ -4030,17 +4027,17 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     <div className="relative flex min-h-[320px] flex-col justify-between p-6">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="min-w-0">
-                          <p className="text-[10px] font-black uppercase tracking-[0.26em] text-primary">Now Playing</p>
-                          <h3 className="mt-2 line-clamp-2 max-w-3xl text-3xl font-black leading-tight tracking-[-0.035em] text-white">{playback.title}</h3>
-                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/58">
+                          <p className="text-[10px] font-semibold normal-case tracking-normal text-primary">Now Playing</p>
+                          <h3 className="mt-2 line-clamp-2 max-w-3xl text-3xl font-semibold leading-tight tracking-[-0.035em] text-white">{playback.title}</h3>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold normal-case tracking-normal text-white/58">
                             <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">{playbackStage.headline}</span>
                             <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">{Number(playbackProgress?.peers || 0) > 0 ? 'Connected' : 'Connecting'}</span>
                             <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">{playbackProgress?.state || playbackStage.status}</span>
                           </div>
                         </div>
-                        <div className="rounded-2xl border border-white/10 bg-black/36 px-4 py-3 text-right backdrop-blur-xl">
-                          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Session</p>
-                          <p className="mt-1 text-lg font-black text-white">{Math.round(watchedPercent)}%</p>
+                        <div className="rounded-xl border border-white/10 bg-black/36 px-4 py-3 text-right backdrop-blur-xl">
+                          <p className="text-[10px] font-semibold normal-case tracking-normal text-white/38">Session</p>
+                          <p className="mt-1 text-lg font-semibold text-white">{Math.round(watchedPercent)}%</p>
                         </div>
                       </div>
 
@@ -4078,7 +4075,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                           </div>
                         ) : null}
                         <div className="mb-4">
-                          <div className="mb-2 flex items-center justify-between text-xs font-bold text-white/58">
+                          <div className="mb-2 flex items-center justify-between text-xs font-semibold text-white/58">
                             <span>{durationSeconds > 0 ? formatPlaybackTime(currentSeconds) : '--:--'}</span>
                             <span>{durationSeconds > 0 ? formatPlaybackTime(durationSeconds) : playbackStage.status}</span>
                           </div>
@@ -4097,7 +4094,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                           />
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/10 bg-black/46 p-3 shadow-xl shadow-black/30 backdrop-blur-xl">
+                        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/46 p-3 shadow-none shadow-black/30 backdrop-blur-xl">
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
@@ -4112,7 +4109,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                               type="button"
                               disabled={playerBusy}
                               onClick={() => void runPlayerControl(isPaused ? 'play' : 'toggle_pause')}
-                              className="grid h-16 w-16 place-items-center rounded-full bg-white text-black shadow-xl shadow-white/10 transition-transform hover:scale-[1.04] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="grid h-16 w-16 place-items-center rounded-full bg-white text-black shadow-none shadow-white/10 transition-transform hover:scale-[1.04] disabled:cursor-not-allowed disabled:opacity-60"
                               aria-label={isPaused ? 'Play' : 'Pause'}
                             >
                               {playerControlBusy === 'toggle_pause' || playerControlBusy === 'play' ? (
@@ -4149,7 +4146,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                               style={{ '--range-fill': `${Math.max(0, Math.min(100, (volumeValue / 130) * 100))}%` } as React.CSSProperties}
                               className="desktop-player-range h-1.5 w-28 cursor-pointer disabled:cursor-not-allowed"
                             />
-                            <span className="min-w-9 text-right text-xs font-black text-white/58">{Math.round(volumeValue)}%</span>
+                            <span className="min-w-9 text-right text-xs font-semibold text-white/58">{Math.round(volumeValue)}%</span>
                           </div>
 
                           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -4157,7 +4154,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                               type="button"
                               disabled={playerBusy}
                               onClick={() => void runPlayerControl('subtitle')}
-                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-black uppercase tracking-[0.14em] text-white/72 transition-colors hover:border-white/20 hover:bg-white/[0.10] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-semibold normal-case tracking-normal text-white/72 transition-colors hover:border-white/20 hover:bg-white/[0.10] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Subs
                             </button>
@@ -4165,7 +4162,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                               type="button"
                               disabled={playerBusy}
                               onClick={() => void runPlayerControl('audio')}
-                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-black uppercase tracking-[0.14em] text-white/72 transition-colors hover:border-white/20 hover:bg-white/[0.10] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-semibold normal-case tracking-normal text-white/72 transition-colors hover:border-white/20 hover:bg-white/[0.10] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Audio
                             </button>
@@ -4173,7 +4170,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                               defaultValue="1"
                               disabled={playerBusy}
                               onChange={(event) => void runPlayerControl('speed', Number(event.currentTarget.value))}
-                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-black uppercase tracking-[0.14em] text-white outline-none transition-colors hover:border-white/20 hover:bg-white/[0.10] disabled:cursor-not-allowed disabled:opacity-50"
+                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-semibold normal-case tracking-normal text-white outline-none transition-colors hover:border-white/20 hover:bg-white/[0.10] disabled:cursor-not-allowed disabled:opacity-50"
                               aria-label="Playback speed"
                             >
                               <option value="0.75">0.75x</option>
@@ -4193,7 +4190,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                             <button
                               type="button"
                               onClick={() => void stopPlayback()}
-                              className="h-11 rounded-full border border-white/12 bg-black/35 px-4 text-xs font-black uppercase tracking-[0.14em] text-white/78 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+                              className="h-11 rounded-full border border-white/12 bg-black/35 px-4 text-xs font-semibold normal-case tracking-normal text-white/78 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                             >
                               Stop
                             </button>
@@ -4206,7 +4203,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                             return (
                               <span
                                 key={label}
-                                className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
+                                className={`rounded-full border px-3 py-1 text-[10px] font-semibold normal-case tracking-normal ${
                                   activeStep
                                     ? 'border-primary/30 bg-primary/14 text-primary'
                                     : 'border-white/10 bg-white/[0.04] text-white/34'
@@ -4216,7 +4213,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                               </span>
                             );
                           })}
-                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/42">
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/42">
                             {playbackProgress?.downloaded_bytes ? `${Math.round(playbackProgress.downloaded_bytes / 1024 / 1024)} MB cached` : 'Cache pending'}
                           </span>
                         </div>
@@ -4227,11 +4224,16 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
               );
             })() : null}
 
+            <details key={`${id}:${selectedEpisode}`} open ref={playbackOptionsRef} className="sn-playback-options">
+              <summary className="flex min-h-14 cursor-pointer items-center justify-between gap-4 px-5 py-3 font-semibold">
+                <span>Change playback option</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} available` : 'View options'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
+              </summary>
+              <div className="p-4">
             {animeNotYetAired ? null : sourcesBusy ? (
               <div className="grid gap-3">
                 <DesktopLoadingProgress label={`Preparing Episode ${selectedEpisode}`} percent={sourceSearchProgress} detail="Checking video quality, audio preference, and playback health." />
                 {Array.from({ length: 3 }).map((_, index) => (
-                  <div key={index} className="desktop-skeleton-shimmer h-[76px] rounded-2xl border border-white/[0.06]" />
+                  <div key={index} className="desktop-skeleton-shimmer h-[76px] rounded-xl border border-white/[0.06]" />
                 ))}
               </div>
             ) : sortedSources.length ? (
@@ -4259,37 +4261,37 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     {index === 0 || source.matchTier !== previousTier ? (
                       <div className={`${index === 0 ? '' : 'mt-2'} flex items-center justify-between border-t border-white/[0.08] pt-4`}>
                         <div>
-                          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/58">{sourceTierLabel(source.matchTier)}</p>
-                          <p className="mt-1 text-xs font-bold text-white/38">{sourceTierDescription(source.matchTier)}</p>
+                          <p className="text-[11px] font-semibold normal-case tracking-normal text-white/58">{sourceTierLabel(source.matchTier)}</p>
+                          <p className="mt-1 text-xs font-semibold text-white/38">{sourceTierDescription(source.matchTier)}</p>
                         </div>
-                        <p className="text-xs font-bold text-white/42">
+                        <p className="text-xs font-semibold text-white/42">
                           {source.matchTier === 'exact' ? visibleTierCounts.exact : source.matchTier === 'likely' ? visibleTierCounts.likely : visibleTierCounts.broad} source
                           {(source.matchTier === 'exact' ? visibleTierCounts.exact : source.matchTier === 'likely' ? visibleTierCounts.likely : visibleTierCounts.broad) === 1 ? '' : 's'}
                         </p>
                       </div>
                     ) : null}
                     <div
-                      className={`relative overflow-hidden rounded-2xl border bg-[#101116]/82 p-4 shadow-lg shadow-black/20 transition-all hover:-translate-y-0.5 hover:border-primary/24 hover:bg-[#171923]/82 ${
+                      className={`relative overflow-hidden rounded-xl border bg-[#101116]/82 p-4 shadow-none shadow-black/20 transition-all hover:-translate-y-0.5 hover:border-primary/24 hover:bg-[#171923]/82 ${
                         index === 0 && source.matchTier === 'exact' ? 'border-primary/42 bg-[linear-gradient(135deg,rgba(244,63,94,0.10),rgba(255,255,255,0.040)_52%,rgba(255,255,255,0.030))] shadow-primary/8' : 'border-white/[0.085]'
                       }`}
                     >
-                      {index === 0 && source.matchTier === 'exact' ? <div className="absolute inset-y-4 left-0 w-1 rounded-r-full bg-primary shadow-lg shadow-primary/40" /> : null}
+                      {index === 0 && source.matchTier === 'exact' ? <div className="absolute inset-y-4 left-0 w-1 rounded-r-full bg-primary shadow-none shadow-primary/40" /> : null}
                       <div className="flex items-center gap-4">
-                        <span className="grid h-[58px] min-w-[70px] shrink-0 place-items-center rounded-xl border border-white/[0.10] bg-white/[0.065] px-3 text-xs font-black text-white shadow-inner shadow-black/20">{quality}</span>
+                        <span className="grid h-[58px] min-w-[70px] shrink-0 place-items-center rounded-xl border border-white/[0.10] bg-white/[0.065] px-3 text-xs font-semibold text-white shadow-inner shadow-black/20">{quality}</span>
                         <div className="min-w-0 flex-1">
-                          {index === 0 && source.matchTier === 'exact' ? <p className="mb-1 text-[10px] font-black uppercase tracking-[0.22em] text-primary">Recommended source</p> : null}
-                          <p className="line-clamp-1 text-sm font-black text-white">{source.title}</p>
+                          {index === 0 && source.matchTier === 'exact' ? <p className="mb-1 text-[10px] font-semibold normal-case tracking-normal text-primary">Recommended source</p> : null}
+                          <p className="line-clamp-1 text-sm font-semibold text-white">{source.title}</p>
                           <p className="mt-1 text-xs font-semibold text-white/52">
                             {quality} <span className="text-white/24">-</span> {codec} <span className="text-white/24">-</span> {audioLabel} <span className="text-white/24">-</span> {source.size}
                           </p>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-white/45">
-                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${source.playable ? sourceConfidenceClassName(confidence.band) : playableStatusClassName(source.playableStatus)}`}>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/45">
+                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal ${source.playable ? sourceConfidenceClassName(confidence.band) : playableStatusClassName(source.playableStatus)}`}>
                               {source.playable ? confidence.label : source.playableLabel}
                             </span>
                             <span className="text-emerald-400">{sourceHealth(source.rawSeeders)}</span>
                             <span>{source.seeders} seeders</span>
                             {visibleReasons.map((reason) => (
-                              <span key={`${sourceId}-${reason}`} className="rounded-full border border-white/8 bg-white/[0.045] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/54">
+                              <span key={`${sourceId}-${reason}`} className="rounded-full border border-white/8 bg-white/[0.045] px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/54">
                                 {reason}
                               </span>
                             ))}
@@ -4299,7 +4301,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                           <button
                             type="button"
                             onClick={() => toggleSourceDetails(sourceId)}
-                            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-black text-white/62 transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]"
+                            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-white/62 transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]"
                           >
                             Details
                             <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -4307,7 +4309,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                           <button type="button" onClick={() => navigator.clipboard?.writeText(source.magnet || torrentUrlFor(source))} className="grid h-10 w-10 place-items-center rounded-lg border border-white/[0.10] bg-white/[0.05] text-white/62 transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]" aria-label="Copy source link">
                             <Copy className="h-4 w-4" />
                           </button>
-                          <button type="button" disabled={Boolean(active) || !source.playable} onClick={() => void playSource(source)} className="inline-flex h-10 min-w-[86px] items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-black uppercase tracking-[0.14em] text-white shadow-lg shadow-primary/24 transition-all hover:bg-[#ff3345] hover:shadow-primary/34 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60">
+                          <button type="button" disabled={Boolean(active) || !source.playable} onClick={() => void playSource(source)} className="inline-flex h-10 min-w-[86px] items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold normal-case tracking-normal text-white shadow-none shadow-primary/24 transition-all hover:bg-[#ff3345] hover:shadow-primary/34 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60">
                             {active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}
                             {active ? 'Opening' : source.playable ? 'Play' : 'Blocked'}
                           </button>
@@ -4319,7 +4321,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                             {[...reasons, `Confidence ${score}`, `Rank ${Math.round(sourceScore(source, audioPreference, audioMode))}`, source.category, source.pubDate ? `Updated ${new Date(source.pubDate).toLocaleDateString()}` : '', source.infoHash ? `Hash ${source.infoHash.slice(0, 10)}` : '']
                               .filter(Boolean)
                               .map((label) => (
-                                <span key={`${sourceId}-${label}`} className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-white/46">
+                                <span key={`${sourceId}-${label}`} className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/46">
                                   {label}
                                 </span>
                               ))}
@@ -4335,8 +4337,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 })}
               </div>
             ) : (
-              <div className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.05))] p-8 text-center text-white/62">
-                <p className="text-lg font-black text-white">{sourcesError ? 'Playback preparation was interrupted' : sourceQuality === 'auto' ? 'This episode is not playable yet' : `${sourceQualityLabel(sourceQuality)} is unavailable`}</p>
+              <div className="rounded-xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.05))] p-8 text-center text-white/62">
+                <p className="text-lg font-semibold text-white">{sourcesError ? 'Playback preparation was interrupted' : sourceQuality === 'auto' ? 'This episode is not playable yet' : `${sourceQualityLabel(sourceQuality)} is unavailable`}</p>
                 <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/50">
                   {sourcesError
                     ? 'The connection was interrupted before playback could be prepared. Retry to continue.'
@@ -4349,7 +4351,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     <button
                       type="button"
                       onClick={() => setSourceQuality('auto')}
-                      className="inline-flex h-11 items-center rounded-xl bg-white px-5 text-sm font-black text-black shadow-lg shadow-white/8 transition-colors hover:bg-white/90"
+                      className="inline-flex h-11 items-center rounded-xl bg-white px-5 text-sm font-semibold text-black shadow-none shadow-white/8 transition-colors hover:bg-white/90"
                     >
                       Show Auto
                     </button>
@@ -4357,19 +4359,21 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   <button
                     type="button"
                     onClick={() => void refetchSources()}
-                    className="inline-flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-black text-white shadow-lg shadow-primary/18 transition-colors hover:bg-primary/90"
+                    className="inline-flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-semibold text-white shadow-none shadow-primary/18 transition-colors hover:bg-primary/90"
                   >
                     Retry
                   </button>
                   <Link
                     to={`/nyaa?q=${encodeURIComponent(anime.title || '')}`}
-                    className="inline-flex h-11 items-center rounded-xl border border-white/10 bg-white/[0.06] px-5 text-sm font-black text-white transition-colors hover:border-white/18 hover:bg-white/[0.09]"
+                    className="inline-flex h-11 items-center rounded-xl border border-white/10 bg-white/[0.06] px-5 text-sm font-semibold text-white transition-colors hover:border-white/18 hover:bg-white/[0.09]"
                   >
                     Playback Options
                   </Link>
                 </div>
               </div>
             )}
+              </div>
+            </details>
           </section>
         </main>
       </div>

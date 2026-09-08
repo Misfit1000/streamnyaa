@@ -10,13 +10,14 @@ export default function DesktopLoadingProgress({
   className = '',
 }: {
   label: string;
-  percent: number;
+  percent?: number;
   detail?: string;
   variant?: 'screen' | 'section' | 'inline';
   children?: ReactNode;
   className?: string;
 }) {
-  const value = clampLoadingPercent(percent);
+  const measured = typeof percent === 'number' && Number.isFinite(percent);
+  const value = measured ? clampLoadingPercent(percent) : undefined;
   const layout = variant === 'screen'
     ? 'grid min-h-[58vh] place-items-center px-6'
     : variant === 'inline'
@@ -28,7 +29,7 @@ export default function DesktopLoadingProgress({
       <div className={variant === 'screen' ? 'w-full max-w-sm bg-[#0d0d10] p-6 ring-1 ring-white/[0.08]' : 'w-full'}>
         <div className="flex items-baseline justify-between gap-4">
           <p className="text-sm font-semibold text-white/78">{label}</p>
-          <output className="shrink-0 text-sm font-semibold tabular-nums text-white" aria-label={`${value} percent loaded`}>{value}%</output>
+          {measured ? <output className="shrink-0 text-sm font-semibold tabular-nums text-white" aria-label={`${value} percent loaded`}>{value}%</output> : null}
         </div>
         {detail ? <p className="mt-1 text-xs leading-5 text-white/46">{detail}</p> : null}
         <div
@@ -39,11 +40,10 @@ export default function DesktopLoadingProgress({
           aria-valuemax={100}
           aria-valuenow={value}
         >
-          <div className="h-full bg-primary transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${value}%` }} />
+          <div className={`h-full bg-primary ${measured ? 'transition-[width] duration-300 motion-reduce:transition-none' : 'animate-pulse motion-reduce:animate-none'}`} style={{ width: measured ? `${value}%` : '100%' }} />
         </div>
         {children ? <div className="mt-5">{children}</div> : null}
       </div>
     </div>
   );
 }
-

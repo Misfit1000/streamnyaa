@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { saveHideEpisodeSpoilers, useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { BellRing, CheckCircle2, Copy, Download, Globe2, HardDrive, History, Keyboard, PlayCircle, RefreshCw, ServerCog, ShieldCheck, Square, Trash2, Upload, UserRound } from 'lucide-react';
 import Seo from '../components/Seo';
+import DesktopAppearanceSettings from '../components/DesktopAppearanceSettings';
+import DesktopShortcutEditor from '../components/DesktopShortcutEditor';
 import {
   buildDesktopDiagnosticsReport,
   clearLocalPlaybackHistory,
@@ -85,8 +88,8 @@ function PreferenceCard({
           {checked ? enabledLabel : disabledLabel}
         </span>
       </span>
-      <span className={`relative h-8 w-14 shrink-0 rounded-full p-1 transition-colors ${checked ? 'bg-primary shadow-lg shadow-primary/25' : 'bg-white/12'}`}>
-        <span className={`block h-6 w-6 rounded-full bg-white shadow-lg transition-transform ${checked ? 'translate-x-6' : 'translate-x-0'}`} />
+      <span className={`relative h-8 w-14 shrink-0 rounded-full p-1 transition-colors ${checked ? 'bg-primary shadow-none shadow-primary/25' : 'bg-white/12'}`}>
+        <span className={`block h-6 w-6 rounded-full bg-white shadow-none transition-transform ${checked ? 'translate-x-6' : 'translate-x-0'}`} />
       </span>
     </button>
   );
@@ -105,7 +108,7 @@ function SectionHeader({
 }) {
   return (
     <div className="flex items-start gap-3">
-      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary/12 text-primary shadow-lg shadow-primary/10">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/12 text-primary shadow-none shadow-primary/10">
         {icon}
       </span>
       <div>
@@ -120,13 +123,14 @@ function SectionHeader({
 function SupportRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-white/[0.06] py-3 last:border-b-0">
-      <span className="text-sm font-bold text-white/48">{label}</span>
-      <span className="max-w-[62%] break-words text-right text-sm font-bold text-white/78">{value}</span>
+      <span className="text-sm font-semibold text-white/48">{label}</span>
+      <span className="max-w-[62%] break-words text-right text-sm font-semibold text-white/78">{value}</span>
     </div>
   );
 }
 
 export default function DesktopSettings() {
+  const hideEpisodeSpoilers = useHideEpisodeSpoilers();
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
   const [autoOpenBestSource, setAutoOpenBestSource] = useState(() => loadDesktopAutoOpenBestSource());
@@ -268,6 +272,14 @@ export default function DesktopSettings() {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Support report could not be copied.' });
     }
   };
+  const exportDiagnostics = () => {
+    const url = URL.createObjectURL(new Blob([buildDesktopDiagnosticsReport(diagnostics)], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `streamnyaa-support-${new Date().toISOString().slice(0, 10)}.txt`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   const ready = Boolean(runtime?.ready);
   const cache = diagnostics?.cache;
@@ -289,12 +301,12 @@ export default function DesktopSettings() {
               Control playback, notifications, temporary storage, privacy, and app health.
             </p>
           </div>
-          <div className={`rounded-2xl border px-4 py-3 shadow-lg ${statusTone(ready)}`}>
+          <div className={`rounded-xl border px-4 py-3 shadow-none ${statusTone(ready)}`}>
             <div className="flex items-center gap-3">
               <CheckCircle2 className="h-5 w-5" />
               <div>
                 <p className="text-sm font-semibold">{ready ? 'Ready to stream' : 'Needs attention'}</p>
-                <p className="mt-0.5 max-w-[320px] text-xs font-bold opacity-75">{runtime?.message || 'Checking playback status...'}</p>
+                <p className="mt-0.5 max-w-[320px] text-xs font-semibold opacity-75">{runtime?.message || 'Checking playback status...'}</p>
               </div>
             </div>
           </div>
@@ -303,7 +315,7 @@ export default function DesktopSettings() {
 
       {message ? (
         <div
-          className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-bold shadow-lg ${
+          className={`mt-4 rounded-xl border px-4 py-3 text-sm font-semibold shadow-none ${
             message.tone === 'error'
               ? 'border-red-400/25 bg-red-500/10 text-red-100 shadow-red-950/20'
               : message.tone === 'success'
@@ -388,9 +400,9 @@ export default function DesktopSettings() {
                     key={value}
                     type="button"
                     onClick={() => updateAudioPreference(value)}
-                    className={`rounded-2xl p-4 text-left transition-all ${
+                    className={`rounded-xl p-4 text-left transition-all ${
                       audioPreference === value
-                        ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                        ? 'bg-primary text-white shadow-none shadow-primary/20'
                         : 'bg-white/[0.055] text-white/68 hover:bg-white/[0.08] hover:text-white'
                     }`}
                   >
@@ -402,6 +414,14 @@ export default function DesktopSettings() {
             </div>
           </section>
 
+          <DesktopAppearanceSettings />
+          <section className="sn-glass-panel p-5">
+            <PreferenceCard title="Hide episode spoilers" description="Use episode numbers and series artwork in the Watch episode list. Turn off to reveal episode titles and stills. This preference stays on this PC."
+              checked={hideEpisodeSpoilers} onChange={(enabled) => {
+                try { saveHideEpisodeSpoilers(enabled); }
+                catch { setMessage({ tone: 'error', text: 'The spoiler preference could not be saved.' }); }
+              }} enabledLabel="Hidden" disabledLabel="Visible" />
+          </section>
           <section id="controls" className="sn-glass-panel scroll-mt-24 p-5">
             <SectionHeader
               icon={<Keyboard className="h-5 w-5" />}
@@ -417,6 +437,7 @@ export default function DesktopSettings() {
                 </div>
               ))}
             </div>
+            <DesktopShortcutEditor />
           </section>
 
           <section id="updates" className="sn-glass-panel scroll-mt-24 p-5">
@@ -474,7 +495,7 @@ export default function DesktopSettings() {
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
                   <div className="h-full rounded-full bg-primary" style={{ width: `${cachePercent}%` }} />
                 </div>
-                <p className="mt-3 text-xs font-bold text-white/42">Limit shown: {formatBytes(cacheLimit)}. Cache pressure: {cache?.pressure || 'unknown'}.</p>
+                <p className="mt-3 text-xs font-semibold text-white/42">Limit shown: {formatBytes(cacheLimit)}. Cache pressure: {cache?.pressure || 'unknown'}.</p>
               </div>
               <div className="grid gap-3">
                 <button onClick={clearStorage} className="sn-primary-action h-12 px-5 text-sm">
@@ -605,10 +626,13 @@ export default function DesktopSettings() {
                 Copy report
               </button>
             </div>
+            <button type="button" disabled={!diagnostics} onClick={exportDiagnostics} className="sn-secondary-action mt-2 h-10 w-full px-3 text-xs disabled:opacity-50">
+              <Download className="h-4 w-4" /> Save private-data-free report
+            </button>
             <details className="mt-5 border-t border-white/[0.07] pt-4">
               <summary className="cursor-pointer text-sm font-semibold text-white/68 hover:text-white">Technical details</summary>
               <div className="mt-3">
-                <SupportRow label="App version" value={diagnostics?.app_version || '0.1.7'} />
+                <SupportRow label="App version" value={diagnostics?.app_version || '0.1.8'} />
                 <SupportRow label="Player" value={runtime?.player_version || 'Auto'} />
                 <SupportRow label="Streaming" value={runtime?.torrent_engine_version || 'Auto'} />
                 <SupportRow label="Temp usage" value={`${formatBytes(cache?.total_bytes)} / ${formatBytes(cacheLimit)}`} />
@@ -618,7 +642,7 @@ export default function DesktopSettings() {
               {diagnostics?.recent_errors?.length ? (
                 <div className="mt-4 rounded-lg border border-red-400/15 bg-red-500/10 p-3">
                   <p className="text-[11px] font-semibold text-red-100/70">Recent problem</p>
-                  <p className="mt-1 line-clamp-3 text-xs font-bold leading-5 text-red-50/72">{diagnostics.recent_errors[0]}</p>
+                  <p className="mt-1 line-clamp-3 text-xs font-semibold leading-5 text-red-50/72">{diagnostics.recent_errors[0]}</p>
                 </div>
               ) : null}
               <pre className="mt-4 max-h-[260px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/35 p-3 text-xs leading-6 text-white/58">

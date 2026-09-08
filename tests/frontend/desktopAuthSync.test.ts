@@ -131,6 +131,27 @@ describe('account record conflict resolution', () => {
   const older = { value: 'older', updatedAt: '2026-08-15T01:00:00.000Z' };
   const newer = { value: 'newer', updatedAt: '2026-08-15T02:00:00.000Z' };
 
+  it('reads and writes beyond the first 500 account records', async () => {
+    window.__STREAMNYAA_DESKTOP__ = true;
+    const rows = Array.from({ length: 501 }, (_, id) => ({ anime_id: String(id), anime_title: `Anime ${id}`,
+      anime: { mal_id: id, title: `Anime ${id}` }, bookmarked: true, liked: false, updated_at: newer.updatedAt }));
+    const calls: any[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, options: RequestInit = {}) => {
+      calls.push([url, options]);
+      if (options.method === 'POST') return new Response(null, { status: 204 });
+      const parsed = new URL(url);
+      const body = parsed.pathname.endsWith('/user_library')
+        ? rows.slice(Number(parsed.searchParams.get('offset') || 0), Number(parsed.searchParams.get('offset') || 0) + 500) : [];
+      return new Response(JSON.stringify(body), { status: 200 });
+    }));
+    const session = { access_token: 'fixture', user: { id: 'fixture' } };
+    const data = await fetchAccountSync(session);
+    expect(data.library).toHaveLength(501);
+    await replaceAccountSyncData(session, data);
+    const writes = calls.filter(([url, options]) => url.includes('/user_library') && options.method === 'POST');
+    expect(writes.map(([, options]) => JSON.parse(options.body).length)).toEqual([500, 1]);
+  });
+
   it('selects the latest update, including deliberate backward-seek records', () => {
     expect(selectNewestAccountRecord(older, newer)).toBe(newer);
     expect(selectNewestAccountRecord(newer, older)).toBe(newer);
