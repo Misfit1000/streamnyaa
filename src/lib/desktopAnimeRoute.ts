@@ -6,11 +6,8 @@ function normalizedStatus(anime: any) {
 
 export function isUpcomingAnime(anime: any) {
   const status = normalizedStatus(anime);
-  if (status === 'NOT_YET_AIRED' || status === 'UPCOMING') return true;
-  if (String(anime?.latestEpisode || '').trim().toUpperCase() === 'TBA') return true;
-  if (!anime?.episodes && !anime?.latestEpisode && status && status !== 'FINISHED' && status !== 'RELEASING') {
-    return true;
-  }
+  // Missing counts are common for ongoing MAL series and do not imply an unreleased title.
+  if (['NOT_YET_AIRED', 'NOT_YET_RELEASED', 'NOT YET AIRED', 'UPCOMING'].includes(status)) return true;
   return false;
 }
 
@@ -32,7 +29,7 @@ export function desktopWatchPath(
   extras?: Record<string, string | number | null | undefined>,
 ) {
   const params = new URLSearchParams();
-  const anilistId = extractNumericId(anime?.anilist_id ?? anime?.id ?? '');
+  const anilistId = extractNumericId(anime?.anilist_id ?? (anime?.mal_id ? '' : anime?.id) ?? '');
   const malId = extractNumericId(anime?.mal_id ?? '');
 
   if (anilistId) params.set('aid', anilistId);

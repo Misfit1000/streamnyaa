@@ -13,6 +13,7 @@ export type AccountLibraryItem = {
 };
 
 export type AccountWatchHistoryItem = {
+  watchedCoverage?: import('./desktopCoverage').WatchedCoverage;
   key: string;
   animeId?: string;
   animeTitle?: string;
@@ -102,6 +103,7 @@ function normalizeWatchHistory(row: any): AccountWatchHistoryItem | null {
     animeTitle: row?.anime_title || legacySource?.animeTitle || legacySource?.title || undefined,
     poster: row?.poster_url || legacySource?.poster || legacySource?.image || undefined,
     episode: row?.episode ?? legacySource?.episode ?? null,
+    watchedCoverage:legacySource?.watchedCoverage,
     positionSeconds,
     durationSeconds: durationSeconds || undefined,
     watchedPercent,
@@ -216,7 +218,7 @@ function watchRows(userId: string, rows: AccountWatchHistoryItem[]) {
   return rows.map((item) => ({
     user_id: userId,
     history_key: item.key,
-    source: null,
+    source: item.watchedCoverage ? {watchedCoverage:item.watchedCoverage} : null,
     anime_id: item.animeId || null,
     anime_title: item.animeTitle || null,
     poster_url: item.poster || null,

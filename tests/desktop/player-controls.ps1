@@ -53,6 +53,21 @@ try {
     return $response.data
   }
 
+  function Wait-MpvProperty([string]$Property, [scriptblock]$Matches, [string]$Failure) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(3)
+    do {
+      $value = Invoke-MpvCommand -Command @('get_property', $Property) -AllowUnavailable
+      if (& $Matches $value) { return }
+      Start-Sleep -Milliseconds 30
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "$Failure Last observed value: $value"
+  }
+
+  # A playable duration can arrive before Lua has registered its key bindings.
+  Wait-MpvProperty 'input-bindings' { param($bindings)
+    @($bindings | Where-Object { $_.key -eq 'k' -and $_.cmd -like '*streamnyaa*' }).Count -gt 0
+  } 'StreamNyaa keyboard bindings did not initialize.'
+
   $duration = $null
   for ($attempt = 0; $attempt -lt 30; $attempt += 1) {
     $duration = Invoke-MpvCommand -Command @('get_property', 'duration') -AllowUnavailable
@@ -65,40 +80,21 @@ try {
     throw 'The control test must start with playback paused.'
   }
   Invoke-MpvCommand @('keypress', 'k') | Out-Null
-  Start-Sleep -Milliseconds 120
-  if ((Invoke-MpvCommand @('get_property', 'pause')) -ne $false) {
-    throw 'K did not resume playback.'
-  }
+  Wait-MpvProperty 'pause' { param($value) $null -ne $value -and $value -eq $false } 'K did not resume playback.'
 
   Invoke-MpvCommand @('keypress', 'm') | Out-Null
-  Start-Sleep -Milliseconds 80
-  if ((Invoke-MpvCommand @('get_property', 'mute')) -ne $true) {
-    throw 'M did not mute playback.'
-  }
+  Wait-MpvProperty 'mute' { param($value) $null -ne $value -and $value -eq $true } 'M did not mute playback.'
 
   Invoke-MpvCommand @('keypress', ']') | Out-Null
-  Start-Sleep -Milliseconds 80
-  if ([double](Invoke-MpvCommand @('get_property', 'speed')) -le 1) {
-    throw '] did not increase playback speed.'
-  }
+  Wait-MpvProperty 'speed' { param($value) [double]$value -gt 1 } '] did not increase playback speed.'
 
   Invoke-MpvCommand @('keypress', '5') | Out-Null
-  Start-Sleep -Milliseconds 80
-  $lastShortcut = Invoke-MpvCommand @('get_property', 'user-data/streamnyaa/last_shortcut')
-  if ($lastShortcut -ne 'key-percent-5') {
-    throw 'The number-row percentage shortcut did not reach the StreamNyaa player handler.'
-  }
+  Wait-MpvProperty 'user-data/streamnyaa/last_shortcut' { param($value) $value -eq 'key-percent-5' } 'The number-row percentage shortcut did not reach the StreamNyaa player handler.'
 
   Invoke-MpvCommand @('keypress', 'f') | Out-Null
-  Start-Sleep -Milliseconds 100
-  if ((Invoke-MpvCommand @('get_property', 'fullscreen')) -ne $true) {
-    throw 'F did not enter fullscreen.'
-  }
+  Wait-MpvProperty 'fullscreen' { param($value) $null -ne $value -and $value -eq $true } 'F did not enter fullscreen.'
   Invoke-MpvCommand @('keypress', 'ESC') | Out-Null
-  Start-Sleep -Milliseconds 100
-  if ((Invoke-MpvCommand @('get_property', 'fullscreen')) -ne $false) {
-    throw 'Escape did not exit fullscreen.'
-  }
+  Wait-MpvProperty 'fullscreen' { param($value) $null -ne $value -and $value -eq $false } 'Escape did not exit fullscreen.'
 
   for ($cycle = 0; $cycle -lt $SoakCycles; $cycle += 1) {
     Invoke-MpvCommand @('seek', 0.1, 'relative+exact') | Out-Null

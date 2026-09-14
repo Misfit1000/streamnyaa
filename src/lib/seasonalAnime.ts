@@ -2,6 +2,7 @@ import { isDesktopApp } from './desktop';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeSeason } from '../api/jikan';
+import { withDesktopCatalogFallback } from '../api/desktopCatalogFallback';
 import { animeIdentity } from './animeIdentity';
 import { getCurrentAnimeSeason, type AnimeSeason } from './currentSeason';
 import { readDesktopCatalog, writeDesktopCatalog } from './desktopCatalogCache';
@@ -102,7 +103,9 @@ export function useSeasonalAnimeQuery({
   const query = useQuery({
     queryKey: [queryKeyPrefix, currentSeason.season, currentSeason.year, limit],
     queryFn: async ({ signal }) => {
-      const response = await fetchAnimeSeason(currentSeason.season, currentSeason.year, 1, { signal, priority: 'background' });
+      const primary = () => fetchAnimeSeason(currentSeason.season, currentSeason.year, 1, { signal, priority: 'background' });
+      const response = await (isDesktopApp() ? withDesktopCatalogFallback(primary,
+        { mode: 'seasonal', year: currentSeason.year, season: currentSeason.season }, signal) : primary());
       const normalized = {
         ...response,
         data: uniqueSeasonalAnime(response?.data || []).slice(0, limit),
@@ -113,6 +116,7 @@ export function useSeasonalAnimeQuery({
     retry: isDesktopApp() ? false : retry,
     staleTime,
     refetchOnWindowFocus: false,
+    refetchInterval: query => query.state.data?.fallback ? 300_000 : false,
     initialData: savedCatalog?.data,
     initialDataUpdatedAt: savedCatalog?.savedAt,
   });

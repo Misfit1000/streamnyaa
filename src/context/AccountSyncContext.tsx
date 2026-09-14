@@ -1,3 +1,4 @@
+import {mergeCoverage,coveragePercent} from '../lib/desktopCoverage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 import {
@@ -136,6 +137,7 @@ function progressToSync(record: DesktopWatchProgressRecord): AccountWatchHistory
     animeTitle: record.title,
     poster: record.poster,
     episode: record.episode,
+    watchedCoverage:record.watchedCoverage,
     positionSeconds: Math.max(0, Number(record.positionSeconds || 0)),
     durationSeconds: record.durationSeconds,
     watchedPercent: record.progressPercent,
@@ -191,7 +193,14 @@ function mergeByKey<T extends { updatedAt: string }>(
   remote.forEach((item) => {
     const key = keyFor(item);
     const winner = selectNewestAccountRecord(merged[key], item);
-    if (winner) merged[key] = winner;
+    if (winner) {
+      const old=merged[key] as any, next=item as any;
+      if(!(winner as any).deletedAt && old && !old.deletedAt && !next.deletedAt && (old.watchedCoverage || next.watchedCoverage)) {
+        const duration=next.durationSeconds || old.durationSeconds || 0;
+        const coverage=mergeCoverage(old.watchedCoverage,next.watchedCoverage,duration,old.watchedCoverage?0:old.positionSeconds || 0);
+        merged[key]={...winner,watchedCoverage:coverage,positionSeconds:coverage.furthest,watchedPercent:coveragePercent(coverage,duration),completed:coveragePercent(coverage,duration)>=92};
+      } else merged[key]=winner;
+    }
   });
   return merged;
 }
@@ -213,6 +222,7 @@ function applyWatchHistory(items: AccountWatchHistoryItem[]) {
       title: item.animeTitle || '',
       poster: item.poster,
       episode: item.episode || 1,
+      watchedCoverage:item.watchedCoverage,
       positionSeconds: item.positionSeconds,
       durationSeconds: item.durationSeconds,
       progressPercent: item.watchedPercent,

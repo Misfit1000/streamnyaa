@@ -1,9 +1,14 @@
+import {mergeCoverage,coveragePercent,type WatchedCoverage} from './desktopCoverage';
 import { animeIdentity, animeTitleKey } from './animeIdentity';
-import { clearInterruptedPlayback, markInterruptedPlayback } from './desktopInterruptedSession';
+import { clearInterruptedPlayback, markInterruptedPlayback, interruptedSourceKey } from './desktopInterruptedSession';
 import { invokeDesktopData, type DesktopRequestOptions } from './desktopRequests';
+import { readHideEpisodeSpoilers } from './desktopSpoilers';
 
 export type LocalPlaybackSource = {
+  watchedCoverage?: WatchedCoverage;
   magnet: string;
+  offlineDownloadId?: string;
+  offlineFile?: string;
   torrentUrl?: string;
   infoHash?: string;
   title: string;
@@ -25,6 +30,7 @@ export type LocalPlaybackSource = {
 };
 
 export type DesktopWatchProgressRecord = {
+  watchedCoverage?: WatchedCoverage;
   animeId: string | number;
   title: string;
   poster?: string;
@@ -59,6 +65,7 @@ export type DesktopPlaybackStatus = {
 };
 
 export type DesktopPlaybackProgress = {
+  watched_coverage?: WatchedCoverage;
   ok: boolean;
   torrent_id: string;
   state: string;
@@ -418,6 +425,7 @@ function watchProgressMatchesSource(
 }
 
 function playbackProgressPercent(source: Partial<LocalPlaybackSource>) {
+  if(source.watchedCoverage)return coveragePercent(source.watchedCoverage,source.durationSeconds || 0);
   const explicitPercent = Number(source.progressPercent || 0);
   if (Number.isFinite(explicitPercent) && explicitPercent > 0) {
     return Math.max(0, Math.min(100, explicitPercent));
@@ -431,6 +439,7 @@ function playbackProgressPercent(source: Partial<LocalPlaybackSource>) {
 }
 
 function isPlaybackEntryComplete(source: Partial<LocalPlaybackSource>) {
+  if(source.watchedCoverage)return coveragePercent(source.watchedCoverage,source.durationSeconds || 0)>=COMPLETION_PERCENT_THRESHOLD;
   const percent = playbackProgressPercent(source);
   const duration = Number(source.durationSeconds || 0);
   const resume = Number(source.resumeSeconds || 0);
@@ -456,6 +465,7 @@ function watchProgressFromSource(source: Partial<LocalPlaybackSource>): DesktopW
     poster: source.poster || source.image || source.banner,
     episode: source.episode || 1,
     positionSeconds,
+    watchedCoverage:source.watchedCoverage,
     durationSeconds: durationSeconds || undefined,
     progressPercent: playbackProgressPercent(source),
     updatedAt: Number(source.progressUpdatedAt || source.savedAt || Date.now()),
@@ -601,16 +611,13 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
     const key = watchProgressKey(normalized);
     const current = loadDesktopWatchProgress();
     const existing = current.find((item) => watchProgressKey(item) === key);
-    if (existing && Number(existing.updatedAt || 0) > normalized.updatedAt) {
-      return;
-    }
-    if (
-      existing
-      && Math.abs(Number(existing.positionSeconds || 0) - normalized.positionSeconds) < 5
-      && Math.abs(Number(existing.progressPercent || 0) - Number(normalized.progressPercent || 0)) < 1
-    ) {
-      return;
-    }
+    if ((existing?.watchedCoverage || normalized.watchedCoverage) && !(record.completed && record.positionSeconds===0 && record.progressPercent===100)) {
+      normalized.watchedCoverage=mergeCoverage(existing?.watchedCoverage,normalized.watchedCoverage,normalized.durationSeconds || existing?.durationSeconds || 0,existing?.watchedCoverage?0:existing?.positionSeconds || 0);
+      normalized.positionSeconds=normalized.watchedCoverage.furthest;
+      normalized.progressPercent=coveragePercent(normalized.watchedCoverage,normalized.durationSeconds || existing?.durationSeconds || 0);
+      normalized.completed=normalized.progressPercent>=92;
+      normalized.updatedAt=Math.max(normalized.updatedAt,existing?.updatedAt || 0);
+    } else if (existing && existing.updatedAt>normalized.updatedAt) return;
     const next = [
       normalized,
       ...current.filter((item) => watchProgressKey(item) !== key),
@@ -626,7 +633,11 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
 
 export function replaceDesktopWatchProgress(records: DesktopWatchProgressRecord[]) {
   try {
-    const next = records
+    const local=loadDesktopWatchProgress();
+    const next = records.map(record=>{const old=local.find(r=>watchProgressKey(r)===watchProgressKey(record));if(!old?.watchedCoverage&&!record.watchedCoverage)return record;
+      const coverage=mergeCoverage(old?.watchedCoverage,record.watchedCoverage,record.durationSeconds || old?.durationSeconds || 0,old?.watchedCoverage?0:old?.positionSeconds || 0);
+      const percent=coveragePercent(coverage,record.durationSeconds || old?.durationSeconds || 0);
+      return {...record,watchedCoverage:coverage,positionSeconds:coverage.furthest,progressPercent:percent,completed:percent>=92};})
       .filter((item): item is DesktopWatchProgressRecord => Boolean(item?.title && item?.episode))
       .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
       .slice(0, DESKTOP_WATCH_PROGRESS_LIMIT);
@@ -672,12 +683,14 @@ export function resolveDesktopPlaybackCheckpoint(source: Partial<LocalPlaybackSo
       positionSeconds: Math.max(0, Number(watchProgress.positionSeconds || 0)),
       durationSeconds: Math.max(0, Number(watchProgress.durationSeconds || 0)),
       progressPercent: playbackProgressPercent({
+        watchedCoverage:watchProgress.watchedCoverage,
         progressPercent: watchProgress.progressPercent,
         resumeSeconds: watchProgress.positionSeconds,
         durationSeconds: watchProgress.durationSeconds,
       }),
       updatedAt: Number(watchProgress.updatedAt || 0),
       completed: watchProgress.completed ?? isPlaybackEntryComplete({
+        watchedCoverage:watchProgress.watchedCoverage,
         progressPercent: watchProgress.progressPercent,
         resumeSeconds: watchProgress.positionSeconds,
         durationSeconds: watchProgress.durationSeconds,
@@ -685,7 +698,7 @@ export function resolveDesktopPlaybackCheckpoint(source: Partial<LocalPlaybackSo
     } : null,
   ].filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
 
-  return candidates.sort((left, right) => right.updatedAt - left.updatedAt)[0] || null;
+  return candidates.sort((left, right) => right.positionSeconds - left.positionSeconds || right.updatedAt - left.updatedAt)[0] || null;
 }
 
 function playbackHistoryMatchesAnime(source: Partial<LocalPlaybackSource>, anime: any) {
@@ -760,6 +773,13 @@ export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
   try {
     const normalized = { ...source, savedAt: source.savedAt || Date.now() };
     const key = playbackHistoryKey(normalized);
+    const previous=loadLocalPlaybackHistory().find(item=>playbackHistoryKey(item)===key);
+    if(previous?.watchedCoverage || normalized.watchedCoverage){
+      normalized.watchedCoverage=mergeCoverage(previous?.watchedCoverage,normalized.watchedCoverage,normalized.durationSeconds || previous?.durationSeconds || 0,previous?.watchedCoverage?0:previous?.resumeSeconds || 0);
+      normalized.resumeSeconds=normalized.watchedCoverage.furthest;
+      normalized.progressPercent=coveragePercent(normalized.watchedCoverage,normalized.durationSeconds || previous?.durationSeconds || 0);
+      normalized.completed=normalized.progressPercent>=92;
+    }
     const next = [
       normalized,
       ...loadLocalPlaybackHistory().filter((item) => playbackHistoryKey(item) !== key),
@@ -779,6 +799,7 @@ export async function openLocalSourceNow(source: LocalPlaybackSource, settings =
   const preparedSource: LocalPlaybackSource = {
     ...(existing || {}),
     ...source,
+    watchedCoverage:existing?.watchedCoverage || source.watchedCoverage,
     progressPercent: checkpoint?.progressPercent ?? 0,
     progressUpdatedAt: checkpoint?.updatedAt || source.progressUpdatedAt || existing?.progressUpdatedAt,
     resumeSeconds: checkpoint?.positionSeconds ?? 0,
@@ -801,6 +822,7 @@ export async function openLocalSourceNow(source: LocalPlaybackSource, settings =
 export function updateLocalPlaybackHistoryProgress(
   source: Partial<LocalPlaybackSource>,
   progress: {
+    watchedCoverage?: WatchedCoverage;
     currentSeconds?: number | null;
     durationSeconds?: number | null;
     progressPercent?: number | null;
@@ -809,40 +831,12 @@ export function updateLocalPlaybackHistoryProgress(
   const existing = findLocalPlaybackHistoryItem(source);
   if (!existing) return;
 
-  // Missing telemetry during opening/reconnection is not a seek to zero.
-  // Preserve an explicit zero (a deliberate restart), but never write NaN/Infinity.
-  if (typeof progress.currentSeconds !== 'number' || !Number.isFinite(progress.currentSeconds)
-    || progress.currentSeconds < 0) return;
-  const currentSeconds = progress.currentSeconds;
-  if (currentSeconds > 0) markInterruptedPlayback(existing.animeId || existing.animeTitle, existing.episode);
-  const reportedDuration = progress.durationSeconds;
-  const durationSeconds = typeof reportedDuration === 'number' && Number.isFinite(reportedDuration)
-    && reportedDuration > 0 ? reportedDuration : Math.max(0, Number(existing.durationSeconds || 0));
-  // Torrent completion and watched completion are independent metrics. Watch
-  // progress must always come from the media timeline when duration is known.
-  const percent = durationSeconds > 0
-    ? Math.max(0, Math.min(100, (currentSeconds / durationSeconds) * 100))
-    : Number(existing.progressPercent || 0);
-
-  const priorSeconds = Math.max(0, Number(existing.resumeSeconds || 0));
-  const priorPercent = Math.max(0, Number(existing.progressPercent || 0));
-  if (Math.abs(currentSeconds - priorSeconds) < 5 && Math.abs(percent - priorPercent) < 1) {
-    return;
-  }
-
-  saveLocalPlaybackHistoryItem({
-    ...existing,
-    ...source,
-    progressPercent: percent,
-    progressUpdatedAt: Date.now(),
-    resumeSeconds: currentSeconds,
-    durationSeconds,
-    completed: isPlaybackEntryComplete({
-      progressPercent: percent,
-      resumeSeconds: currentSeconds,
-      durationSeconds,
-    }),
-  });
+  if (!Number.isFinite(progress.currentSeconds) || Number(progress.currentSeconds)<0) return;
+  const durationSeconds=Number(progress.durationSeconds || existing.durationSeconds || 0);
+  const coverage=mergeCoverage(existing.watchedCoverage,progress.watchedCoverage,durationSeconds,existing.watchedCoverage ? 0 : existing.resumeSeconds || 0);
+  const percent=coveragePercent(coverage,durationSeconds);
+  markInterruptedPlayback(existing.animeId || existing.animeTitle,existing.episode,interruptedSourceKey({...existing,...source}),coverage.furthest,durationSeconds);
+  saveLocalPlaybackHistoryItem({...existing,...source,watchedCoverage:coverage,resumeSeconds:coverage.furthest,durationSeconds,progressPercent:percent,completed:percent>=92,progressUpdatedAt:Date.now()});
 }
 
 export function formatPlaybackTime(seconds?: number | null) {
@@ -1174,6 +1168,10 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
   }
 
   try {
+    if (source.offlineDownloadId && source.offlineFile) {
+      await invoke<void>('play_offline_file', { id: source.offlineDownloadId, file: source.offlineFile, checkpointSeconds: Number(source.resumeSeconds || 0), resume: Number(source.resumeSeconds || 0) > 0 && !source.completed });
+      return { ok: true, state: 'offline', message: 'Offline video opened.', title: source.animeTitle || source.title } as DesktopPlaybackStatus;
+    }
     const result = await invoke<DesktopPlaybackStatus>('play_local_torrent', {
       request: {
         magnet: source.magnet,
@@ -1184,8 +1182,8 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
         episode: source.episode ? String(source.episode) : '',
         size: source.size || '',
         poster: source.poster || source.image || '',
-        banner: source.banner || '',
-        banner_candidates: Array.isArray(source.bannerCandidates) ? source.bannerCandidates : [],
+        banner: readHideEpisodeSpoilers() ? '' : source.banner || '',
+        banner_candidates: readHideEpisodeSpoilers() ? [] : Array.isArray(source.bannerCandidates) ? source.bannerCandidates : [],
         resume_seconds: Number(source.resumeSeconds || 0),
         settings,
       },
@@ -1446,11 +1444,13 @@ export function desktopEpisodeWatchState(
   }
 
   const progressPercent = playbackProgressPercent({
+    watchedCoverage:match.watchedCoverage,
     progressPercent: match.progressPercent,
     resumeSeconds: match.positionSeconds,
     durationSeconds: match.durationSeconds,
   });
   const completed = isPlaybackEntryComplete({
+    watchedCoverage:match.watchedCoverage,
     progressPercent,
     resumeSeconds: match.positionSeconds,
     durationSeconds: match.durationSeconds,

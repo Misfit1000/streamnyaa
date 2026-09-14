@@ -1,3 +1,11 @@
+import {coveragePercent} from '../lib/desktopCoverage';
+import DesktopWatchDesk from '../components/DesktopWatchDesk';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
+import DesktopHomeCustomize from '../components/DesktopHomeCustomize';
+import { useHomeLayout, type ShelfId } from '../lib/desktopHomeLayout';
+import { useDesktopDesign } from '../lib/desktopAppearance';
+import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -24,6 +32,7 @@ import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { useSeasonalAnimeQuery } from '../lib/seasonalAnime';
 import { airedEpisodeCount, episodeAvailabilityLabel } from '../lib/animeEpisodes';
 import { readDesktopCatalog, writeDesktopCatalog } from '../lib/desktopCatalogCache';
+import { withDesktopCatalogFallback } from '../api/desktopCatalogFallback';
 
 const FALLBACK_POSTERS: Record<number, string> = {
   52299: 'https://cdn.myanimelist.net/images/anime/1801/142390l.jpg',
@@ -348,6 +357,7 @@ function sourceImageCandidates(source: LocalPlaybackSource, fallbackAnime?: any)
 }
 
 function sourceProgressPercent(source: LocalPlaybackSource) {
+  if(source.watchedCoverage)return coveragePercent(source.watchedCoverage,source.durationSeconds || 0);
   const duration = Number(source.durationSeconds || 0);
   const resume = Number(source.resumeSeconds || 0);
   if (Number.isFinite(duration) && duration > 0 && Number.isFinite(resume) && resume > 0) {
@@ -595,7 +605,7 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
   episode?: string | number;
   showNew?: boolean;
 }) {
-  const episodeLabel = episodeAvailabilityLabel({
+  const episodeLabel = anime.recentFeedKind === 'listed' ? (anime.listedEpisode ? `Listed episode ${anime.listedEpisode}` : 'Recently listed') : episodeAvailabilityLabel({
     ...anime,
     latestEpisode: airedEpisodeCount(anime) ?? (Number(episode) > 0 ? Number(episode) : undefined),
   });
@@ -606,7 +616,7 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
     showNew ? 'NEW' : '',
   ].filter(Boolean);
   return (
-    <Link
+    <div className="relative w-[190px] shrink-0 2xl:w-[210px]"><Link
       to={to}
       onPointerEnter={() => primeDesktopWatchSnapshot(to, anime)}
       onFocus={() => primeDesktopWatchSnapshot(to, anime)}
@@ -628,9 +638,7 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
             </span>
           ) : null}
         </div>
-        <span className="absolute right-3 top-3 grid h-8 w-8 translate-y-1 place-items-center rounded-full border border-white/[0.10] bg-black/56 text-white opacity-0 shadow-none shadow-black/22 backdrop-blur transition-all duration-200 group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-          <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
-        </span>
+
         <div className="absolute inset-x-0 bottom-0 p-3.5">
           <p className="line-clamp-2 text-[14px] font-semibold leading-tight tracking-[-0.02em] text-white drop-shadow">{anime.title}</p>
           <p className="mt-1 line-clamp-1 text-[12px] font-semibold text-white/58">{animeGenre(anime)}{year ? ` - ${year}` : ''}</p>
@@ -645,12 +653,13 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
           </div>
         </div>
       </div>
-    </Link>
+    </Link><DesktopBookmarkButton anime={anime} className="absolute right-3 top-3 z-20" /></div>
   );
 });
 
 const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackSource }) {
-  const images = sourceImageCandidates(source);
+  const hideSpoilers = useHideEpisodeSpoilers();
+  const images = hideSpoilers ? uniqueValues([source.poster]) : sourceImageCandidates(source);
   const progress = sourceProgressPercent(source);
   const progressWidth = progress > 0 ? Math.max(progress, 2) : 0;
   const resumeText = source.resumeSeconds
@@ -663,7 +672,7 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
     ...(source.animeId ? { animeId: String(source.animeId) } : {}),
     ...(source.episode ? { ep: String(source.episode) } : {}),
   });
-  const detailsPath = `/nyaa?${detailsQuery.toString()}`;
+  const detailsPath = source.animeId ? desktopWatchPath({mal_id:source.animeId,title:source.animeTitle || source.title}, source.episode ? {ep:String(source.episode)} : undefined) : `/search?q=${encodeURIComponent(source.animeTitle || source.title)}`;
   const resume = () => {
     void openLocalSourceNow(source).catch((error) => {
       console.warn(error instanceof Error ? error.message : String(error || 'Source link could not open.'));
@@ -686,9 +695,7 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
             className="absolute inset-0 h-full w-full object-cover opacity-95 transition-transform duration-500 group-hover:scale-[1.045]"
           />
           <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.84),rgba(7,8,12,0.34)_42%,rgba(7,8,12,0.02)_78%)]" />
-          <span className="absolute left-3 top-3 grid h-9 w-9 place-items-center rounded-full border border-white/[0.10] bg-black/58 text-white shadow-none shadow-black/18 backdrop-blur transition-all group-hover:bg-primary group-hover:shadow-primary/20">
-            <Play className="ml-0.5 h-4 w-4 fill-current" />
-          </span>
+
           <span className="absolute inset-x-0 bottom-0 block p-3.5">
             <span className="block line-clamp-1 text-[13px] font-semibold text-white drop-shadow">{source.animeTitle || source.title}</span>
             <span className="mt-1 block line-clamp-1 text-[11px] font-semibold text-white/64">{episodeLabel} - {resumeText}</span>
@@ -698,6 +705,7 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
             </span>
           </span>
         </button>
+        <DesktopBookmarkButton anime={{mal_id:source.animeId,title:source.animeTitle || source.title,images:{jpg:{image_url:source.poster}}}} className="absolute left-3 top-3 z-20" />
         <div className="absolute right-3 top-3 flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           <button
             type="button"
@@ -743,7 +751,7 @@ function keysForItems(items: any[]) {
 function buildRailItems(liveItems: any[], count: number, softBlocked: Set<string> = new Set()) {
   const liveUnique = uniqueAnimeById(liveItems);
   const result = takeDistinct(liveUnique, count, softBlocked);
-  const localUsed = keysForItems(result);
+  const localUsed = new Set([...softBlocked, ...keysForItems(result)]);
 
   if (result.length < count) {
     result.push(...takeDistinct(liveUnique, count - result.length, localUsed));
@@ -765,7 +773,9 @@ function useHomeCatalogQuery(
   return useQuery({
     queryKey,
     queryFn: async ({ signal }) => {
-      const response = await queryFn({ signal, priority: secondaryPriority(cacheKey) });
+      const mode = cacheKey.startsWith('home:year:') ? 'year' : ({ 'home:top-airing': 'airing', 'home:recent': 'new' } as Record<string, string>)[cacheKey] || cacheKey.split(':')[1];
+      const response = await withDesktopCatalogFallback(() => queryFn({ signal, priority: secondaryPriority(cacheKey) }),
+        { mode, ...(mode === 'year' ? { year: Number(cacheKey.split(':')[2]) } : {}), ...(mode === 'airing' ? { sort: 'score' } : {}) }, signal);
       if (!Array.isArray(response?.data)) throw new Error('Invalid home response.');
       const normalized = { ...response, data: uniqueAnimeById(response?.data || []).slice(0, 18) };
       writeDesktopCatalog(cacheKey, normalized);
@@ -778,16 +788,23 @@ function useHomeCatalogQuery(
     gcTime: 1000 * 60 * 90,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
+    refetchInterval: query => query.state.error || query.state.data?.fallback ? 300_000 : false,
     initialData: saved?.data,
     initialDataUpdatedAt: saved?.savedAt,
   });
 }
 
 export default function DesktopHome() {
+  const design = useDesktopDesign();
+  const preferences = useHomeLayout();
+  const shelfStyle = (id: ShelfId) => design === 'revamped' ? { order: preferences.layout.order.indexOf(id) + 3, display: preferences.layout.hidden.includes(id) ? 'none' : undefined } : undefined;
   const [history, setHistory] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
   const recentSources = useMemo(() => uniqueRecentSources(history).slice(0, 6), [history]);
   const [heroIndex, setHeroIndex] = useState(0);
+  const [heroPaused, setHeroPaused] = useState(false);
+  const [heroInteracting, setHeroInteracting] = useState(false);
+  const reducedMotion = useReducedMotion();
   const [secondaryRailsReady, setSecondaryRailsReady] = useState(false);
 
   useEffect(() => {
@@ -848,7 +865,7 @@ export default function DesktopHome() {
 
   const retryHome = () => {
     homeQueries.forEach((query) => {
-      if (query.isError || (!query.data && !query.isFetching)) void query.refetch();
+      if (query.isError || query.data?.fallback || (!query.data && !query.isFetching)) void query.refetch();
     });
   };
 
@@ -873,11 +890,11 @@ export default function DesktopHome() {
   const rails = useMemo(() => {
     const latestEpisodes = buildRailItems(recentEpisodeItems, 8);
     const trending = buildRailItems(trendingItems, 8, keysForItems(latestEpisodes));
-    const topAiring = buildRailItems(topAiringItems, 8, keysForItems(trending));
-    const seasonalPicks = buildRailItems(seasonalItems, 8, keysForItems(topAiring));
+    const topAiring = buildRailItems(topAiringItems, 8, keysForItems([...latestEpisodes, ...trending]));
+    const seasonalPicks = buildRailItems(seasonalItems, 8, keysForItems([...latestEpisodes, ...trending, ...topAiring]));
     const upcoming = buildRailItems(upcomingItems, 8);
-    const popular = buildRailItems(popularItems, 8, keysForItems(seasonalPicks));
-    const yearlyTop = buildRailItems(yearlyTopItems, 8, keysForItems(popular));
+    const popular = buildRailItems(popularItems, 8, keysForItems([...latestEpisodes, ...trending, ...topAiring, ...seasonalPicks]));
+    const yearlyTop = buildRailItems(yearlyTopItems, 8, keysForItems([...latestEpisodes, ...trending, ...topAiring, ...seasonalPicks, ...popular]));
     return {
       latestEpisodes,
       trending,
@@ -898,8 +915,14 @@ export default function DesktopHome() {
   const heroCount = heroPool.length;
 
   useEffect(() => {
-    setHeroIndex(0);
-  }, [heroPool]);
+    setHeroIndex(index => heroCount ? index % heroCount : 0);
+  }, [heroCount]);
+
+  useEffect(() => {
+    if (heroCount < 2 || heroPaused || heroInteracting || reducedMotion) return;
+    const timer = window.setInterval(() => { if (!document.hidden) setHeroIndex(index => (index + 1) % heroCount); }, 4000);
+    return () => window.clearInterval(timer);
+  }, [heroCount, heroPaused, heroInteracting, reducedMotion]);
 
   useEffect(() => {
     if (!heroCount || typeof window === 'undefined') return;
@@ -917,23 +940,13 @@ export default function DesktopHome() {
   };
 
   return (
-    <div className="desktop-home-cinema sn-page pb-9 pt-4">
+    <div className="desktop-home-cinema sn-page pb-9 pt-4" style={design === 'revamped' ? {display:'flex',flexDirection:'column'} : undefined}>
       <Seo title="StreamNyaa Desktop Cinema" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
+      <DesktopWatchDesk recent={history.filter(item => Number(item.progressUpdatedAt || item.savedAt || 0) > Date.now() - 7 * 86400_000).length} resumable={recentSources.filter(item => !item.completed && Number(item.progressPercent || 0) < 92).length} />
+      {(homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <details className="mb-3 text-sm text-white/60" style={{order:2}}><summary className="cursor-pointer py-2">Catalog status · some shelves use saved or fallback data</summary><p className="mt-2">Exact airing times and trending require AniList. Recent MAL additions are shown when available. MyAnimeList shelves keep their own provider identity. <button className="underline" onClick={retryHome}>Retry affected shelves</button></p></details>}
 
-      {homeRefreshFailed ? (
-        <div className="mb-4 flex min-h-12 items-center justify-between gap-4 border border-amber-300/15 bg-amber-300/[0.055] px-4 py-3 text-sm text-white/72">
-          <span>{homeQueries.some(query => (query.error as { code?: string } | null)?.code === 'access-denied')
-            ? 'Some catalog updates are unavailable. Saved titles, Library and History remain available.'
-            : homeHasSavedContent ? 'Some titles could not refresh. Your saved titles are still available.' : 'Home could not refresh yet. Your Library and History remain available.'}</span>
-          <button type="button" onClick={retryHome} className="sn-ghost-action shrink-0 gap-2 px-3 py-2 text-xs font-semibold">
-            {homeQueries.some((query) => query.isFetching) ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" /> : <RefreshCw className="h-4 w-4" />}
-            Retry
-          </button>
-        </div>
-      ) : null}
-
-      <section className="sn-spotlight" aria-label="Featured anime">
-        {hero ? <DesktopImage candidates={heroImageCandidates(hero)} alt={hero.title} className="sn-spotlight-art" loading="eager" forceKey={animeIdentity(hero)} /> : null}
+      <section style={shelfStyle('spotlight')} className="sn-spotlight" aria-label="Featured anime" onMouseEnter={() => setHeroInteracting(true)} onMouseLeave={() => setHeroInteracting(false)} onFocusCapture={() => setHeroInteracting(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setHeroInteracting(false); }}>
+        <AnimatePresence initial={false}>{hero ? <motion.div key={animeIdentity(hero)} className="sn-spotlight-frame" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:reducedMotion ? 0 : .6}}><DesktopImage candidates={heroImageCandidates(hero)} alt={hero.title} className="sn-spotlight-art" loading="eager" forceKey={animeIdentity(hero)} /></motion.div> : null}</AnimatePresence>
         <div className="sn-spotlight-shade" />
         <div className="sn-spotlight-copy">
           <p className="text-sm text-white/65">In the spotlight</p>
@@ -944,6 +957,7 @@ export default function DesktopHome() {
             {hero ? <Link to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))} className="sn-primary-action"><Play className="h-4 w-4 fill-current" />Watch now</Link>
               : <button type="button" onClick={retryHome} className="sn-secondary-action"><RefreshCw className="h-4 w-4" />{homeRefreshFailed ? 'Try again' : 'Refresh Home'}</button>}
             {heroCount > 1 ? <div className="flex items-center gap-1">
+              <button type="button" onClick={() => setHeroPaused(value => !value)} className="sn-secondary-action px-3 py-2" aria-pressed={heroPaused}>{heroPaused ? 'Rotate' : 'Pause'}</button>
               <button type="button" onClick={() => moveHero(-1)} className="sn-icon-action h-11 w-11" aria-label="Previous seasonal pick"><ChevronLeft className="h-5 w-5" /></button>
               <button type="button" onClick={() => moveHero(1)} className="sn-icon-action h-11 w-11" aria-label="Next seasonal pick"><ChevronRight className="h-5 w-5" /></button>
             </div> : null}
@@ -952,7 +966,7 @@ export default function DesktopHome() {
       </section>
 
       {recentSources.length ? (
-        <section className="mt-7 desktop-section-enter">
+        <section style={shelfStyle('continue')} className="mt-7 desktop-section-enter">
           <RailHeader title="Continue Watching" subtitle="Your next episode is waiting" to="/dashboard" count={recentSources.length} />
           <MediaRail>
             {recentSources.map((source) => <SourceCard key={source.magnet} source={source} />)}
@@ -960,23 +974,24 @@ export default function DesktopHome() {
         </section>
       ) : null}
 
-      <section className="mt-7 desktop-section-enter">
-        <RailHeader title="New Episodes" subtitle="Freshly updated episode entries" to="/search?mode=new" count={latestEpisodes.length} />
+      <section style={shelfStyle('episodes')} className="mt-7 desktop-section-enter">
+        <RailHeader title="New Episodes" subtitle={recentEpisodeData?.fallbackLabel || (recentEpisodeData?.recentFeedKind === 'listed' ? 'Recently added to MyAnimeList · not exact airing times' : 'Freshly aired episodes')} to="/search?mode=new" count={latestEpisodes.length} />
         <MediaRail>
           {latestEpisodes.map((anime: any, index: number) => (
             <PosterAnimeCard
               key={`latest-${anime.mal_id || anime.id || index}`}
               anime={anime}
-              to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime, index + 1))}
-              episode={anime?.latestEpisode || watchEpisodeFor(anime, history, index + 1)}
-              showNew
+              to={anime.recentFeedKind === 'listed' ? desktopWatchPath(anime, {ep: anime.listedEpisode || 1}) : watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime, index + 1))}
+              episode={anime.recentFeedKind === 'listed' ? anime.listedEpisode || 'Listed' : anime?.latestEpisode || watchEpisodeFor(anime, history, index + 1)}
+              showNew={!anime.catalogAlternative && anime.recentFeedKind !== 'listed'}
             />
           ))}
-          {!latestEpisodes.length ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
+          {!latestEpisodes.length && recentEpisodeQuery.isLoading ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
+          {!latestEpisodes.length && recentEpisodeQuery.isError ? <p role="status" className="py-5 text-sm text-white/60">New episodes are temporarily unavailable. Your Library and saved progress are unaffected.</p> : null}
         </MediaRail>
       </section>
 
-      <section className="mt-7 desktop-section-enter">
+      <section style={shelfStyle('season')} className="mt-7 desktop-section-enter">
         <RailHeader title="This Season" subtitle={`${currentSeason.label} picks`} to="/search?mode=seasonal" count={seasonalPicks.length} />
         <MediaRail>
           {seasonalPicks.map((anime: any, index: number) => (
@@ -989,8 +1004,8 @@ export default function DesktopHome() {
         </MediaRail>
       </section>
 
-      <section className="mt-7 desktop-section-enter">
-        <RailHeader title="Trending Now" subtitle="Airing titles with the strongest current activity" to="/search?mode=trending" count={trending.length} />
+      <section style={shelfStyle('trending')} className="mt-7 desktop-section-enter">
+        <RailHeader title="Trending Now" subtitle={trendingData?.fallbackLabel || "Airing titles with the strongest current activity"} to="/search?mode=trending" count={trending.length} />
         <MediaRail>
           {trending.map((anime: any, index: number) => (
             <PosterAnimeCard
@@ -999,11 +1014,12 @@ export default function DesktopHome() {
               to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
             />
           ))}
-          {!trending.length ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
+          {!trending.length && trendingQuery.isLoading ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
+          {!trending.length && trendingQuery.isError ? <p role="status" className="py-5 text-sm text-white/60">Trending requires the primary catalog, which is currently unavailable.</p> : null}
         </MediaRail>
       </section>
 
-      <section className="mt-7 desktop-section-enter">
+      <section style={shelfStyle('airing')} className="mt-7 desktop-section-enter">
         <RailHeader title="Top Airing Anime" subtitle="Highest rated shows still in rotation" to="/search?mode=airing" count={topAiring.length} />
         <MediaRail>
           {topAiring.map((anime: any, index: number) => (
@@ -1017,7 +1033,7 @@ export default function DesktopHome() {
       </section>
 
       {upcoming.length ? (
-        <section className="mt-7 desktop-section-enter">
+        <section style={shelfStyle('upcoming')} className="mt-7 desktop-section-enter">
           <RailHeader title="Upcoming Anime" subtitle="Not aired yet; watch links stay disabled until release" to="/search?mode=upcoming" count={upcoming.length} />
           <MediaRail>
             {upcoming.map((anime: any, index: number) => (
@@ -1027,7 +1043,7 @@ export default function DesktopHome() {
         </section>
       ) : null}
 
-      <section className="mt-7 desktop-section-enter">
+      <section style={shelfStyle('popular')} className="mt-7 desktop-section-enter">
         <RailHeader title="Popular Picks" subtitle="Reliable discovery staples" to="/search?mode=popular" count={popular.length} />
         <MediaRail>
           {popular.map((anime: any, index: number) => (
@@ -1037,11 +1053,11 @@ export default function DesktopHome() {
               to={watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime))}
             />
           ))}
-          {!popular.length ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
+          {!popular.length && popularQuery.isLoading ? Array.from({ length: 6 }).map((_, index) => <div key={index} className="h-[278px] w-[190px] shrink-0 rounded-xl border border-white/8 bg-white/[0.045] 2xl:h-[304px] 2xl:w-[210px]" />) : null}
         </MediaRail>
       </section>
 
-      <section className="mt-7 desktop-section-enter">
+      <section style={shelfStyle('yearly')} className="mt-7 desktop-section-enter">
         <RailHeader title={`Top Anime From ${topYear}`} subtitle="High score titles from the selected year" to={`/search?mode=year&year=${topYear}&order=score`} count={yearlyTop.length} />
         <MediaRail>
           {yearlyTop.map((anime: any, index: number) => (

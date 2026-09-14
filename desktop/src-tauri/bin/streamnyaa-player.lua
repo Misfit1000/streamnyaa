@@ -1507,6 +1507,7 @@ end
 
 function is_loading()
   if is_midplayback_buffering() then return false end
+  if has_playable_media() and state.has_started_playback and not ui.recovery_terminal then return false end
   if ui.recovery_terminal or (ui.recovery_attempt and state.idle) then return true end
   if state.paused_for_cache and not has_playable_media() then return true end
   if is_placeholder_media() then return true end
@@ -2268,7 +2269,10 @@ end
 
 local PLAYER_UI = { icon = 24, hit = 44, center_hit = 64, center_icon = 28, margin = 24, gap = 8 }
 function controls_scale(s)
-  return clamp(math.max(s, mp.get_property_number("display-hidpi-scale", 1)), 1, 2)
+  -- MPV may return (default, error) when no display property is available.
+  -- Capture one value; forwarding both results to math.max kills the UI script.
+  local display_scale = mp.get_property_number("display-hidpi-scale", 1)
+  return clamp(math.max(tonumber(s) or 1, tonumber(display_scale) or 1), 1, 2)
 end
 
 function draw_gradient_top(ass, width, height, s)
@@ -2305,6 +2309,7 @@ function request_next_episode(reason)
   ui.end_request_id = string.format("next-%d-%d", math.floor(mp.get_time() * 1000), ui.end_next_request_token)
   ui.end_next_pending = next_reason == "manual" or state.autoplay
   ui.end_status = ui.end_next_pending and "preparing" or "idle"
+  safe_set_property("user-data/streamnyaa/next-enabled", state.autoplay and "true" or "false")
   emit_next_request(next_reason, ui.end_request_id)
 end
 
@@ -2602,7 +2607,7 @@ function button(ass, mouse, id, cx, cy, hit, icon_size, draw_icon, active)
   if hot and not ui.settings_open and not ui.dragging then
     local hints = { play = state.paused and "Play · K" or "Pause · K", back = "Back " .. seek_step_seconds() .. " seconds · J",
       forward = "Forward " .. seek_step_seconds() .. " seconds · L", next_episode = "Next episode", mute = "Mute · M",
-      download = state.download_status and ("Cancel download · " .. state.download_status) or "Download episode",
+      download = "Downloads · save episode files",
       fullscreen = "Fullscreen · F", mini = "Mini player", settings = "Settings · S", subs = "Subtitles" }
     local label = hints[id]
     if label then
@@ -2772,7 +2777,7 @@ function draw_timeline(ass, width, height, mouse, s)
 
   circle(ass, x1 + w * ratio, y, dragging and 12 * s or ((seek_hot and 10 * s) or 7 * s), C.accent, 0)
   local display_pos = dragging and state.duration * ratio or state.pos
-  draw_text(ass, x2, y + 34 * s, 6, font_px(s, 17, 16, 19), C.white, 0, string.format("%s / %s", format_time(display_pos), state.duration > 0 and format_time(state.duration) or "--:--"), false, "Segoe UI", true)
+  draw_text(ass, x2, y - 20 * s, 6, font_px(s, 17, 16, 19), C.white, 0, string.format("%s / %s", format_time(display_pos), state.duration > 0 and format_time(state.duration) or "--:--"), false, "Segoe UI", true)
   add_region("seek", x1, y - seek_hit_y, x2, y + seek_hit_y)
 
   if seek_hot and state.duration > 0 then
@@ -3391,7 +3396,7 @@ end
 
 function build_main_settings_rows()
   return {
-    { id = "settings:download", icon = "download", label = state.download_status and "Cancel download" or "Download episode", value = state.download_status or "Save video…", type = "action" },
+    { id = "settings:download", icon = "download", label = "Downloads · save episode files", value = "Open manager…", type = "action" },
     { id = "settings:seek_step", icon = "skip", label = "Seek step", value = tostring(seek_step_seconds()) .. " seconds", type = "submenu" },
     { id = "settings:sleep", icon = "speed", label = "Sleep timer", value = sleep_timer_label(), type = "submenu" },
     { id = "settings:subs", icon = "sub", label = "Subtitles / CC", value = current_track_label("sub", "Off"), type = "submenu", active = state.sub_visible and state.sid ~= "no" },
@@ -3564,7 +3569,8 @@ function submenu_title_prefix(menu)
 end
 
 function draw_main_settings(ass, width, height, mouse, s)
-  local rows = cached_menu_rows("main", build_main_settings_rows)
+  s = math.min(s, width / 500, height / 600)
+  local rows = fitted_options(cached_menu_rows("main", build_main_settings_rows), height, s, 57 * s, 56 * s)
   local x1, y1, x2, _, row_h, header_h = panel_bounds(width, height, s, #rows)
   local y2 = y1 + header_h + row_h * #rows + 10 * s
   draw_panel_shell(ass, x1, y1, x2, y2, "Settings", s)
@@ -3608,6 +3614,7 @@ function fitted_options(options, height, s, row_h, header_h)
 end
 
 function draw_option_submenu(ass, width, height, mouse, s, title, options, prefix)
+  s = math.min(s, width / 500, height / 600)
   local base_row_h = 57 * s
   local base_header_h = 56 * s
   local menu_options = fitted_options(options, height, s, base_row_h, base_header_h)
@@ -4530,7 +4537,7 @@ function close_menu_or_overlay()
     else
       ui.settings_open = false
     end
-  elseif state.fullscreen then
+  elseif mp.get_property_native("fullscreen", state.fullscreen) then
     safe_set_property("fullscreen", "no")
     show_overlay()
     draw(true, "escape-fullscreen")
@@ -4558,6 +4565,23 @@ mp.observe_property("time-pos", "number", function(_, value)
   state.pos = value or 0
   if has_playable_media() and value ~= nil and not state.idle then
     ui.last_video_position = state.pos
+  end
+  -- Property notifications can arrive after playback-restart, particularly
+  -- when replacing the loading image. Confirm video independently of that event.
+  if not state.has_started_playback and value ~= nil and not state.seeking
+    and not state.paused and not state.paused_for_cache
+    and not is_placeholder_media() and state.path ~= ""
+    and state.pos > previous_pos + 0.01 then
+    local video = mp.get_property_native("video-out-params")
+    if mp.get_property_native("vo-configured", false) and type(video) == "table"
+      and (tonumber(video.w) or 0) > 0 and (tonumber(video.h) or 0) > 0 then
+      state.has_started_playback = true
+      ui.loading_override_until = 0
+      begin_first_video_frame_handoff()
+      safe_set_property("user-data/streamnyaa/has_started", "true")
+      reset_startup_stream_watchdog(true)
+      draw(true, "advancing-first-video-frame")
+    end
   end
   if has_playable_media() and state.has_started_playback and not state.seeking and state.pos > previous_pos + 0.05 then
     ui.last_video_position = state.pos
@@ -5192,3 +5216,34 @@ mp.add_timeout(0.35, function()
   safe_commandv("script-message", "streamnyaa-lua-ready")
 end)
 draw(true, "init")
+
+-- Actual playback coverage: seeking never fills the skipped interval.
+local coverage = {version=2, intervals={}, furthest=0, lastPosition=0}
+local coverage_sample = nil
+mp.register_event("file-loaded", function() coverage={version=2,intervals={},furthest=0,lastPosition=0}; coverage_sample=nil end)
+mp.register_event("seek", function() coverage_sample=nil end)
+mp.add_periodic_timer(0.5, function()
+ local pos=mp.get_property_number("time-pos")
+ local now=mp.get_time()
+ local speed=mp.get_property_number("speed",1)
+ local playing=not mp.get_property_native("pause",true) and not mp.get_property_native("paused-for-cache",false) and not mp.get_property_native("seeking",false)
+ if not pos or pos<0 then coverage_sample=nil; return end
+ coverage.lastPosition=pos
+ if playing and coverage_sample then
+  local delta=pos-coverage_sample.pos
+  local elapsed=now-coverage_sample.time
+  if elapsed>0 and elapsed<2 and delta>0 and delta<=elapsed*math.max(speed,coverage_sample.speed)+0.35 then
+   local ranges=coverage.intervals
+   ranges[#ranges+1]={coverage_sample.pos,pos}
+   table.sort(ranges,function(a,b)return a[1]<b[1] end)
+   local merged={}
+   for _,range in ipairs(ranges) do
+    local last=merged[#merged]
+    if last and range[1]<=last[2]+0.05 then last[2]=math.max(last[2],range[2]) else merged[#merged+1]=range end
+   end
+   coverage.intervals=merged; coverage.furthest=math.max(coverage.furthest,pos)
+  end
+ end
+ coverage_sample=playing and {pos=pos,time=now,speed=speed} or nil
+ mp.set_property("user-data/streamnyaa/watched-coverage",require('mp.utils').format_json(coverage))
+end)

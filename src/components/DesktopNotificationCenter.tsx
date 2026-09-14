@@ -1,3 +1,4 @@
+import DesktopActivitySummary from './DesktopActivitySummary';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CalendarClock, CheckCheck, ChevronRight, Globe2, UserRound, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -47,6 +48,7 @@ export default function DesktopNotificationCenter() {
   const location = useLocation();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
+  useEffect(() => { const openActivity = () => setOpen(true); window.addEventListener('streamnyaa-open-activity', openActivity); return () => window.removeEventListener('streamnyaa-open-activity', openActivity); }, []);
   const [updates, setUpdates] = useState(() => readDesktopScheduleUpdates());
   const [preferences, setPreferences] = useState(() => loadDesktopScheduleUpdatePreferences());
   const [reminders, setReminders] = useState(() => readDesktopScheduleReminders());
@@ -124,14 +126,14 @@ export default function DesktopNotificationCenter() {
 
       {open ? (
         <section
-          className="absolute right-0 top-12 z-50 w-[390px] overflow-hidden rounded-xl border border-white/[0.09] bg-[#101014] shadow-sm"
+          className="absolute right-0 top-12 z-50 w-[min(390px,calc(100vw-32px))] overflow-hidden rounded-xl border border-white/[0.09] bg-[#101014] shadow-sm"
           role="dialog"
-          aria-label="Notifications"
+          aria-label="Activity center"
         >
           <header className="flex items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3">
             <div>
-              <h2 className="text-base font-semibold text-white">Updates</h2>
-              <p className="mt-0.5 text-xs text-white/48">Delays, cancellations, and airing reminders</p>
+              <h2 className="text-base font-semibold text-white">Activity center</h2>
+              <p className="mt-0.5 text-xs text-white/48">Downloads, catalog status and airing reminders</p>
             </div>
             <div className="flex items-center gap-1">
               <CheckCheck className="h-4 w-4 text-emerald-300" aria-label="Updates read" />
@@ -142,6 +144,7 @@ export default function DesktopNotificationCenter() {
           </header>
 
           <div className="custom-scrollbar max-h-[min(68vh,560px)] overflow-y-auto p-3">
+            <DesktopActivitySummary />
             <div className="flex items-center justify-between gap-3 px-1 pb-2">
               <h3 className="text-sm font-semibold text-white/82">Airing alerts</h3>
               <Link to="/desktop-settings#updates" className="text-xs font-semibold text-primary hover:text-primary/80">Manage</Link>

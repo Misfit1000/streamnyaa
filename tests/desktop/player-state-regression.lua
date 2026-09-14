@@ -4,6 +4,7 @@ local now = 1000
 local callbacks, properties, commands, messages, observers = {}, {}, {}, {}, {}
 local last_ass = ""
 local key_callbacks = {}
+local periodic_callbacks = {}
 
 -- Load the real skin against a deterministic MPV boundary. Event callbacks,
 -- reloads, cache telemetry, and time are exercised without fetching a torrent.
@@ -14,7 +15,7 @@ mp.register_event = function(name, callback)
 end
 mp.observe_property = function(name, _, callback) observers[name] = callback end
 mp.register_script_message = function(name, callback) messages[name] = callback end
-mp.add_periodic_timer = function() return { stop = function() end, resume = function() end } end
+mp.add_periodic_timer = function(_, callback) periodic_callbacks[#periodic_callbacks+1]=callback; return { stop = function() end, resume = function() end } end
 mp.add_timeout = function() return { kill = function() end } end
 mp.add_key_binding = function() end
 mp.add_forced_key_binding = function(key, _, callback) key_callbacks[key] = callback end
@@ -325,10 +326,10 @@ local ok, error_message = pcall(function()
   apply_player_preference("seekStepSeconds", "1")
   check(seek_step_seconds() == 5, "Seek preference cannot fall below five seconds")
   messages["streamnyaa-download-status"]("20%")
-  check(build_main_settings_rows()[1].label == "Cancel download", "Active download must offer cancellation")
-  check(build_main_settings_rows()[1].value == "20%", "Download must show measured progress")
+  check(build_main_settings_rows()[1].label == "Downloads · save episode files", "Player downloads must open the persistent manager")
+  check(build_main_settings_rows()[1].value == "Open manager…", "Player must direct transfer management to its independent queue")
   messages["streamnyaa-download-status"]("")
-  check(build_main_settings_rows()[1].label == "Download episode", "Completed download must allow another save")
+  check(build_main_settings_rows()[1].label == "Downloads · save episode files", "Download manager must remain accessible without an active transfer")
 
   reset()
   messages["streamnyaa-reload-meta"]()
@@ -453,6 +454,27 @@ local ok, error_message = pcall(function()
   ui.settings_open = false
   key_callbacks["Ctrl+s"]()
   check(ui.settings_open, "Custom Settings must open its real menu")
+  -- Drive the real coverage sampler with pause, seek, speed and buffering events.
+  mp.get_property_native=function(name,default) if properties[name]~=nil then return properties[name] end return default end
+  local sample=periodic_callbacks[#periodic_callbacks]
+  callbacks["file-loaded"][#callbacks["file-loaded"]]()
+  properties["pause"]=false; properties["paused-for-cache"]=false; properties["seeking"]=false; properties["speed"]=1
+  properties["time-pos"]=5; sample(); now=now+0.5; properties["time-pos"]=5.5; sample()
+  local function coverage() return require("mp.utils").parse_json(properties["user-data/streamnyaa/watched-coverage"]) end
+  check(coverage().furthest==5.5,"Actual playback establishes watched coverage")
+  event("seek"); properties["time-pos"]=1200; sample()
+  check(coverage().furthest==5.5,"A forward seek must not advance Resume")
+  now=now+0.5; properties["time-pos"]=1200.5; sample()
+  check(coverage().furthest==1200.5 and #coverage().intervals==2,"Playback after seek records only the new segment")
+  event("seek"); properties["time-pos"]=5; sample(); now=now+0.5; properties["time-pos"]=5.5; sample()
+  check(coverage().furthest==1200.5 and #coverage().intervals==2,"Rewatching neither lowers Resume nor duplicates intervals")
+  properties["pause"]=true; now=now+0.5; properties["time-pos"]=1300; sample()
+  check(coverage().furthest==1200.5,"Paused seeking is not watched")
+  properties["pause"]=false; properties["paused-for-cache"]=true; now=now+0.5; properties["time-pos"]=1400; sample()
+  check(coverage().furthest==1200.5,"Buffering is not watched")
+  properties["paused-for-cache"]=false; properties["speed"]=2; sample(); now=now+0.5; properties["time-pos"]=1401; sample()
+  check(coverage().furthest==1401,"Coverage follows actual playback speed")
+
 end)
 
 if ok then

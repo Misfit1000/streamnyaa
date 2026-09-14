@@ -247,7 +247,7 @@ fn client() -> &'static reqwest::Client {
             .pool_idle_timeout(Duration::from_secs(90))
             .pool_max_idle_per_host(4)
             .redirect(reqwest::redirect::Policy::none())
-            .user_agent("StreamNyaa Desktop/0.1.7")
+            .user_agent(concat!("StreamNyaa Desktop/", env!("CARGO_PKG_VERSION")))
             .build()
             .expect("public-data HTTP client")
     })

@@ -1,7 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod data_requests;
+#[cfg(test)]
 mod player_download;
 mod player_shortcuts;
+mod download_queue;
 
 use image::imageops::FilterType;
 use serde::{Deserialize, Serialize};
@@ -235,6 +237,7 @@ struct LocalPlaybackProgress {
     message: String,
     progress: Option<f64>,
     torrent_progress_percent: Option<f64>,
+    watched_coverage: Option<serde_json::Value>,
     buffer_percent: Option<f64>,
     buffered_seconds: Option<f64>,
     buffering: bool,
@@ -438,6 +441,7 @@ struct PlayerRecoveryRequestPayload {
 
 #[derive(Clone)]
 struct ActiveSession {
+    download_request: PlaybackRequest,
     torrent_id: String,
     session_dir: PathBuf,
     engine_path: String,
@@ -508,7 +512,6 @@ static RQBIT_HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
 static PLAYER_PREFERENCES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static SUBTITLE_IMPORT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 static PLAYER_DOWNLOAD_RUNNING: AtomicBool = AtomicBool::new(false);
-static PLAYER_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 static APP_EXITING: AtomicBool = AtomicBool::new(false);
 static TRAY_SUSPEND_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
@@ -1777,6 +1780,15 @@ fn playback_cover_sources(request: &PlaybackRequest) -> Vec<(String, &'static st
             sources.push((value.to_string(), "landscape"));
         }
     }
+    if let Some(poster) = request.poster.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        if let Some((_, kind)) = sources.iter_mut().find(|(existing, _)| existing == poster) {
+            *kind = "poster";
+        } else {
+            // Reserve a slot for poster-only catalogs even with many banners.
+            sources.truncate(2);
+            sources.push((poster.to_string(), "poster"));
+        }
+    }
     sources
 }
 
@@ -1904,6 +1916,15 @@ fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage,
     let target_width = PLAYER_COVER_BACKGROUND_WIDTH;
     let target_height = PLAYER_COVER_BACKGROUND_HEIGHT;
     let mut composition = compose_full_landscape_art(decoded, target_width, target_height);
+    if decoded.width() < decoded.height() {
+        composition = image::imageops::blur(&composition, 28.0);
+        let height = target_height * 9 / 10;
+        let width = ((decoded.width() as u64 * height as u64) / decoded.height() as u64) as u32;
+        let poster = image::imageops::resize(decoded, width, height, FilterType::Lanczos3);
+        image::imageops::overlay(&mut composition, &poster,
+            (target_width.saturating_sub(width + target_width / 16)) as i64,
+            ((target_height - height) / 2) as i64);
+    }
     apply_loading_readability_gradient(&mut composition);
     (composition, "landscape")
 }
@@ -1937,7 +1958,8 @@ fn prepare_player_cover(
         }) {
             Ok(image) if image.width() > 0 && image.height() > 0 => {
                 let decoded = image.to_rgba8();
-                if is_quality_landscape_art(&decoded) {
+                if is_quality_landscape_art(&decoded)
+                    || (source_kind == "poster" && decoded.width() >= 100 && decoded.height() >= 150) {
                     decoded_cover = Some((decoded, source, source_kind));
                     break;
                 }
@@ -3956,74 +3978,22 @@ fn spawn_subtitle_import_task(ipc: String) {
 }
 
 fn spawn_player_download(ipc: String) {
-    if PLAYER_DOWNLOAD_RUNNING.swap(true, Ordering::SeqCst) {
-        PLAYER_DOWNLOAD_CANCEL.store(true, Ordering::SeqCst);
-        return;
-    }
-    PLAYER_DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
+    if PLAYER_DOWNLOAD_RUNNING.swap(true, Ordering::SeqCst) { return; }
     let session = manager().lock().ok().and_then(|guard| guard.active.clone());
-    let Some(session) = session else {
-        PLAYER_DOWNLOAD_RUNNING.store(false, Ordering::SeqCst);
-        show_player_text(&ipc, "Start playback before downloading an episode.");
-        return;
-    };
     thread::spawn(move || {
-        let active = || player_ipc_is_active(&ipc)
-            && playback_generation_current(session.playback_generation)
-            && !PLAYER_DOWNLOAD_CANCEL.load(Ordering::SeqCst);
-        send_player_script_message_arg(&ipc, "streamnyaa-download-status", "Choosing location");
-        let last_percent = std::cell::Cell::new(101u64);
-        let result = open_video_save_picker().and_then(|selected| {
-            let Some(path) = selected else { return Err("Download cancelled.".into()); };
-            player_download::save(&session.media_url, &path, &active, |bytes, total| {
-                let percent = bytes.saturating_mul(100) / total.max(1);
-                if active() && percent != last_percent.get() {
-                    last_percent.set(percent);
-                    send_player_script_message_arg(&ipc, "streamnyaa-download-status", &format!("{}%", percent));
-                }
-            })
+        let result = session.map(|session| {
+            download_queue::enqueue_release(session.download_request.title, session.download_request.magnet, true)
         });
         PLAYER_DOWNLOAD_RUNNING.store(false, Ordering::SeqCst);
+        let error = result.and_then(Result::err);
         if player_ipc_is_active(&ipc) {
-            send_player_script_message_arg(&ipc, "streamnyaa-download-status", "");
-            if playback_generation_current(session.playback_generation) {
-                show_player_text(&ipc, result.as_ref().err().map(String::as_str).unwrap_or("Episode downloaded."));
-            }
+            show_player_text(&ipc, error.as_deref().unwrap_or("Downloads opened. Choose the episode files to save."));
+        }
+        if let Some(app) = APP_HANDLE.get() {
+            show_main_window(app);
+            let _ = app.emit("streamnyaa-open-downloads", serde_json::json!({ "error": error }));
         }
     });
-}
-
-#[cfg(windows)]
-fn open_video_save_picker() -> Result<Option<PathBuf>, String> {
-    // Static script only: no titles, torrent names or paths interpolated as shell code.
-    let script = r#"
-Add-Type -AssemblyName System.Windows.Forms
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$dialog = New-Object System.Windows.Forms.SaveFileDialog
-$dialog.Title = 'Download episode (keep playback open)'
-$dialog.Filter = 'Matroska video (*.mkv)|*.mkv|MP4 video (*.mp4)|*.mp4|All files (*.*)|*.*'
-$dialog.FileName = 'StreamNyaa episode.mkv'
-$dialog.CheckPathExists = $true
-$dialog.OverwritePrompt = $true
-$owner = New-Object System.Windows.Forms.Form
-$owner.ShowInTaskbar = $false
-$owner.TopMost = $true
-$owner.Opacity = 0
-$owner.Show()
-if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.FileName }
-$dialog.Dispose()
-$owner.Dispose()
-"#;
-    let output = prepared_command("powershell").args(["-NoProfile", "-STA", "-Command", script])
-        .stdin(Stdio::null()).output().map_err(|_| "Could not open download location picker.")?;
-    if !output.status.success() { return Err("Could not open download location picker.".into()); }
-    let value = String::from_utf8_lossy(&output.stdout).trim().trim_start_matches('\u{feff}').to_string();
-    Ok((!value.is_empty()).then(|| PathBuf::from(value)))
-}
-
-#[cfg(not(windows))]
-fn open_video_save_picker() -> Result<Option<PathBuf>, String> {
-    Err("Episode downloads are currently supported on Windows.".into())
 }
 
 fn spawn_subtitle_import_request_watcher(ipc: String, request_file: PathBuf) {
@@ -4128,6 +4098,7 @@ fn emit_player_next_episode_request(reason: &str, request_id: &str) {
         }
         *last = Some((event_key, now));
     }
+    if download_queue::handle_next_request(reason, request_id) { return; }
     let payload = PlayerNextEpisodePayload {
         reason: reason.to_string(),
         request_id: request_id
@@ -5659,6 +5630,7 @@ fn start_stream(
                 .lock()
                 .map_err(|_| "Playback manager is unavailable.".to_string())?;
             guard.active = Some(ActiveSession {
+                download_request: request.clone(),
                 torrent_id: torrent_id.clone(),
                 session_dir: session_dir.clone(),
                 engine_path: engine_path.to_string(),
@@ -5819,6 +5791,7 @@ async fn get_local_playback_progress(
                                 .to_string(),
                         progress: Some(100.0),
                         torrent_progress_percent: Some(100.0),
+                        watched_coverage: None,
                         buffer_percent: None,
                         buffered_seconds: None,
                         buffering: false,
@@ -6023,6 +5996,7 @@ async fn get_local_playback_progress(
             },
             progress,
             torrent_progress_percent: progress,
+            watched_coverage: player_ipc.as_ref().and_then(|ipc| get_player_property_string(ipc, "user-data/streamnyaa/watched-coverage")).and_then(|raw| serde_json::from_str(&raw).ok()),
             buffer_percent,
             buffered_seconds,
             buffering,
@@ -6345,6 +6319,7 @@ fn quit_desktop_app(app: tauri::AppHandle) {
         return;
     }
     thread::spawn(move || {
+        download_queue::shutdown();
         shutdown_desktop_runtime("explicit tray quit");
         log_info("StreamNyaa desktop app closing");
         app.exit(0);
@@ -6434,6 +6409,7 @@ fn main() {
             }
             install_system_tray(app)?;
             spawn_player_watchdog();
+            download_queue::start();
             thread::spawn(startup_maintenance);
             Ok(())
         })
@@ -6448,6 +6424,20 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            download_queue::get_download_queue,
+            download_queue::choose_download_directory,
+            download_queue::enqueue_download,
+            download_queue::enqueue_download_selection,
+            download_queue::select_download_files,
+            download_queue::control_downloads,
+            download_queue::set_download_limit,
+            download_queue::remove_download,
+            download_queue::forget_download,
+            download_queue::open_download_destination,
+            download_queue::get_offline_files,
+            download_queue::link_offline_episode,
+            download_queue::play_offline_file,
+            download_queue::relink_offline_folder,
             player_shortcuts::get_player_shortcuts,
             player_shortcuts::save_player_shortcuts,
             begin_desktop_google_oauth,
@@ -6706,7 +6696,7 @@ mod tests {
     }
 
     #[test]
-    fn portrait_player_art_is_rejected_instead_of_stretched_or_blurred() {
+    fn portrait_player_art_supplied_in_both_fields_remains_available() {
         let root = env::temp_dir().join(format!("streamnyaa-portrait-cover-test-{}", now_millis()));
         fs::create_dir_all(&root).expect("create portrait cover test dir");
         let source_path = root.join("portrait.png");
@@ -6723,12 +6713,12 @@ mod tests {
 
         assert!(prepare_player_cover(&root, &request)
             .expect("portrait artwork should be handled")
-            .is_none());
+            .is_some());
         let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn player_art_candidates_never_use_the_portrait_poster() {
+    fn player_art_candidates_prefer_banners_and_retain_poster_fallback() {
         let mut request = playback_request_for_episode("1");
         request.poster = Some("https://example.com/portrait.jpg".to_string());
         request.banner = Some("https://example.com/banner.jpg".to_string());
@@ -6738,11 +6728,10 @@ mod tests {
         ]);
 
         let sources = playback_cover_sources(&request);
-        assert_eq!(sources.len(), 2);
-        assert!(sources.iter().all(|(_, kind)| *kind == "landscape"));
-        assert!(sources
-            .iter()
-            .all(|(source, _)| !source.contains("portrait")));
+        assert_eq!(sources.len(), 3);
+        assert_eq!(sources[0].1, "landscape");
+        assert_eq!(sources[1].1, "landscape");
+        assert_eq!(sources[2], ("https://example.com/portrait.jpg".to_string(), "poster"));
     }
 
     #[test]

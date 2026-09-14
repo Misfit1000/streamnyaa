@@ -1,12 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
+import { clearInterruptedPlayback } from '../lib/desktopInterruptedSession';
+import { enqueueDownload, enqueueDownloadSelection } from '../lib/desktopDownloads';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
-import { fetchAnimeDetails, fetchAnimeEpisodes, fetchAnimeInstallments } from '../api/jikan';
+import { fetchAnimeDetails, fetchAnimeEpisodeWindow, fetchAnimeInstallments } from '../api/jikan';
 import { loadSeriesTimeline, type TimelineResult } from '../lib/desktopSeriesTimeline';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
@@ -1897,6 +1899,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       routeTitle: titleFromRoute(id),
     }),
     enabled: !!id,
+    refetchInterval: query => query.state.error ? 60_000 : false,
     staleTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
@@ -1911,7 +1914,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const usingPlaceholderDetails = Boolean((detailsQuery as { isPlaceholderData?: boolean }).isPlaceholderData);
   const resolvedAnime = usingPlaceholderDetails ? null : detailsQuery.data?.data;
   const anime = resolvedAnime || fallbackAnime;
-  const animeNotYetAired = routeMarkedUpcoming || isUpcomingAnime(anime);
+  const animeNotYetAired = (!resolvedAnime && routeMarkedUpcoming) || isUpcomingAnime(anime);
   const hasFullMetadata = Boolean(resolvedAnime);
   const metadataFailed = detailsQuery.isError && !usingPlaceholderDetails;
   const metadataLoading = Boolean(id)
@@ -1928,7 +1931,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     [currentInstallmentKind],
   );
   const requestedEpisode = Math.max(0, Number(searchParams.get('ep') || 0));
-  const estimatedEpisode = requestedEpisode || knownAiredEpisodeCount(anime) || 1;
+  const estimatedEpisode = requestedEpisode || 1;
   const episodePage = Math.max(1, Math.ceil(estimatedEpisode / 100));
   const timelineCacheKey = useMemo(
     () => desktopAnimeQueryKey(id || '', anime?.anilist_id || routeAniListId, anime?.mal_id || routeMalId)[1],
@@ -1967,9 +1970,10 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const installmentGraphInitialLoading = Boolean(hasFullMetadata && !metadataFailed && installmentGraphQuery.isLoading);
 
   const episodeQuery = useQuery({
-    queryKey: ['episodes', episodeLookupId, episodePage],
-    queryFn: ({ signal }) => fetchAnimeEpisodes(episodeLookupId, episodePage, { signal }),
+    queryKey: ['episodes', episodeLookupId, episodePage, 3],
+    queryFn: ({ signal }) => fetchAnimeEpisodeWindow(episodeLookupId, episodePage, { signal }),
     enabled: canFetchEpisodeMetadata,
+    refetchInterval: query => query.state.error || query.state.data?.latestPageResolved === false || query.state.data?.streamnyaa?.status === 'stale' ? 60_000 : false,
     retry: false,
     staleTime: 1000 * 60 * 10,
     refetchOnWindowFocus: false,
@@ -1979,7 +1983,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
   const pageItems = episodeData?.data || [];
   const airedCount = knownAiredEpisodeCount(anime, pageItems);
-  const selectedEpisode = requestedEpisode > 0 ? requestedEpisode : (airedCount || 1);
+  const episodeCountLabel = episodeData?.streamnyaa?.status === 'stale' ? 'Last known aired' : episodeData?.latestPageResolved === false && knownAiredEpisodeCount(anime) == null ? 'Loaded through episode' : 'Latest aired';
+  const selectedEpisode = requestedEpisode > 0 ? requestedEpisode : 1;
   const episodeCatalogEstimated = !episodeData?.data?.length && !animeNotYetAired;
   const selectedEpisodeWatchState = desktopEpisodeWatchState(anime, selectedEpisode, watchProgressRecords);
   const sourceBrowserPath = useMemo(() => {
@@ -2014,7 +2019,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     return new Map(entries);
   }, [anime?.streamingEpisodes]);
   const allEpisodes = useMemo(() => {
-    const count = Math.max(airedCount ?? 0, 0);
+    const count = animeNotYetAired ? 0 : Math.min(100000, Math.max(airedCount ?? Math.max(selectedEpisode, 12), 0));
     return Array.from({ length: count }, (_, index) => {
       const number = index + 1;
       const pageEpisode = pageEpisodeMap.get(number);
@@ -2025,7 +2030,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
         image: streamingEpisode?.thumbnail || pageEpisode?.image || wideImageFor(anime),
       };
     });
-  }, [airedCount, anime, pageEpisodeMap, pageItems.length, selectedEpisode, streamingEpisodeMap]);
+  }, [airedCount, anime, animeNotYetAired, pageEpisodeMap, pageItems.length, selectedEpisode, streamingEpisodeMap]);
   const episodeRanges = useMemo(() => {
     const count = Math.max(allEpisodes.length, 1);
     return Array.from({ length: Math.ceil(count / EPISODE_GRID_PAGE_SIZE) }, (_, index) => {
@@ -2126,7 +2131,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       primaryMeta: [
         year ? String(year) : '',
         type,
-        `Latest aired ${airedCount ?? '?'}/${totalEpisodes ?? '?'}`,
+        `${episodeCountLabel} ${airedCount ?? '?'}/${totalEpisodes ?? '?'}`,
       ].filter(Boolean),
       secondaryMeta: [
         score ? `Rating ${score.toFixed(1)}` : '',
@@ -2140,7 +2145,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       visibleSynopsis,
       canExpandSynopsis,
     };
-  }, [airedCount, anime, synopsisExpanded]);
+  }, [airedCount, episodeCountLabel, anime, synopsisExpanded]);
   const trailerEmbedUrl = useMemo(() => youtubeEmbedUrlFor(leftPanelInfo.trailerUrl), [leftPanelInfo.trailerUrl]);
   const trailerPreviewImages = useMemo(
     () => {
@@ -2465,8 +2470,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   }, [qualityCounts]);
   const playableSources = useMemo(() => (
     sourceQuality === 'auto'
-      ? modeFilteredSources
-      : modeFilteredSources.filter((source) => sourceQualityBucket(source.title) === sourceQuality)
+      ? modeFilteredSources.filter(source => source.playable)
+      : modeFilteredSources.filter((source) => source.playable && sourceQualityBucket(source.title) === sourceQuality)
   ), [modeFilteredSources, sourceQuality]);
   const sortedSources = useMemo(() => (
     sourceQuality === 'auto'
@@ -2506,7 +2511,9 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     : sourceMode === 'broad'
       ? 'Try another episode, audio preference, or refresh playback options.'
       : 'Try Broad mode to include less certain matches.';
-  const sourcesBusy = sourcesLoading || sourcesFetching;
+  const sourceSearchInProgress = sourcesLoading || sourcesFetching;
+  // A progressive search must not hide or disable verified results already found.
+  const sourcesBusy = sourceSearchInProgress && !playableSources.some(source => source.playable);
   const nextPlayableSource = useMemo(
     () => playableSources.find((source) => !sourceFailureFor(source, failedSourceRecords)) || playableSources[0] || null,
     [failedSourceRecords, playableSources],
@@ -2535,7 +2542,6 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   }, [sourcesBusy]);
 
   useEffect(() => {
-    if (sourcesBusy) return;
     playableSourcesRef.current = playableSources;
     playableSourcesEpisodeRef.current = selectedEpisode;
   }, [playableSources, selectedEpisode, sourcesBusy]);
@@ -2608,27 +2614,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     const positionSeconds = measuredPosition;
     const durationSeconds = Math.max(0, Number(progress.duration_seconds || activePlayback.source.durationSeconds || 0));
     if (positionSeconds <= 0 && durationSeconds <= 0) return;
-    const watchedPercent = durationSeconds > 0
-      ? Math.max(0, Math.min(100, (positionSeconds / durationSeconds) * 100))
-      : Number(activePlayback.source.progressPercent || 0);
-    const completed = watchedPercent >= 92 || (durationSeconds > 0 && durationSeconds - positionSeconds <= 90);
-    const updatedAt = Date.now();
-
-    updateLocalPlaybackHistoryProgress(activePlayback.source, {
-      currentSeconds: positionSeconds,
-      durationSeconds,
-    });
-    saveDesktopWatchProgress({
-      animeId: activePlayback.source.animeId || activePlayback.source.animeTitle || activePlayback.source.title,
-      title: activePlayback.source.animeTitle || activePlayback.source.title,
-      poster: activePlayback.source.poster || activePlayback.source.image || activePlayback.source.banner,
-      episode: activePlayback.source.episode || 1,
-      positionSeconds,
-      durationSeconds: durationSeconds || undefined,
-      progressPercent: watchedPercent,
-      updatedAt,
-      completed,
-    });
+    updateLocalPlaybackHistoryProgress(activePlayback.source, {currentSeconds:positionSeconds,durationSeconds,watchedCoverage:progress.watched_coverage});
   }, []);
 
   useEffect(() => () => {
@@ -2638,6 +2624,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   useEffect(() => {
     if (playback && playbackProgress?.state === 'stopped') {
       persistActivePlaybackCheckpoint();
+      clearInterruptedPlayback();
       setPlayback(null);
       setPlaybackNotice({ tone: 'success', text: playbackProgress.message || 'Playback ended and temporary files were cleaned.' });
     }
@@ -2662,7 +2649,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
   useEffect(() => {
     selectedEpisodeRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-  }, [displayedEpisodes, episodeViewMode, selectedEpisode, selectedEpisodeInfo?.number]);
+  }, [id, episodeViewMode, selectedEpisode]);
 
   useEffect(() => {
     setEpisodeJumpValue(String(selectedEpisode));
@@ -2682,15 +2669,15 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const submitEpisodeJump = useCallback(() => {
     const parsed = Number(episodeJumpValue || 0);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
-    selectEpisode(clampNumber(Math.round(parsed), 1, Math.max(1, airedCount || selectedEpisode || 1)));
-  }, [airedCount, episodeJumpValue, selectEpisode, selectedEpisode]);
+    selectEpisode(clampNumber(Math.round(parsed), 1, Math.max(1, /FINISHED|COMPLETED/i.test(String(anime.status)) ? (Number(anime.episodes) || 9999) : 9999)));
+  }, [anime.status, anime.episodes, episodeJumpValue, selectEpisode]);
 
   const submitEpisodeSearch = useCallback(() => {
     const trimmed = episodeSearch.trim();
     if (!trimmed) return;
     const exactEpisode = Number(trimmed);
     if (Number.isFinite(exactEpisode) && exactEpisode > 0) {
-      selectEpisode(clampNumber(Math.round(exactEpisode), 1, Math.max(1, airedCount || selectedEpisode || 1)));
+      selectEpisode(clampNumber(Math.round(exactEpisode), 1, Math.max(1, airedCount ?? 9999)));
     } else if (searchedEpisodes[0]) {
       selectEpisode(searchedEpisodes[0].number);
     }
@@ -2699,7 +2686,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const sourcePayloadFor = useCallback((source: NyaaItem, resumeOverride?: number): LocalPlaybackSource => {
     const bannerCandidates = playerLandscapeCandidates(
       anime,
-      streamingEpisodeMap.get(selectedEpisode)?.thumbnail || selectedEpisodeInfo?.image,
+      hideEpisodeSpoilers ? undefined : streamingEpisodeMap.get(selectedEpisode)?.thumbnail || selectedEpisodeInfo?.image,
     );
     const baseSource: LocalPlaybackSource = {
       magnet: source.magnet,
@@ -2726,7 +2713,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       durationSeconds: checkpoint?.durationSeconds ?? 0,
       completed: checkpoint?.completed ?? false,
     };
-  }, [anime, selectedEpisode, selectedEpisodeInfo?.image, streamingEpisodeMap]);
+  }, [anime, selectedEpisode, selectedEpisodeInfo?.image, streamingEpisodeMap, hideEpisodeSpoilers]);
 
   const openOneSource = useCallback(async (source: NyaaItem, resumeOverride?: number) => {
     const playbackSource = sourcePayloadFor(source, resumeOverride);
@@ -2737,6 +2724,10 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   }, [sourcePayloadFor]);
 
   const playSource = useCallback(async (source: RankedNyaaItem, resumeOverride?: number) => {
+    const current = playbackValueRef.current?.source;
+    const currentSeconds = playbackProgressValueRef.current?.current_seconds;
+    if (resumeOverride === undefined && current && String(current.animeId) === String(anime.mal_id || anime.id)
+      && String(current.episode) === String(selectedEpisode) && Number.isFinite(currentSeconds) && Number(currentSeconds) >= 0) resumeOverride = Number(currentSeconds);
     const initialSourceId = source.infoHash || source.magnet || source.title;
     if (playActionLockRef.current && activeSourceId === initialSourceId) {
       setPlaybackNotice({ tone: 'loading', text: 'This source is already opening.' });
@@ -3128,7 +3119,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       suppressEpisodeClickRef.current = true;
     }
     event.preventDefault();
-    rail.scrollLeft = drag.scrollLeft - deltaX;
+    rail.scrollLeft = clampNumber(drag.scrollLeft - deltaX, 0, Math.max(0, rail.scrollWidth - rail.clientWidth));
   }, []);
 
   const stopEpisodeRailDrag = useCallback((event: any) => {
@@ -3513,7 +3504,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 <Download className="h-4 w-4 text-primary" />
                 <span>
                   <span className="block text-lg font-semibold">{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'}</span>
-                  <span className="mt-0.5 block text-xs font-semibold text-white/60">{airedCount == null ? 'Checking aired episodes' : 'Latest aired ' + airedCount} · Total {totalEpisodeCount(anime) ?? '?'}</span>
+                  <span className="mt-0.5 block text-xs font-semibold text-white/60">{airedCount == null ? (episodeQuery.isFetching ? 'Checking aired episodes' : 'Episode count unavailable') : episodeCountLabel + ' ' + airedCount} · Total {totalEpisodeCount(anime) ?? '?'}</span>
                 </span>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-3">
@@ -3581,10 +3572,11 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     </button>
                   </div>
                 ) : null}
-                {longEpisodeRun ? (
-                  <div className="hidden items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 px-3 py-2 md:flex">
+                {!animeNotYetAired ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 px-3 py-2">
                     <span className="text-[11px] font-semibold normal-case tracking-normal text-white/44">Jump</span>
                     <input
+                      aria-label="Episode number"
                       value={episodeJumpValue}
                       onChange={(event) => setEpisodeJumpValue(event.target.value.replace(/[^\d]/g, '').slice(0, 4))}
                       onKeyDown={(event) => {
@@ -3665,11 +3657,19 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 </div>
               </div>
             </div>
+            {episodeData?.streamnyaa?.status === 'stale' && <p role="status" className="mb-3 text-sm text-amber-200">Saved episode titles are shown. The provider could not refresh them; numbered navigation remains available. <button className="underline" onClick={() => void episodeQuery.refetch()}>Refresh titles</button></p>}
             {episodeCatalogEstimated ? (
               <p className="mb-3 text-sm text-white/60" role="status">
-                {airedCount == null ? 'Checking episode availability…' : episodeQuery.isFetching ? 'Updating episode titles…' : 'Episode titles will update automatically.'}
+                {episodeQuery.isFetching ? 'Loading episode metadata…' : airedCount == null ? 'Episode count and titles are unavailable. These numbered buttons are navigation only, not confirmed releases. Select a number to find matching sources.' : 'Episode titles are unavailable. Numbered episodes remain selectable.'}
+                {episodeQuery.isError ? <button className="ml-2 underline" onClick={() => void episodeQuery.refetch()}>Retry episode list</button> : null}
               </p>
             ) : null}
+            {Number(episodeData?.pagination?.last_visible_page) > 1 && <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+              <span>Episode metadata page {episodePage} of {episodeData?.pagination?.last_visible_page}</span>
+              <button disabled={episodePage <= 1 || episodeQuery.isFetching} className="sn-secondary-action px-3 py-2 disabled:opacity-40" onClick={() => selectEpisode(Math.max(1, (episodePage - 2) * 100 + 1))}>Previous episodes</button>
+              <button disabled={episodePage >= Number(episodeData?.pagination?.last_visible_page) || episodeQuery.isFetching} className="sn-secondary-action px-3 py-2 disabled:opacity-40" onClick={() => selectEpisode(episodePage * 100 + 1)}>Next episodes</button>
+              <button disabled={episodeQuery.isFetching} className="sn-secondary-action px-3 py-2 disabled:opacity-40" onClick={() => selectEpisode((Number(episodeData?.pagination?.last_visible_page) - 1) * 100 + 1)}>Latest episode page</button>
+            </div>}
             {episodeSearchTerm && !displayedEpisodes.length ? (
               <div className="rounded-xl border border-white/[0.10] bg-white/[0.04] p-6 text-sm font-semibold text-white/58">
                 No episodes matched that search. Try a title keyword or an episode number.
@@ -3728,6 +3728,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             ) : (
               <div
                 ref={episodesRailRef}
+                style={{ scrollBehavior: 'auto', overflowAnchor: 'none', touchAction: 'pan-y' }}
+                onDragStart={event => event.preventDefault()}
                 onPointerDown={startEpisodeRailDrag}
                 onPointerMove={moveEpisodeRailDrag}
                 onPointerUp={stopEpisodeRailDrag}
@@ -3833,6 +3835,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         <Play className="mr-2 h-4 w-4 fill-current" />
                         {Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : sourcesBusy ? 'Preparing...' : 'Play Episode'}
                       </button>
+                      <button type="button" disabled={!nextPlayableSource || Boolean(activeSourceId)} onClick={()=>{if(nextPlayableSource)void playSource(nextPlayableSource,0);}} className="sn-secondary-action px-3 py-2 disabled:opacity-40">Restart episode</button>
                       <button
                         type="button"
                         onClick={() => { if (playbackOptionsRef.current) { playbackOptionsRef.current.open = true; playbackOptionsRef.current.scrollIntoView({ block: 'nearest' }); } }}
@@ -4226,10 +4229,11 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
             <details key={`${id}:${selectedEpisode}`} open ref={playbackOptionsRef} className="sn-playback-options">
               <summary className="flex min-h-14 cursor-pointer items-center justify-between gap-4 px-5 py-3 font-semibold">
-                <span>Change playback option</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} available` : 'View options'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
+                <span>Change playback option</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} available${sourceSearchInProgress ? ' · finding more' : ''}` : 'View options'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
               </summary>
               <div className="p-4">
-            {animeNotYetAired ? null : sourcesBusy ? (
+            {sourceSearchInProgress && !sourcesBusy && <p role="status" className="mb-3 text-sm text-white/60">Matching sources are ready to play. Additional options are still being checked.</p>}
+            {animeNotYetAired ? null : sourceSearchInProgress && !sortedSources.length ? (
               <div className="grid gap-3">
                 <DesktopLoadingProgress label={`Preparing Episode ${selectedEpisode}`} percent={sourceSearchProgress} detail="Checking video quality, audio preference, and playback health." />
                 {Array.from({ length: 3 }).map((_, index) => (
@@ -4297,7 +4301,13 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                             ))}
                           </div>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          <button type="button" disabled={!source.magnet} className="sn-secondary-action h-10 px-3 text-xs" title="Download all files in this release, including all episodes in a batch" onClick={() => {
+                            void enqueueDownload(source.title, source.magnet).then(() => setPlaybackNotice({ tone: 'success', text: 'Release queued in the download manager.' }), issue => setPlaybackNotice({ tone: 'error', text: String(issue instanceof Error ? issue.message : issue) }));
+                          }}><Download className="h-4 w-4" />Download release</button>
+                          <button type="button" disabled={!source.magnet} className="sn-secondary-action h-10 px-3 text-xs" title="Resolve the release file list before choosing episodes to download" onClick={() => {
+                            void enqueueDownloadSelection(source.title, source.magnet).then(() => setPlaybackNotice({ tone: 'success', text: 'Download manager opened. Choose episode files once metadata resolves.' }), issue => setPlaybackNotice({ tone: 'error', text: String(issue instanceof Error ? issue.message : issue) }));
+                          }}><Download className="h-4 w-4" />Choose files</button>
                           <button
                             type="button"
                             onClick={() => toggleSourceDetails(sourceId)}

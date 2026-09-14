@@ -18,7 +18,7 @@ export function airedEpisodeCount(anime: any): number | null {
   const total = totalEpisodeCount(anime);
   const status = String(anime?.status || '').trim().toUpperCase();
   if (status === 'FINISHED' || /FINISHED|COMPLETED/.test(status)) return total;
-  if (/NOT_YET|UPCOMING/.test(status)) return 0;
+  if (/NOT[_ ]YET|UPCOMING/.test(status)) return 0;
   return null;
 }
 
@@ -31,7 +31,7 @@ export function episodeAvailabilityLabel(anime: any) {
 /** Titles are optional. Missing title/date metadata must not manufacture zero aired episodes. */
 export function verifiedAiredEpisodeCount(anime: any, episodes: any[] = [], now = Date.now()): number | null {
   const status = String(anime?.status || '').trim().toUpperCase();
-  if (/NOT_YET|UPCOMING/.test(status)) return 0;
+  if (/NOT[_ ]YET|UPCOMING/.test(status)) return 0;
   const finished = /FINISHED|COMPLETED/.test(status);
   const known = airedEpisodeCount(anime);
   const dated = episodes.filter(e => finished || (Number.isFinite(Date.parse(e?.aired)) && Date.parse(e.aired) <= now))

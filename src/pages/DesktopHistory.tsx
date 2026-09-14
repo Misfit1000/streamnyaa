@@ -1,3 +1,6 @@
+import {coveragePercent} from '../lib/desktopCoverage';
+import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
+import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Clock, ExternalLink, Grid2X2, List, Play, RotateCcw, Search, Trash2, X } from 'lucide-react';
@@ -37,7 +40,8 @@ function imageCandidates(source: LocalPlaybackSource) {
 function HistoryImage({ source }: { source: LocalPlaybackSource }) {
   const [imageIndex, setImageIndex] = useState(0);
   const [failed, setFailed] = useState(false);
-  const candidates = useMemo(() => imageCandidates(source), [source]);
+  const hideSpoilers = useHideEpisodeSpoilers();
+  const candidates = useMemo(() => hideSpoilers ? [source.poster].filter((value): value is string => Boolean(value)) : imageCandidates(source), [source, hideSpoilers]);
   const current = candidates[imageIndex] || '';
 
   useEffect(() => {
@@ -73,6 +77,7 @@ function HistoryImage({ source }: { source: LocalPlaybackSource }) {
 }
 
 function progressPercent(source: LocalPlaybackSource) {
+  if(source.watchedCoverage)return coveragePercent(source.watchedCoverage,source.durationSeconds || 0);
   const direct = Number(source.progressPercent || 0);
   if (Number.isFinite(direct) && direct > 0) return Math.max(0, Math.min(100, direct));
   const resume = Number(source.resumeSeconds || 0);
@@ -82,6 +87,7 @@ function progressPercent(source: LocalPlaybackSource) {
 }
 
 function isComplete(source: LocalPlaybackSource) {
+  if(source.watchedCoverage)return coveragePercent(source.watchedCoverage,source.durationSeconds || 0)>=COMPLETED_PERCENT;
   const progress = progressPercent(source);
   const resume = Number(source.resumeSeconds || 0);
   const duration = Number(source.durationSeconds || 0);
@@ -145,6 +151,7 @@ function sortHistory(items: LocalPlaybackSource[], sort: HistorySort) {
 }
 
 export default function DesktopHistory() {
+  const hideSpoilers = useHideEpisodeSpoilers();
   const [history, setHistory] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
   const [status, setStatus] = useState('');
   const [query, setQuery] = useState('');
@@ -271,8 +278,8 @@ export default function DesktopHistory() {
             </p>
             <p className="mt-1 text-sm text-white/52">
               {pendingClear === 'all'
-                ? 'This removes local history and Continue Watching progress from this device. Favorites are not affected.'
-                : `This removes ${completedCount} completed ${completedCount === 1 ? 'entry' : 'entries'}. In-progress history and favorites stay intact.`}
+                ? 'This removes local history and Continue Watching progress from this device. Bookmarks are not affected.'
+                : `This removes ${completedCount} completed ${completedCount === 1 ? 'entry' : 'entries'}. In-progress history and bookmarks stay intact.`}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -380,21 +387,14 @@ export default function DesktopHistory() {
                       <div className="relative aspect-video bg-black/35">
                         <HistoryImage source={source} />
                         <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.82),rgba(7,8,12,0.12)_58%,transparent)]" />
-                        <button
-                          type="button"
-                          onClick={() => void openSource(source)}
-                          className="sn-primary-action absolute left-3 top-3 h-10 min-h-0 w-10 min-w-0 rounded-full p-0"
-                          aria-label="Resume playback"
-                        >
-                          <Play className="h-4 w-4 fill-current" />
-                        </button>
+                        <DesktopBookmarkButton anime={{mal_id:source.animeId,title:source.animeTitle || source.title,images:{jpg:{image_url:source.poster}}}} className="absolute left-3 top-3" />
                         <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
                           <div className="h-full bg-primary" style={{ width: `${progress}%` }} />
                         </div>
                       </div>
                       <div className="p-4">
                         <h2 className="line-clamp-1 text-base font-semibold text-white">{source.animeTitle || source.title}</h2>
-                        <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/42">{source.title}</p>
+                        <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/42">{hideSpoilers ? (source.episode ? `Episode ${source.episode}` : 'Saved source') : source.title}</p>
                         <div className="mt-3 flex items-center justify-between gap-2 text-xs font-semibold text-white/45">
                           <span>{resumeLabel(source)}</span>
                           <span>{formatLastWatched(source)}</span>
@@ -421,21 +421,20 @@ export default function DesktopHistory() {
                         >
                           <HistoryImage source={source} />
                           <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.72),transparent_60%)]" />
-                          <span className="absolute left-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-primary text-white shadow-none shadow-primary/20 transition group-hover:scale-105">
-                            <Play className="h-4 w-4 fill-current" />
-                          </span>
+
                           <span className="absolute bottom-2 left-3 rounded-lg bg-black/62 px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/72">
                             {complete ? 'Completed' : 'Resume'}
                           </span>
                         </button>
 
                         <div className="min-w-0">
+                          <DesktopBookmarkButton anime={{mal_id:source.animeId,title:source.animeTitle || source.title,images:{jpg:{image_url:source.poster}}}} />
                           <div className="flex flex-wrap items-center gap-2">
                             {source.episode ? <span className="rounded-lg bg-primary/15 px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-primary">Episode {source.episode}</span> : null}
                             <span className="rounded-lg bg-white/[0.055] px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/42">{formatLastWatched(source)}</span>
                           </div>
                           <h2 className="mt-2 line-clamp-1 text-base font-semibold text-white">{source.animeTitle || source.title}</h2>
-                          <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/42">{source.title}</p>
+                          <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/42">{hideSpoilers ? (source.episode ? `Episode ${source.episode}` : 'Saved source') : source.title}</p>
                           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/48">
                             <span className="inline-flex items-center gap-2">
                               <Clock className="h-4 w-4 text-primary" />

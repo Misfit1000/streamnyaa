@@ -1,4 +1,25 @@
 import { useEffect, useState } from 'react';
+import '../styles/desktop-revamp.css';
+
+const designKey = 'streamnyaa.desktop.design.v1';
+export type DesktopDesign = 'classic' | 'revamped';
+export function readDesktopDesign(): DesktopDesign {
+  try { return localStorage.getItem(designKey) === 'classic' ? 'classic' : 'revamped'; } catch { return 'classic'; }
+}
+export function saveDesktopDesign(design: DesktopDesign) {
+  localStorage.setItem(designKey, design);
+  window.dispatchEvent(new Event('streamnyaa-design-changed'));
+}
+export function useDesktopDesign() {
+  const [design, setDesign] = useState(readDesktopDesign);
+  useEffect(() => {
+    const refresh = () => setDesign(readDesktopDesign());
+    window.addEventListener('streamnyaa-design-changed', refresh);
+    window.addEventListener('storage', refresh);
+    return () => { window.removeEventListener('streamnyaa-design-changed', refresh); window.removeEventListener('storage', refresh); };
+  }, []);
+  return design;
+}
 
 export const desktopInterfaceScales = [85, 100, 115, 125] as const;
 const storageKey = 'streamnyaa.desktop.interfaceScale';
@@ -28,6 +49,11 @@ export function useInterfaceScale() {
 }
 export function useDesktopInterfaceScale() {
   const scale = useInterfaceScale();
+  const design = useDesktopDesign();
+  useEffect(() => {
+    document.documentElement.dataset.desktopDesign = design;
+    return () => { delete document.documentElement.dataset.desktopDesign; };
+  }, [design]);
   useEffect(() => {
     const previous = document.documentElement.style.fontSize;
     document.documentElement.style.fontSize = `${16 * scale / 100}px`;

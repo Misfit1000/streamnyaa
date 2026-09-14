@@ -1,10 +1,13 @@
+import DesktopDragRail from '../components/DesktopDragRail';
+import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { Bell, CalendarDays, ChevronRight, Heart, History, Loader2, TriangleAlert } from 'lucide-react';
-import AnimeCard from '../components/AnimeCard';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Bookmark, Bell, CalendarDays, ChevronRight, Heart, History, Loader2, TriangleAlert } from 'lucide-react';
+import '../styles/desktop-calendar.css';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
+import DesktopScheduleFallback from '../components/DesktopScheduleFallback';
 import { desktopWeekQuery } from '../lib/desktopScheduleQuery';
 import { animeIdentity } from '../lib/animeIdentity';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
@@ -257,6 +260,9 @@ function reminderOffsetLabel(reminder: ScheduleReminder) {
 }
 
 export default function DesktopSchedule() {
+  const [params] = useSearchParams();
+  const [trackedOnly,setTrackedOnly] = useState(params.get('scope') === 'tracked');
+  const [daySearch,setDaySearch] = useState('');
   const [selectedDay, setSelectedDay] = useState(0);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [reminders, setReminders] = useState<ScheduleReminder[]>(() => readScheduleReminders());
@@ -265,8 +271,13 @@ export default function DesktopSchedule() {
   const [notificationPermission, setNotificationPermission] = useState<ScheduleNotificationPermission>('default');
   const [scheduleUpdates, setScheduleUpdates] = useState(() => readDesktopScheduleUpdates());
   const [watchedSeries, setWatchedSeries] = useState(() => loadDesktopWatchedSeries());
-  const { isInMyList, addToMyList, removeFromMyList, nsfwMode } = useStore();
-  const days = useMemo(scheduleDays, []);
+  const store = useStore();
+  const { addToMyList, removeFromMyList, nsfwMode } = store;
+  const isInMyList = (id: string | number) => store.isInMyList(id) || store.isLiked(id);
+  const [clock, setClock] = useState(Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 60_000); return () => window.clearInterval(timer); }, []);
+  const todayKey = new Date(clock).toDateString();
+  const days = useMemo(scheduleDays, [todayKey]);
   const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'local time', []);
   const active = days[selectedDay];
   const hasWatchHistory = watchedSeries.length > 0;
@@ -286,20 +297,22 @@ export default function DesktopSchedule() {
     [watchedSeries, watchedWeekItems],
   );
   const visibleItems = useMemo(
-    () => (favoritesOnly ? items.filter((anime: any) => isInMyList(animeIdentity(anime))) : items),
-    [favoritesOnly, isInMyList, items],
+    () => items.filter((anime: any) => (!favoritesOnly || isInMyList(animeIdentity(anime)))
+      && (!trackedOnly || isInMyList(animeIdentity(anime)) || watchedSeries.some(record => desktopWatchedSeriesMatchesAnime(record, anime)))
+      && safeReminderTitle(anime).toLowerCase().includes(daySearch.trim().toLowerCase())),
+    [favoritesOnly, isInMyList, items, trackedOnly, watchedSeries, daySearch],
   );
   const groupedItems = useMemo(() => {
     if (!visibleItems.length) return [];
     if (selectedDay !== 0) return [{ title: active.label, items: visibleItems }];
-    const now = Date.now();
+    const now = clock;
     const upcoming = visibleItems.filter((anime: any) => airingAtMs(anime) > now);
     const aired = visibleItems.filter((anime: any) => airingAtMs(anime) <= now);
     return [
       { title: 'Airing Soon', items: upcoming },
       { title: 'Already Aired', items: aired },
     ].filter((group) => group.items.length);
-  }, [active.label, selectedDay, visibleItems]);
+  }, [active.label, selectedDay, visibleItems, clock]);
   const reminderIds = useMemo(() => new Set(reminders.map((reminder) => reminder.id)), [reminders]);
   const activeReminders = useMemo(
     () =>
@@ -351,7 +364,7 @@ export default function DesktopSchedule() {
 
   const toggleScheduleList = (anime: any) => {
     const id = animeIdentity(anime);
-    if (isInMyList(id)) removeFromMyList(id);
+    if (isInMyList(id)) { removeFromMyList(id); if (store.isLiked(id)) store.toggleLike(anime); }
     else addToMyList(anime);
   };
 
@@ -463,77 +476,28 @@ export default function DesktopSchedule() {
   );
 
   return (
-    <div className="sn-page py-6">
+    <div className="sn-page broadcast-desk py-6">
       <Seo title="Airing Schedule | StreamNyaa Desktop" description="Desktop anime schedule." canonicalPath="/schedule" robots="noindex, nofollow" />
 
-      <section className="sn-hero-panel overflow-hidden p-6">
+      <section className="broadcast-masthead p-6">
         <div className="flex flex-wrap items-end justify-between gap-5">
           <div className="flex items-center gap-4">
             <span className="grid h-12 w-12 place-items-center rounded-xl bg-primary/12 text-primary shadow-none shadow-primary/10">
               <CalendarDays className="h-6 w-6" />
             </span>
             <div>
-              <p className="text-xs font-semibold text-primary">Calendar</p>
-              <h1 className="mt-1 text-3xl font-semibold tracking-[-0.03em] text-white">Airing schedule</h1>
-              <p className="mt-1 text-sm text-white/56">Times are shown in {timezone}.</p>
+              <p className="text-xs font-semibold text-primary">STREAMNYAA / WEEKLY EDITION</p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-[-0.03em] text-white">The broadcast desk.</h1>
+              <p className="mt-1 text-sm text-white/56">{scheduleQuery.isError ? 'Broadcast references use the provider timezone shown on each entry.' : `Times are shown in ${timezone}.`}</p>
             </div>
           </div>
-          <div className="flex flex-wrap justify-end gap-2 text-xs font-semibold text-white/58">
-            <button
-              type="button"
-              onClick={() => setFavoritesOnly((value) => !value)}
-              className={`sn-category-chip px-3 py-1.5 ${
-                favoritesOnly
-                  ? 'sn-category-chip-active'
-                  : ''
-              }`}
-            >
-              Favorites only
-            </button>
-            <span className="sn-category-chip px-3 py-1.5">
-              {activeReminders.length} reminder{activeReminders.length === 1 ? '' : 's'}
-            </span>
-            {nextReminder ? (
-              <span className="sn-category-chip max-w-[260px] truncate px-3 py-1.5" title={`${nextReminder.title} - ${formatAiringTime(nextReminder.airingAt)}`}>
-                Next: {formatAiringTime(nextReminder.airingAt)}
-              </span>
-            ) : null}
-            {firedReminderCount ? (
-              <button type="button" onClick={clearFiredReminders} className="sn-category-chip px-3 py-1.5 hover:text-white">
-                Clear fired
-              </button>
-            ) : null}
-            {scheduleAlertCount ? (
-              <span className="sn-category-chip border-amber-300/20 bg-amber-400/10 px-3 py-1.5 text-amber-100">
-                {scheduleAlertCount} schedule alert{scheduleAlertCount === 1 ? '' : 's'}
-              </span>
-            ) : null}
-            <span className="sn-category-chip px-3 py-1.5">{items.length} titles</span>
-            <span className="sn-category-chip px-3 py-1.5">{active.label}</span>
-            {scheduleQuery.isFetching && !scheduleQuery.isLoading ? (
-              <span className="inline-flex items-center gap-1.5 px-2 py-1 text-white/42">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                Refreshing
-              </span>
-            ) : null}
-            <span
-              className={`sn-category-chip px-3 py-1.5 ${
-                notificationPermission === 'denied'
-                  ? 'border-amber-300/20 bg-amber-400/10 text-amber-100'
-                  : notificationPermission === 'granted'
-                    ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100'
-                    : ''
-              }`}
-            >
-              {notificationStatusMessage}
-            </span>
-            <button type="button" onClick={testNotification} className="sn-category-chip px-3 py-1.5 hover:text-white">
-              Test notification
-            </button>
-            <span className="basis-full text-right text-[11px] font-semibold normal-case tracking-normal text-white/40">
-              Saved bells use native Windows notifications outside the app window while StreamNyaa is running.
-            </span>
-          </div>
+          <section className="broadcast-reminder-desk" aria-label="Reminders and preferences">
+            <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold text-white">Your reminders</h2><p className="mt-1 text-xs text-white/65">{activeReminders.length ? `${activeReminders.length} upcoming alerts` : 'Tap a bell beside an episode to get a release reminder.'}</p></div><Bell className="h-5 w-5 shrink-0 text-primary" /></div>
+            {nextReminder && <p className="mt-3 rounded-lg bg-white/5 p-3 text-sm"><span className="text-white/60">Next alert · </span>{nextReminder.title}<span className="mt-1 block text-xs text-white/65">{formatAiringTime(nextReminder.airingAt)}</span></p>}
+            <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setFavoritesOnly(value => !value)} aria-pressed={favoritesOnly} className="sn-secondary-action px-3 py-2 text-xs">{favoritesOnly ? 'Showing bookmarks' : 'Show bookmarks only'}</button><button type="button" onClick={testNotification} className="sn-secondary-action px-3 py-2 text-xs">Test an alert</button>{firedReminderCount > 0 && <button type="button" onClick={clearFiredReminders} className="sn-secondary-action px-3 py-2 text-xs">Clear delivered alerts</button>}</div>
+            <p className="mt-3 text-xs leading-5 text-white/65">{notificationStatusMessage}. Keep StreamNyaa running to receive desktop reminders.</p>
+            {activeReminders.length > 0 && <details className="mt-3 border-t border-white/10 pt-3 text-sm"><summary className="cursor-pointer">Manage scheduled alerts</summary><ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">{activeReminders.map(reminder => <li key={reminder.id} className="flex items-center gap-3"><span className="min-w-0 flex-1 truncate">{reminder.title} · {formatAiringTime(reminder.airingAt)}</span><button className="sn-secondary-action px-2 py-1 text-xs" onClick={() => { const next = reminders.filter(value => value.id !== reminder.id); setReminders(next); writeScheduleReminders(next); }}>Remove</button></li>)}</ul></details>}
+          </section>
         </div>
       </section>
 
@@ -585,25 +549,146 @@ export default function DesktopSchedule() {
         </section>
       ) : null}
 
-      <div className="sn-scroll-rail mt-6 flex gap-3 pb-2">
-        {days.map((day, index) => (
-          <button
-            key={day.start}
-            type="button"
-            onClick={() => setSelectedDay(index)}
-            className={`min-w-[120px] rounded-xl px-4 py-3 text-left transition-all hover:-translate-y-0.5 ${
-              selectedDay === index
-                ? 'bg-primary text-white shadow-none shadow-primary/12'
-                : 'bg-white/[0.045] text-white/62 hover:bg-white/[0.07] hover:text-white'
-            }`}
-          >
-            <span className="block text-sm font-semibold">{day.label}</span>
-            <span className="mt-1 block text-xs opacity-72">{day.date}</span>
-            {index === 0 ? <span className="mt-2 inline-flex rounded-full bg-white/12 px-2 py-0.5 text-[10px] font-semibold">Today</span> : null}
-          </button>
-        ))}
+      <div className="broadcast-week" role="tablist" aria-label="Broadcast day">
+        {days.map((day, index) => <button key={day.start} id={`broadcast-day-${index}`} role="tab" aria-selected={selectedDay === index} aria-controls="broadcast-agenda" tabIndex={selectedDay === index ? 0 : -1}
+          onClick={() => setSelectedDay(index)} onKeyDown={event => {
+            const next = event.key === 'ArrowRight' ? (index + 1) % 7 : event.key === 'ArrowLeft' ? (index + 6) % 7 : event.key === 'Home' ? 0 : event.key === 'End' ? 6 : -1;
+            if (next < 0) return; event.preventDefault(); setSelectedDay(next); document.getElementById(`broadcast-day-${next}`)?.focus();
+          }} className="broadcast-day"><span>{day.label}</span><strong>{new Date(day.start * 1000).getDate().toString().padStart(2, '0')}</strong><small>{day.date}</small></button>)}
       </div>
+      <div className="broadcast-date-heading"><div><p>YOUR SEVEN-DAY WATCH WINDOW</p><h2>{active.label}<span> / {active.date}</span></h2></div><button className="sn-secondary-action" aria-pressed={favoritesOnly} onClick={() => setFavoritesOnly(value => !value)}><Bookmark className="h-4 w-4" />{favoritesOnly ? 'Saved titles' : 'All titles'}</button></div>
 
+      <div className="mt-4 flex flex-wrap items-center gap-3"><input aria-label="Search this broadcast day" className="sn-input min-w-0 flex-1 px-4 py-3" value={daySearch} onChange={event=>setDaySearch(event.target.value)} placeholder="Find an anime on this day…" /><button className="sn-secondary-action" aria-pressed={trackedOnly} onClick={()=>setTrackedOnly(value=>!value)}>{trackedOnly ? 'My week · tracked shows' : 'All broadcasts'}</button><button className="sn-secondary-action" onClick={()=>{setSelectedDay(0);setDaySearch('');}}>Today</button></div>
+      <section id="broadcast-agenda" role="tabpanel" aria-labelledby={`broadcast-day-${selectedDay}`} className="mt-7">
+        {scheduleQuery.isError ? <DesktopScheduleFallback key={active.start} favoritesOnly={favoritesOnly} search={daySearch} matchesTracked={trackedOnly ? (anime: any) => isInMyList(animeIdentity(anime)) || watchedSeries.some(record => desktopWatchedSeriesMatchesAnime(record, anime)) : undefined} selectedWeekday={new Date(active.start * 1000).toLocaleDateString('en-US', { weekday: 'long' }) + 's'} /> : null}
+        {scheduleQuery.isError && scheduleQuery.data ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/15 bg-amber-300/[0.06] px-4 py-3" role="status">
+            <div>
+              <p className="text-sm font-semibold text-amber-100">Schedule couldn’t refresh</p>
+              <p className="mt-0.5 text-xs text-white/50">
+                {scheduleQuery.data
+                  ? 'The last verified schedule is still shown below.'
+                  : 'Your saved screens remain available while the schedule reconnects.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => scheduleQuery.refetch()}
+              disabled={scheduleQuery.isFetching}
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/[0.07] px-3 text-sm font-semibold text-white transition-colors hover:bg-white/[0.11] disabled:opacity-50"
+            >
+              <Loader2 className={`h-4 w-4 ${scheduleQuery.isFetching ? 'animate-spin' : ''}`} />
+              Retry
+            </button>
+          </div>
+        ) : null}
+        {scheduleQuery.isLoading ? (
+          <div className="sn-glass-panel p-5">
+            <DesktopLoadingProgress variant="inline" label="Loading the airing schedule" percent={44} detail="Normalizing broadcast times for your time zone." />
+            <div className="broadcast-agenda-list">
+              {Array.from({ length: 10 }).map((_, index) => (
+                <div key={index} className="sn-poster-card animate-pulse bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]" />
+              ))}
+            </div>
+          </div>
+        ) : groupedItems.length ? (
+          <div className="space-y-8">
+            {groupedItems.map((group) => (
+              <div key={group.title}>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-xl font-semibold tracking-[-0.01em] text-white">{group.title}</h2>
+                  <span className="sn-category-chip px-3 py-1.5 text-xs">{group.items.length} titles</span>
+                </div>
+                <div className="broadcast-agenda-list">
+                  {[...group.items].sort((a: any, b: any) => airingAtMs(a) - airingAtMs(b)).map((anime: any) => {
+                    const airingMs = airingAtMs(anime);
+                    const date = new Date(airingMs);
+                    const time = airingMs ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : 'TBA';
+                    const broadcastState = scheduleBroadcastState(anime, airingMs);
+                    const inList = isInMyList(animeIdentity(anime));
+                    const reminder = reminderFromAnime(anime);
+                    const reminderId = reminder?.id || reminderIdForAnime(anime);
+                    const activeReminder = reminders.find((item) => item.id === reminderId);
+                    const notified = Boolean(activeReminder);
+                    const canAddReminder = Boolean(reminder && reminder.airingAt > Date.now() && !broadcastState.blocksReminder);
+                    const reminderPending = pendingReminderId === reminderId;
+                    const reminderUnavailableTitle = broadcastState.blocksReminder
+                      ? `Reminder unavailable: ${broadcastState.label}`
+                      : reminder && reminder.airingAt <= Date.now()
+                        ? 'This episode has already aired'
+                        : 'Reminder unavailable until release time is known';
+                    return (
+                      <div key={anime.scheduleId || `${anime.mal_id}-${anime.airingEpisode}`} className="broadcast-ticket">
+                        <div className="broadcast-time"><strong>{time}</strong><span>{broadcastState.label}</span></div>
+                        <Link className="broadcast-title" to={desktopWatchOrBrowsePath(anime)}><img src={scheduleArtwork(anime)} alt="" loading="lazy" /><span><small>EPISODE {anime.airingEpisode || 'TBA'}</small><strong>{safeReminderTitle(anime)}</strong><span>{broadcastState.detail || `Scheduled in ${timezone}`}</span></span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
+                        <div className="broadcast-actions flex gap-2">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleScheduleList(anime);
+                            }}
+                            className={`grid h-8 w-8 place-items-center rounded-lg border backdrop-blur transition-colors ${
+                              inList
+                                ? 'border-primary/35 bg-primary/22 text-primary'
+                                : 'border-white/10 bg-black/60 text-white/70 hover:bg-white/12 hover:text-white'
+                            }`}
+                            aria-label={inList ? 'Remove bookmark' : 'Bookmark anime'}
+                          >
+                            <Bookmark className={`h-4 w-4 ${inList ? 'fill-current' : ''}`} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleNotification(anime);
+                            }}
+                            disabled={reminderPending || (!notified && !canAddReminder)}
+                            className={`grid h-8 w-8 place-items-center rounded-lg border backdrop-blur transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:cursor-not-allowed disabled:opacity-45 ${
+                              notified
+                                ? 'border-primary/45 bg-primary/22 text-primary shadow-none shadow-primary/20'
+                                : 'border-white/10 bg-black/60 text-white/70 hover:border-primary/30 hover:bg-primary/14 hover:text-white'
+                            }`}
+                            aria-label={
+                              notified
+                                ? `Windows reminder enabled for ${safeReminderTitle(anime)}`
+                                : canAddReminder
+                                  ? `Remind me before ${safeReminderTitle(anime)} airs`
+                                  : `Reminder unavailable for ${safeReminderTitle(anime)}`
+                            }
+                            aria-pressed={notified}
+                            title={
+                              notified
+                                ? 'Windows reminder enabled'
+                                : canAddReminder
+                                  ? `Remind ${DEFAULT_REMINDER_OFFSET_MINUTES} minutes before airing`
+                                  : reminderUnavailableTitle
+                            }
+                          >
+                            {reminderPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Bell className={`h-4 w-4 ${notified ? 'fill-current' : ''}`} />
+                            )}
+                          </button>
+                        </div>
+
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : scheduleQuery.isError && !scheduleQuery.data ? null : (
+          <div className="sn-empty-state px-6 py-16 text-center">
+            <p className="text-lg font-semibold text-white">{daySearch || trackedOnly || favoritesOnly ? 'No matching releases in this day’s schedule.' : 'No episodes scheduled for this day.'}</p>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Check another day or view upcoming releases from Explore.</p>
+          </div>
+        )}
+      </section>
       <section className="mt-6 overflow-hidden rounded-xl bg-[linear-gradient(120deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_58%,rgba(153,0,24,0.12))] p-5 shadow-sm ring-1 ring-inset ring-white/[0.07]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -617,7 +702,7 @@ export default function DesktopSchedule() {
           </div>
           {watchedSeries.length ? (
             <span className="text-xs font-semibold text-white/46">
-              {watchedSeries.length} tracked / {watchedWeekItems.length} airing this week
+              {watchedSeries.length} tracked / {watchedWeekQuery.isError ? 'airing updates unavailable' : `${watchedWeekItems.length} airing this week`}
             </span>
           ) : null}
         </div>
@@ -642,7 +727,7 @@ export default function DesktopSchedule() {
         ) : (
           <>
             {watchedWeekItems.length ? (
-              <div className="sn-scroll-rail mt-4 flex gap-3 pb-1">
+              <DesktopDragRail label="From your watch history">
                 {watchedWeekItems.map((anime: any) => {
               const artwork = scheduleArtwork(anime);
               const airingMs = airingAtMs(anime);
@@ -671,7 +756,7 @@ export default function DesktopSchedule() {
                 </Link>
               );
                 })}
-              </div>
+              </DesktopDragRail>
             ) : (
               <p className="mt-4 text-sm text-white/48">None of your watched anime have an episode scheduled in the next seven days.</p>
             )}
@@ -712,159 +797,6 @@ export default function DesktopSchedule() {
         )}
       </section>
 
-      <section className="mt-7">
-        {scheduleQuery.isError ? (
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/15 bg-amber-300/[0.06] px-4 py-3" role="status">
-            <div>
-              <p className="text-sm font-semibold text-amber-100">Schedule couldn’t refresh</p>
-              <p className="mt-0.5 text-xs text-white/50">
-                {scheduleQuery.data
-                  ? 'The last verified schedule is still shown below.'
-                  : 'Your saved screens remain available while the schedule reconnects.'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => scheduleQuery.refetch()}
-              disabled={scheduleQuery.isFetching}
-              className="inline-flex h-9 items-center gap-2 rounded-lg bg-white/[0.07] px-3 text-sm font-semibold text-white transition-colors hover:bg-white/[0.11] disabled:opacity-50"
-            >
-              <Loader2 className={`h-4 w-4 ${scheduleQuery.isFetching ? 'animate-spin' : ''}`} />
-              Retry
-            </button>
-          </div>
-        ) : null}
-        {scheduleQuery.isLoading ? (
-          <div className="sn-glass-panel p-5">
-            <DesktopLoadingProgress variant="inline" label="Loading the airing schedule" percent={44} detail="Normalizing broadcast times for your time zone." />
-            <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-              {Array.from({ length: 10 }).map((_, index) => (
-                <div key={index} className="sn-poster-card animate-pulse bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025))]" />
-              ))}
-            </div>
-          </div>
-        ) : groupedItems.length ? (
-          <div className="space-y-8">
-            {groupedItems.map((group) => (
-              <div key={group.title}>
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-xl font-semibold tracking-[-0.01em] text-white">{group.title}</h2>
-                  <span className="sn-category-chip px-3 py-1.5 text-xs">{group.items.length} titles</span>
-                </div>
-                <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-                  {group.items.map((anime: any) => {
-                    const airingMs = airingAtMs(anime);
-                    const date = new Date(airingMs);
-                    const time = airingMs ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : 'TBA';
-                    const broadcastState = scheduleBroadcastState(anime, airingMs);
-                    const inList = isInMyList(animeIdentity(anime));
-                    const reminder = reminderFromAnime(anime);
-                    const reminderId = reminder?.id || reminderIdForAnime(anime);
-                    const activeReminder = reminders.find((item) => item.id === reminderId);
-                    const notified = Boolean(activeReminder);
-                    const canAddReminder = Boolean(reminder && reminder.airingAt > Date.now() && !broadcastState.blocksReminder);
-                    const reminderPending = pendingReminderId === reminderId;
-                    const reminderUnavailableTitle = broadcastState.blocksReminder
-                      ? `Reminder unavailable: ${broadcastState.label}`
-                      : reminder && reminder.airingAt <= Date.now()
-                        ? 'This episode has already aired'
-                        : 'Reminder unavailable until release time is known';
-                    return (
-                      <div key={anime.scheduleId || `${anime.mal_id}-${anime.airingEpisode}`} className="relative">
-                        <AnimeCard anime={anime} />
-                        <div className="absolute right-2 top-2 z-30 flex gap-1">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              toggleScheduleList(anime);
-                            }}
-                            className={`grid h-8 w-8 place-items-center rounded-lg border backdrop-blur transition-colors ${
-                              inList
-                                ? 'border-primary/35 bg-primary/22 text-primary'
-                                : 'border-white/10 bg-black/60 text-white/70 hover:bg-white/12 hover:text-white'
-                            }`}
-                            aria-label={inList ? 'Remove from favorites' : 'Add to favorites'}
-                          >
-                            <Heart className={`h-4 w-4 ${inList ? 'fill-current' : ''}`} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              toggleNotification(anime);
-                            }}
-                            disabled={reminderPending || (!notified && !canAddReminder)}
-                            className={`grid h-8 w-8 place-items-center rounded-lg border backdrop-blur transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:cursor-not-allowed disabled:opacity-45 ${
-                              notified
-                                ? 'border-primary/45 bg-primary/22 text-primary shadow-none shadow-primary/20'
-                                : 'border-white/10 bg-black/60 text-white/70 hover:border-primary/30 hover:bg-primary/14 hover:text-white'
-                            }`}
-                            aria-label={
-                              notified
-                                ? `Windows reminder enabled for ${safeReminderTitle(anime)}`
-                                : canAddReminder
-                                  ? `Remind me before ${safeReminderTitle(anime)} airs`
-                                  : `Reminder unavailable for ${safeReminderTitle(anime)}`
-                            }
-                            aria-pressed={notified}
-                            title={
-                              notified
-                                ? 'Windows reminder enabled'
-                                : canAddReminder
-                                  ? `Remind ${DEFAULT_REMINDER_OFFSET_MINUTES} minutes before airing`
-                                  : reminderUnavailableTitle
-                            }
-                          >
-                            {reminderPending ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Bell className={`h-4 w-4 ${notified ? 'fill-current' : ''}`} />
-                            )}
-                          </button>
-                        </div>
-                        <div className="absolute left-2 top-2 z-20 rounded-lg border border-white/10 bg-black/72 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur">
-                          {time} - Ep {anime.airingEpisode}
-                        </div>
-                        {broadcastState.prominent ? (
-                          <div
-                            className="pointer-events-none absolute inset-x-3 top-[46%] z-[25] flex -translate-y-1/2 items-center gap-2"
-                            title={broadcastState.detail}
-                          >
-                            <span className="h-px min-w-3 flex-1 bg-gradient-to-r from-transparent via-primary/65 to-primary/20" />
-                            <span className={`rounded-md border bg-[#08080b]/92 px-4 py-2 text-xs font-semibold tracking-wider backdrop-blur-sm ${scheduleStateAccentClass(broadcastState.kind)}`}>
-                              {broadcastState.headline || broadcastState.label}
-                            </span>
-                            <span className="h-px min-w-3 flex-1 bg-gradient-to-l from-transparent via-primary/65 to-primary/20" />
-                          </div>
-                        ) : (
-                          <div
-                            className={`absolute bottom-2 right-2 z-20 rounded-lg border px-2 py-1 text-[10px] font-semibold backdrop-blur ${scheduleStateBadgeClass(broadcastState.kind)}`}
-                          >
-                            {broadcastState.label}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : scheduleQuery.isError && !scheduleQuery.data ? (
-          <div className="sn-empty-state px-6 py-16 text-center">
-            <p className="text-lg font-semibold text-white">Schedule is temporarily unavailable.</p>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Retry when your connection is ready. StreamNyaa will keep this page intact.</p>
-          </div>
-        ) : (
-          <div className="sn-empty-state px-6 py-16 text-center">
-            <p className="text-lg font-semibold text-white">No episodes scheduled for this day.</p>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Check another day or view upcoming releases from Explore.</p>
-          </div>
-        )}
-      </section>
     </div>
   );
 }

@@ -1,22 +1,23 @@
+import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { CalendarDays, Check, ChevronDown, Clapperboard, Grid2X2, List, Loader2, Play, RefreshCw, Search, SlidersHorizontal, Sparkles, Star, TrendingUp, Tv, X } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Seo from '../components/Seo';
+import DesktopCatalogActions from '../components/DesktopCatalogActions';
 import { readExplorePresets, writeExplorePresets } from '../lib/desktopExplorePresets';
 import { libraryOrganizationEvent, organizationIdentity, readLibraryOrganization } from '../lib/desktopLibraryOrganization';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
-import { fetchAnimeSeason, fetchJikanExploreCatalog, fetchPopularAnime, fetchRecentEpisodesWithLimit, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
 import { getCurrentAnimeSeason } from '../lib/currentSeason';
-import { desktopWatchOrBrowsePath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
+import { desktopWatchOrBrowsePath, desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { desktopPosterCandidates } from '../lib/desktopArtwork';
 import { episodeAvailabilityLabel } from '../lib/animeEpisodes';
 import { preloadDesktopRoute, preloadDesktopWatchData } from '../lib/desktopRoutePreload';
-import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
-import { exploreCatalogCacheKey, readDesktopExploreCatalog, writeDesktopExploreCatalog } from '../lib/desktopExploreCache';
-import { fetchExplorePage, type ExplorePage, type ExploreRequest } from '../api/desktopExplore';
+import { primeDesktopWatchSnapshot, readCachedWatchTitles } from '../lib/desktopWatchSnapshot';
+import { readCachedExploreTitles, exploreCatalogCacheKey, readDesktopExploreCatalog, writeDesktopExploreCatalog } from '../lib/desktopExploreCache';
+import { jikanAdultTitle, fetchExplorePage, type ExplorePage, type ExploreRequest, type ExploreService } from '../api/desktopExplore';
 import { useStore } from '../store/useStore';
 
 type ExploreMode = 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year' | 'ranking';
@@ -106,69 +107,6 @@ function localSort(items: any[], sort: string) {
   return next;
 }
 
-type ExploreCatalogArgs = {
-  mode: ExploreMode;
-  query: string;
-  year: number;
-  format: string;
-  genre: string;
-  status: string;
-  sort: string;
-};
-
-async function loadPrimaryExploreCatalog(args: ExploreCatalogArgs, options: { signal?: AbortSignal } = {}) {
-  const { mode, query, year, format, genre, status, sort } = args;
-  const currentSeason = getCurrentAnimeSeason();
-  const type = providerFormat(format);
-  const providerGenre = genre === 'Any' ? '' : genre;
-  const providerSort = sort === 'best' ? '' : sort;
-  const state = providerStatus(status);
-  if (query) return searchAnime(query, 1, type, '', providerGenre, providerSort, state, options);
-  if (mode === 'new') return fetchRecentEpisodesWithLimit(48, options);
-  if (mode === 'airing') return fetchTopAiring(options);
-  if (mode === 'popular') return fetchPopularAnime(options);
-  if (mode === 'upcoming') return fetchUpcomingAnime(options);
-  if (mode === 'seasonal') return fetchAnimeSeason(currentSeason.season, currentSeason.year, 1, options);
-  if (mode === 'year') return fetchTopAnimeByYear(year, 1, options);
-  if (mode === 'top') return searchAnime('', 1, type, '', providerGenre, 'score', state, options);
-  return searchAnime('', 1, type, '', providerGenre, 'popular', state || 'airing', options);
-}
-
-export function loadExploreCatalog(args: ExploreCatalogArgs, signal?: AbortSignal) {
-  const currentSeason = getCurrentAnimeSeason();
-  return new Promise<any>((resolve, reject) => {
-    const primary = new AbortController(), secondary = new AbortController();
-    let settled = false, secondaryStarted = false;
-    const errors: unknown[] = [];
-    const cleanup = () => { clearTimeout(timer); primary.abort(); secondary.abort(); signal?.removeEventListener('abort', cancel); };
-    const finish = (error?: unknown, data?: any) => {
-      if (settled) return;
-      settled = true; cleanup();
-      if (error) reject(error); else resolve(data);
-    };
-    const cancel = () => finish(new DOMException('Cancelled', 'AbortError'));
-    const accept = (data: any) => Array.isArray(data?.data) ? finish(undefined, data) : fail(new Error('Invalid catalog response.'));
-    const fail = (error: unknown) => {
-      if (settled) return;
-      errors.push(error);
-      if ((error as { code?: string })?.code === 'rate-limited') { finish(error); return; }
-      if (!secondaryStarted) startSecondary();
-      else if (errors.length >= 2) finish(errors[0]);
-    };
-    const startSecondary = () => {
-      if (secondaryStarted || settled) return;
-      secondaryStarted = true;
-      void fetchJikanExploreCatalog({ mode: args.mode === 'ranking' ? 'top' : args.mode, query: args.query, year: args.year, season: currentSeason.season,
-        type: providerFormat(args.format), genre: args.genre === 'Any' ? '' : args.genre, status: providerStatus(args.status),
-      }, { signal: secondary.signal }).then(accept, fail);
-    };
-    const timer = window.setTimeout(startSecondary, 1500);
-    signal?.addEventListener('abort', cancel, { once: true });
-    if (signal?.aborted) { cancel(); return; }
-    void loadPrimaryExploreCatalog(args, { signal: primary.signal }).then(accept, fail);
-  });
-}
-
 export function PremiumSelect({ value, options, onChange, ariaLabel }: {
   value: string;
   options: SelectOption[];
@@ -236,10 +174,10 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
   const candidates = useMemo(() => desktopPosterCandidates(anime), [anime]);
   const image = candidates[imageIndex] || '';
   const title = anime?.title || anime?.title_english || anime?.title_romaji || 'Anime';
-  const path = desktopWatchOrBrowsePath(anime);
+  const path = anime.recentFeedKind === 'listed' && anime.listedEpisode ? desktopWatchPath(anime, {ep:anime.listedEpisode}) : desktopWatchOrBrowsePath(anime);
   const genres = genresFor(anime).slice(0, 2);
   const compact = density === 'compact';
-  const episodeLabel = episodeAvailabilityLabel(anime);
+  const episodeLabel = anime.recentFeedKind === 'listed' ? (anime.listedEpisode ? `Listed episode ${anime.listedEpisode}` : 'Recently listed') : episodeAvailabilityLabel(anime);
   const upcoming = isUpcomingAnime(anime);
 
   useEffect(() => {
@@ -272,20 +210,21 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
             <span className="inline-flex items-center gap-1 text-amber-300"><Star className="h-3.5 w-3.5 fill-current" />{scoreFor(anime) ? scoreFor(anime).toFixed(1) : 'N/A'}</span>
           </div>
         </div>
-        {upcoming ? <span className="mr-[116px]" /> : <span className="mr-2 grid h-10 w-10 place-items-center rounded-full bg-primary text-white"><Play className="ml-0.5 h-4 w-4 fill-current" /></span>}
+        <span className="w-11" />
       </Link>
       {upcoming ? <UpcomingNotifyButton anime={anime} compact className="absolute bottom-3 right-3" /> : null}
+      <DesktopBookmarkButton anime={anime} className="absolute right-3 top-3 z-20" />
       </div>
     );
   }
 
   return (
-    <div className="min-w-0" style={{ contentVisibility: 'auto', containIntrinsicSize: compact ? '210px 294px' : '230px 345px' }}>
+    <div className="relative min-w-0" style={{ contentVisibility: 'auto', containIntrinsicSize: compact ? '210px 294px' : '230px 345px' }}>
     <Link to={path} onPointerEnter={prepare} onFocus={prepare} onPointerDown={prepare} className="group block min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
       <div className={`sn-explore-poster relative overflow-hidden rounded-xl border border-white/[0.07] bg-[#111114] ${compact ? 'aspect-[5/7]' : 'aspect-[2/3]'}`}>
         {imageNode}<div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_42%,rgba(5,5,7,0.94)_100%)]" />
         <span className="absolute left-3 top-3 rounded-full bg-black/70 px-2.5 py-1 text-[11px] font-semibold text-white/78">EP {episodeLabel}</span>
-        {!upcoming ? <span className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-black/70 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"><Play className="ml-0.5 h-4 w-4 fill-current" /></span> : null}
+        
         <div className="absolute inset-x-0 bottom-0 p-3.5">
           <h3 className={`${compact ? 'text-[13px]' : 'text-[15px]'} line-clamp-2 font-semibold leading-tight text-white`}>{title}</h3>
           <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-semibold text-white/58">
@@ -297,6 +236,7 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
       {!compact ? <p className="mt-2 truncate text-xs font-medium text-white/48">{genres.join(' · ') || yearFor(anime) || 'Anime'}</p> : null}
     </Link>
     {upcoming ? <UpcomingNotifyButton anime={anime} compact fullWidth className="mt-2" /> : null}
+    <DesktopBookmarkButton anime={anime} className="absolute right-3 top-3 z-20" />
     </div>
   );
 });
@@ -325,7 +265,7 @@ export default function DesktopExplore() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentSeason = getCurrentAnimeSeason();
   const currentYear = new Date().getFullYear();
-  const mode = (modes.some((item) => item.mode === searchParams.get('mode')) ? searchParams.get('mode') : 'trending') as ExploreMode;
+  const mode = (modes.some((item) => item.mode === searchParams.get('mode')) ? searchParams.get('mode') : 'popular') as ExploreMode;
   const query = String(searchParams.get('q') || '').trim();
   const genre = searchParams.get('genre') || 'Any';
   const format = searchParams.get('format') || 'Any';
@@ -335,15 +275,18 @@ export default function DesktopExplore() {
   const density = (['poster', 'compact', 'list'].includes(searchParams.get('view') || '') ? searchParams.get('view') : 'poster') as ExploreDensity;
   const ranking = mode === 'ranking';
   const hideCompleted = searchParams.get('hideCompleted') === '1';
-  const service = ranking && searchParams.get('ranking') === 'mal' ? 'mal' : 'anilist';
+  const service: ExploreService = 'anilist';
   const block = Math.max(1, Math.min(1000, Math.floor(Number(searchParams.get('page')) || 1)));
   const adult = useStore((state) => state.nsfwMode);
   const season = searchParams.get('season') || currentSeason.season;
+  const releaseDays = ['7', '30', '90'].includes(searchParams.get('released') || '') ? searchParams.get('released')! : 'all';
+  const releasedAfter = useMemo(() => releaseDays === 'all' ? undefined : new Date(Date.now() - Number(releaseDays) * 86_400_000).toISOString().slice(0, 10), [releaseDays]);
   const request = useMemo<ExploreRequest>(() => ({ mode, query, genre, format, status, sort, service, adult,
-    year: ['seasonal', 'year'].includes(mode) ? year : undefined,
+    year: ['seasonal', 'year'].includes(mode) || (ranking && searchParams.has('year')) ? year : undefined,
     season: mode === 'seasonal' ? season : undefined,
-  }), [mode, query, genre, format, status, sort, service, adult, year, season]);
-  const catalogCacheKey = exploreCatalogCacheKey({ ...request, block: ranking ? block : 1, version: 3 });
+    releasedAfter,
+  }), [mode, query, genre, format, status, sort, service, adult, year, season, releasedAfter, ranking, searchParams]);
+  const catalogCacheKey = exploreCatalogCacheKey({ ...request, block: ranking ? block : 1, version: 5 });
   const snapshot = useRef({ key: '', before: 0 });
   if (snapshot.current.key !== catalogCacheKey) {
     const saved = readDesktopExploreCatalog(catalogCacheKey)?.data?.pages?.[0]?.before;
@@ -354,22 +297,30 @@ export default function DesktopExplore() {
   const firstPage = ranking ? (block - 1) * 4 + 1 : 1;
   const catalogQuery = useInfiniteQuery({
     queryKey: ['desktop-explore-v3', catalogCacheKey],
-    initialPageParam: firstPage,
-    queryFn: ({ signal, pageParam }) => fetchExplorePage({ ...request, before: requestBefore }, pageParam, signal),
-    getNextPageParam: (last, pages) => last.hasNextPage && (!ranking || pages.length < 4) ? last.page + 1 : undefined,
+    initialPageParam: { page: firstPage, service: service as ExploreService },
+    queryFn: async ({ signal, pageParam }) => {
+      const result = await fetchExplorePage({ ...request, service: pageParam.service, before: requestBefore,
+        allowFallback: pageParam.page === 1 }, pageParam.page, signal);
+      return { ...result, fallback: result.fallback || (!ranking && result.service !== service) };
+    },
+    getNextPageParam: (last, pages) => last.paginationVersion === 2 && last.hasNextPage && (!ranking || pages.length < 4)
+      ? { page: last.page + 1, service: last.service } : undefined,
     initialData: () => {
       const cached = readDesktopExploreCatalog(catalogCacheKey)?.data;
       if (!Array.isArray(cached?.pages) || !cached.pages.length || !Array.isArray(cached.pageParams)) return undefined;
-      if (!cached.pages.every((page: ExplorePage, i: number) => page.service === service && page.page === firstPage + i
+      const savedService = cached.pages[0].service;
+      if (savedService !== service && savedService !== 'mal') return undefined;
+      if (!cached.pages.every((page: ExplorePage, i: number) => page.service === savedService && page.page === firstPage + i
         && Array.isArray(page.data) && typeof page.hasNextPage === 'boolean') || cached.pages.length !== cached.pageParams.length) return undefined;
-      return { pages: cached.pages as ExplorePage[], pageParams: cached.pageParams as number[] };
+      return { pages: cached.pages as ExplorePage[], pageParams: cached.pages.map((page: ExplorePage, index: number) => ({ page: page.page, service: index === 0 ? service as ExploreService : page.service })) };
     },
     initialDataUpdatedAt: () => readDesktopExploreCatalog(catalogCacheKey)?.savedAt,
-    staleTime: query ? 1000 * 60 * 10 : 1000 * 60 * 25,
+    staleTime: state => state.state.data?.pages[0]?.paginationVersion !== 2 ? 0 : query ? 1000 * 60 * 10 : 1000 * 60 * 25,
     gcTime: 1000 * 60 * 90,
     retry: false,
     retryDelay: (attempt) => 250 + attempt * 500,
     refetchOnReconnect: true,
+    refetchInterval: query => query.state.error || query.state.data?.pages[0]?.fallback ? 300_000 : false,
   });
 
   useEffect(() => {
@@ -398,7 +349,7 @@ export default function DesktopExplore() {
   }, [ranking, genre, format, status, catalogQuery.hasNextPage, catalogQuery.isFetching, catalogQuery.isError, catalogQuery.fetchNextPage, catalogQuery.data]);
 
   const loadedItems = useMemo(() => uniqueAnime(catalogQuery.data?.pages.flatMap((page) => page.data) || []), [catalogQuery.data]);
-  const rankPositions = useMemo(() => new Map(loadedItems.map((anime, index) => [organizationIdentity(anime), (block - 1) * 100 + index + 1])), [loadedItems, block]);
+  const rankPositions = useMemo(() => new Map(loadedItems.map((anime, index) => [organizationIdentity(anime), Number(anime.rankingPosition) || (block - 1) * 100 + index + 1])), [loadedItems, block]);
   const results = useMemo(() => {
     // Preserve item references so appending a page does not invalidate every
     // memoized poster card just to attach its rank.
@@ -411,10 +362,39 @@ export default function DesktopExplore() {
     return items;
   }, [loadedItems, format, genre, status, ranking, hideCompleted, organization]);
 
+  const savedTitles = useStore(state => state.myList);
+  const favoriteTitles = useStore(state => state.likedAnimes);
+  const localMatches = useMemo(() => {
+    if (!query || !catalogQuery.isError || results.length) return [];
+    const tokens = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    return uniqueAnime([...savedTitles, ...favoriteTitles, ...readCachedWatchTitles(), ...readCachedExploreTitles()])
+      .filter(anime => {
+        const titles = [anime.title, anime.title_english, anime.title_romaji, anime.title_native, ...(anime.synonyms || [])].filter(value => typeof value === 'string').join(' ').toLocaleLowerCase();
+        const premiere = anime.aired?.from || anime.startDate;
+        return tokens.every(token => titles.includes(token)) && (adult || !jikanAdultTitle(anime))
+          && (genre === 'Any' || genresFor(anime).some(value => value.toLowerCase() === genre.toLowerCase()))
+          && (format === 'Any' || formatFor(anime).toLowerCase() === format.toLowerCase())
+          && (status === 'Any' || statusFor(anime) === status)
+          && (!request.year || Number(anime.year || anime.seasonYear) === request.year)
+          && (!request.season || String(anime.season).toLowerCase() === request.season.toLowerCase())
+          && (!releasedAfter || (typeof premiere === 'string' && Number.isFinite(Date.parse(premiere)) && Date.parse(premiere) >= Date.parse(releasedAfter)))
+          && (!hideCompleted || organization.entries[organizationIdentity(anime)]?.status !== 'Completed');
+      }).slice(0, 100);
+  }, [query, catalogQuery.isError, results.length, savedTitles, favoriteTitles, adult, genre, format, status, request.year, request.season, releasedAfter, hideCompleted, organization]);
+
+  const rankingFilterKeys = ['genre','format','status','order','year','released','hideCompleted'] as const;
+  useEffect(() => {
+    if (!ranking) return;
+    try { localStorage.setItem(`streamnyaa.desktop.rankingFilters.v1.${service}`, new URLSearchParams([...searchParams.entries()].filter(([key]) => ['genre','format','status','order','year','released','hideCompleted'].includes(key))).toString()); } catch { /* Optional preference only. */ }
+  }, [ranking, service, searchParams]);
+
   const setParam = (key: string, value: string, defaultValue = '') => {
     const next = new URLSearchParams(searchParams);
     if (!['page', 'view'].includes(key)) next.delete('page');
-    if (key === 'ranking' && value === 'mal' && format === 'TV Short') next.delete('format');
+    if (key === 'ranking' && value !== service) {
+      try { const stored = localStorage.getItem(`streamnyaa.desktop.rankingFilters.v1.${value}`); if (stored !== null && stored.length < 2000) { const restored = new URLSearchParams(stored); rankingFilterKeys.forEach(key => { next.delete(key); if (restored.has(key)) next.set(key,restored.get(key)!); }); } } catch { /* Retain current filters if storage is unavailable. */ }
+      if (value === 'mal' && next.get('format') === 'TV Short') next.delete('format');
+    }
     if (!value || value === defaultValue) next.delete(key);
     else next.set(key, value);
     setSearchParams(next, { replace: true });
@@ -431,11 +411,11 @@ export default function DesktopExplore() {
 
   const clearFilters = () => {
     const next = new URLSearchParams(searchParams);
-    ['genre', 'format', 'status', 'order', 'page'].forEach((key) => next.delete(key));
+    ['genre', 'format', 'status', 'order', 'page', 'released', ...(ranking ? ['year'] : [])].forEach((key) => next.delete(key));
     setSearchParams(next, { replace: true });
   };
 
-  const activeFilters = [genre !== 'Any' ? genre : '', format !== 'Any' ? format : '', status !== 'Any' ? status : ''].filter(Boolean);
+  const activeFilters = [genre !== 'Any' ? genre : '', format !== 'Any' ? format : '', status !== 'Any' ? status : '', ranking && searchParams.has('year') ? String(year) : '', sort !== 'best' ? sort : '', releaseDays !== 'all' ? releaseDays : ''].filter(Boolean);
   const selectedMode = modes.find((item) => item.mode === mode) || modes[1];
   const gridClass = density === 'list' ? 'grid gap-3' : density === 'compact' ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-7' : 'grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6';
 
@@ -455,23 +435,27 @@ export default function DesktopExplore() {
         <div className="sn-scroll-rail flex gap-2 pb-1">
           {modes.map((item) => { const Icon = item.icon; const selected = item.mode === mode && !query; return <button key={item.mode} type="button" onClick={() => chooseMode(item.mode)} className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-colors ${selected ? 'bg-primary text-white' : 'bg-white/[0.045] text-white/58 hover:bg-white/[0.075] hover:text-white'}`}><Icon className="h-4 w-4" />{item.label}</button>; })}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-3">
+        <fieldset className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-3">
+          <legend className="px-2 text-sm font-semibold">{ranking ? 'Top 100 filters' : 'Catalog filters'}</legend>
           <SlidersHorizontal className="mx-1 h-4 w-4 text-white/38" />
           <label className="flex items-center gap-2 px-2 text-sm text-white/65"><input type="checkbox" checked={hideCompleted} onChange={(event) => setParam('hideCompleted', event.target.checked ? '1' : '')} />Hide marked completed</label>
           <PremiumSelect ariaLabel="Genre" value={genre} options={genreOptions.map((value) => ({ label: value === 'Any' ? 'All genres' : value, value }))} onChange={(value) => setParam('genre', value, 'Any')} />
-          <PremiumSelect ariaLabel="Format" value={format} options={formatOptions.filter((value) => service !== 'mal' || value !== 'TV Short').map((value) => ({ label: value === 'Any' ? 'All formats' : value, value }))} onChange={(value) => setParam('format', value, 'Any')} />
+          <PremiumSelect ariaLabel="Format" value={format} options={formatOptions.map((value) => ({ label: value === 'Any' ? 'All formats' : value, value }))} onChange={(value) => setParam('format', value, 'Any')} />
           <PremiumSelect ariaLabel="Status" value={status} options={statusOptions.map((value) => ({ label: value === 'Any' ? 'Any status' : value, value }))} onChange={(value) => setParam('status', value, 'Any')} />
           <PremiumSelect ariaLabel="Sort" value={sort} options={sortOptions} onChange={(value) => setParam('order', value, 'best')} />
+          <PremiumSelect ariaLabel={mode === 'new' ? 'Episode release window' : 'Premiere window'} value={releaseDays} options={[{ value: 'all', label: 'Any release date' }, { value: '7', label: 'Past 7 days' }, { value: '30', label: 'Past 30 days' }, { value: '90', label: 'Past 90 days' }]} onChange={value => setParam('released', value, 'all')} />
           {['year', 'seasonal'].includes(mode) ? <PremiumSelect ariaLabel="Year" value={String(year)} options={Array.from({ length: 70 }, (_, index) => ({ label: String(currentYear + 1 - index), value: String(currentYear + 1 - index) }))} onChange={(value) => setParam('year', value)} /> : null}
           {mode === 'seasonal' ? <PremiumSelect ariaLabel="Season" value={season.toUpperCase()} options={['WINTER', 'SPRING', 'SUMMER', 'FALL'].map((value) => ({ value, label: value[0] + value.slice(1).toLowerCase() }))} onChange={(value) => setParam('season', value)} /> : null}
-          {ranking ? <div className="flex gap-1 rounded-lg bg-white/5 p-1" aria-label="Ranking service">{(['anilist', 'mal'] as const).map((value) => <button key={value} type="button" aria-pressed={service === value} onClick={() => setParam('ranking', value)} className={`rounded-md px-3 py-2 text-sm font-semibold ${service === value ? 'bg-primary text-white' : 'text-white/60'}`}>{value === 'mal' ? 'MyAnimeList' : 'AniList'}</button>)}</div> : null}
+          {ranking ? <PremiumSelect ariaLabel="Ranking year" value={searchParams.has('year') ? String(year) : 'all'} options={[{ value: 'all', label: 'All years' }, ...Array.from({ length: 70 }, (_, index) => ({ label: String(currentYear - index), value: String(currentYear - index) }))]} onChange={value => setParam('year', value, 'all')} /> : null}
+
           {activeFilters.length ? <button type="button" onClick={clearFilters} className="h-10 rounded-lg px-3 text-sm font-semibold text-primary hover:bg-primary/10">Clear filters</button> : null}
           <div className="ml-auto flex rounded-lg bg-white/[0.045] p-1" aria-label="Result layout">
             {([['poster', Grid2X2, 'Poster grid'], ['compact', Grid2X2, 'Compact grid'], ['list', List, 'List']] as const).map(([value, Icon, label]) => <button key={value} type="button" onClick={() => setParam('view', value, 'poster')} className={`grid h-8 w-9 place-items-center rounded-md ${density === value ? 'bg-white/[0.12] text-white' : 'text-white/42 hover:text-white'}`} aria-label={label}><Icon className={value === 'compact' ? 'h-3.5 w-3.5' : 'h-4 w-4'} /></button>)}
           </div>
-        </div>
+        </fieldset>
       </section>
 
+      <div className="mt-3 flex flex-wrap gap-2" aria-label="Active catalog filters">{rankingFilterKeys.filter(key=>searchParams.has(key)).map(key=><button className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/65" key={key} aria-label={`Remove ${key} filter`} onClick={()=>setParam(key,'')}>{key}: {searchParams.get(key)} ×</button>)}</div>
       <details className="mt-3 text-sm text-white/65">
         <summary className="w-fit cursor-pointer rounded-md px-2 py-2 focus-visible:outline focus-visible:outline-primary">Saved filters{presets.length ? ` (${presets.length})` : ''}</summary>
         <div className="flex flex-wrap items-center gap-2 py-2">
@@ -488,19 +472,25 @@ export default function DesktopExplore() {
       </details>
 
       <div className="mt-6 flex items-end justify-between gap-4">
-        <div><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-semibold">{query ? `Results for “${query}”` : selectedMode.label}</h2>{catalogQuery.isFetching && catalogQuery.data ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/46"><Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />Refreshing</span> : null}</div><p className="mt-1 text-sm text-white/48">{results.length ? `${results.length} anime title${results.length === 1 ? '' : 's'}` : `${currentSeason.season} ${currentSeason.year}`}</p></div>
+        <div><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-semibold">{query ? `Results for “${query}”` : selectedMode.label}</h2>{catalogQuery.isFetching && catalogQuery.data ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/46"><Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />Refreshing</span> : null}</div><p className="mt-1 text-sm text-white/48">{results.length ? `${results.length} anime title${results.length === 1 ? '' : 's'}` : ranking ? (request.year ? `Year ${request.year}` : 'All years') : mode === 'seasonal' ? `${season} ${year}` : catalogQuery.isError ? 'Catalog unavailable' : 'Loading catalog…'}</p></div>
         {catalogQuery.isError ? <button type="button" onClick={() => void catalogQuery.refetch()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-sm font-semibold text-white/72 hover:bg-white/[0.09]"><RefreshCw className="h-4 w-4" />Retry</button> : null}
       </div>
 
       {catalogQuery.isLoading && !catalogQuery.data ? <div className="mt-5"><ExploreSkeleton /></div> : null}
-      {catalogQuery.isError && !catalogQuery.data ? <div className="mt-5 rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-3"><span className="text-sm text-white/52">Connection interrupted. Filters and search remain available.</span><button type="button" onClick={() => void catalogQuery.refetch()} className="ml-3 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4" />Retry now</button></div> : null}
+      {!ranking && catalogQuery.data?.pages[0]?.fallback ? <p role="status" className="mt-4 text-sm text-white/65">{catalogQuery.data.pages[0].fallbackLabel || (catalogQuery.data.pages[0].recentFeedKind === 'listed' ? 'Recently added episode listings from MyAnimeList. Listing order is not an exact broadcast timeline; episode video IDs are not used as episode numbers.' : 'Using MyAnimeList through Jikan while AniList is unavailable. Refresh to check AniList again.')}</p> : null}
+      {catalogQuery.isError ? <div role="status" className="mt-5 rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-3"><span className="text-sm text-white/65">{catalogQuery.error.message} Filters, search and saved results remain available.</span>{!query && ['new', 'trending'].includes(mode) ? <button type="button" onClick={() => chooseMode('popular')} className="ml-3 inline-flex h-9 items-center rounded-lg bg-white/10 px-3 text-sm font-semibold text-white">Browse Popular</button> : null}<button type="button" onClick={() => void catalogQuery.refetch()} className="ml-3 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4" />Retry now</button></div> : null}
       {catalogQuery.data && !results.length ? <div className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-6 py-12 text-center"><Search className="mx-auto h-6 w-6 text-white/34" /><h3 className="mt-3 font-semibold text-white">{catalogQuery.hasNextPage || catalogQuery.isError ? 'No matches in the loaded results yet' : 'No matching anime'}</h3><p className="mt-1 text-sm text-white/48">{catalogQuery.hasNextPage ? 'Load more results or adjust your filters.' : 'Clear a filter or try another title.'}</p></div> : null}
-      {ranking ? <p className="mt-3 text-sm text-white/60">{service === 'mal' ? 'MyAnimeList' : 'AniList'} · Positions {(block - 1) * 100 + 1}–{block * 100} · {sort === 'popular' ? 'Most popular' : sort === 'title' ? 'Title A–Z' : sort === 'recent' ? 'Newest first' : 'Highest score'}{catalogQuery.data?.pages[0]?.fetchedAt ? ` · Updated ${new Date(catalogQuery.data.pages[0].fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</p> : null}
-      {results.length ? <div className={`${gridClass} mt-5`}>{results.map((anime, index) => <div key={`${anime.anilist_id ? 'anilist' : 'mal'}:${anime?.anilist_id || anime?.mal_id}`} className="min-w-0">{ranking ? <div className="mb-2 flex justify-between text-sm font-semibold"><span>#{rankPositions.get(organizationIdentity(anime))}</span><span className="text-white/60">{anime.rankingScore ?? '—'}{service === 'mal' ? '/10 MAL' : '/100 AniList'}</span></div> : null}<ExploreAnimeCard anime={anime} index={index} density={density} /></div>)}</div> : null}
+      {ranking ? <p className="mt-3 text-sm text-white/60"><span title={`Ranking source: ${catalogQuery.data?.pages[0]?.service === "mal" ? "MyAnimeList" : "AniList"}`}>Top 100 ⓘ</span> · Positions {(block - 1) * 100 + 1}–{block * 100} · {sort === 'popular' ? 'Most popular' : sort === 'title' ? 'Title A–Z' : sort === 'recent' ? 'Newest first' : 'Highest score'}{catalogQuery.data?.pages[0]?.fetchedAt ? ` · Updated ${new Date(catalogQuery.data.pages[0].fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</p> : null}
+      {results.length ? <div className={`${gridClass} mt-5`}>{results.map((anime, index) => <div key={`${anime.anilist_id ? 'anilist' : 'mal'}:${anime?.anilist_id || anime?.mal_id}`} className="min-w-0">{ranking ? <div className="mb-2 flex justify-between text-sm font-semibold"><span>#{rankPositions.get(organizationIdentity(anime))}</span><span className="text-white/60">{anime.rankingScore === undefined ? '—' : (anime.rankingService === 'mal' ? Number(anime.rankingScore) : Number(anime.rankingScore)/10).toFixed(1)}/10</span></div> : null}<ExploreAnimeCard anime={anime} index={index} density={density} /></div>)}</div> : null}
+      {query && catalogQuery.isError && !results.length && <section aria-label="Saved search results" className="mt-5">
+        <h3 className="text-xl font-semibold">On this device · {localMatches.length} matches</h3>
+        <p className="mt-2 text-sm text-white/60">Online search is unavailable. These titles come from your Library and recent catalog cache and match the selected filters. This is not a complete online search or a ranking.</p>
+        {localMatches.length ? <div className={`mt-4 ${gridClass}`}>{localMatches.map((anime, index) => <ExploreAnimeCard key={organizationIdentity(anime)} anime={anime} index={index} density={density} />)}</div> : <p className="mt-3 text-sm text-white/60">No matching titles are cached on this device.</p>}
+      </section>}
       <div ref={sentinel} className="mt-6 flex min-h-12 items-center justify-center gap-3" aria-live="polite">
         {catalogQuery.isFetchingNextPage ? <span className="flex items-center gap-2 text-sm text-white/60"><Loader2 className="h-4 w-4 animate-spin" />Loading more anime…</span> : null}
         {catalogQuery.hasNextPage && !catalogQuery.isFetchingNextPage ? <button className="sn-secondary-action" onClick={() => void catalogQuery.fetchNextPage()}>Load more</button> : null}
-        {ranking ? <><button className="sn-secondary-action" disabled={block === 1 || catalogQuery.isFetching} onClick={() => setParam('page', String(block - 1))}>Previous 100</button><button className="sn-primary-action" disabled={catalogQuery.isFetching || catalogQuery.isError || (catalogQuery.data?.pages.length || 0) < 4 || !catalogQuery.data?.pages.at(-1)?.hasNextPage} onClick={() => setParam('page', String(block + 1))}>Next 100</button></> : null}
+        {ranking ? <><button className="sn-secondary-action" disabled={block === 1 || catalogQuery.isFetching} onClick={() => setParam('page', String(block - 1))}>Previous 100</button><button className="sn-primary-action disabled:opacity-40 disabled:cursor-not-allowed" disabled={catalogQuery.isFetching || catalogQuery.isError || (catalogQuery.data?.pages.length || 0) < 4 || !catalogQuery.data?.pages.at(-1)?.hasNextPage} onClick={() => setParam('page', String(block + 1))}>Next 100</button></> : null}
         {!catalogQuery.hasNextPage && !catalogQuery.isFetching && results.length > 0 && !ranking ? <span className="text-sm text-white/50">You’ve reached the end.</span> : null}
       </div>
 

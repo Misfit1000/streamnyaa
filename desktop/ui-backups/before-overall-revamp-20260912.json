@@ -1,0 +1,7 @@
+{
+  "createdAt": "2026-09-12T16:28:57.987852",
+  "archive": "before-overall-revamp-20260912.zip",
+  "sha256": "bebdaf9aaded9f76ea372ad1a708ab18af053515480aac0dbccfb6a0e23265a4",
+  "files": 110,
+  "purpose": "Exact source snapshot before overall revamp. Do not restore wholesale over later functional repairs; appearance switch is the immediate visual rollback."
+}

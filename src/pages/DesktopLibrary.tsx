@@ -1,8 +1,11 @@
+import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
+import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Bookmark, Clock3, Heart, History, Play, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import AnimeCard from '../components/AnimeCard';
 import DesktopLibraryOrganizer from '../components/DesktopLibraryOrganizer';
+import DesktopDownloads from '../components/DesktopDownloads';
 import Seo from '../components/Seo';
 import { animeIdentity } from '../lib/animeIdentity';
 import {
@@ -17,7 +20,7 @@ import { useStore } from '../store/useStore';
 
 type LibraryFilter = 'all' | 'bookmarks' | 'favorites';
 type LibrarySort = 'date-desc' | 'date-asc' | 'title-asc' | 'title-desc' | 'score-desc' | 'score-asc';
-type LibraryCategory = 'watching' | 'completed' | 'plan' | 'favorites' | 'history';
+type LibraryCategory = 'watching' | 'completed' | 'plan' | 'favorites' | 'bookmarks' | 'history' | 'offline' | 'collections';
 
 function titleFor(anime: any) {
   return String(anime?.title || anime?.title_english || anime?.title_romaji || '').trim();
@@ -29,10 +32,16 @@ function scoreFor(anime: any) {
 }
 
 export default function DesktopLibrary() {
+  const hideSpoilers = useHideEpisodeSpoilers();
   const { myList, likedAnimes, clearMyList, isLiked, isInMyList } = useStore();
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState<LibraryCategory>('watching');
-  const [filter, setFilter] = useState<LibraryFilter>('all');
+  const [params, setParams] = useSearchParams();
+  const requestedCategory = params.get('tab') || 'bookmarks';
+  const rawCategory = ['plan','favorites'].includes(requestedCategory) ? 'bookmarks' : requestedCategory;
+  const category: LibraryCategory = ['watching','completed','bookmarks','plan','favorites','history','offline','collections'].includes(rawCategory) ? rawCategory as LibraryCategory : 'watching';
+  const setCategory = (value: LibraryCategory) => setParams({tab:value});
+  const [filter, setFilter] = useState<LibraryFilter>(category === 'favorites' ? 'favorites' : category === 'plan' ? 'bookmarks' : 'all');
+  useEffect(() => { setFilter(category === 'favorites' ? 'favorites' : category === 'plan' ? 'bookmarks' : 'all'); }, [category]);
   const [sortBy, setSortBy] = useState<LibrarySort>('date-desc');
   const [confirmClear, setConfirmClear] = useState(false);
   const [historyItems, setHistoryItems] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
@@ -57,7 +66,7 @@ export default function DesktopLibrary() {
     return combinedList
       .filter((anime) => {
         const id = animeIdentity(anime);
-        if (filter === 'bookmarks' && !isInMyList(id)) return false;
+        if (filter === 'bookmarks' && !isInMyList(id) && !isLiked(id)) return false;
         if (filter === 'favorites' && !isLiked(id)) return false;
         if (!normalizedQuery) return true;
         return titleFor(anime).toLowerCase().includes(normalizedQuery);
@@ -91,13 +100,14 @@ export default function DesktopLibrary() {
         || String(item.title || '').toLowerCase().includes(normalizedQuery)
         || String(item.episode || '').toLowerCase().includes(normalizedQuery);
     })
-    .slice(0, 16);
+    .slice(0, 100);
 
   const libraryCategories = [
     { id: 'watching' as const, label: 'Watching', count: historyItems.filter((item) => Number(item.progressPercent || 0) < 92).length, icon: Play },
     { id: 'completed' as const, label: 'Completed', count: historyItems.filter((item) => Number(item.progressPercent || 0) >= 92).length, icon: Clock3 },
-    { id: 'plan' as const, label: 'Plan to Watch', count: stats.bookmarks, icon: Bookmark },
-    { id: 'favorites' as const, label: 'Favorites', count: stats.favorites, icon: Heart },
+    { id: 'bookmarks' as const, label: 'Bookmarks', count: stats.all, icon: Bookmark },
+    { id: 'offline' as const, label: 'Offline & Downloads', count: '↗', icon: Play },
+    { id: 'collections' as const, label: 'Collections', count: '↗', icon: Bookmark },
     { id: 'history' as const, label: 'History', count: historyItems.length, icon: History },
   ];
 
@@ -106,7 +116,7 @@ export default function DesktopLibrary() {
   return (
     <div className="sn-page py-6">
       <Seo title="Library | StreamNyaa Desktop" description="Desktop anime library." canonicalPath="/my-list" robots="noindex, nofollow" />
-      <DesktopLibraryOrganizer anime={combinedList} />
+
 
       <section className="sn-hero-panel p-6">
         <div className="flex flex-wrap items-end justify-between gap-5">
@@ -114,23 +124,10 @@ export default function DesktopLibrary() {
             <p className="text-[11px] font-semibold normal-case tracking-normal text-primary">Library</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-white">Saved anime, cleanly organized.</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">
-              Bookmarked and favorited anime stay here for quick desktop access.
+              All your bookmarked anime in one place. Previous Favorites and Plan to Watch entries are included.
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center text-xs font-semibold">
-            <span className="sn-glass-card rounded-xl px-3 py-2 text-white/58">
-              <span className="block text-base text-white">{stats.all}</span>
-              All
-            </span>
-            <span className="sn-glass-card rounded-xl px-3 py-2 text-white/58">
-              <span className="block text-base text-white">{stats.bookmarks}</span>
-              Saved
-            </span>
-            <span className="sn-glass-card rounded-xl px-3 py-2 text-white/58">
-              <span className="block text-base text-white">{stats.favorites}</span>
-              Loved
-            </span>
-          </div>
+          <div className="sn-glass-card rounded-xl px-4 py-3 text-center text-xs font-semibold text-white/70"><span className="block text-base text-white">{stats.all}</span>Bookmarks</div>
         </div>
 
         <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
@@ -140,8 +137,7 @@ export default function DesktopLibrary() {
               type="button"
               onClick={() => {
                 setCategory(id);
-                if (id === 'plan') setFilter('bookmarks');
-                else if (id === 'favorites') setFilter('favorites');
+                if (id === 'bookmarks') setFilter('bookmarks');
                 else setFilter('all');
               }}
               className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-all ${
@@ -162,7 +158,7 @@ export default function DesktopLibrary() {
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          <label className="relative min-w-[320px] flex-1">
+          <label className="relative min-w-[180px] flex-1">
             <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/36" />
             <input
               value={query}
@@ -175,16 +171,14 @@ export default function DesktopLibrary() {
           <div className="sn-glass-card flex rounded-xl p-1">
             {([
               ['all', 'All', Bookmark],
-              ['bookmarks', 'Saved', Bookmark],
-              ['favorites', 'Loved', Heart],
+              ['bookmarks', 'Bookmarks', Bookmark],
             ] as const).map(([value, label, Icon]) => (
               <button
                 key={value}
                 type="button"
                 onClick={() => {
                   setFilter(value);
-                  if (value === 'bookmarks') setCategory('plan');
-                  if (value === 'favorites') setCategory('favorites');
+                  if (value === 'bookmarks') setCategory('bookmarks');
                 }}
                 className={`inline-flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors ${
                   filter === value
@@ -192,7 +186,7 @@ export default function DesktopLibrary() {
                     : 'text-white/58 hover:bg-white/[0.06] hover:text-white'
                 }`}
               >
-                <Icon className={`h-4 w-4 ${value === 'favorites' && filter === value ? 'fill-current' : ''}`} />
+                <Icon className={`h-4 w-4 ${filter === value ? 'fill-current' : ''}`} />
                 {label}
               </button>
             ))}
@@ -234,7 +228,7 @@ export default function DesktopLibrary() {
               <h2 className="text-lg font-semibold text-white">Clear library?</h2>
             </div>
             <p className="mt-3 text-sm leading-6 text-white/56">
-              This removes saved and favorited anime from this desktop profile. It will not affect playback cache or source history.
+              This removes bookmarked anime from this desktop profile. It will not affect playback cache or source history.
             </p>
             <div className="mt-5 flex justify-end gap-3">
               <button
@@ -260,18 +254,19 @@ export default function DesktopLibrary() {
       ) : null}
 
       <section className="mt-6">
-        {showsHistoryRows ? (
+        {category === 'offline' ? <DesktopDownloads /> : category === 'collections' ? <DesktopLibraryOrganizer anime={combinedList} /> : showsHistoryRows ? (
           visibleHistory.length ? (
             <div className="space-y-3">
               {visibleHistory.map((source) => {
                 const progress = Math.max(0, Math.min(100, Number(source.progressPercent || 0)));
                 const title = source.animeTitle || source.title;
+                const artwork = hideSpoilers ? source.poster : source.image || source.poster || source.banner;
                 const watchPath = desktopWatchPath({ mal_id: source.animeId, id: source.animeId, title }, source.episode ? { ep: String(source.episode) } : undefined);
                 return (
                   <article key={`${source.magnet}-${source.episode || 'recent'}`} className="sn-card-hover sn-glass-card grid gap-4 rounded-xl p-3 sm:grid-cols-[140px_minmax(0,1fr)_auto]">
                     <div className="relative aspect-video overflow-hidden rounded-xl bg-white/[0.055]">
-                      {source.image || source.poster || source.banner ? (
-                        <img src={source.image || source.poster || source.banner} alt={title} className="h-full w-full object-cover" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
+                      {artwork ? (
+                        <img src={artwork} alt={title} className="h-full w-full object-cover" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
                       ) : (
                         <div className="grid h-full place-items-center bg-[radial-gradient(circle_at_30%_20%,rgba(244,63,94,0.32),transparent_34%),linear-gradient(145deg,#171017,#07070a)] text-xs font-semibold normal-case tracking-normal text-white/52">
                           StreamNyaa
@@ -283,7 +278,7 @@ export default function DesktopLibrary() {
                     </div>
                     <div className="min-w-0 py-1">
                       <h2 className="line-clamp-1 text-base font-semibold text-white">{title}</h2>
-                      <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/48">{source.title}</p>
+                      <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/48">{hideSpoilers ? (source.episode ? `Episode ${source.episode}` : 'Saved source') : source.title}</p>
                       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
                         <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
                       </div>
@@ -292,6 +287,7 @@ export default function DesktopLibrary() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2 sm:flex-col sm:items-stretch sm:justify-center">
+                      <DesktopBookmarkButton anime={{mal_id:source.animeId,title,images:{jpg:{image_url:source.poster}}}} />
                       <button
                         type="button"
                         onClick={() => void openLocalSourceNow(source)}
@@ -321,7 +317,7 @@ export default function DesktopLibrary() {
           <div className="sn-empty-state px-6 py-16 text-center">
             <Bookmark className="mx-auto h-10 w-10 text-primary" />
             <p className="mt-4 text-lg font-semibold text-white">Your library is empty.</p>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Save or favorite anime from Explore to build a desktop library.</p>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Bookmark anime from Explore to build a desktop library.</p>
             <Link to="/search" className="sn-primary-action mt-5 h-11 px-5">
               Explore anime
             </Link>

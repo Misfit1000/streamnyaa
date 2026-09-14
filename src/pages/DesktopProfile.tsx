@@ -1,3 +1,5 @@
+import {coveragePercent} from '../lib/desktopCoverage';
+import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
@@ -54,6 +56,7 @@ function formatSyncTime(value: number | null) {
 }
 
 function progressPercent(source: LocalPlaybackSource) {
+  if(source.watchedCoverage)return coveragePercent(source.watchedCoverage,source.durationSeconds || 0);
   const direct = Number(source.progressPercent || 0);
   if (Number.isFinite(direct) && direct > 0) return Math.max(0, Math.min(100, direct));
   const resume = Number(source.resumeSeconds || 0);
@@ -299,9 +302,8 @@ export default function DesktopProfile() {
         </div>
       </section>
 
-      <section className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Library} label="Saved anime" value={myList.length} detail="Bookmarks synced to your account." />
-        <StatCard icon={Heart} label="Favorites" value={likedAnimes.length} detail="Liked anime follow you across devices." />
+      <section className="mt-5 grid gap-4 md:grid-cols-3">
+        <StatCard icon={Bookmark} label="Bookmarks" value={libraryItems.length} detail="Your saved anime, including previous favorites." />
         <StatCard icon={History} label="Watch entries" value={history.length} detail="Resume data from local playback history." />
         <StatCard icon={Cloud} label="Last sync" value={lastSyncedAt ? 'Live' : 'Idle'} detail={formatSyncTime(lastSyncedAt)} />
       </section>
@@ -320,7 +322,7 @@ export default function DesktopProfile() {
             <ShieldCheck className="h-6 w-6 text-primary" />
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-2">
-            <ActionCard to="/my-list" icon={Bookmark} title="Library and bookmarks" description="Saved and favorited anime use account sync." />
+            <ActionCard to="/my-list" icon={Bookmark} title="Library and bookmarks" description="Bookmarked anime use account sync." />
             <ActionCard to="/dashboard" icon={History} title="Watch history" description="Playback progress is stored locally and synced after sign-in." />
             <ActionCard to="/search" icon={Search} title="Discover anime" description="Find anime, then save it to your synced desktop library." />
             <ActionCard to="/desktop-settings" icon={UserCircle} title="Desktop preferences" description="Playback preferences remain native to this desktop app." />
@@ -357,8 +359,7 @@ export default function DesktopProfile() {
               const title = source.animeTitle || source.title;
               const progress = progressPercent(source);
               return (
-                <Link
-                  key={`${source.animeId || title}-${source.episode || ''}-${source.infoHash || source.magnet || source.title}`}
+                <div key={`${source.animeId || title}-${source.episode || ''}-${source.infoHash || source.magnet || source.title}`} className="relative"><Link
                   to="/dashboard"
                   className="sn-card-hover group flex gap-3 p-3 hover:bg-primary/10"
                 >
@@ -376,7 +377,7 @@ export default function DesktopProfile() {
                       <span>{source.resumeSeconds ? `Resume ${formatPlaybackTime(source.resumeSeconds)}` : `${Math.round(progress)}% watched`}</span>
                     </div>
                   </div>
-                </Link>
+                </Link><DesktopBookmarkButton anime={{mal_id:source.animeId,title,images:{jpg:{image_url:source.poster}}}} className="absolute right-2 top-2" /></div>
               );
             }) : (
               <div className="sn-empty-state px-4 py-8 text-center">
@@ -392,7 +393,7 @@ export default function DesktopProfile() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-[11px] font-semibold normal-case tracking-normal text-primary">Library Preview</p>
-            <h2 className="mt-2 text-xl font-semibold text-white">Bookmarks and favorites</h2>
+            <h2 className="mt-2 text-xl font-semibold text-white">Bookmarks</h2>
           </div>
           <Link to="/my-list" className="text-xs font-semibold normal-case tracking-normal text-white/42 transition-colors hover:text-primary">
             Open library
@@ -402,8 +403,7 @@ export default function DesktopProfile() {
         {recentLibrary.length ? (
           <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
             {recentLibrary.map((anime) => (
-              <Link
-                key={`profile-library-${animeIdentity(anime)}`}
+              <div key={`profile-library-${animeIdentity(anime)}`} className="relative"><Link
                 to={animeWatchPath(anime)}
                 className="sn-card-hover group overflow-hidden rounded-xl"
               >
@@ -416,7 +416,7 @@ export default function DesktopProfile() {
                     {anime.type || anime.format || 'Anime'} {anime.year ? `- ${anime.year}` : ''}
                   </p>
                 </div>
-              </Link>
+              </Link><DesktopBookmarkButton anime={anime} className="absolute right-2 top-2" /></div>
             ))}
           </div>
         ) : (

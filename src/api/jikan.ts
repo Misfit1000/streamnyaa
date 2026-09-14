@@ -3,6 +3,7 @@ import { enrichDesktopScheduleRevisions } from '../lib/scheduleRevisions';
 import { extractNumericId } from '../lib/slug';
 import { fetchDesktopMetadataApi, isDesktopApp } from '../lib/desktop';
 import { desktopDataError } from '../lib/desktopData';
+import { readEpisodePage, saveEpisodePage } from '../lib/desktopEpisodeCache';
 import type { DesktopRequestOptions } from '../lib/desktopRequests';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
@@ -23,6 +24,8 @@ type MetadataCacheEntry = {
 const memoryMetadataCache = new Map<string, MetadataCacheEntry>();
 const inFlightMetadataRequests = new Map<string, Promise<Response>>();
 const providerCooldowns = new Map<MetadataProvider, number>();
+const desktopProviderFailures = new Map<MetadataProvider, { until: number; error: ReturnType<typeof desktopDataError> }>();
+const desktopRequestFailures = new Map<string, { until: number; error: ReturnType<typeof desktopDataError> }>();
 const pendingMetadataWrites = new Map<string, MetadataCacheEntry>();
 let metadataPersistTimer: number | undefined;
 
@@ -286,6 +289,13 @@ const fetchWithLocalMetadataCache = async (
   const cached = readLocalMetadata(key);
   if (cached) return jsonResponse(cached.value, 'local-hit');
   const stale = readLocalMetadata(key, true);
+  const providerFailure = desktopProviderFailures.get(provider);
+  const recentFailure = isDesktopApp() ? (providerFailure && providerFailure.until > Date.now()
+    ? providerFailure : desktopRequestFailures.get(key)) : undefined;
+  if (recentFailure && recentFailure.until > Date.now()) {
+    if (stale) return jsonResponse(stale.value, 'local-stale');
+    throw recentFailure.error;
+  }
   if (stale && providerInCooldown(provider)) return jsonResponse(stale.value, 'local-stale');
 
   const requestKey = `${provider}:${key}`;
@@ -312,6 +322,8 @@ const fetchWithLocalMetadataCache = async (
     const json = await readValidatedMetadataJson(provider, response);
     writeLocalMetadata(key, json, ttlSeconds);
     providerCooldowns.delete(provider);
+    desktopProviderFailures.delete(provider);
+    desktopRequestFailures.delete(key);
     return response;
   })();
 
@@ -322,6 +334,17 @@ const fetchWithLocalMetadataCache = async (
   } catch (error) {
     const failure = desktopDataError(provider, error);
     if (failure.code === 'cancelled') throw failure;
+    if (isDesktopApp() && failure.code !== 'invalid') {
+      const wait = failure.code === 'access-denied' ? 300_000 : failure.code === 'rate-limited'
+        ? Math.max(1000, Math.min(86_400_000, failure.retryAfterMs || 60_000)) : 30_000;
+      if (failure.code === 'access-denied' || failure.code === 'rate-limited') {
+        desktopProviderFailures.set(provider, { until: Date.now() + wait, error: failure });
+      } else {
+        // A failed search must not disable working schedules, details and shelves.
+        desktopRequestFailures.set(key, { until: Date.now() + wait, error: failure });
+        if (desktopRequestFailures.size > 500) desktopRequestFailures.delete(desktopRequestFailures.keys().next().value!);
+      }
+    }
     if (failure.code === 'rate-limited') providerCooldowns.set(provider, Date.now() + (failure.retryAfterMs || 60_000));
     if (stale) return jsonResponse(stale.value, 'local-stale');
     throw failure;
@@ -352,7 +375,7 @@ export const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 2
         status: 200,
         headers: {
           'Content-Type': 'application/json',
-          'X-StreamNyaa-Desktop-Cache': 'bridge',
+          'X-StreamNyaa-Desktop-Cache': desktopResponse.cache_status || 'bridge',
         },
       });
     }
@@ -384,7 +407,7 @@ export const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: 
         status: 200,
         headers: {
           'Content-Type': 'application/json',
-          'X-StreamNyaa-Desktop-Cache': 'bridge',
+          'X-StreamNyaa-Desktop-Cache': desktopResponse.cache_status || 'bridge',
         },
       });
     }
@@ -997,11 +1020,12 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
   if (!media) {
 const fallbackMalId = preferredMalId;
     if (fallbackMalId) {
+      for (const detailPath of [`/anime/${fallbackMalId}/full`, `/anime/${fallbackMalId}`]) {
       try {
-const jikanRes = await fetchJikanPath(`/anime/${fallbackMalId}/full`, 21600, options);
+const jikanRes = await fetchJikanPath(detailPath, 21600, options);
         if (jikanRes.ok) {
           const jikanJson = await jikanRes.json();
-          if (jikanJson?.data) {
+          if (jikanJson?.data && Number(jikanJson.data.mal_id) === fallbackMalId) {
             const mapped = mapJikanDetailToAnime(jikanJson.data);
             if (!useStore.getState().nsfwMode && mapped.isAdult) {
               throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
@@ -1011,6 +1035,9 @@ const jikanRes = await fetchJikanPath(`/anime/${fallbackMalId}/full`, 21600, opt
         }
       } catch (error) {
         if (error instanceof Error && error.message.includes('NSFW')) throw error;
+        const failure = desktopDataError('jikan', error);
+        if (options.signal?.aborted || ['cancelled', 'access-denied', 'rate-limited'].includes(failure.code)) throw error;
+      }
       }
     }
     throw desktopDataError('anilist', failures[0] || new Error('Anime details are temporarily unavailable.'));
@@ -1143,8 +1170,20 @@ export const fetchMangaDetails = async (id: string) => {
 
 export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: DesktopRequestOptions = {}) => {
   if (!/^[1-9]\d*$/.test(id)) throw desktopDataError('jikan', new Error('Invalid MAL episode identity.'));
+  if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw desktopDataError('jikan', new Error('Invalid episode page.'));
   try {
-const res = await fetchJikanPath(`/anime/${id}/episodes?page=${page}`, 600, options);
+    const path = page === 1 ? `/anime/${id}/episodes` : `/anime/${id}/episodes?page=${page}`;
+    let res: Response;
+    try {
+      res = await fetchJikanPath(path, 600, options);
+      if (!res.ok) throw desktopDataError('jikan', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
+    } catch (error) {
+      const failure = desktopDataError('jikan', error);
+      // Both are documented forms of page one. Try the explicit form once for
+      // an upstream timeout/server failure, never after denial or throttling.
+      if (page !== 1 || options.signal?.aborted || !(['timeout'].includes(failure.code) || (failure.statusCode || 0) >= 500)) throw error;
+      res = await fetchJikanPath(`/anime/${id}/episodes?page=1`, 600, options);
+    }
     if (!res.ok) throw desktopDataError('jikan', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
     const json = await res.json().catch((error) => {
       throw desktopDataError('jikan', error);
@@ -1152,19 +1191,42 @@ const res = await fetchJikanPath(`/anime/${id}/episodes?page=${page}`, 600, opti
     if (!json || !Array.isArray(json.data)) {
       throw desktopDataError('jikan', new Error('Episode metadata response was invalid.'));
     }
+    const stale = res.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' || res.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale';
+    if (!stale) saveEpisodePage(id, page, json);
     return {
       ...json,
       streamnyaa: {
-        status: res.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' ? 'stale' : 'authoritative',
+        status: stale ? 'stale' : 'authoritative',
         provider: 'jikan',
+        cached: Boolean(res.headers.get('X-StreamNyaa-Local-Cache')) || ['memory','disk','stale'].includes(res.headers.get('X-StreamNyaa-Desktop-Cache') || ''),
       },
     };
   } catch (error) {
+    if (options.signal?.aborted || desktopDataError('jikan', error).code === 'cancelled') throw error;
+    const saved = isDesktopApp() ? readEpisodePage(id, page) : undefined;
+    if (saved) return { data: saved.data, pagination: saved.pagination, streamnyaa: { status: 'stale', provider: 'jikan', savedAt: saved.savedAt } };
     if (isDesktopApp()) throw error;
     console.error('Failed to fetch episodes from Jikan', error);
     return { data: [], pagination: { last_visible_page: 1 } };
   }
 };
+
+/** Resolve the final page separately; one partial page cannot establish the latest episode. */
+export async function fetchAnimeEpisodeWindow(id: string, page = 1, options: DesktopRequestOptions = {}) {
+  const current = await fetchAnimeEpisodes(id, page, options);
+  const last = Number(current.pagination?.last_visible_page || 1);
+  if (!Number.isSafeInteger(last) || last < 1 || last > 1000) throw new Error('Invalid episode pagination.');
+  if (last === page || last === 1) return { ...current, latestPageResolved: true };
+  try {
+    const tail = await fetchAnimeEpisodes(id, last, options);
+    const merged = new Map<number, any>();
+    for (const episode of [...current.data, ...tail.data]) merged.set(Number(episode.mal_id), episode);
+    return { ...current, data: [...merged.values()], latestPageResolved: true };
+  } catch (error) {
+    if (options.signal?.aborted || desktopDataError('jikan', error).code === 'cancelled') throw error;
+    return { ...current, latestPageResolved: false };
+  }
+}
 
 export const fetchJikanExploreCatalog = async (options: {
   mode: 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year';

@@ -11,7 +11,7 @@ import {
 } from '../../src/lib/desktop';
 
 describe('desktop playback compatibility behavior', () => {
-  it('preserves resume position on missing telemetry but accepts an explicit restart', () => {
+  it('preserves resume position on missing telemetry and backward seeks', () => {
     const source = { magnet: 'magnet:?xt=urn:btih:test', title: 'Release A', animeId: 1, animeTitle: 'Example', episode: 4 };
     saveLocalPlaybackHistoryItem({ ...source, resumeSeconds: 300, durationSeconds: 1440, progressPercent: 20.8 });
     for (const currentSeconds of [undefined, null, NaN, Infinity, -1]) {
@@ -19,7 +19,7 @@ describe('desktop playback compatibility behavior', () => {
       expect(findLocalPlaybackHistoryItem(source)?.resumeSeconds).toBe(300);
     }
     updateLocalPlaybackHistoryProgress(source, { currentSeconds: 0 });
-    expect(findLocalPlaybackHistoryItem(source)?.resumeSeconds).toBe(0);
+    expect(findLocalPlaybackHistoryItem(source)?.resumeSeconds).toBe(300);
   });
   beforeEach(() => {
     localStorage.clear();

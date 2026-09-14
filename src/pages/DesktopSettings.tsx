@@ -1,9 +1,15 @@
+import DesktopHomeSettings from '../components/DesktopHomeSettings';
+import DesktopDownloadSettings from '../components/DesktopDownloadSettings';
+import { useLocation } from 'react-router-dom';
+import { exportPersonalBackup, importPersonalBackup } from '../lib/desktopPersonalBackup';
 import { useEffect, useRef, useState } from 'react';
 import { saveHideEpisodeSpoilers, useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { BellRing, CheckCircle2, Copy, Download, Globe2, HardDrive, History, Keyboard, PlayCircle, RefreshCw, ServerCog, ShieldCheck, Square, Trash2, Upload, UserRound } from 'lucide-react';
 import Seo from '../components/Seo';
+import DesktopSettingsSearch from '../components/DesktopSettingsSearch';
 import DesktopAppearanceSettings from '../components/DesktopAppearanceSettings';
 import DesktopShortcutEditor from '../components/DesktopShortcutEditor';
+import DesktopDiagnosticCheck from '../components/DesktopDiagnosticCheck';
 import {
   buildDesktopDiagnosticsReport,
   clearLocalPlaybackHistory,
@@ -130,6 +136,8 @@ function SupportRow({ label, value }: { label: string; value: React.ReactNode })
 }
 
 export default function DesktopSettings() {
+  const location = useLocation();
+  useEffect(() => { if (!location.hash) return; const id=location.hash.slice(1); const timer=window.setTimeout(()=>{const section=document.getElementById(id);section?.scrollIntoView({block:'start'});section?.setAttribute('tabindex','-1');section?.focus({preventScroll:true});},100);return ()=>window.clearTimeout(timer);},[location.hash]);
   const hideEpisodeSpoilers = useHideEpisodeSpoilers();
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
@@ -217,9 +225,9 @@ export default function DesktopSettings() {
     setMessage({ tone: 'success', text: 'Watch history and Continue Watching were cleared.' });
   };
 
-  const exportSettings = () => {
+  const exportSettings = async () => {
     try {
-      const payload = exportDesktopSettingsBackup();
+      const payload = await exportPersonalBackup();
       const blob = new Blob([payload], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -229,7 +237,7 @@ export default function DesktopSettings() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setMessage({ tone: 'success', text: 'Desktop settings backup saved.' });
+      setMessage({ tone: 'success', text: 'Library, history, preferences and shortcuts backup saved.' });
     } catch (error) {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Desktop settings could not be exported.' });
     }
@@ -238,7 +246,7 @@ export default function DesktopSettings() {
   const importSettings = async (file?: File) => {
     if (!file) return;
     try {
-      const imported = importDesktopSettingsBackup(await file.text());
+      const imported = await importPersonalBackup(await file.text());
       setSettings(loadDesktopPlaybackSettings());
       setAudioPreference(loadDesktopAudioPreference());
       setAutoOpenBestSource(loadDesktopAutoOpenBestSource());
@@ -248,7 +256,7 @@ export default function DesktopSettings() {
       setMessage({ tone: 'success', text: `Imported ${imported} desktop setting group${imported === 1 ? '' : 's'}.` });
       await refresh(true, loadDesktopPlaybackSettings());
     } catch (error) {
-      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Desktop settings backup could not be imported.' });
+      setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Personal backup could not be imported.' });
     } finally {
       if (backupInputRef.current) backupInputRef.current.value = '';
     }
@@ -313,6 +321,7 @@ export default function DesktopSettings() {
         </div>
       </section>
 
+      <DesktopSettingsSearch />
       {message ? (
         <div
           className={`mt-4 rounded-xl border px-4 py-3 text-sm font-semibold shadow-none ${
@@ -414,9 +423,9 @@ export default function DesktopSettings() {
             </div>
           </section>
 
-          <DesktopAppearanceSettings />
+          <div id="appearance" className="scroll-mt-24"><DesktopAppearanceSettings /><DesktopHomeSettings /></div>
           <section className="sn-glass-panel p-5">
-            <PreferenceCard title="Hide episode spoilers" description="Use episode numbers and series artwork in the Watch episode list. Turn off to reveal episode titles and stills. This preference stays on this PC."
+            <PreferenceCard title="Hide episode spoilers" description="Use episode numbers and series artwork in Watch, Continue Watching, Library and History. Turn off to reveal episode titles and stills. This preference stays on this PC."
               checked={hideEpisodeSpoilers} onChange={(enabled) => {
                 try { saveHideEpisodeSpoilers(enabled); }
                 catch { setMessage({ tone: 'error', text: 'The spoiler preference could not be saved.' }); }
@@ -475,6 +484,7 @@ export default function DesktopSettings() {
             </div>
           </section>
 
+          <DesktopDownloadSettings />
           <section id="storage" className="sn-glass-panel scroll-mt-24 p-5">
             <SectionHeader
               icon={<HardDrive className="h-5 w-5" />}
@@ -541,17 +551,17 @@ export default function DesktopSettings() {
                 <div>
                   <p className="text-base font-semibold text-white">Backup local desktop data</p>
                   <p className="mt-1 max-w-2xl text-sm leading-6 text-white/50">
-                    Export or restore playback preferences, local history, Continue Watching, and reminders for this desktop app.
+                    Export Library, history, collections, saved filters, appearance, reminders and player shortcuts. Import replaces the included groups; account credentials and downloaded media are excluded.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={exportSettings} className="sn-secondary-action h-11 px-4 text-sm">
                     <Download className="h-4 w-4" />
-                    Export desktop settings
+                    Export personal backup
                   </button>
                   <button type="button" onClick={() => backupInputRef.current?.click()} className="sn-primary-action h-11 px-4 text-sm">
                     <Upload className="h-4 w-4" />
-                    Import desktop settings
+                    Restore personal backup
                   </button>
                 </div>
               </div>
@@ -629,6 +639,7 @@ export default function DesktopSettings() {
             <button type="button" disabled={!diagnostics} onClick={exportDiagnostics} className="sn-secondary-action mt-2 h-10 w-full px-3 text-xs disabled:opacity-50">
               <Download className="h-4 w-4" /> Save private-data-free report
             </button>
+            <DesktopDiagnosticCheck />
             <details className="mt-5 border-t border-white/[0.07] pt-4">
               <summary className="cursor-pointer text-sm font-semibold text-white/68 hover:text-white">Technical details</summary>
               <div className="mt-3">

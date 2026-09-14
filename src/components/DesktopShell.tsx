@@ -1,8 +1,12 @@
+import DesktopDownloadManager from './DesktopDownloadManager';
+import { DesktopCatalogStatus } from './DesktopActivitySummary';
 import { memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
-import { CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
+import { Bookmark, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
+import DesktopCommandPalette from './DesktopCommandPalette';
 import DesktopNotificationCenter from './DesktopNotificationCenter';
+import DesktopSessionRecovery from './DesktopSessionRecovery';
 import { desktopWeekQuery } from '../lib/desktopScheduleQuery';
 import { desktopQueryClient } from '../lib/desktopQueryClient';
 import { useAuth } from '../context/AuthContext';
@@ -37,8 +41,8 @@ const desktopNav = [
 ];
 
 const desktopLibrary = [
-  { to: '/nyaa', label: 'Playback options', icon: Download },
-  { to: '/my-list', label: 'Favorites', icon: Heart },
+  { to: '/my-list?tab=offline', label: 'Downloads', icon: Download },
+  { to: '/my-list?tab=bookmarks', label: 'Bookmarks', icon: Bookmark },
   { to: '/dashboard', label: 'History', icon: History },
   { to: '/desktop-settings', label: 'Settings', icon: Settings },
 ];
@@ -49,7 +53,7 @@ const HOVER_PRELOAD_DELAY_MS = 80;
 const HOVER_SOURCE_PRELOAD_DELAY_MS = 360;
 
 const desktopShortcuts = [
-  ['Ctrl K', 'Open search'],
+  ['Ctrl K', 'Commands and search'],
   ['?', 'Show this shortcut guide'],
   ...desktopPlayerShortcuts,
 ] as const;
@@ -178,6 +182,7 @@ export default function DesktopShell() {
   const isWatch = location.pathname.startsWith('/watch/');
   const [logoFailed, setLogoFailed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [commandsOpen, setCommandsOpen] = useState(false);
   const [topSearchValue, setTopSearchValue] = useState('');
   const topSearchInputRef = useRef<HTMLInputElement | null>(null);
   const hoverPreloadTimer = useRef<number | undefined>(undefined);
@@ -211,8 +216,7 @@ export default function DesktopShell() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        topSearchInputRef.current?.focus();
-        topSearchInputRef.current?.select();
+        setCommandsOpen(value => !value);
         return;
       }
       if (isTypingTarget(event.target)) return;
@@ -377,10 +381,13 @@ export default function DesktopShell() {
   if (isWatch) {
     return (
       <div className="desktop-app-shell custom-scrollbar h-screen overflow-y-auto overflow-x-hidden text-white">
+        <DesktopSessionRecovery />
         <Suspense fallback={<DesktopOutletFallback />}>
           <Outlet />
         </Suspense>
-        {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
+        <DesktopDownloadManager />
+      {commandsOpen ? <DesktopCommandPalette onClose={() => setCommandsOpen(false)} /> : null}
+      {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
       </div>
     );
   }
@@ -465,6 +472,8 @@ export default function DesktopShell() {
               <kbd className="ml-auto hidden shrink-0 rounded-md bg-white/8 px-2 py-1 text-[11px] text-white/55 xl:block">Ctrl K</kbd>
             </form>
             <div className="ml-auto flex items-center gap-3">
+              <button className="sn-icon-action h-10 px-2 text-xs" title="Commands (Ctrl K)" onClick={() => setCommandsOpen(true)}>⌘ K</button>
+              <DesktopCatalogStatus />
               <DesktopNotificationCenter />
               <Link
                 to={user ? '/profile' : '/login?next=/profile'}
@@ -489,6 +498,7 @@ export default function DesktopShell() {
             onFocusCapture={(event: FocusEvent<HTMLElement>) => preloadLinkedRouteNow(event.target)}
           >
             <div className="desktop-route-transition">
+              <DesktopSessionRecovery />
               <Suspense fallback={<DesktopOutletFallback />}>
                 <Outlet />
               </Suspense>
@@ -496,6 +506,8 @@ export default function DesktopShell() {
           </main>
         </div>
       </div>
+      <DesktopDownloadManager />
+      {commandsOpen ? <DesktopCommandPalette onClose={() => setCommandsOpen(false)} /> : null}
       {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
     </div>
   );

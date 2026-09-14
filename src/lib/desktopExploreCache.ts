@@ -46,3 +46,9 @@ export function writeDesktopExploreCatalog(key: string, data: any, now = Date.no
   }
 }
 
+
+/** A device-local discovery index; never use these items as a live provider ranking. */
+export function readCachedExploreTitles(now = Date.now()): any[] {
+  return readEntries().filter(entry => now - entry.savedAt <= MAX_AGE_MS)
+    .flatMap(entry => entry.data.data).filter(item => item && typeof item.title === 'string');
+}

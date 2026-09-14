@@ -24,7 +24,7 @@ export function desktopWeekQuery(priority: 'foreground' | 'background' = 'foregr
       }
       return response;
     },
-    staleTime: 180_000, retry: false as const,
+    staleTime: 180_000, retry: false as const, refetchInterval: 300_000,
     initialData: saved?.data, initialDataUpdatedAt: saved?.savedAt,
   };
 }

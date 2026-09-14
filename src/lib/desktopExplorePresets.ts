@@ -1,6 +1,6 @@
 export interface ExplorePreset { name: string; query: string }
 const key = 'streamnyaa-desktop-explore-presets-v1';
-const allowed = new Set(['mode', 'q', 'genre', 'format', 'status', 'order', 'year', 'season', 'ranking', 'view', 'hideCompleted']);
+const allowed = new Set(['mode', 'q', 'genre', 'format', 'status', 'order', 'year', 'season', 'ranking', 'view', 'hideCompleted', 'released']);
 export function sanitizeExplorePreset(query: string) {
   const output = new URLSearchParams();
   new URLSearchParams(query).forEach((value, name) => {

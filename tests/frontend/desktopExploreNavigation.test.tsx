@@ -15,12 +15,18 @@ function mount(route: string) {
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}><DesktopExplore /></MemoryRouter></QueryClientProvider>);
 }
 function page(request: any, number: number) {
-  return { page: number, service: request.service, fetchedAt: Date.now(), hasNextPage: true,
+  return { paginationVersion: 2 as const, page: number, service: request.service, fetchedAt: Date.now(), hasNextPage: true,
     data: Array.from({ length: 25 }, (_, i) => ({ mal_id: (number - 1) * 25 + i + 1,
       title: `${request.service} title ${(number - 1) * 25 + i + 1}`, score: 9, rankingScore: request.service === 'mal' ? 9 : 90,
       status: 'Finished Airing', episodes: 12, type: 'TV', genres: [{ name: 'Fantasy' }] })) };
 }
 describe('Explore ranked page navigation', () => {
+  it('opens the default page on the fallback-capable Popular feed', async () => {
+    vi.mocked(fetchExplorePage).mockImplementation(async (request, number) => ({ ...page(request, number), hasNextPage: false }));
+    mount('/search');
+    await screen.findByRole('heading', { name: 'anilist title 1', exact: true });
+    expect(vi.mocked(fetchExplorePage).mock.calls[0][0]).toMatchObject({ mode: 'popular', service: 'anilist', allowFallback: true });
+  });
   it('loads four underlying pages, then moves to 101–200 without mixing services', async () => {
     vi.mocked(fetchExplorePage).mockImplementation(async (request, number) => page(request, number));
     mount('/search?mode=ranking&ranking=mal');
@@ -33,9 +39,8 @@ describe('Explore ranked page navigation', () => {
     expect(screen.queryByText('#1')).toBeNull();
     expect(screen.getByText('#101')).toBeTruthy();
     expect(vi.mocked(fetchExplorePage).mock.calls.slice(4).map(call => call[1])).toEqual([5, 6, 7, 8]);
-    fireEvent.click(screen.getByRole('button', { name: 'AniList', exact: true }));
-    await screen.findByRole('heading', { name: 'anilist title 1', exact: true });
-    expect(screen.queryByRole('heading', { name: 'mal title 101', exact: true })).toBeNull();
+    expect(screen.queryByRole('button',{name:'AniList',exact:true})).toBeNull();
+    expect(screen.queryByRole('button',{name:'MyAnimeList',exact:true})).toBeNull();
   });
   it('retains earlier cards when a later page fails and does not invent the next hundred', async () => {
     vi.mocked(fetchExplorePage).mockImplementation(async (request, number) => {
@@ -45,7 +50,7 @@ describe('Explore ranked page navigation', () => {
     mount('/search?mode=ranking&ranking=mal&status=Completed');
     await screen.findByText('#25');
     await waitFor(() => expect(fetchExplorePage).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole('heading', { name: 'mal title 1', exact: true })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'anilist title 1', exact: true })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Next 100' }).hasAttribute('disabled')).toBe(true);
   });
   it('hides completed titles without renumbering the ranking', async () => {
@@ -54,7 +59,7 @@ describe('Explore ranked page navigation', () => {
     mount('/search?mode=ranking&ranking=mal&hideCompleted=1');
     await screen.findByText('#2');
     expect(screen.queryByText('#1')).toBeNull();
-    expect(screen.getByRole('heading', { name: 'mal title 2', exact: true })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'anilist title 2', exact: true })).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Hide marked completed'));
     await screen.findByText('#1');
   });
