@@ -41,7 +41,7 @@ function isDesktopRuntime() {
 export default function Login({ adminOnly = false }: LoginProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, signIn, signInGoogle, signUp, sendPasswordReset, resetPassword } = useAuth();
+  const { user, recoveryAccessToken, recoveryState, recoveryError, clearRecovery, signIn, signInGoogle, signUp, sendPasswordReset, resetPassword } = useAuth();
   const [mode, setMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -92,6 +92,20 @@ export default function Login({ adminOnly = false }: LoginProps) {
   }, [seasonalVisuals.length]);
 
   useEffect(() => {
+    if (isDesktopRuntime() && recoveryAccessToken) {
+      setResetToken(recoveryAccessToken);
+      setMode('reset');
+      setError('');
+      setMessage('Choose a new password.');
+      return;
+    }
+    if (isDesktopRuntime() && (recoveryState === 'expired' || recoveryState === 'error')) {
+      setResetToken('');
+      setMode('forgot');
+      setMessage('');
+      setError(recoveryError || 'This password reset link is missing or expired.');
+      return;
+    }
     const recovery = parseWebRecoveryCallback(window.location.href);
     if (recovery.status === 'valid') {
       setResetToken(recovery.accessToken);
@@ -106,7 +120,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
       setError(recovery.message);
       window.history.replaceState(null, '', '/reset-password');
     }
-  }, [location.hash, location.pathname, location.search]);
+  }, [location.hash, location.pathname, location.search, recoveryAccessToken, recoveryState, recoveryError]);
 
   useEffect(() => {
     if (!adminOnly && user && location.pathname === '/login') {
@@ -122,10 +136,10 @@ export default function Login({ adminOnly = false }: LoginProps) {
       const loginRedirect = redirectTarget === defaultAuthenticatedRoute
         ? '/login'
         : `/login?next=${encodeURIComponent(redirectTarget)}`;
-      await signInGoogle(loginRedirect);
+      await signInGoogle(isDesktopRuntime() ? redirectTarget : loginRedirect);
       if (isDesktopRuntime()) {
         setSubmitting(false);
-        setMessage('Complete sign-in in the secure Google window. StreamNyaa will return here automatically.');
+        setMessage('Complete sign-in in your browser. StreamNyaa will return here automatically.');
       }
     } catch (authError) {
       setSubmitting(false);
@@ -147,6 +161,7 @@ export default function Login({ adminOnly = false }: LoginProps) {
         if (!resetToken) throw new Error('This password reset link is missing or expired. Send another link to continue.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
         await resetPassword(resetToken, password);
+        clearRecovery();
         setMessage('Password updated. You can sign in with your new password.');
         setMode('login');
         setPassword('');

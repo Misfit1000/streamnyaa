@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "StreamNyaa",
-  "version": "0.1.1",
+  "version": "0.1.8",
   "identifier": "xyz.streamnyaa.desktop",
   "build": {
     "beforeDevCommand": "npm.cmd run dev:desktop",
@@ -27,7 +27,14 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https: http://localhost:*; font-src 'self' data:; media-src 'self' blob: http://localhost:*; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; connect-src 'self' https: http://localhost:*; font-src 'self' data:; media-src 'self' blob: http://localhost:*; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["streamnyaa"]
+      }
     }
   },
   "bundle": {

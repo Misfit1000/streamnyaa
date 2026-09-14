@@ -1,3 +1,6 @@
+import { isDesktopApp } from '../lib/desktop';
+import { WebAccountSyncProvider } from './WebAccountSyncContext';
+import {mergeCoverage,coveragePercent} from '../lib/desktopCoverage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 import {
@@ -29,9 +32,11 @@ type SyncJournal = {
   watchHistory: Record<string, AccountWatchHistoryItem>;
 };
 
-const AccountSyncContext = createContext<AccountSyncContextValue | null>(null);
+import { AccountSyncContext } from './accountSyncShared';
 const PUSH_DEBOUNCE_MS = 900;
-const JOURNAL_PREFIX = 'streamnyaa.accountSync.v2.';
+const JOURNAL_PREFIX = 'streamnyaa.desktop.accountSync.v2.';
+const PROJECTION_OWNER_KEY = 'streamnyaa.desktop.accountProjectionOwner.v1';
+const GUEST_OWNER = '__guest__';
 
 function storeAnimeId(anime: any) {
   return String(anime?.mal_id ?? anime?.id ?? anime?.title ?? '').trim();
@@ -134,6 +139,7 @@ function progressToSync(record: DesktopWatchProgressRecord): AccountWatchHistory
     animeTitle: record.title,
     poster: record.poster,
     episode: record.episode,
+    watchedCoverage:record.watchedCoverage,
     positionSeconds: Math.max(0, Number(record.positionSeconds || 0)),
     durationSeconds: record.durationSeconds,
     watchedPercent: record.progressPercent,
@@ -189,7 +195,14 @@ function mergeByKey<T extends { updatedAt: string }>(
   remote.forEach((item) => {
     const key = keyFor(item);
     const winner = selectNewestAccountRecord(merged[key], item);
-    if (winner) merged[key] = winner;
+    if (winner) {
+      const old=merged[key] as any, next=item as any;
+      if(!(winner as any).deletedAt && old && !old.deletedAt && !next.deletedAt && (old.watchedCoverage || next.watchedCoverage)) {
+        const duration=next.durationSeconds || old.durationSeconds || 0;
+        const coverage=mergeCoverage(old.watchedCoverage,next.watchedCoverage,duration,old.watchedCoverage?0:old.positionSeconds || 0);
+        merged[key]={...winner,watchedCoverage:coverage,positionSeconds:coverage.furthest,watchedPercent:coveragePercent(coverage,duration),completed:coveragePercent(coverage,duration)>=92};
+      } else merged[key]=winner;
+    }
   });
   return merged;
 }
@@ -211,6 +224,7 @@ function applyWatchHistory(items: AccountWatchHistoryItem[]) {
       title: item.animeTitle || '',
       poster: item.poster,
       episode: item.episode || 1,
+      watchedCoverage:item.watchedCoverage,
       positionSeconds: item.positionSeconds,
       durationSeconds: item.durationSeconds,
       progressPercent: item.watchedPercent,
@@ -220,61 +234,88 @@ function applyWatchHistory(items: AccountWatchHistoryItem[]) {
   replaceDesktopWatchProgress(records);
 }
 
-export function AccountSyncProvider({ children }: { children: React.ReactNode }) {
-  const { session, user } = useAuth();
+function DesktopAccountSyncProvider({ children }: { children: React.ReactNode }) {
+  const { session, user, loading } = useAuth();
   const [state, setState] = useState<AccountSyncState>('idle');
   const [message, setMessage] = useState('');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const initialSyncedRef = useRef(false);
   const applyingRemoteRef = useRef(false);
   const pushTimerRef = useRef<number | null>(null);
-  const userId = user?.id || session?.user?.id || '';
+  const userId = session ? session.user?.id || user?.id || '' : '';
+  const identity = `${userId}:${session?.access_token || ''}`;
+  const currentIdentity = useRef(identity);
+  currentIdentity.current = identity;
+  const epochRef = useRef({ identity, value: 0 });
+  if (epochRef.current.identity !== identity) epochRef.current = { identity, value: epochRef.current.value + 1 };
+  const epoch = epochRef.current.value;
+  const flight = useRef<{ identity: string; epoch: number; promise: Promise<void> } | null>(null);
+  const resync = useRef(false);
+  const projectionReady = useRef(false);
 
-  const pushCurrentState = useCallback(async () => {
-    if (!session?.access_token || !userId || !initialSyncedRef.current) return;
-    const journal = captureLocalChanges(userId);
-    await replaceAccountSyncData(session, {
-      library: Object.values(journal.library),
-      watchHistory: Object.values(journal.watchHistory),
-    });
-    setState('synced');
-    setMessage('Your profile, library, favorites, and watch progress are synced.');
-    setLastSyncedAt(Date.now());
-  }, [session, userId]);
+  // The visible library is a projection, never an implicit transfer between
+  // accounts. Retain each outgoing projection in its existing journal.
+  useEffect(() => {
+    if (loading) return;
+    projectionReady.current = false;
+    currentIdentity.current = identity;
+    const owner = userId || GUEST_OWNER;
+    try {
+      const previous = localStorage.getItem(PROJECTION_OWNER_KEY);
+      if (previous && previous !== owner) {
+        captureLocalChanges(previous);
+        const journal = loadJournal(owner);
+        applyingRemoteRef.current = true;
+        try {
+          applyLibraryToStore(Object.values(journal.library));
+          applyWatchHistory(Object.values(journal.watchHistory));
+        } finally { applyingRemoteRef.current = false; }
+      }
+      localStorage.setItem(PROJECTION_OWNER_KEY, owner);
+      resync.current = false;
+      projectionReady.current = true;
+    } catch {
+      currentIdentity.current = '';
+      setState('unavailable');
+      setMessage('Account data could not be saved locally. Free some storage and restart before syncing.');
+    }
+    return () => { currentIdentity.current = ''; };
+  }, [userId, loading]);
 
-  const schedulePush = useCallback(() => {
-    if (!session?.access_token || !userId || !initialSyncedRef.current || applyingRemoteRef.current) return;
-    captureLocalChanges(userId);
-    if (pushTimerRef.current) window.clearTimeout(pushTimerRef.current);
-    pushTimerRef.current = window.setTimeout(() => {
-      void pushCurrentState().catch((error) => {
-        setState('unavailable');
-        setMessage(error instanceof Error ? error.message : 'Local changes are saved and will retry.');
-      });
-    }, PUSH_DEBOUNCE_MS);
-  }, [pushCurrentState, session?.access_token, userId]);
-
-  const syncNow = useCallback(async () => {
-    if (!session?.access_token || !userId) return;
+  const syncNow = useCallback((): Promise<void> => {
+    const isCurrent = () => projectionReady.current && currentIdentity.current === identity && epochRef.current.value === epoch;
+    if (!isCurrent()) return Promise.resolve();
+    if (flight.current?.identity === identity && flight.current.epoch === epoch) {
+      resync.current = true;
+      return flight.current.promise;
+    }
+    const run = async () => {
+    if (loading || !session?.access_token || !userId) return;
     setState('syncing');
     setMessage('Syncing profile, library, favorites, and watch progress...');
     initialSyncedRef.current = false;
     try {
-      const local = captureLocalChanges(userId);
+      captureLocalChanges(userId);
       const remote = await fetchAccountSync(session);
+      if (!isCurrent()) return;
+      // Capture again after I/O: edits, removals and backward seeks made while
+      // fetching are newer than the pre-request snapshot.
+      const local = captureLocalChanges(userId);
       const merged: SyncJournal = {
         library: mergeByKey(local.library, remote.library, (item) => item.animeId),
         watchHistory: mergeByKey(local.watchHistory, remote.watchHistory, (item) => item.key),
       };
+      // Persist first so a quota failure never replaces unsaved local data.
+      saveJournal(userId, merged);
       applyingRemoteRef.current = true;
       applyLibraryToStore(Object.values(merged.library));
       applyWatchHistory(Object.values(merged.watchHistory));
-      saveJournal(userId, merged);
       applyingRemoteRef.current = false;
       await replaceAccountSyncData(session, {
         library: Object.values(merged.library),
         watchHistory: Object.values(merged.watchHistory),
       });
+      if (!isCurrent()) return;
       initialSyncedRef.current = true;
       setState('synced');
       setMessage(user?.email
@@ -282,12 +323,36 @@ export function AccountSyncProvider({ children }: { children: React.ReactNode })
         : 'Core account data is synced.');
       setLastSyncedAt(Date.now());
     } catch (error) {
+      if (!isCurrent()) return;
       applyingRemoteRef.current = false;
       initialSyncedRef.current = true;
       setState('unavailable');
       setMessage(error instanceof Error ? error.message : 'Local changes are saved and will retry.');
     }
-  }, [session, user?.email, userId]);
+    };
+    const promise = run().finally(() => {
+      if (flight.current?.promise !== promise) return;
+      flight.current = null;
+      if (isCurrent() && resync.current) {
+        resync.current = false;
+        void syncNow();
+      }
+    });
+    flight.current = { identity, epoch, promise };
+    return promise;
+  }, [epoch, identity, loading, session, user?.email, userId]);
+
+  const schedulePush = useCallback(() => {
+    if (!projectionReady.current || currentIdentity.current !== identity || !session?.access_token || !userId || applyingRemoteRef.current) return;
+    try { captureLocalChanges(userId); }
+    catch {
+      setState('unavailable');
+      setMessage('Local changes could not be saved. Check available storage before closing the app.');
+      return;
+    }
+    if (pushTimerRef.current) window.clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = window.setTimeout(() => { void syncNow(); }, PUSH_DEBOUNCE_MS);
+  }, [identity, syncNow, session?.access_token, userId]);
 
   useEffect(() => {
     if (!session?.access_token || !userId) {
@@ -324,3 +389,7 @@ export function useAccountSync() {
   return value;
 }
 
+export function AccountSyncProvider({ children }: { children: React.ReactNode }) {
+  const Provider = isDesktopApp() ? DesktopAccountSyncProvider : WebAccountSyncProvider;
+  return <Provider>{children}</Provider>;
+}

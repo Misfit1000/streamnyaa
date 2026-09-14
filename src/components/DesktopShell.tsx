@@ -1,7 +1,14 @@
-import { memo, Suspense, useEffect, useState, type FocusEvent, type PointerEvent } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Bell, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
+import DesktopDownloadManager from './DesktopDownloadManager';
+import { DesktopCatalogStatus } from './DesktopActivitySummary';
+import { memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import { Bookmark, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import desktopLogo from '../assets/desktop-logo.png';
+import DesktopCommandPalette from './DesktopCommandPalette';
+import DesktopNotificationCenter from './DesktopNotificationCenter';
+import DesktopSessionRecovery from './DesktopSessionRecovery';
+import { desktopWeekQuery } from '../lib/desktopScheduleQuery';
+import { desktopQueryClient } from '../lib/desktopQueryClient';
 import { useAuth } from '../context/AuthContext';
 import {
   listenDesktopPlayerAutoNextChanged,
@@ -16,37 +23,40 @@ import {
   DESKTOP_REMINDER_POLL_MS,
   deliverDueDesktopReminders,
   readDesktopScheduleReminders,
+  resolveDesktopUpcomingAnimeWatches,
   subscribeDesktopScheduleReminders,
 } from '../lib/desktopReminders';
-import { preloadDesktopRoute, warmCoreDesktopRoutes } from '../lib/desktopRoutePreload';
+import { preloadDesktopRoute, preloadDesktopWatchData, warmCoreDesktopRoutes } from '../lib/desktopRoutePreload';
+import { loadDesktopScheduleUpdatePreferences } from '../lib/scheduleRevisions';
+import { desktopPlayerShortcuts } from '../lib/desktopPlayerShortcuts';
+import { desktopSearchPath } from '../lib/desktopSearchRoute';
+import { restoreDesktopScroll } from '../lib/desktopScrollRestore';
+import { useDesktopInterfaceScale } from '../lib/desktopAppearance';
 
 const desktopNav = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/search', label: 'Explore', icon: Compass },
   { to: '/schedule', label: 'Calendar', icon: CalendarDays },
-  { to: '/nyaa', label: 'Sources', icon: Download },
   { to: '/my-list', label: 'Library', icon: Library },
 ];
 
 const desktopLibrary = [
-  { to: '/my-list', label: 'Favorites', icon: Heart },
+  { to: '/my-list?tab=offline', label: 'Downloads', icon: Download },
+  { to: '/my-list?tab=bookmarks', label: 'Bookmarks', icon: Bookmark },
   { to: '/dashboard', label: 'History', icon: History },
   { to: '/desktop-settings', label: 'Settings', icon: Settings },
 ];
 
 const SIDEBAR_STORAGE_KEY = 'streamnyaa.desktop.sidebarCollapsed';
+const desktopScrollPositions = new Map<string, number>();
+const HOVER_PRELOAD_DELAY_MS = 80;
+const HOVER_SOURCE_PRELOAD_DELAY_MS = 360;
 
 const desktopShortcuts = [
-  ['Ctrl K', 'Open search'],
+  ['Ctrl K', 'Commands and search'],
   ['?', 'Show this shortcut guide'],
-  ['Esc', 'Close panels or overlays'],
-  ['Space', 'Play or pause in the player'],
-  ['[ / ]', 'Previous or next episode in the player'],
-  ['← / →', 'Seek backward or forward in the player'],
-  ['↑ / ↓', 'Adjust player volume'],
-  ['F', 'Toggle fullscreen in the player'],
-  ['C', 'Toggle subtitles in the player'],
-];
+  ...desktopPlayerShortcuts,
+] as const;
 
 function DesktopOutletFallback() {
   return (
@@ -58,12 +68,21 @@ function DesktopOutletFallback() {
   );
 }
 
-function preloadLinkedRoute(target: EventTarget | null) {
+function internalLinkedRoute(target: EventTarget | null) {
   const anchor = (target as HTMLElement | null)?.closest<HTMLAnchorElement>('a[href]');
-  if (!anchor) return;
+  if (!anchor) return null;
   const url = new URL(anchor.href, window.location.href);
-  if (url.origin !== window.location.origin) return;
+  if (url.origin !== window.location.origin) return null;
+  return url;
+}
+
+function preloadLinkedRoute(target: EventTarget | null, includeWatchSources = false) {
+  const url = internalLinkedRoute(target);
+  if (!url) return;
   void preloadDesktopRoute(url.pathname);
+  if (/^\/(?:watch|anime)\//.test(url.pathname)) {
+    void preloadDesktopWatchData(`${url.pathname}${url.search}`, includeWatchSources);
+  }
 }
 
 export function isTypingTarget(target: EventTarget | null) {
@@ -76,16 +95,16 @@ export function isTypingTarget(target: EventTarget | null) {
 
 function ShortcutHelpOverlay({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/68 p-5 backdrop-blur-md" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-      <div className="sn-glass-panel w-full max-w-2xl overflow-hidden rounded-[2rem] shadow-2xl shadow-black/50">
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/82 p-5" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+      <div className="sn-glass-panel w-full max-w-2xl overflow-hidden rounded-xl border border-white/[0.08] shadow-sm">
         <div className="flex items-center justify-between gap-4 border-b border-white/[0.08] px-5 py-4">
           <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-2xl bg-primary/16 text-primary">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-primary/16 text-primary">
               <Keyboard className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Shortcuts</p>
-              <h2 className="text-xl font-black tracking-[-0.03em] text-white">Desktop controls</h2>
+              <p className="text-xs font-semibold text-primary">Keyboard shortcuts</p>
+              <h2 className="text-xl font-semibold text-white">Universal player controls</h2>
             </div>
           </div>
           <button type="button" onClick={onClose} className="sn-icon-action h-10 w-10 rounded-full" aria-label="Close shortcuts">
@@ -94,9 +113,9 @@ function ShortcutHelpOverlay({ onClose }: { onClose: () => void }) {
         </div>
         <div className="grid gap-2 p-5 sm:grid-cols-2">
           {desktopShortcuts.map(([keys, label]) => (
-            <div key={keys} className="flex items-center justify-between gap-3 rounded-2xl bg-white/[0.045] px-4 py-3">
-              <span className="text-sm font-bold text-white/70">{label}</span>
-              <kbd className="shrink-0 rounded-lg bg-black/42 px-2.5 py-1 text-xs font-black text-white/72 shadow-inner shadow-white/[0.04]">{keys}</kbd>
+            <div key={keys} className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.045] px-4 py-3">
+              <span className="text-sm font-semibold text-white/70">{label}</span>
+              <kbd className="shrink-0 rounded-md bg-black/42 px-2.5 py-1 text-xs font-semibold text-white/72">{keys}</kbd>
             </div>
           ))}
         </div>
@@ -128,14 +147,14 @@ const DesktopNavItem = memo(function DesktopNavItem({
         'group relative flex h-11 items-center overflow-hidden rounded-xl text-[15px] font-semibold transition-all duration-200',
         collapsed ? 'justify-center px-0' : 'gap-3 px-4',
         isActive
-          ? 'bg-[linear-gradient(135deg,rgba(255,63,95,0.36),rgba(255,63,95,0.16))] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_18px_42px_rgba(255,47,79,0.18)]'
+          ? 'bg-primary/15 text-white'
           : 'text-white/58 hover:bg-white/[0.060] hover:text-white',
       ].join(' ')}
     >
       {({ isActive }) => (
         <>
           <span
-            className={`absolute left-0 top-2 h-7 w-1 rounded-r-full bg-primary shadow-[0_0_18px_rgba(244,63,94,0.65)] transition-opacity duration-200 ${
+            className={`absolute left-0 top-2 h-7 w-1 rounded-r-full bg-primary transition-opacity duration-200 ${
               isActive ? 'opacity-100' : 'opacity-0'
             }`}
             aria-hidden="true"
@@ -155,11 +174,35 @@ const DesktopNavItem = memo(function DesktopNavItem({
 });
 
 export default function DesktopShell() {
+  useDesktopInterfaceScale();
   const location = useLocation();
+  const navigationType = useNavigationType();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isWatch = location.pathname.startsWith('/watch/');
   const [logoFailed, setLogoFailed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [commandsOpen, setCommandsOpen] = useState(false);
+  const [topSearchValue, setTopSearchValue] = useState('');
+  const topSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const hoverPreloadTimer = useRef<number | undefined>(undefined);
+  const hoverSourcePreloadTimer = useRef<number | undefined>(undefined);
+  const hoverPreloadHref = useRef('');
+  const contentRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    setTopSearchValue(location.pathname === '/search' ? new URLSearchParams(location.search).get('q') || '' : '');
+  }, [location.pathname, location.search]);
+  useLayoutEffect(() => {
+    const element = contentRef.current;
+    if (!element) return;
+    const saved = navigationType === 'POP' ? desktopScrollPositions.get(location.key) || 0 : 0;
+    const stopRestore = restoreDesktopScroll(element, saved);
+    return () => {
+      stopRestore();
+      desktopScrollPositions.set(location.key, element.scrollTop);
+      if (desktopScrollPositions.size > 100) desktopScrollPositions.delete(desktopScrollPositions.keys().next().value!);
+    };
+  }, [location.key, navigationType]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -171,6 +214,11 @@ export default function DesktopShell() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandsOpen(value => !value);
+        return;
+      }
       if (isTypingTarget(event.target)) return;
       if (event.key === '?' || (event.shiftKey && event.key === '/')) {
         event.preventDefault();
@@ -186,6 +234,72 @@ export default function DesktopShell() {
   }, []);
 
   useEffect(() => warmCoreDesktopRoutes(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    let lastRefreshAt = 0;
+    const refreshScheduleUpdates = async () => {
+      const preferences = loadDesktopScheduleUpdatePreferences();
+      if (cancelled || (!preferences.personal && !preferences.global)) return;
+      lastRefreshAt = Date.now();
+      const schedule = await desktopQueryClient.fetchQuery(desktopWeekQuery('background')).catch(() => null);
+      if (schedule?.data) resolveDesktopUpcomingAnimeWatches(schedule.data);
+    };
+    const refreshWhenStale = () => {
+      if (Date.now() - lastRefreshAt >= 1000 * 60 * 20) void refreshScheduleUpdates();
+    };
+    timer = window.setTimeout(() => void refreshScheduleUpdates(), 2200);
+    window.addEventListener('focus', refreshWhenStale);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      window.removeEventListener('focus', refreshWhenStale);
+    };
+  }, []);
+
+  // Only intentional hover/focus/pointer-down prefetches; no competing visible-card scan.
+
+  useEffect(() => () => {
+    if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);
+    if (hoverSourcePreloadTimer.current !== undefined) window.clearTimeout(hoverSourcePreloadTimer.current);
+  }, []);
+
+  const scheduleLinkedRoutePreload = (target: EventTarget | null) => {
+    const url = internalLinkedRoute(target);
+    if (!url || hoverPreloadHref.current === url.href) return;
+    hoverPreloadHref.current = url.href;
+    if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);
+    if (hoverSourcePreloadTimer.current !== undefined) window.clearTimeout(hoverSourcePreloadTimer.current);
+    hoverPreloadTimer.current = window.setTimeout(() => {
+      hoverPreloadTimer.current = undefined;
+      void preloadDesktopRoute(url.pathname);
+      if (/^\/(?:watch|anime)\//.test(url.pathname)) {
+        void preloadDesktopWatchData(`${url.pathname}${url.search}`, false);
+      }
+    }, HOVER_PRELOAD_DELAY_MS);
+    if (/^\/(?:watch|anime)\//.test(url.pathname)) {
+      hoverSourcePreloadTimer.current = window.setTimeout(() => {
+        hoverSourcePreloadTimer.current = undefined;
+        if (hoverPreloadHref.current === url.href) {
+          void preloadDesktopWatchData(`${url.pathname}${url.search}`, true);
+        }
+      }, HOVER_SOURCE_PRELOAD_DELAY_MS);
+    }
+  };
+
+  const preloadLinkedRouteNow = (target: EventTarget | null, includeWatchSources = false) => {
+    if (hoverPreloadTimer.current !== undefined) {
+      window.clearTimeout(hoverPreloadTimer.current);
+      hoverPreloadTimer.current = undefined;
+    }
+    if (hoverSourcePreloadTimer.current !== undefined) {
+      window.clearTimeout(hoverSourcePreloadTimer.current);
+      hoverSourcePreloadTimer.current = undefined;
+    }
+    hoverPreloadHref.current = '';
+    preloadLinkedRoute(target, includeWatchSources);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -267,37 +381,39 @@ export default function DesktopShell() {
   if (isWatch) {
     return (
       <div className="desktop-app-shell custom-scrollbar h-screen overflow-y-auto overflow-x-hidden text-white">
+        <DesktopSessionRecovery />
         <Suspense fallback={<DesktopOutletFallback />}>
           <Outlet />
         </Suspense>
-        {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
+        <DesktopDownloadManager />
+      {commandsOpen ? <DesktopCommandPalette onClose={() => setCommandsOpen(false)} /> : null}
+      {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
       </div>
     );
   }
 
   return (
     <div className="desktop-app-shell min-h-screen overflow-hidden text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_66%_6%,rgba(139,8,30,0.16),transparent_30%),linear-gradient(180deg,rgba(255,255,255,0.018),transparent_36%)]" />
-      <div className={`relative grid min-h-screen w-screen overflow-hidden bg-black/20 shadow-2xl shadow-black/40 transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? 'grid-cols-[86px_minmax(0,1fr)]' : 'grid-cols-[258px_minmax(0,1fr)]'}`}>
+      <div className={`relative grid min-h-screen w-screen overflow-hidden bg-black/20 shadow-none shadow-black/40 transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? 'grid-cols-[86px_minmax(0,1fr)]' : 'grid-cols-[258px_minmax(0,1fr)]'}`}>
         <aside className={`sn-sidebar-panel flex h-screen flex-col py-6 transition-[padding] duration-300 ${sidebarCollapsed ? 'px-3' : 'px-5'}`}>
           <Link to="/" className={`flex h-[58px] items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-1'}`}>
             {logoFailed ? (
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[18px] bg-primary text-[21px] font-black text-white">S</span>
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary text-[21px] font-semibold text-white">S</span>
             ) : (
               <img
                 src={desktopLogo}
                 alt="StreamNyaa"
-                className="h-11 w-11 shrink-0 rounded-[18px] object-contain drop-shadow-[0_10px_24px_rgba(244,63,94,0.18)]"
+                className="h-11 w-11 shrink-0 rounded-xl object-contain drop-shadow-[0_10px_24px_rgba(244,63,94,0.18)]"
                 loading="eager"
                 decoding="async"
                 onError={() => setLogoFailed(true)}
               />
             )}
             {!sidebarCollapsed ? <span className="flex min-w-0 flex-col justify-center">
-              <span className="block text-[23px] font-black leading-none tracking-[-0.052em] text-white">
+              <span className="block text-[23px] font-semibold leading-none tracking-[-0.052em] text-white">
                 Stream<span className="text-primary">Nyaa</span>
               </span>
-              <span className="mt-1.5 block text-[11px] font-bold uppercase leading-[1.1] tracking-[0.32em] text-white/42">Desktop Cinema</span>
+              <span className="mt-1.5 block text-[11px] font-semibold normal-case leading-[1.1] tracking-normal text-white/42">Desktop Cinema</span>
             </span> : null}
           </Link>
 
@@ -306,7 +422,7 @@ export default function DesktopShell() {
           </nav>
 
           <div className="mt-7 border-t border-white/[0.06] pt-5">
-            {!sidebarCollapsed ? <p className="mb-3 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-white/38">Library</p> : null}
+            {!sidebarCollapsed ? <p className="mb-3 px-3 text-[11px] font-semibold normal-case tracking-normal text-white/38">Library</p> : null}
             <nav className="space-y-2">
               {desktopLibrary.map((item) => <DesktopNavItem key={`${item.to}-${item.label}`} {...item} collapsed={sidebarCollapsed} />)}
             </nav>
@@ -333,16 +449,32 @@ export default function DesktopShell() {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <Link to="/search" className="sn-input flex h-11 min-w-[340px] max-w-[600px] flex-1 items-center gap-3 px-4 text-sm text-white/48 transition-all hover:text-white/74 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
+            <form
+              className="sn-input flex h-11 min-w-0 max-w-[600px] flex-1 items-center gap-3 px-4 text-sm text-white/60 focus-within:ring-2 focus-within:ring-primary/60"
+              role="search"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const query = topSearchValue.trim();
+                navigate(desktopSearchPath(query, location.pathname, location.search));
+              }}
+            >
               <Search className="h-5 w-5" />
-              <span>Search anime, episodes, sources...</span>
-              <kbd className="ml-auto rounded-md bg-white/8 px-2 py-1 text-[11px] font-bold text-white/42">Ctrl K</kbd>
-            </Link>
+              <input
+                id="desktop-global-search"
+                ref={topSearchInputRef}
+                value={topSearchValue}
+                onChange={(event) => setTopSearchValue(event.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/42"
+                placeholder="Search anime titles..."
+                aria-label="Search anime"
+              />
+              {topSearchValue ? <button type="button" aria-label="Clear search" onClick={() => { setTopSearchValue(''); topSearchInputRef.current?.focus(); }} className="sn-icon-action h-8 w-8"><X className="h-4 w-4" /></button> : null}
+              <kbd className="ml-auto hidden shrink-0 rounded-md bg-white/8 px-2 py-1 text-[11px] text-white/55 xl:block">Ctrl K</kbd>
+            </form>
             <div className="ml-auto flex items-center gap-3">
-              <Link to="/schedule" title="Airing reminders" className="sn-icon-action relative h-10 w-10 rounded-full">
-                <Bell className="h-5 w-5" />
-                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary shadow-[0_0_0_4px_rgba(244,63,94,0.14)]" />
-              </Link>
+              <button className="sn-icon-action h-10 px-2 text-xs" title="Commands (Ctrl K)" onClick={() => setCommandsOpen(true)}>⌘ K</button>
+              <DesktopCatalogStatus />
+              <DesktopNotificationCenter />
               <Link
                 to={user ? '/profile' : '/login?next=/profile'}
                 title={user ? 'Profile' : 'Sign in'}
@@ -359,12 +491,14 @@ export default function DesktopShell() {
             </div>
           </header>
           <main
+            ref={contentRef}
             className="custom-scrollbar h-[calc(100vh-70px)] overflow-y-auto"
-            onPointerOverCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRoute(event.target)}
-            onPointerDownCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRoute(event.target)}
-            onFocusCapture={(event: FocusEvent<HTMLElement>) => preloadLinkedRoute(event.target)}
+            onPointerOverCapture={(event: PointerEvent<HTMLElement>) => scheduleLinkedRoutePreload(event.target)}
+            onPointerDownCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRouteNow(event.target, true)}
+            onFocusCapture={(event: FocusEvent<HTMLElement>) => preloadLinkedRouteNow(event.target)}
           >
             <div className="desktop-route-transition">
+              <DesktopSessionRecovery />
               <Suspense fallback={<DesktopOutletFallback />}>
                 <Outlet />
               </Suspense>
@@ -372,6 +506,8 @@ export default function DesktopShell() {
           </main>
         </div>
       </div>
+      <DesktopDownloadManager />
+      {commandsOpen ? <DesktopCommandPalette onClose={() => setCommandsOpen(false)} /> : null}
       {shortcutsOpen ? <ShortcutHelpOverlay onClose={() => setShortcutsOpen(false)} /> : null}
     </div>
   );

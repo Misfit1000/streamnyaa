@@ -1,8 +1,11 @@
+import { isDesktopApp } from './desktop';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeSeason } from '../api/jikan';
+import { withDesktopCatalogFallback } from '../api/desktopCatalogFallback';
 import { animeIdentity } from './animeIdentity';
 import { getCurrentAnimeSeason, type AnimeSeason } from './currentSeason';
+import { readDesktopCatalog, writeDesktopCatalog } from './desktopCatalogCache';
 
 export type CurrentAnimeSeasonInfo = {
   season: AnimeSeason;
@@ -95,16 +98,27 @@ export function useSeasonalAnimeQuery({
   staleTime = 1000 * 60 * 10,
 }: SeasonalAnimeQueryOptions = {}) {
   const currentSeason = useCurrentAnimeSeasonInfo();
+  const cacheKey = `${queryKeyPrefix}:${currentSeason.key}:${limit}`;
+  const savedCatalog = readDesktopCatalog(cacheKey);
   const query = useQuery({
     queryKey: [queryKeyPrefix, currentSeason.season, currentSeason.year, limit],
-    queryFn: () => fetchAnimeSeason(currentSeason.season, currentSeason.year),
-    retry,
+    queryFn: async ({ signal }) => {
+      const primary = () => fetchAnimeSeason(currentSeason.season, currentSeason.year, 1, { signal, priority: 'background' });
+      const response = await (isDesktopApp() ? withDesktopCatalogFallback(primary,
+        { mode: 'seasonal', year: currentSeason.year, season: currentSeason.season }, signal) : primary());
+      const normalized = {
+        ...response,
+        data: uniqueSeasonalAnime(response?.data || []).slice(0, limit),
+      };
+      writeDesktopCatalog(cacheKey, normalized);
+      return normalized;
+    },
+    retry: isDesktopApp() ? false : retry,
     staleTime,
     refetchOnWindowFocus: false,
-    select: (result: any) => ({
-      ...result,
-      data: uniqueSeasonalAnime(result?.data || []).slice(0, limit),
-    }),
+    refetchInterval: query => query.state.data?.fallback ? 300_000 : false,
+    initialData: savedCatalog?.data,
+    initialDataUpdatedAt: savedCatalog?.savedAt,
   });
 
   return {

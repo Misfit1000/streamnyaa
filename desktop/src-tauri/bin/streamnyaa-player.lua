@@ -28,6 +28,7 @@ local script_options = {
   next_episode_request_file = "",
   settings_request_file = "",
   preferences_file = "",
+  stall_test_mode = false,
 }
 
 options.read_options(script_options)
@@ -50,16 +51,28 @@ local DEBUG_PERF = false
 local DEBUG_SUBMENU_PERF = false
 local DEBUG_SCRIPT_MESSAGES = false
 local DEBUG_FORCE_MINIMAL_OSD = false
-local ENABLE_COVER_BITMAP_OVERLAY = false
+local ENABLE_COVER_BITMAP_OVERLAY = true
 local DEBUG_COVER_LOADING = false
 local DEBUG_LOADING_DRAW = false
 local DEBUG_COVER_TEST = false
 local BUFFER_TARGET_SECONDS = 18
+local BUFFER_RECOVERY_TARGET_SECONDS = 24
+local BUFFER_STRESSED_TARGET_SECONDS = 30
 local STALL_SAMPLE_SECONDS = 0.5
 local STALL_DETECT_SECONDS = 2.5
-local STALL_RECOVERY_SECONDS = 8
-local STALL_ACTION_SECONDS = 5
+local STALL_RECOVERY_SECONDS = 12
+local STALL_ACTION_SECONDS = 10
+local STALL_BACKUP_WAIT_SECONDS = 10
 local STALL_LOW_BUFFER_SECONDS = 2.5
+local STARTUP_STREAM_RETRY_SECONDS = 12
+local STARTUP_STREAM_BACKUP_SECONDS = 8
+local STARTUP_STREAM_ACTION_SECONDS = 8
+local MAX_CONTINUOUS_BUFFERING_SECONDS = 60
+if script_options.stall_test_mode then
+  STARTUP_STREAM_RETRY_SECONDS = 0.2
+  STARTUP_STREAM_BACKUP_SECONDS = 0.2
+  STARTUP_STREAM_ACTION_SECONDS = 0.2
+end
 
 msg.info("[StreamNyaa Lua] streamnyaa-player.lua loaded")
 
@@ -67,6 +80,7 @@ local state = {
   duration = 0,
   pos = 0,
   paused = false,
+  seeking = false,
   volume = 100,
   muted = false,
   speed = 1,
@@ -82,6 +96,7 @@ local state = {
   cache_buffering_active = false,
   demuxer_buffering_percent = nil,
   demuxer_cache_duration = nil,
+  demuxer_state_duration = nil,
   demuxer_underrun = false,
   cache_end = 0,
   chapters = {},
@@ -126,6 +141,7 @@ local ui = {
   last_drag_draw_at = 0,
   mouse_down_region = nil,
   last_interaction = mp.get_time(),
+  last_direct_interaction = 0,
   last_draw_at = 0,
   pending_draw = false,
   draw_count = 0,
@@ -137,6 +153,7 @@ local ui = {
   skip_intro_applied = false,
   skip_outro_applied = false,
   loading_override_until = 0,
+  first_video_frame_cover_until = 0,
   hover_region_id = "",
   subtitle_menu_scroll = 0,
   last_meta_poll_at = 0,
@@ -153,6 +170,9 @@ local ui = {
   end_overlay = false,
   end_overlay_key = "",
   end_next_pending = false,
+  end_request_id = '',
+  end_status = 'idle',
+  end_focus = 'end_next_episode',
   end_next_pending_at = 0,
   end_next_request_token = 0,
   eof_handled_key = "",
@@ -163,12 +183,36 @@ local ui = {
   playback_stalled = false,
   stall_actions_visible = false,
   stall_last_pos = nil,
+  stall_last_buffer = nil,
   stall_last_progress_at = 0,
   stall_started_at = 0,
   stall_recovery_attempted = false,
   stall_recovery_at = 0,
+  stall_backup_requested = false,
+  stall_backup_at = 0,
+  source_recovery_count = 0,
+  software_decoder_media = "",
+  adaptive_buffer_target = BUFFER_TARGET_SECONDS,
   stall_ignore_restart_until = 0,
+  recovery_restore = nil,
+  recovery_attempt = nil,
+  recovery_terminal = false,
+  last_video_path = "",
+  last_video_position = 0,
+  playhead_last_advance_at = mp.get_time(),
+  startup_stream_key = "",
+  startup_stream_started_at = 0,
+  startup_stream_retry_at = 0,
+  startup_stream_retried = false,
+  startup_stream_backup_at = 0,
+  startup_stream_backup_requested = false,
+  startup_stream_actions_visible = false,
+  last_startup_loading_percent = 0,
   skip_range_state = {},
+  skip_only_rendered = false,
+  last_ass_text = nil,
+  last_ass_width = 0,
+  last_ass_height = 0,
 }
 
 local regions = {}
@@ -185,13 +229,15 @@ local player_meta = {
   coverBackgroundBgraPath = "",
   coverBackgroundWidth = 0,
   coverBackgroundHeight = 0,
+  artworkLayout = "",
 }
 
 local cover_overlay = nil
 local cover_overlay_key = ""
-local cover_overlay_supported = true
+local cover_overlay_retry_at = 0
 local debug_cover_test_data = nil
 local stall_watchdog_timer = nil
+local startup_stream_watchdog_timer = nil
 
 local menu_row_cache = {}
 local menu_cache_dirty = {
@@ -461,6 +507,7 @@ function is_settings_region(region)
     or id == "settings-panel"
     or starts_with(id, "settings:")
     or starts_with(id, "speed:")
+    or starts_with(id, "seek_step:")
     or starts_with(id, "sub:")
     or starts_with(id, "appearance:")
     or starts_with(id, "style:")
@@ -547,15 +594,16 @@ function line(ass, x1, y1, x2, y2, thickness, color, alpha)
   ))
 end
 
-function draw_text(ass, x, y, align, size, color, alpha, value, bold, font)
+function draw_text(ass, x, y, align, size, color, alpha, value, bold, font, video_outline)
   ass:new_event()
   ass:append(string.format(
-    "{\\an%d\\pos(%.2f,%.2f)\\fn%s\\fs%d\\bord0\\shad0\\b%d\\c&H%s&\\alpha&H%02X&}%s",
+    "{\\an%d\\pos(%.2f,%.2f)\\fn%s\\fs%d\\bord%.2f\\3c&H101014&\\shad0\\b%d\\c&H%s&\\alpha&H%02X&}%s",
     align,
     x,
     y,
     font or "Segoe UI",
     math.max(1, math.floor(size)),
+    video_outline and math.max(1, size * 0.065) or 0,
     bold and 1 or 0,
     color,
     clamp(alpha or 0, 0, 255),
@@ -668,7 +716,7 @@ function normalize_loading_title(value)
   local title = tostring(value or "")
   title = title:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
   if title == "" then title = "this anime" end
-  return title:upper()
+  return title
 end
 
 function estimated_spaced_text_width(value, size, spacing)
@@ -698,8 +746,10 @@ end
 
 function loading_title_layout(raw_title, width, height, s)
   local title = normalize_loading_title(raw_title)
+  local artwork_layout = tostring(player_meta.artworkLayout or "landscape")
   local key = table.concat({
     title,
+    artwork_layout,
     tostring(math.floor(width or 0)),
     tostring(math.floor(height or 0)),
   }, ":")
@@ -707,13 +757,12 @@ function loading_title_layout(raw_title, width, height, s)
     return ui.title_layout
   end
 
-  local max_width = width * 0.82
-  local size = clamp(86 * s, 46 * s, 108 * s)
-  local spacing = clamp(size * 0.055, 1.6 * s, 5.8 * s)
+  local max_width = artwork_layout == "portrait" and width * 0.52 or width * 0.74
+  local size = clamp(76 * s, 50 * s, 94 * s)
+  local spacing = 0
 
-  while size > 58 * s and estimated_spaced_text_width(title, size, spacing) > max_width do
+  while size > 52 * s and estimated_spaced_text_width(title, size, spacing) > max_width do
     size = size - 2 * s
-    spacing = clamp(size * 0.052, 1.4 * s, 5.2 * s)
   end
 
   local lines = { title }
@@ -738,8 +787,7 @@ function loading_title_layout(raw_title, width, height, s)
         end
       end
       lines = { best_left or title, best_right or "" }
-      while size > 46 * s do
-        spacing = clamp(size * 0.047, 1.2 * s, 4.8 * s)
+      while size > 42 * s do
         local fits = true
         for _, line_value in ipairs(lines) do
           if estimated_spaced_text_width(line_value, size, spacing) > max_width then
@@ -794,7 +842,7 @@ end
 
 function clear_cover_overlay()
   if cover_overlay then
-    pcall(function() cover_overlay:remove() end)
+    pcall(mp.commandv, "overlay-remove", "3")
   end
   cover_overlay = nil
   cover_overlay_key = ""
@@ -864,11 +912,18 @@ function load_player_meta()
   end
 
   local previous_title = tostring(player_meta.animeTitle or "")
+  local previous_artwork_layout = tostring(player_meta.artworkLayout or "")
   local previous_cover_key = cover_metadata_key()
 
   player_meta.animeTitle = tostring(data.animeTitle or data.anime_title or "")
   player_meta.episodeTitle = tostring(data.episodeTitle or data.episode_title or "")
   player_meta.episodeNumber = tostring(data.episodeNumber or data.episode_number or "")
+  local offset_key = tostring(data.subtitleOffsetKey or data.subtitle_offset_key or "")
+  if player_meta.subtitleOffsetKey ~= offset_key then
+    player_meta.subtitleOffsetKey = offset_key
+    player_meta.subtitleOffsetSeconds = clamp(tonumber(data.subtitleOffsetSeconds or data.subtitle_offset_seconds) or 0, -120, 120)
+    ui.restored_offset_key = nil
+  end
   player_meta.loadingImagePath = tostring(data.loadingImagePath or data.loading_image_path or "")
   player_meta.loadingImageWidth = tonumber(data.loadingImageWidth or data.loading_image_width) or 0
   player_meta.loadingImageHeight = tonumber(data.loadingImageHeight or data.loading_image_height) or 0
@@ -878,6 +933,7 @@ function load_player_meta()
   player_meta.coverBackgroundBgraPath = tostring(data.coverBackgroundBgraPath or data.cover_background_bgra_path or "")
   player_meta.coverBackgroundWidth = tonumber(data.coverBackgroundWidth or data.cover_background_width) or 0
   player_meta.coverBackgroundHeight = tonumber(data.coverBackgroundHeight or data.cover_background_height) or 0
+  player_meta.artworkLayout = tostring(data.artworkLayout or data.artwork_layout or "")
   msg.info(
     "[StreamNyaa Lua] metadata parsed: title="
       .. tostring(player_meta.animeTitle or "")
@@ -915,13 +971,16 @@ function load_player_meta()
     )
   )
 
-  if previous_title ~= tostring(player_meta.animeTitle or "") then
+  if previous_title ~= tostring(player_meta.animeTitle or "")
+      or previous_artwork_layout ~= tostring(player_meta.artworkLayout or "") then
     ui.title_layout_key = ""
     ui.title_layout = nil
   end
 
   local next_cover_key = cover_metadata_key()
-  if previous_cover_key ~= next_cover_key then
+  if previous_cover_key ~= next_cover_key
+      or previous_title ~= tostring(player_meta.animeTitle or "")
+      or previous_artwork_layout ~= tostring(player_meta.artworkLayout or "") then
     clear_cover_overlay()
     ui.cover_missing_log_key = ""
     if next_cover_key ~= "" and ui.cover_loaded_log_key ~= next_cover_key then
@@ -932,7 +991,7 @@ function load_player_meta()
 end
 
 function ensure_cover_overlay()
-  if not cover_overlay_supported then return false end
+  if mp.get_time() < cover_overlay_retry_at then return false end
   if not ENABLE_COVER_BITMAP_OVERLAY then
     clear_cover_overlay()
     debug_cover("cover bitmap overlay disabled; using mandatory ASS fallback")
@@ -951,13 +1010,8 @@ function ensure_cover_overlay()
   end
 
   clear_cover_overlay()
-  local data = nil
-  if cover_path == "__streamnyaa_debug_cover_test__" then
-    data = generated_debug_cover_data(cover_w, cover_h)
-  else
-    data = read_binary_file(cover_path)
-  end
-  if not data or #data == 0 then
+  local info = utils.file_info(cover_path)
+  if not info or not info.size or info.size == 0 then
     if ui.cover_missing_log_key ~= key then
       msg.warn("StreamNyaa loading cover file is not ready yet.")
       ui.cover_missing_log_key = key
@@ -966,11 +1020,11 @@ function ensure_cover_overlay()
     return false
   end
   local expected_bytes = cover_w * cover_h * 4
-  if #data ~= expected_bytes then
+  if info.size ~= expected_bytes then
     msg.warn(
       string.format(
         "StreamNyaa loading cover has invalid BGRA size: got %d bytes, expected %d.",
-        #data,
+        info.size,
         expected_bytes
       )
     )
@@ -978,30 +1032,20 @@ function ensure_cover_overlay()
     return false
   end
 
-  local ok, overlay = pcall(mp.create_osd_overlay, "bgra")
-  if not ok or not overlay then
-    cover_overlay_supported = false
-    msg.warn("StreamNyaa cover overlay is not supported by this MPV build.")
-    return false
-  end
-
-  overlay.data = data
-  overlay.w = cover_w
-  overlay.h = cover_h
-  overlay.stride = cover_w * 4
-  overlay.z = -100
-  cover_overlay = overlay
+  -- MPV's osd-overlay API only supports ASS, not BGRA. Bitmap artwork uses
+  -- overlay-add with an on-disk file and explicit display dimensions instead.
+  cover_overlay = { path = cover_path, w = cover_w, h = cover_h, render_key = "" }
   cover_overlay_key = key
   if ui.cover_loaded_log_key ~= key then
     msg.info("StreamNyaa loading cover overlay loaded.")
     ui.cover_loaded_log_key = key
   end
-  debug_cover("cover overlay loaded kind=" .. cover_kind .. " bytes=" .. tostring(#data))
+  debug_cover("cover overlay loaded kind=" .. cover_kind .. " bytes=" .. tostring(info.size))
   return true
 end
 
 function update_cover_overlay(show, width, height, s)
-  if not show then
+  if not show or is_cover_loading_media() or ui.recovery_terminal then
     clear_cover_overlay()
     return nil
   end
@@ -1014,18 +1058,26 @@ function update_cover_overlay(show, width, height, s)
   if cover_path == "" or cover_w <= 0 or cover_h <= 0 then
     return nil
   end
-  local x = math.floor(width / 2 - cover_w / 2)
-  local y = math.floor(height / 2 - cover_h / 2)
-  cover_overlay.x = x
-  cover_overlay.y = y
-  local ok, err = pcall(function() cover_overlay:update() end)
-  if not ok then
-    msg.warn("StreamNyaa cover overlay update failed: " .. tostring(err))
-    cover_overlay_supported = false
+  local render_key = tostring(width) .. "x" .. tostring(height)
+  if cover_overlay.render_key == render_key then
+    return { x = 0, y = 0, w = width, h = height, kind = cover_kind }
+  end
+  local ok, result, err = pcall(mp.command_native, {
+    "overlay-add", 3, 0, 0, cover_path, 0, "bgra", cover_w, cover_h, cover_w * 4,
+    math.floor(width), math.floor(height)
+  })
+  -- Commands without a return value (including overlay-add) succeed with nil.
+  -- Only an exception or the second error return indicates failure.
+  if not ok or err ~= nil then
+    msg.warn("StreamNyaa cover overlay update failed: " .. tostring(ok and err or result))
+    -- Video output can be briefly unavailable during loadfile/window changes.
+    -- Retry after it settles instead of disabling artwork for this whole player.
+    cover_overlay_retry_at = mp.get_time() + 1
     clear_cover_overlay()
     return nil
   end
-  return { x = x, y = y, w = cover_w, h = cover_h, kind = cover_kind }
+  cover_overlay.render_key = render_key
+  return { x = 0, y = 0, w = width, h = height, kind = cover_kind }
 end
 
 function has_cover_metadata()
@@ -1298,7 +1350,10 @@ end
 
 function apply_player_preference(key, value)
   key = tostring(key or "")
-  if key == "autoNextEpisode" or key == "auto_next_episode" then
+  if key == "seekStepSeconds" then
+    state.seek_step_seconds = math.floor(clamp(tonumber(value) or 10, 5, 60) / 5 + 0.5) * 5
+    mark_menus_dirty("main", "seek_step")
+  elseif key == "autoNextEpisode" or key == "auto_next_episode" then
     state.autoplay = player_setting_bool(value)
     mark_menu_dirty("main")
   elseif key == "autoSkipIntro" or key == "auto_skip_intro" then
@@ -1370,6 +1425,12 @@ function normalized_player_path()
   return tostring(state.path or ""):gsub("\\", "/"):lower()
 end
 
+function is_placeholder_path(value)
+  local normalized = tostring(value or ""):gsub("\\", "/"):lower()
+  return normalized:find("streamnyaa%-loading%.bmp") ~= nil
+    or normalized:find("loading%-cover%.jpg") ~= nil
+end
+
 function is_generic_loading_media()
   return normalized_player_path():find("streamnyaa%-loading%.bmp") ~= nil
 end
@@ -1394,7 +1455,7 @@ function is_midplayback_buffering()
   if ui.end_overlay then return false end
   if not state.has_started_playback then return false end
   if not has_playable_media() or not has_valid_playhead() then return false end
-  if is_placeholder_media() or state.idle or state.core_idle then return false end
+  if is_placeholder_media() or state.idle then return false end
   if ui.dragging == "seek" then return false end
   if state.paused and not state.paused_for_cache then return false end
   if state.paused_for_cache then return true end
@@ -1414,6 +1475,7 @@ function load_persisted_player_preferences()
     return false
   end
   local ordered_keys = {
+    "seekStepSeconds",
     "autoNextEpisode",
     "autoSkipIntro",
     "autoSkipOutro",
@@ -1445,12 +1507,14 @@ end
 
 function is_loading()
   if is_midplayback_buffering() then return false end
+  if has_playable_media() and state.has_started_playback and not ui.recovery_terminal then return false end
+  if ui.recovery_terminal or (ui.recovery_attempt and state.idle) then return true end
   if state.paused_for_cache and not has_playable_media() then return true end
   if is_placeholder_media() then return true end
   if ui.loading_override_until and mp.get_time() < ui.loading_override_until then return true end
-  if has_playable_media() then return false end
+  if has_playable_media() and state.has_started_playback then return false end
   if state.idle or state.core_idle then return true end
-  return not state.has_started_playback and (tonumber(state.duration) or 0) <= 0
+  return not state.has_started_playback
 end
 
 function stream_progress()
@@ -1464,25 +1528,60 @@ end
 
 function clean_buffering_percent(percent)
   local value = tonumber(percent)
-  if not value or value <= 0 or value >= 100 then return nil end
+  if not value or value ~= value or value < 0 or value > 100 then return nil end
   return math.floor(clamp(value, 0, 100) + 0.5)
 end
 
+function hold_cover_for_first_video_frame()
+  return has_playable_media()
+    and not is_placeholder_media()
+    and state.has_started_playback
+    and mp.get_time() < (ui.first_video_frame_cover_until or 0)
+end
+
+function begin_first_video_frame_handoff()
+  -- playback-restart follows the decoder handoff. A timed cover here paints
+  -- artwork over the first video frames and can survive an idle redraw.
+  ui.first_video_frame_cover_until = 0
+  clear_cover_overlay()
+end
+
+function adaptive_buffer_target_seconds()
+  if (ui.source_recovery_count or 0) >= 2 then return BUFFER_STRESSED_TARGET_SECONDS end
+  if (ui.source_recovery_count or 0) >= 1 or ui.playback_stalled or ui.inferred_buffering then
+    return BUFFER_RECOVERY_TARGET_SECONDS
+  end
+  return BUFFER_TARGET_SECONDS
+end
+
+function apply_adaptive_buffer_target()
+  local target = adaptive_buffer_target_seconds()
+  if ui.adaptive_buffer_target == target then return target end
+  ui.adaptive_buffer_target = target
+  safe_set_property_number("cache-secs", target)
+  safe_set_property_number("demuxer-readahead-secs", math.max(45, target * 2))
+  safe_set_property_number("user-data/streamnyaa/buffer_target_seconds", target)
+  msg.info(string.format("[StreamNyaa Lua] Adaptive buffer target set to %ds", target))
+  return target
+end
+
 function buffering_display_percent()
-  local cache_percent = state.cache_buffering_active and clean_buffering_percent(state.cache_buffering_percent) or nil
-  if cache_percent then return cache_percent end
+  local cache_percent = (state.paused_for_cache or state.cache_buffering_active) and clean_buffering_percent(state.cache_buffering_percent) or nil
+  if cache_percent ~= nil then return cache_percent end
   local demuxer_percent = state.demuxer_underrun and clean_buffering_percent(state.demuxer_buffering_percent) or nil
   if demuxer_percent then return demuxer_percent end
   local cached = buffered_seconds()
   if cached ~= nil then
-    return math.floor(clamp((cached / BUFFER_TARGET_SECONDS) * 100, 0, 100) + 0.5)
+    return math.floor(clamp((cached / apply_adaptive_buffer_target()) * 100, 0, 100) + 0.5)
   end
   return nil
 end
 
 function buffered_seconds()
   local seconds = tonumber(state.demuxer_cache_duration)
-  if seconds and seconds > 0 then return seconds end
+  if seconds and seconds >= 0 then return seconds end
+  seconds = tonumber(state.demuxer_state_duration)
+  if seconds and seconds >= 0 then return seconds end
   local cache_end = tonumber(state.cache_end) or 0
   local pos = tonumber(state.pos) or 0
   if cache_end > pos then return cache_end - pos end
@@ -1490,16 +1589,11 @@ function buffered_seconds()
 end
 
 function buffering_status_label()
-  if ui.playback_stalled then
-    return "PLAYBACK STALLED"
-  end
   local percent = buffering_display_percent()
-  local cached = buffered_seconds()
-  local label = percent and string.format("BUFFERING %d%%", percent) or "BUFFERING..."
-  if percent and cached and cached >= 1 then
-    label = string.format("%s - %ds cached", label, math.floor(cached + 0.5))
+  if ui.playback_stalled then
+    return percent and string.format("Reconnecting  ·  %d%%", percent) or "Reconnecting"
   end
-  return label
+  return percent and string.format("Buffering  ·  %d%%", percent) or "Connecting"
 end
 
 function log_buffering_transition()
@@ -1524,6 +1618,7 @@ function reset_buffering_state()
   state.cache_buffering_active = false
   state.demuxer_buffering_percent = nil
   state.demuxer_cache_duration = nil
+  state.demuxer_state_duration = nil
   state.demuxer_underrun = false
   state.cache_end = 0
   ui.last_buffering_active = false
@@ -1537,9 +1632,67 @@ function reset_stall_watchdog(keep_position)
   ui.stall_started_at = 0
   ui.stall_recovery_attempted = false
   ui.stall_recovery_at = 0
+  ui.stall_backup_requested = false
+  ui.stall_backup_at = 0
   ui.stall_ignore_restart_until = 0
   ui.stall_last_progress_at = mp.get_time()
   ui.stall_last_pos = keep_position and (tonumber(state.pos) or 0) or nil
+  ui.stall_last_buffer = buffered_seconds()
+  safe_set_property("user-data/streamnyaa/recovery_stage", native_buffering_active() and "buffering" or "idle")
+end
+
+function reset_startup_stream_watchdog(clear_key)
+  if clear_key then ui.startup_stream_key = "" end
+  ui.startup_stream_started_at = 0
+  ui.startup_stream_retry_at = 0
+  ui.startup_stream_retried = false
+  ui.startup_stream_backup_at = 0
+  ui.startup_stream_backup_requested = false
+  ui.startup_stream_actions_visible = false
+end
+
+function begin_startup_stream_watchdog(path)
+  local key = tostring(path or "")
+  if key == "" or is_placeholder_path(key) then
+    reset_startup_stream_watchdog(true)
+    return
+  end
+  if ui.startup_stream_key ~= key then
+    reset_startup_stream_watchdog(false)
+    ui.startup_stream_key = key
+    ui.startup_stream_started_at = mp.get_time()
+    msg.info("[StreamNyaa Lua] Startup stream watchdog armed")
+  elseif ui.startup_stream_started_at <= 0 then
+    ui.startup_stream_started_at = mp.get_time()
+  end
+end
+
+function check_startup_stream_stall()
+  if check_recovery_deadline() then return end
+  local path = tostring(state.path or "")
+  if path == "" or is_placeholder_media() then
+    return
+  end
+  if state.has_started_playback and has_playable_media() and has_valid_playhead() then
+    reset_startup_stream_watchdog(true)
+    return
+  end
+  if state.paused and not state.paused_for_cache then return end
+  begin_startup_stream_watchdog(path)
+  local now = mp.get_time()
+  local waiting_for = now - (ui.startup_stream_started_at or now)
+  if waiting_for < STARTUP_STREAM_RETRY_SECONDS then return end
+
+  ui.inferred_buffering = true
+  if not ui.startup_stream_retried then
+    ui.startup_stream_retried = true
+    ui.startup_stream_retry_at = now
+    safe_set_property("user-data/streamnyaa/recovery_stage", "startup-retry")
+    msg.info("[StreamNyaa Lua] Startup stream did not expose a playable timeline; reopening current stream")
+    request_same_source_recovery("startup")
+  end
+  show_overlay()
+  draw(false, "startup-stream-watchdog")
 end
 
 function native_buffering_active()
@@ -1547,8 +1700,8 @@ function native_buffering_active()
 end
 
 function stall_watchdog_allowed()
-  if state.paused or state.idle or state.core_idle or ui.end_overlay or ui.settings_open then return false end
-  if ui.dragging or is_placeholder_media() or native_buffering_active() then return false end
+  if (state.paused and not state.paused_for_cache) or state.seeking or state.idle or ui.end_overlay then return false end
+  if ui.dragging or is_placeholder_media() then return false end
   if not state.has_started_playback or not has_playable_media() or not has_valid_playhead() then return false end
   local duration = tonumber(state.duration) or 0
   local pos = tonumber(state.pos) or 0
@@ -1557,46 +1710,157 @@ function stall_watchdog_allowed()
 end
 
 function request_same_source_recovery(origin)
-  local pos = tonumber(state.pos) or 0
-  if pos < 0 or not has_playable_media() then return false end
+  local path = tostring(state.path or "")
+  if path == "" or is_placeholder_path(path) then path = ui.last_video_path end
+  local pos = ui.recovery_attempt and ui.recovery_attempt.position
+    or (has_playable_media() and tonumber(state.pos)) or ui.last_video_position or 0
+  if path == "" or is_placeholder_path(path) then return false end
+  ui.recovery_terminal = false
+  ui.recovery_attempt = { path = path, position = pos, started_at = mp.get_time(), kind = origin == "startup" and "startup" or "retry", restart_seen = false }
   ui.stall_recovery_attempted = true
+  ui.source_recovery_count = ui.source_recovery_count + 1
+  apply_adaptive_buffer_target()
   ui.stall_recovery_at = mp.get_time()
   ui.stall_actions_visible = false
   ui.stall_ignore_restart_until = ui.stall_recovery_at + 3
-  msg.info(string.format("[StreamNyaa Lua] Same-source recovery seek origin=%s position=%.2f", tostring(origin or "watchdog"), pos))
-  return safe_commandv("seek", tostring(pos), "absolute+exact")
+  safe_set_property("user-data/streamnyaa/recovery_stage", "retrying")
+  msg.info(string.format("[StreamNyaa Lua] Same-source stream reopen origin=%s position=%.2f", tostring(origin or "watchdog"), pos))
+  ui.recovery_restore = {
+    sid = state.sid,
+    aid = state.aid,
+    speed = state.speed,
+    volume = state.volume,
+    muted = state.muted,
+    sub_visible = state.sub_visible,
+    sub_delay = state.sub_delay,
+    audio_delay = state.audio_delay,
+  }
+  if script_options.stall_test_mode then return true end
+  return safe_commandv("loadfile", path, "replace", "-1", string.format("start=%.3f", pos))
 end
 
-function request_backup_source_recovery()
+function request_software_decoder_recovery()
+  local path = tostring(state.path or "")
+  local media_key = current_media_key()
   local pos = tonumber(state.pos) or 0
+  if path == "" or media_key == "" or is_placeholder_media() then return false end
+  if ui.software_decoder_media == media_key then return false end
+  ui.software_decoder_media = media_key
+  ui.recovery_attempt = { path = path, position = pos, started_at = mp.get_time(), kind = "decoder", restart_seen = false }
+  ui.recovery_terminal = false
+  ui.recovery_restore = {
+    sid = state.sid,
+    aid = state.aid,
+    speed = state.speed,
+    volume = state.volume,
+    muted = state.muted,
+    sub_visible = state.sub_visible,
+    sub_delay = state.sub_delay,
+    audio_delay = state.audio_delay,
+  }
+  safe_set_property("hwdec", "no")
+  safe_set_property("user-data/streamnyaa/recovery_stage", "decoder-retry")
+  msg.info(string.format("[StreamNyaa Lua] Retrying healthy-buffer playback with software decoding at %.2f", pos))
+  return safe_commandv("loadfile", path, "replace", "-1", string.format("start=%.3f", pos))
+end
+
+function restore_same_source_preferences()
+  local restore = ui.recovery_restore
+  if not restore then return end
+  ui.recovery_restore = nil
+  if restore.sid ~= nil then safe_set_property("sid", restore.sid) end
+  if restore.aid ~= nil then safe_set_property("aid", restore.aid) end
+  safe_set_property_number("speed", tonumber(restore.speed) or 1)
+  safe_set_property_number("volume", tonumber(restore.volume) or 100)
+  safe_set_property_bool("mute", restore.muted == true)
+  safe_set_property_bool("sub-visibility", restore.sub_visible ~= false)
+  safe_set_property_number("sub-delay", tonumber(restore.sub_delay) or 0)
+  safe_set_property_number("audio-delay", tonumber(restore.audio_delay) or 0)
+  msg.info("[StreamNyaa Lua] Restored player preferences after same-source recovery")
+end
+
+function request_backup_source_recovery(action)
+  if ui.recovery_attempt and ui.recovery_attempt.kind == "backup" then return end
+  local pos = ui.recovery_attempt and ui.recovery_attempt.position
+    or (has_playable_media() and tonumber(state.pos)) or ui.last_video_position or 0
   local key = current_media_key()
   msg.info(string.format("[StreamNyaa Lua] Backup recovery requested key=%s position=%.2f", tostring(key), pos))
-  safe_commandv("script-message", "streamnyaa-player-recovery-request", "backup", tostring(key), tostring(pos))
+  ui.stall_backup_requested = true
+  ui.stall_backup_at = mp.get_time()
+  ui.recovery_terminal = false
+  ui.recovery_attempt = { path = ui.last_video_path ~= "" and ui.last_video_path or state.path, position = pos, started_at = mp.get_time(), kind = "backup", restart_seen = false }
+  safe_set_property("user-data/streamnyaa/recovery_stage", "switching")
+  safe_commandv("script-message", "streamnyaa-player-recovery-request", action == "retry" and "retry" or "backup", tostring(key), tostring(pos))
+end
+
+function check_recovery_deadline()
+  if ui.recovery_terminal then return true end
+  local attempt = ui.recovery_attempt
+  if not attempt then return false end
+  local now = mp.get_time()
+  local tick = math.max(0, now - (attempt.last_check_at or now))
+  attempt.last_check_at = now
+  if state.paused and not state.paused_for_cache then
+    attempt.started_at = attempt.started_at + tick
+    return true
+  end
+  local elapsed = now - attempt.started_at
+  if attempt.kind == "backup" then
+    if elapsed >= STALL_BACKUP_WAIT_SECONDS then
+      ui.recovery_terminal = true
+      ui.stall_actions_visible = true
+      ui.startup_stream_actions_visible = true
+      ui.playback_stalled = true
+      safe_set_property("user-data/streamnyaa/recovery_stage", "failed")
+      msg.warn("[StreamNyaa Lua] Recovery deadline exhausted; stopped loading animation")
+      show_overlay()
+      draw(true, "recovery-exhausted")
+    end
+  elseif elapsed >= (attempt.kind == "startup" and STARTUP_STREAM_BACKUP_SECONDS or STALL_ACTION_SECONDS) then
+    msg.warn(attempt.kind == "startup"
+      and "[StreamNyaa Lua] Startup stream retry did not become playable; requesting backup"
+      or "[StreamNyaa Lua] Recovery produced no advancing video; requesting backup")
+    request_backup_source_recovery()
+  end
+  return true
 end
 
 function check_playback_stall()
   local now = mp.get_time()
   local pos = tonumber(state.pos) or 0
+  if check_recovery_deadline() then return end
   if not stall_watchdog_allowed() then
     if stall_watchdog_timer then stall_watchdog_timer:stop() end
-    if not native_buffering_active() then
-      reset_stall_watchdog(true)
-    end
+    reset_stall_watchdog(true)
     return
   end
 
+  local cached = buffered_seconds()
   if ui.stall_last_pos == nil then
     ui.stall_last_pos = pos
+    ui.stall_last_buffer = cached
     ui.stall_last_progress_at = now
     return
   end
 
-  if math.abs(pos - ui.stall_last_pos) >= 0.15 then
+  local playhead_advanced = math.abs(pos - ui.stall_last_pos) >= 0.15
+  local buffer_advanced = cached ~= nil and (ui.stall_last_buffer == nil or cached > ui.stall_last_buffer + 0.20)
+  if playhead_advanced then
+    ui.playhead_last_advance_at = now
+  end
+  local continuous_wait = now - (ui.playhead_last_advance_at or now)
+  if not playhead_advanced and is_midplayback_buffering() and continuous_wait >= MAX_CONTINUOUS_BUFFERING_SECONDS then
+    msg.warn("[StreamNyaa Lua] Continuous buffering deadline reached despite intermittent data")
+    request_same_source_recovery("continuous-buffering")
+    return
+  end
+  if playhead_advanced or buffer_advanced then
     if ui.inferred_buffering or ui.playback_stalled then
-      msg.info("[StreamNyaa Lua] Playback resumed after inferred stall")
+      msg.info("[StreamNyaa Lua] Playback or buffer resumed after stall")
     end
     reset_stall_watchdog(true)
     ui.stall_last_pos = pos
+    ui.stall_last_buffer = cached
     return
   end
 
@@ -1605,7 +1869,6 @@ function check_playback_stall()
   if ui.stall_started_at <= 0 then
     ui.stall_started_at = now - frozen_for
     ui.anim_started = now
-    local cached = buffered_seconds()
     if cached == nil or cached < STALL_LOW_BUFFER_SECONDS then
       ui.inferred_buffering = true
       ui.playback_stalled = false
@@ -1619,13 +1882,17 @@ function check_playback_stall()
   end
 
   local stalled_for = now - ui.stall_started_at
+  if not script_options.stall_test_mode and stalled_for >= 6 and cached ~= nil and cached >= STALL_LOW_BUFFER_SECONDS and ui.software_decoder_media ~= current_media_key() then
+    if request_software_decoder_recovery() then return end
+  end
   if stalled_for >= STALL_RECOVERY_SECONDS and not ui.stall_recovery_attempted then
-    request_same_source_recovery("watchdog")
-  elseif ui.stall_recovery_attempted and now - ui.stall_recovery_at >= STALL_ACTION_SECONDS then
-    if not ui.stall_actions_visible then
-      msg.info("[StreamNyaa Lua] Recovery seek did not restore playback; showing recovery actions")
+    if ui.source_recovery_count < 1 then
+      request_same_source_recovery("watchdog")
+    else
+      request_backup_source_recovery()
+      ui.stall_recovery_attempted = true
+      ui.stall_recovery_at = now
     end
-    ui.stall_actions_visible = true
   end
   draw(false, "stall-watchdog")
 end
@@ -1636,8 +1903,9 @@ function update_stall_watchdog_timer()
     stall_watchdog_timer:resume()
   else
     stall_watchdog_timer:stop()
-    if not native_buffering_active() then
-      reset_stall_watchdog(true)
+    reset_stall_watchdog(true)
+    if state.paused and not state.paused_for_cache or state.seeking or ui.dragging then
+      ui.playhead_last_advance_at = mp.get_time()
     end
   end
 end
@@ -1952,6 +2220,10 @@ function show_overlay()
   ui.last_interaction = mp.get_time()
 end
 
+function note_direct_interaction()
+  ui.last_direct_interaction = mp.get_time()
+end
+
 function current_media_key()
   local path = tostring(state.path or "")
   local title = tostring(state.title or state.filename or "")
@@ -1963,31 +2235,48 @@ function reset_end_overlay_state()
   ui.end_overlay = false
   ui.end_overlay_key = ""
   ui.end_next_pending = false
-  ui.end_next_pending_at = 0
-  ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
+  ui.end_request_id = ""
+  ui.end_status = "idle"
+  ui.end_focus = "end_next_episode"
   ui.eof_handled_key = ""
   ui.last_next_episode_request_key = ""
 end
 
-function hide_end_overlay()
+function emit_next_request(reason, request_id)
+  local request_file = tostring(script_options.next_episode_request_file or "")
+  if request_file ~= "" then
+    local file = io.open(request_file, "w")
+    if file then
+      file:write(reason .. "|" .. request_id .. "\n")
+      file:close()
+    end
+  end
+  safe_commandv("script-message", "streamnyaa-next-episode-request", reason, request_id)
+end
+
+function hide_end_overlay(cancel_pending)
+  if cancel_pending and ui.end_request_id ~= "" then emit_next_request("cancel", ui.end_request_id) end
   ui.end_overlay = false
   ui.end_overlay_key = ""
   ui.end_next_pending = false
-  ui.end_next_pending_at = 0
-  ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
+  ui.end_request_id = ""
+  ui.end_status = "idle"
 end
 
 function scaled(width, height)
-  return clamp(math.min(width / 1920, height / 1080), 0.72, 1.35)
+  return clamp(math.min(width / 1920, height / 1080), 0.72, 2.0)
+end
+
+local PLAYER_UI = { icon = 24, hit = 44, center_hit = 64, center_icon = 28, margin = 24, gap = 8 }
+function controls_scale(s)
+  -- MPV may return (default, error) when no display property is available.
+  -- Capture one value; forwarding both results to math.max kills the UI script.
+  local display_scale = mp.get_property_number("display-hidpi-scale", 1)
+  return clamp(math.max(tonumber(s) or 1, tonumber(display_scale) or 1), 1, 2)
 end
 
 function draw_gradient_top(ass, width, height, s)
-  local h = 92 * s
-  for i = 0, 9 do
-    local y1 = i * h / 10
-    local y2 = (i + 1) * h / 10
-    rect(ass, 0, y1, width, y2, C.black, 218 + i * 3)
-  end
+  -- Intentionally transparent. No full-width OSD backplate.
 end
 
 function request_external_subtitle_import()
@@ -2009,51 +2298,29 @@ function request_external_subtitle_import()
 end
 
 function request_next_episode(reason)
-  local next_reason = tostring(reason or "manual")
-  if next_reason ~= "ended" and next_reason ~= "manual" then
-    next_reason = "manual"
-  end
+  if reason == "ended" and ui.sleep_expired then return end
+  if ui.end_next_pending or ui.end_status == "unavailable" then return end
+  local next_reason = reason == "ended" and "ended" or "manual"
   local key = current_media_key()
   local request_key = next_reason .. ":" .. key
-  if next_reason == "ended" and request_key == ui.last_next_episode_request_key then
-    msg.info("[StreamNyaa Lua] Duplicate EOF next request ignored key=" .. request_key)
-    return
-  end
-  if next_reason == "ended" then
-    ui.last_next_episode_request_key = request_key
-  else
-    ui.last_next_episode_request_key = ""
-  end
-  local request_file = tostring(script_options.next_episode_request_file or "")
-  if request_file ~= "" then
-    local file, error_message = io.open(request_file, "w")
-    if file then
-      file:write(next_reason .. "|" .. tostring(mp.get_time()) .. "|" .. tostring(key) .. "\n")
-      file:close()
-      msg.info("[StreamNyaa Lua] Wrote next-episode request file reason=" .. next_reason)
-    else
-      msg.warn("Could not write next-episode request file: " .. tostring(error_message))
-    end
-  end
-  msg.info("[StreamNyaa Lua] Sending next episode request reason=" .. next_reason .. " key=" .. tostring(key))
-  if next_reason == "manual" or state.autoplay then
-    ui.end_next_pending = true
-    ui.end_next_pending_at = mp.get_time()
-    ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
-    local request_token = ui.end_next_request_token
-    mp.add_timeout(8, function()
-      if request_token ~= ui.end_next_request_token or not ui.end_overlay then return end
-      ui.end_next_pending = false
-      ui.end_next_pending_at = 0
-      settings_notice("The next episode is not ready yet. You can try again.")
-      draw(true, "end-next-timeout")
-    end)
-  end
-  safe_commandv("script-message", "streamnyaa-next-episode-request", next_reason)
-  if next_reason ~= "ended" or state.autoplay then
-    settings_notice(next_reason == "ended" and "Opening next episode..." or "Next episode requested")
-  end
+  if next_reason == "ended" and request_key == ui.last_next_episode_request_key then return end
+  ui.last_next_episode_request_key = next_reason == "ended" and request_key or ""
+  ui.end_next_request_token = (ui.end_next_request_token or 0) + 1
+  ui.end_request_id = string.format("next-%d-%d", math.floor(mp.get_time() * 1000), ui.end_next_request_token)
+  ui.end_next_pending = next_reason == "manual" or state.autoplay
+  ui.end_status = ui.end_next_pending and "preparing" or "idle"
+  safe_set_property("user-data/streamnyaa/next-enabled", state.autoplay and "true" or "false")
+  emit_next_request(next_reason, ui.end_request_id)
 end
+
+mp.register_script_message("streamnyaa-next-episode-status", function(request_id, status)
+  if tostring(request_id or "") ~= ui.end_request_id or ui.end_request_id == "" then return end
+  if status ~= "preparing" and status ~= "opening" and status ~= "unavailable" and status ~= "failed" and status ~= "idle" then return end
+  ui.end_status = status
+  ui.end_next_pending = status == "preparing" or status == "opening"
+  if status == "unavailable" then ui.end_focus = "end_replay" end
+  draw(true, "next-episode-status")
+end)
 
 function handle_episode_eof()
   local key = tostring(ui.eof_candidate_key or "")
@@ -2082,16 +2349,7 @@ function maybe_handle_episode_end()
 end
 
 function draw_gradient_bottom(ass, width, height, s)
-  local h = 164 * s
-  local start = height - h
-  for i = 0, 11 do
-    local t1 = i / 12
-    local t2 = (i + 1) / 12
-    local y1 = start + h * t1
-    local y2 = start + h * t2
-    local alpha = 246 - i * 3
-    rect(ass, 0, y1, width, y2, C.black, clamp(alpha, 210, 248))
-  end
+  -- Intentionally transparent. Never paint stepped horizontal bands over video.
 end
 
 function icon_point(cx, cy, size, x, y)
@@ -2179,9 +2437,13 @@ function icon_play_pause(ass, cx, cy, size, color)
   end
 end
 
+function seek_step_seconds()
+  return state.seek_step_seconds or 10
+end
+
 function icon_skip(ass, cx, cy, size, color, forward)
   local t = icon_stroke(size, 0.075)
-  draw_text(ass, cx, cy + size * 0.12, 5, size * 0.30, color, 0, "10", true, "Segoe UI Semibold")
+  draw_text(ass, cx, cy, 5, math.max(11, size * 0.48), color, 0, tostring(seek_step_seconds()), true, "Segoe UI Semibold")
   draw_arc(ass, cx, cy, size * 0.40, forward and -35 or 140, 255, t, color, 0)
   if forward then
     icon_polyline(ass, cx, cy, size, {{16.3, 5.3}, {19.1, 5.8}, {18.4, 8.8}}, color, t)
@@ -2220,16 +2482,15 @@ function icon_typography(ass, cx, cy, size, color)
 end
 
 function icon_gear(ass, cx, cy, size, color)
-  local t = math.max(2.1, size * 0.078)
-  icon_line(ass, cx, cy, size, 4.2, 7.2, 19.8, 7.2, color, t)
-  icon_line(ass, cx, cy, size, 4.2, 12, 19.8, 12, color, t)
-  icon_line(ass, cx, cy, size, 4.2, 16.8, 19.8, 16.8, color, t)
-  local k1x, k1y = icon_point(cx, cy, size, 9.0, 7.2)
-  local k2x, k2y = icon_point(cx, cy, size, 15.0, 12)
-  local k3x, k3y = icon_point(cx, cy, size, 11.5, 16.8)
-  circle(ass, k1x, k1y, size * 0.105, color, 0)
-  circle(ass, k2x, k2y, size * 0.105, color, 0)
-  circle(ass, k3x, k3y, size * 0.105, color, 0)
+  local points = {}
+  for index = 0, 31 do
+    local angle = (index * 11.25 - 90) * math.pi / 180
+    local radius = (index % 4 == 1 or index % 4 == 2) and 9.2 or 7.2
+    points[#points + 1] = {12 + math.cos(angle) * radius, 12 + math.sin(angle) * radius}
+  end
+  points[#points + 1] = points[1]
+  icon_polyline(ass, cx, cy, size, points, color, size * 0.065)
+  icon_ring(ass, cx, cy, size, 12, 12, 3.1, color, size * 0.065)
 end
 
 function icon_mini(ass, cx, cy, size, color)
@@ -2293,7 +2554,13 @@ function icon_toggle_dot(ass, cx, cy, size, color)
 end
 
 function icon_row(ass, name, cx, cy, size, color)
-  if name == "speed" then
+  if name == "download" then
+    local r = size * 0.32
+    line(ass, cx, cy - r, cx, cy + r * 0.45, 1.6, color, 0)
+    line(ass, cx - r * 0.55, cy, cx, cy + r * 0.55, 1.6, color, 0)
+    line(ass, cx, cy + r * 0.55, cx + r * 0.55, cy, 1.6, color, 0)
+    line(ass, cx - r, cy + r, cx + r, cy + r, 1.6, color, 0)
+  elseif name == "speed" then
     icon_speed(ass, cx, cy, size * 1.02, color)
   elseif name == "sub" then
     icon_cc(ass, cx, cy, size * 0.98, color)
@@ -2332,11 +2599,26 @@ end
 function button(ass, mouse, id, cx, cy, hit, icon_size, draw_icon, active)
   hit = math.max(44, tonumber(hit) or 44)
   local hot = inside(mouse, cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
-  if hot or active then
-    circle(ass, cx, cy, hit * 0.44, active and C.accent or C.white, hot and 228 or 214)
-  end
-  draw_icon(ass, cx, cy, icon_size, active and C.accent or C.white)
+  local pressed = ui.mouse_down_region and ui.mouse_down_region.id == id and hot
+  if hot or pressed then circle(ass, cx, cy, hit * 0.44, C.white, pressed and 200 or 235) end
+  draw_icon(ass, cx, cy, icon_size, (active or hot) and C.accent or C.white)
+  if active then line(ass, cx - 6, cy + hit * 0.36, cx + 6, cy + hit * 0.36, 2, C.accent, 0) end
   add_region(id, cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
+  if hot and not ui.settings_open and not ui.dragging then
+    local hints = { play = state.paused and "Play · K" or "Pause · K", back = "Back " .. seek_step_seconds() .. " seconds · J",
+      forward = "Forward " .. seek_step_seconds() .. " seconds · L", next_episode = "Next episode", mute = "Mute · M",
+      download = "Downloads · save episode files",
+      fullscreen = "Fullscreen · F", mini = "Mini player", settings = "Settings · S", subs = "Subtitles" }
+    local label = hints[id]
+    if label then
+      local factor = hit / PLAYER_UI.hit
+      local w = math.max(90 * factor, #label * 6.5 * factor)
+      local width = mp.get_osd_size()
+      local tx = clamp(cx, w / 2 + 8, width - w / 2 - 8)
+      rounded_rect(ass, tx - w / 2, cy - hit - 34 * factor, tx + w / 2, cy - hit - 6 * factor, 6 * factor, C.panel, 8)
+      draw_text(ass, tx, cy - hit - 19 * factor, 5, 12 * factor, C.white, 0, label, false, "Segoe UI")
+    end
+  end
 end
 
 function pill_button(ass, mouse, id, cx, cy, width, height, label, active, s)
@@ -2346,19 +2628,34 @@ function pill_button(ass, mouse, id, cx, cy, width, height, label, active, s)
   if hot or active then
     rounded_rect(ass, x1, y1, x2, y2, height / 2, active and C.accent or C.white, hot and 230 or 214)
   end
-  draw_text(ass, cx - 7 * s, cy + 7 * s, 5, font_px(s, 18, 16, 19), active and C.accent or C.white, 0, label, false, "Segoe UI Semibold")
+  draw_text(ass, cx - 7 * s, cy, 5, font_px(s, 18, 16, 19), active and C.accent or C.white, 0, label, false, "Segoe UI Semibold")
   icon_chevron(ass, cx + width / 2 - 16 * s, cy, 18 * s, active and C.accent or C.secondary, "right")
   add_region(id, x1, y1, x2, y2)
 end
 
+function control_layout(width, height, s)
+  s = controls_scale(s)
+  local margin, hit = PLAYER_UI.margin * s, PLAYER_UI.hit * s
+  local step = hit + PLAYER_UI.gap * s
+  local compact = width < 820 * s
+  local left = margin + hit / 2
+  return { margin = margin, hit = hit, step = step, left = left, right = width - margin - hit / 2,
+    compact = compact, scale = s, y = height - margin - hit / 2 }
+end
+
 function seek_bounds(width, height, s)
-  local y = height - 96 * s
-  return 44 * s, y, width - 44 * s, y
+  local layout = control_layout(width, height, s)
+  local y = layout.y - layout.hit / 2 - math.max(20, 24 * s)
+  return layout.margin, y, width - layout.margin, y
 end
 
 function volume_bounds(width, height, s)
-  local y = height - 42 * s
-  return 376 * s, y, math.min(526 * s, width * 0.42), y
+  local layout = control_layout(width, height, s)
+  s = layout.scale
+  local x = layout.left + layout.step * (layout.compact and 2 or 4) + layout.hit / 2 + 10 * s
+  local right_start = layout.right - layout.step * 4 - 40 * s
+  local end_x = math.min(x + 110 * s, right_start - 155 * s)
+  return x, layout.y, math.max(x, end_x), layout.y
 end
 
 function slider_hit_half_height(s)
@@ -2366,21 +2663,25 @@ function slider_hit_half_height(s)
 end
 
 function draw_title_area(ass, width, height, s)
-  local x = 48 * s
-  draw_text(ass, x, 50 * s, 4, font_px(s, 25, 22, 27), C.white, 0, media_title(), true, "Segoe UI Semibold")
-  local subline = is_buffering() and "Buffering local stream" or "Local playback"
-  draw_text(ass, x, 79 * s, 4, font_px(s, 14, 13, 16), C.white, 80, subline, false, "Segoe UI")
+  local x = 28 * s
+  draw_text(ass, x, 38 * s, 4, font_px(s, 22, 18, 28), C.white, 0, truncate_to_width(loading_media_title(), width - x * 2, font_px(s, 22, 18, 28), 0), true, "Segoe UI Semibold", true)
+  draw_text(ass, x, 65 * s, 4, font_px(s, 14, 12, 18), C.white, 55, loading_episode_label(), false, "Segoe UI", true)
 end
 
 function draw_center_play(ass, width, height, mouse, s)
   if is_loading() or ui.end_overlay or ui.settings_open then return end
+  s = controls_scale(s)
   local cx, cy = width / 2, height / 2
-  local hit = math.max(116 * s, 92)
+  local hit = PLAYER_UI.center_hit * s
   local hot = inside(mouse, cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
   add_region("center_toggle", cx - hit / 2, cy - hit / 2, cx + hit / 2, cy + hit / 2)
-  if not state.paused then return end
-  icon_play(ass, cx + 4 * s, cy + 2 * s, 48 * s, C.black)
-  icon_play(ass, cx + 2 * s, cy, 46 * s, hot and C.hover or C.white)
+  local radius = hit / 2
+  circle(ass, cx, cy, radius, C.black, hot and 55 or 95)
+  if state.paused then
+    icon_play(ass, cx + 1.5 * s, cy, PLAYER_UI.center_icon * s, C.white)
+  else
+    icon_pause(ass, cx, cy, PLAYER_UI.center_icon * s, C.white)
+  end
 end
 
 function timeline_ratio(mouse, width, height, s)
@@ -2455,7 +2756,8 @@ function draw_timeline(ass, width, height, mouse, s)
   if state.duration > 0 and (tonumber(state.cache_end) or 0) > 0 then
     buffered = clamp(state.cache_end / state.duration, ratio, 1)
   else
-    buffered = clamp(math.max(ratio, ratio + (1 - ratio) * ((state.cache_percent or 0) / 100)), 0, 1)
+    local seconds_ahead = tonumber(state.demuxer_cache_duration) or 0
+    buffered = state.duration > 0 and clamp(ratio + seconds_ahead / state.duration, ratio, 1) or ratio
   end
 
   rounded_rect(ass, x1, y - h / 2, x2, y + h / 2, h / 2, C.track, 184)
@@ -2475,7 +2777,7 @@ function draw_timeline(ass, width, height, mouse, s)
 
   circle(ass, x1 + w * ratio, y, dragging and 12 * s or ((seek_hot and 10 * s) or 7 * s), C.accent, 0)
   local display_pos = dragging and state.duration * ratio or state.pos
-  draw_text(ass, x2, y + 34 * s, 6, font_px(s, 17, 16, 19), C.white, 0, string.format("%s / %s", format_time(display_pos), state.duration > 0 and format_time(state.duration) or "--:--"), false, "Segoe UI")
+  draw_text(ass, x2, y - 20 * s, 6, font_px(s, 17, 16, 19), C.white, 0, string.format("%s / %s", format_time(display_pos), state.duration > 0 and format_time(state.duration) or "--:--"), false, "Segoe UI", true)
   add_region("seek", x1, y - seek_hit_y, x2, y + seek_hit_y)
 
   if seek_hot and state.duration > 0 then
@@ -2487,37 +2789,46 @@ function draw_timeline(ass, width, height, mouse, s)
 end
 
 function draw_controls(ass, width, height, mouse, s)
-  local y = height - 42 * s
-  local left = 54 * s
-  local right = width - 62 * s
-  local hit = 48 * s
-  local icon = 30 * s
-  local skip_icon = 31 * s
-  local play_icon = 37 * s
-
-  button(ass, mouse, "play", left, y, 56 * s, play_icon, icon_play_pause)
-  button(ass, mouse, "back", left + 82 * s, y, hit, skip_icon, function(a, x, yy, size, color) icon_skip(a, x, yy, size, color, false) end)
-  button(ass, mouse, "forward", left + 158 * s, y, hit, skip_icon, function(a, x, yy, size, color) icon_skip(a, x, yy, size, color, true) end)
-  button(ass, mouse, "next_episode", left + 226 * s, y, hit, icon, icon_next_episode)
-  button(ass, mouse, "mute", left + 294 * s, y, hit, icon, icon_volume)
-
+  local layout = control_layout(width, height, s)
+  s = layout.scale
+  local y, x, hit, step = layout.y, layout.left, layout.hit, layout.step
+  local icon = PLAYER_UI.icon * s
+  button(ass, mouse, "play", x, y, hit, icon, icon_play_pause)
+  x = x + step
+  if not layout.compact then
+    button(ass, mouse, "back", x, y, hit, icon, function(a, xx, yy, size, color) icon_skip(a, xx, yy, size, color, false) end)
+    x = x + step
+    button(ass, mouse, "forward", x, y, hit, icon, function(a, xx, yy, size, color) icon_skip(a, xx, yy, size, color, true) end)
+    x = x + step
+  end
+  button(ass, mouse, "next_episode", x, y, hit, icon, icon_next_episode)
+  x = x + step
+  button(ass, mouse, "mute", x, y, hit, icon, icon_volume)
   local vx1, vy, vx2 = volume_bounds(width, height, s)
-  if vx2 > vx1 + 68 * s then
+  if vx2 > vx1 + 40 * s then
     local volume_dragging = ui.dragging == "volume"
     local vr = volume_dragging and (current_drag_ratio() or 0) or clamp((state.volume or 0) / 130, 0, 1)
-    local vh = volume_dragging and 6 * s or 4 * s
-    rounded_rect(ass, vx1, vy - vh / 2, vx2, vy + vh / 2, vh / 2, C.track, 184)
-    rounded_rect(ass, vx1, vy - vh / 2, vx1 + (vx2 - vx1) * vr, vy + vh / 2, vh / 2, C.accent, 0)
-    circle(ass, vx1 + (vx2 - vx1) * vr, vy, volume_dragging and 9.5 * s or 6 * s, C.accent, 0)
-    local volume_hit_y = slider_hit_half_height(s)
-    add_region("volume", vx1 - 10 * s, vy - volume_hit_y, vx2 + 10 * s, vy + volume_hit_y)
+    rounded_rect(ass, vx1, vy - 2 * s, vx2, vy + 2 * s, 2 * s, C.track, 150)
+    rounded_rect(ass, vx1, vy - 2 * s, vx1 + (vx2 - vx1) * vr, vy + 2 * s, 2 * s, C.accent, 0)
+    circle(ass, vx1 + (vx2 - vx1) * vr, vy, 5 * s, C.accent, 0)
+    add_region("volume", vx1 - 8 * s, vy - 22, vx2 + 8 * s, vy + 22)
   end
-
-  button(ass, mouse, "subs", right - 356 * s, y, hit, icon, icon_cc, state.sub_visible and state.sid ~= "no")
-  button(ass, mouse, "settings", right - 286 * s, y, hit, icon, icon_gear, ui.settings_open)
-  pill_button(ass, mouse, "speed", right - 196 * s, y, 92 * s, 40 * s, speed_label(), ui.settings_open and ui.submenu == "speed", s)
-  button(ass, mouse, "mini", right - 94 * s, y, hit, icon, icon_mini, state.mini_player)
-  button(ass, mouse, "fullscreen", right - 24 * s, y, hit, icon, icon_fullscreen, state.fullscreen)
+  local right = layout.right
+  button(ass, mouse, "fullscreen", right, y, hit, icon, icon_fullscreen, state.fullscreen)
+  if layout.compact then
+    -- Speed, mini-player and track controls remain in the existing settings menu.
+    button(ass, mouse, "settings", right - step, y, hit, icon, icon_gear, ui.settings_open)
+  else
+    button(ass, mouse, "mini", right - step, y, hit, icon, icon_mini, state.mini_player)
+    pill_button(ass, mouse, "speed", right - step * 2 - 5 * s, y, step + 10 * s, hit, speed_label(), ui.settings_open and ui.submenu == "speed", s)
+    button(ass, mouse, "settings", right - step * 3 - 10 * s, y, hit, icon, icon_gear, ui.settings_open)
+    button(ass, mouse, "subs", right - step * 4 - 10 * s, y, hit, icon, icon_cc, state.sub_visible and state.sid ~= "no")
+    local download_x = right - step * 5 - 10 * s
+    if download_x - hit / 2 > vx2 + 24 * s then
+      button(ass, mouse, "download", download_x, y, hit, icon,
+        function(a, xx, yy, size, color) icon_row(a, "download", xx, yy, size, color) end, state.download_status ~= nil)
+    end
+  end
 end
 
 function manual_skip_range(kind)
@@ -2553,17 +2864,19 @@ function wake_manual_skip_buttons()
   if ui.end_overlay or state.paused then return false end
   if is_loading() or is_buffering() then return false end
   local woke = false
+  local newly_shown = false
+  local now = mp.get_time()
   for _, kind in ipairs({ "intro", "outro" }) do
     if not ((kind == "intro" and state.skip_intro) or (kind == "outro" and state.skip_outro)) then
       local range = manual_strict_skip_range(kind, tonumber(state.pos) or 0)
       if range then
         local entry = skip_state_for(range.key)
-        local now = mp.get_time()
         if entry and not entry.clicked and not entry.auto_skipped and not entry.dismissed then
           if not entry.shown then
             entry.shown = true
             entry.shown_at = now
             entry.visible_until = now + MANUAL_SKIP_BUTTON_SECONDS
+            newly_shown = true
             msg.info(string.format(
               "[StreamNyaa Lua] Showing manual Skip %s button source=%s",
               kind == "outro" and "Outro" or "Intro",
@@ -2573,35 +2886,41 @@ function wake_manual_skip_buttons()
             entry.dismissed = true
           end
           if not entry.dismissed and now <= (entry.visible_until or 0) then
-            show_overlay()
             woke = true
           end
         end
       end
     end
   end
+  -- A skip marker is a prompt, not a request to open the full player controls.
+  -- Preserve controls only when the user intentionally interacted moments ago.
+  if newly_shown and now - (ui.last_direct_interaction or 0) > 0.9 then
+    ui.visible = false
+    ui.settings_open = false
+    ui.submenu = "main"
+  end
   return woke
 end
 
 function draw_manual_skip_button(ass, mouse, range, index, width, height, s)
   if not range then return end
-  local label = range.kind == "outro" and "SKIP OUTRO" or "SKIP INTRO"
-  local button_w = 174 * s
-  local button_h = 46 * s
+  local label = range.kind == "outro" and "Skip outro" or "Skip intro"
+  local button_w = 148 * s
+  local button_h = 40 * s
   local x2 = width - 48 * s
-  local y2 = height - (150 + (index or 0) * 56) * s
+  local base_offset = ui.visible and 180 or 140
+  local y2 = height - (base_offset + (index or 0) * 50) * s
   local x1 = x2 - button_w
   local y1 = y2 - button_h
   local center_x = (x1 + x2) / 2
   local center_y = (y1 + y2) / 2
   local hot = inside(mouse, x1, y1, x2, y2)
 
-  rounded_rect(ass, x1 - 4 * s, y1 - 4 * s, x2 + 4 * s, y2 + 4 * s, 11 * s, C.accent, hot and 220 or 244)
-  rounded_rect(ass, x1, y1, x2, y2, 9 * s, C.panel, hot and 0 or 10)
-  rounded_outline(ass, x1, y1, x2, y2, 9 * s, 1.0 * s, hot and C.hover or C.white, hot and 82 or 206)
-  rounded_rect(ass, x1, y1 + 6 * s, x1 + 4 * s, y2 - 6 * s, 2 * s, C.accent, 0)
-  icon_skip_compact(ass, center_x - 55 * s, center_y, 18 * s, hot and C.hover or C.white)
-  draw_text(ass, center_x + 12 * s, center_y + 1 * s, 5, font_px(s, 14, 13, 16), C.white, 0, label, true, "Segoe UI Semibold")
+  rounded_rect(ass, x1, y1, x2, y2, 8 * s, hot and C.panel_2 or C.panel, hot and 0 or 12)
+  rounded_outline(ass, x1, y1, x2, y2, 8 * s, 1.0 * s, hot and C.accent or C.white, hot and 80 or 220)
+  rounded_rect(ass, x1, y1 + 8 * s, x1 + 3 * s, y2 - 8 * s, 1.5 * s, C.accent, 0)
+  icon_skip_compact(ass, center_x - 43 * s, center_y, 16 * s, hot and C.hover or C.white)
+  draw_text(ass, center_x + 10 * s, center_y + 1 * s, 5, font_px(s, 13, 12, 15), C.white, 0, label, true, "Segoe UI Semibold")
   add_region("manual_skip_" .. tostring(range.kind), x1, y1, x2, y2, {
     key = range.key,
     kind = range.kind,
@@ -2611,9 +2930,9 @@ function draw_manual_skip_button(ass, mouse, range, index, width, height, s)
   })
 end
 
-function draw_manual_skip_buttons(ass, width, height, mouse, s)
-  local intro = manual_skip_range("intro")
-  local outro = manual_skip_range("outro")
+function draw_manual_skip_buttons(ass, width, height, mouse, s, resolved_intro, resolved_outro, ranges_resolved)
+  local intro = ranges_resolved and resolved_intro or manual_skip_range("intro")
+  local outro = ranges_resolved and resolved_outro or manual_skip_range("outro")
   if outro then draw_manual_skip_button(ass, mouse, outro, intro and 1 or 0, width, height, s) end
   if intro then draw_manual_skip_button(ass, mouse, intro, 0, width, height, s) end
 end
@@ -2622,10 +2941,9 @@ function draw_end_button(ass, mouse, id, x1, y1, x2, y2, label, primary, s, disa
   local hot = not disabled and inside(mouse, x1, y1, x2, y2)
   local fill = disabled and C.muted or (primary and C.accent or C.panel_2)
   local text_color = disabled and C.secondary or C.white
-  rounded_rect(ass, x1 - 4 * s, y1 - 4 * s, x2 + 4 * s, y2 + 4 * s, 13 * s, primary and C.accent or C.white, disabled and 250 or (hot and 228 or 244))
-  rounded_rect(ass, x1, y1, x2, y2, 10 * s, fill, disabled and 55 or (hot and 0 or (primary and 8 or 18)))
-  rounded_outline(ass, x1, y1, x2, y2, 10 * s, 1.0 * s, primary and C.hover or C.white, disabled and 220 or (hot and 54 or 170))
-  draw_text(ass, (x1 + x2) / 2, y1 + 29 * s, 5, font_px(s, 14, 13, 16), text_color, 0, label, true, "Segoe UI Semibold")
+  rounded_rect(ass, x1, y1, x2, y2, 8 * s, fill, disabled and 55 or (hot and 0 or (primary and 8 or 18)))
+  rounded_outline(ass, x1, y1, x2, y2, 8 * s, 1.0 * s, primary and C.hover or C.white, disabled and 220 or (hot and 70 or 210))
+  draw_text(ass, (x1 + x2) / 2, (y1 + y2) / 2 + 1 * s, 5, font_px(s, 13, 12, 15), text_color, 0, label, true, "Segoe UI Semibold")
   if not disabled then add_region(id, x1, y1, x2, y2) end
 end
 
@@ -2656,128 +2974,195 @@ function draw_end_action(ass, mouse, id, x1, y1, x2, y2, label, primary, s, disa
   if not disabled then add_region(id, x1, y1, x2, y2) end
 end
 
+function end_overlay_layout(width, height, s)
+  local scale = math.min(controls_scale(s), (width - 32) / 520, (height - 32) / 246)
+  return { x = (width - 520 * scale) / 2, y = (height - 246 * scale) / 2, w = 520 * scale, h = 246 * scale, s = scale }
+end
+
 function draw_end_overlay(ass, width, height, mouse, s)
   if not ui.end_overlay then return end
-  local panel_w = math.min(width - 72 * s, 880 * s)
-  local panel_h = 218 * s
-  local x1 = (width - panel_w) / 2
-  local y1 = height - panel_h - 58 * s
-  local x2 = x1 + panel_w
-  local y2 = y1 + panel_h
-
-  rect(ass, 0, 0, width, height, C.black, 162)
-  rounded_rect(ass, x1, y1, x2, y2, 12 * s, C.panel, 12)
-  rounded_outline(ass, x1, y1, x2, y2, 12 * s, 1.0 * s, C.white, 224)
-  rounded_rect(ass, x1, y1 + 20 * s, x1 + 4 * s, y2 - 20 * s, 2 * s, C.accent, 0)
-  local prompt = ui.end_next_pending and "Preparing next episode" or "Episode complete"
-  local detail = ui.end_next_pending
-    and "Finding a playable source for the next aired episode."
-    or "Replay this episode or continue to the next aired episode."
-  draw_text(ass, x1 + 30 * s, y1 + 35 * s, 4, font_px(s, 12, 11, 13), C.accent, 0, "STREAMNYAA", true, "Segoe UI Semibold")
-  draw_text(ass, x1 + 30 * s, y1 + 75 * s, 4, font_px(s, 27, 24, 31), C.white, 0, prompt, true, "Segoe UI Semibold")
-  draw_text(ass, x1 + 30 * s, y1 + 105 * s, 4, font_px(s, 14, 13, 16), C.secondary, 18, detail, false, "Segoe UI")
-  local status_x = x2 - 30 * s
-  circle(ass, status_x - 109 * s, y1 + 35 * s, 4 * s, state.autoplay and C.accent or C.muted, 0)
-  draw_text(ass, status_x, y1 + 35 * s, 6, font_px(s, 11, 10, 13), state.autoplay and C.white or C.secondary, 0, state.autoplay and "Auto next active" or "Auto next paused", true, "Segoe UI Semibold")
-
-  local gap = 12 * s
-  local button_h = 44 * s
-  local next_w = 220 * s
-  local replay_w = 122 * s
-  local close_w = 96 * s
-  local bx = x1 + 30 * s
-  local by = y2 - 64 * s
-  local next_label = ui.end_next_pending and "FINDING NEXT..." or "NEXT EPISODE"
-  draw_end_action(ass, mouse, "end_next_episode", bx, by, bx + next_w, by + button_h, next_label, true, s, ui.end_next_pending, "next")
-  bx = bx + next_w + gap
-  draw_end_action(ass, mouse, "end_replay", bx, by, bx + replay_w, by + button_h, "REPLAY", false, s, false, "replay")
-  bx = bx + replay_w + gap
-  draw_end_action(ass, mouse, "end_close", bx, by, bx + close_w, by + button_h, "CLOSE", false, s, false)
+  local p = end_overlay_layout(width, height, s)
+  s = p.s
+  local x, y, w, h = p.x, p.y, p.w, p.h
+  rect(ass, 0, 0, width, height, C.black, 180)
+  rounded_rect(ass, x, y, x + w, y + h, 14 * s, C.panel, 0)
+  rounded_outline(ass, x, y, x + w, y + h, 14 * s, s, C.white, 220)
+  local unavailable = ui.end_status == "unavailable"
+  draw_text(ass, x + 28 * s, y + 36 * s, 4, 25 * s, C.white, 0, unavailable and "You're caught up" or "Episode complete", true, "Segoe UI Semibold")
+  local title = tostring(player_meta.animeTitle ~= "" and player_meta.animeTitle or state.title or ""):gsub("[\r\n]", " ")
+  draw_text(ass, x + 28 * s, y + 72 * s, 4, 16 * s, C.white, 8, truncate_to_width(title, w - 56 * s, 16 * s, 0), true, "Segoe UI Semibold")
+  local detail = unavailable and "No next aired episode yet."
+    or ui.end_status == "opening" and "Opening the next episode…"
+    or ui.end_status == "preparing" and "Preparing the next episode…"
+    or ui.end_status == "failed" and "Couldn't prepare the next episode. Try again."
+    or "Continue with the next episode, or watch this one again."
+  draw_text(ass, x + 28 * s, y + 103 * s, 4, 13 * s, C.secondary, 0, detail, false, "Segoe UI")
+  draw_text(ass, x + 28 * s, y + 130 * s, 4, 12 * s, C.secondary, 0, state.autoplay and "Autoplay on" or "Autoplay off", false, "Segoe UI")
+  local bx, by = x + 28 * s, y + 168 * s
+  if not unavailable then
+    local label = ui.end_status == "opening" and "Opening…" or ui.end_next_pending and "Preparing…" or ui.end_status == "failed" and "Try again" or "Next episode"
+    draw_end_action(ass, mouse, "end_next_episode", bx, by, bx + 196 * s, by + 48 * s, label, true, s, ui.end_next_pending, "next")
+    bx = bx + 208 * s
+  end
+  draw_end_action(ass, mouse, "end_replay", bx, by, bx + 118 * s, by + 48 * s, "Replay", unavailable, s, false, "replay")
+  bx = bx + 130 * s
+  draw_end_action(ass, mouse, "end_close", bx, by, bx + 126 * s, by + 48 * s, "Close", false, s, false)
+  for _, region in ipairs(regions) do
+    if region.id == ui.end_focus then
+      rounded_outline(ass, region.x1 - 3 * s, region.y1 - 3 * s, region.x2 + 3 * s, region.y2 + 3 * s, 10 * s, 1.5 * s, C.white, 32)
+    end
+  end
 end
 
 function loading_status_text()
   if is_midplayback_buffering() then
     return buffering_status_label()
+  elseif native_buffering_active() and not is_placeholder_media() then
+    return buffering_status_label()
+  elseif ui.startup_stream_backup_requested then
+    return "SWITCHING TO A VERIFIED BACKUP"
+  elseif ui.startup_stream_retried then
+    return "REOPENING THE CURRENT STREAM"
   elseif is_placeholder_media() then
-    return "OPENING PLAYER"
+    local stage = tostring(mp.get_property("user-data/streamnyaa/state", "")):lower()
+    if stage:find("metadata") then return "CHECKING EPISODE AVAILABILITY" end
+    if stage:find("matching") then return "MATCHING THE EPISODE FILE" end
+    if stage:find("buffer") then return "BUILDING THE PLAYABLE BUFFER" end
+    if stage:find("prepar") then return "PREPARING THE VIDEO STREAM" end
+    return "OPENING THE PLAYER"
+  elseif not has_playable_media() and tostring(state.path or "") ~= "" then
+    return "OPENING THE VIDEO DECODER"
   elseif state.idle or state.core_idle then
-    return "STARTING TORRENT ENGINE..."
+    return "STARTING PLAYBACK..."
   end
   return "PREPARING STREAM..."
 end
 
+function startup_loading_percent()
+  local playable_percent = buffering_display_percent()
+  if playable_percent ~= nil and not is_placeholder_media() then
+    return math.floor(clamp(playable_percent, 0, 100) + 0.5)
+  end
+  local raw_value = mp.get_property("user-data/streamnyaa/loading_percent", "")
+  local value = tonumber(raw_value)
+  if not value then return nil end
+  local next_value = math.floor(clamp(value, 0, 96) + 0.5)
+  ui.last_startup_loading_percent = math.max(tonumber(ui.last_startup_loading_percent) or 0, next_value)
+  return ui.last_startup_loading_percent
+end
+
+function loading_episode_label()
+  local episode_number = tostring(player_meta.episodeNumber or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local episode_title = tostring(player_meta.episodeTitle or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local prefix = episode_number ~= "" and ("Episode " .. episode_number) or ""
+  if prefix ~= "" and episode_title ~= "" then return prefix .. "  ·  " .. episode_title end
+  if prefix ~= "" then return prefix end
+  return episode_title
+end
+
 function draw_loading_required_content(ass, width, height, s, status)
   local cx = width / 2
+  if ui.recovery_terminal then
+    local cy = height * 0.48
+    draw_text(ass, cx, cy, 5, font_px(s, 21, 18, 26), C.white, 0, "Playback couldn't continue", true, "Segoe UI Semibold")
+    draw_text(ass, cx, cy + 32 * s, 5, font_px(s, 14, 12, 16), C.secondary, 0, "Your position is saved. Retry or choose another stream.", false, "Segoe UI")
+    local y = cy + 62 * s
+    draw_end_button(ass, mouse_pos(), "recovery_retry", cx - 174 * s, y, cx - 10 * s, y + 44 * s, "Retry", false, s)
+    draw_end_button(ass, mouse_pos(), "recovery_backup", cx + 10 * s, y, cx + 174 * s, y + 44 * s, "Try another stream", true, s)
+    return
+  end
   if is_midplayback_buffering() then
-    local t = (mp.get_time() - ui.anim_started)
-    local spinner_y = height * 0.48
-    local spinner_r = 20 * s
-    local start_angle = (t * 260) % 360
-    local card_w = math.min(width * 0.36, 430 * s)
-    local card_h = (ui.stall_actions_visible and 166 or 108) * s
-    local x1 = cx - card_w / 2
-    local y1 = spinner_y - card_h / 2
-    rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 22 * s, C.black, 120)
-    rounded_rect(ass, x1, y1, x1 + card_w, y1 + card_h, 22 * s, C.white, 238)
-    draw_arc(ass, cx - 98 * s, spinner_y, spinner_r, 0, 360, 2.0 * s, C.white, 232)
-    draw_arc(ass, cx - 98 * s, spinner_y, spinner_r, start_angle, 284, 3.4 * s, C.accent, 0)
-    draw_text(ass, cx - 54 * s, spinner_y - 2 * s, 4, font_px(s, 19, 16, 23), C.white, 0, status, false, "Segoe UI Semibold")
-    local cached = buffered_seconds()
-    local secondary
-    if ui.playback_stalled then
-      secondary = ui.stall_recovery_attempted and "Automatic recovery did not restore playback" or "The local buffer is ready, but playback is not advancing"
+    local cy = height * 0.48
+    local radius = clamp(25 * s, 19, 34)
+    local stroke = math.max(2, 2.5 * s)
+    local percent = buffering_display_percent()
+    draw_arc(ass, cx, cy, radius, 0, 360, stroke, C.white, 202)
+    if percent ~= nil and percent > 0 then
+      draw_arc(ass, cx, cy, radius, 0, percent * 3.6, stroke, C.accent, 0)
     else
-      secondary = cached and cached >= 1 and "Keeping playback smooth" or "Waiting for local buffer"
+      draw_arc(ass, cx, cy, radius, (mp.get_time() * 180) % 360, 78, stroke, C.accent, 0)
     end
-    draw_text(ass, cx - 54 * s, spinner_y + 24 * s, 4, font_px(s, 13, 12, 15), C.secondary, 12, secondary, false, "Segoe UI")
-    if ui.stall_actions_visible then
-      local gap = 12 * s
-      local button_w = 150 * s
-      local button_h = 38 * s
-      local button_y = y1 + card_h - 50 * s
-      local button_x = cx - button_w - gap / 2
-      draw_end_button(ass, mouse_pos(), "recovery_retry", button_x, button_y, button_x + button_w, button_y + button_h, "RETRY STREAM", false, s)
-      button_x = cx + gap / 2
-      draw_end_button(ass, mouse_pos(), "recovery_backup", button_x, button_y, button_x + button_w, button_y + button_h, "TRY BACKUP SOURCE", true, s)
-    end
+    -- MPV's cache fill percentage, never total torrent completion or a timer.
+    draw_text(ass, cx, cy + radius + 24 * s, 5, font_px(s, 18, 16, 22), C.white, 0, percent ~= nil and string.format("%d%%", percent) or "—", true, "Segoe UI Semibold")
+    local label = ui.recovery_attempt and "Reconnecting" or "Buffering"
+    draw_text(ass, cx, cy + radius + 48 * s, 5, font_px(s, 12, 11, 14), C.secondary, 12, percent == nil and "Measuring buffer" or label, false, "Segoe UI")
     return
   end
 
+  local artwork_layout = tostring(player_meta.artworkLayout or "landscape")
   local layout = loading_title_layout(loading_media_title(), width, height, s)
-  local title_size = clamp(layout.size, 46 * s, 104 * s)
-  local line_gap = title_size * 1.13
-  local title_center_y = height * 0.48
+  local title_size = clamp(layout.size, 50 * s, 94 * s)
+  local line_gap = title_size * 1.08
+  local title_x = width * 0.065
+  local title_center_y = height * 0.60
   local first_line_y = title_center_y - ((#layout.lines - 1) * line_gap / 2)
-  local spinner_y = height - 154 * s
-  local status_y = spinner_y + 48 * s
+  local episode_label = loading_episode_label()
+  local detail_y = first_line_y + #layout.lines * line_gap + 7 * s
+  local status_y = detail_y + (episode_label ~= "" and 40 * s or 12 * s)
   local t = (mp.get_time() - ui.anim_started)
-  local spinner_r = 19 * s
+  local percent = startup_loading_percent()
+  local status_text = status
+
+  -- Readability is baked into the generated full-viewport artwork with a
+  -- smooth neutral gradient. Avoid visible overlay bands and color tinting.
+
+  local accent_top = first_line_y - title_size * 0.54
+  local accent_bottom = first_line_y + (#layout.lines - 1) * line_gap + title_size * 0.54
+  rounded_rect(ass, title_x - 16 * s, accent_top, title_x - 12 * s, accent_bottom, 2 * s, C.accent, 0)
 
   for index, line_value in ipairs(layout.lines) do
-    draw_spaced_text(
+    draw_text(
       ass,
-      cx,
+      title_x,
       first_line_y + (index - 1) * line_gap,
-      5,
+      4,
       title_size,
       C.white,
       0,
       line_value,
-      layout.spacing,
       true,
       "Segoe UI Semibold"
     )
   end
 
-  local start_angle = (t * 250) % 360
-  draw_arc(ass, cx, spinner_y, spinner_r, start_angle, 218, 3.2 * s, C.accent, 0)
-  draw_arc(ass, cx, spinner_y, spinner_r * 0.62, 360 - start_angle, 142, 2.2 * s, C.white, 76)
-  circle(ass, cx, spinner_y, 3.2 * s, C.accent, 0)
-  draw_spaced_text(ass, cx, status_y, 5, font_px(s, 14, 13, 17), C.white, 8, status, 4.2 * s, true, "Segoe UI Semibold")
+  if episode_label ~= "" then
+    draw_text(ass, title_x, detail_y, 4, font_px(s, 17, 14, 20), C.secondary, 3, episode_label, false, "Segoe UI")
+  end
+  local activity_alpha = math.floor(28 + ((math.sin(t * 4.2) + 1) / 2) * 112)
+  circle(ass, title_x + 4 * s, status_y, 4 * s, C.accent, activity_alpha)
+  draw_text(ass, title_x + 18 * s, status_y, 4, font_px(s, 14, 12, 17), C.white, 4, status_text, true, "Segoe UI Semibold")
+
+  local bar_x1 = title_x
+  local bar_x2 = title_x + math.min(width * (artwork_layout == "portrait" and 0.42 or 0.38), 560 * s)
+  if percent ~= nil then
+    draw_text(ass, bar_x2, status_y + 2 * s, 6, font_px(s, 23, 19, 28), C.accent, 0, string.format("%d%%", percent), true, "Segoe UI Semibold")
+  else
+    draw_text(ass, bar_x2, status_y + 1 * s, 6, font_px(s, 12, 11, 14), C.secondary, 0, "Connecting", true, "Segoe UI Semibold")
+  end
+  local bar_y = status_y + 24 * s
+  rounded_rect(ass, bar_x1, bar_y, bar_x2, bar_y + 4 * s, 2 * s, C.white, 220)
+  if percent then
+    rounded_rect(ass, bar_x1, bar_y, bar_x1 + (bar_x2 - bar_x1) * clamp(percent / 100, 0, 1), bar_y + 4 * s, 2 * s, C.accent, 0)
+  else
+    local segment = (bar_x2 - bar_x1) * 0.22
+    local pulse_x = bar_x1 + ((bar_x2 - bar_x1) - segment) * ((math.sin(t * 3.0) + 1) / 2)
+    rounded_rect(ass, pulse_x, bar_y, pulse_x + segment, bar_y + 4 * s, 2 * s, C.accent, 0)
+  end
+  local cached = buffered_seconds()
+  if cached and not is_placeholder_media() then
+    draw_text(ass, bar_x1, bar_y + 20 * s, 4, font_px(s, 12, 11, 14), C.secondary, 0, string.format("%.1fs buffered", cached), false, "Segoe UI")
+  end
+  if ui.startup_stream_actions_visible then
+    local button_y = math.min(height - 66 * s, bar_y + 24 * s)
+    local button_w = 156 * s
+    local gap = 12 * s
+    draw_end_button(ass, mouse_pos(), "recovery_retry", bar_x1, button_y, bar_x1 + button_w, button_y + 40 * s, "RETRY STREAM", false, s)
+    draw_end_button(ass, mouse_pos(), "recovery_backup", bar_x1 + button_w + gap, button_y, bar_x1 + button_w * 2 + gap, button_y + 40 * s, "TRY BACKUP SOURCE", true, s)
+  end
 end
 
 function draw_loading(ass, width, height, s, cover_info)
-  if not (is_loading() or is_buffering()) then return end
+  if not (is_loading() or is_buffering() or hold_cover_for_first_video_frame()) then return end
   local cx = width / 2
   local status = loading_status_text()
   local buffering_only = is_midplayback_buffering()
@@ -2791,9 +3176,8 @@ function draw_loading(ass, width, height, s, cover_info)
       rect(ass, 0, 0, width, height, C.black, 150)
     else
       rect(ass, 0, 0, width, height, C.black, 0)
-      rect(ass, 0, 0, width, height, "150006", 108)
+      rect(ass, 0, 0, width, height, C.panel, 80)
     end
-    rect(ass, 0, 0, width, height, C.accent, 248)
     draw_loading_required_content(ass, width, height, s, status)
   end)
 
@@ -2900,9 +3284,42 @@ function subtitle_style_cache_key()
   }, "|")
 end
 
+function sleep_timer_label()
+  if not ui.sleep_deadline then return "Off" end
+  return tostring(math.max(1, math.ceil((ui.sleep_deadline - mp.get_time()) / 60))) .. " min left"
+end
+
+function set_sleep_timer(minutes)
+  local allowed = { [0] = true, [15] = true, [30] = true, [60] = true, [90] = true, [120] = true }
+  minutes = tonumber(minutes)
+  if not minutes or not allowed[minutes] then return false end
+  ui.sleep_deadline = minutes > 0 and mp.get_time() + minutes * 60 or nil
+  ui.sleep_expired = false
+  mark_menu_dirty("main")
+  mark_menu_dirty("sleep")
+  return true
+end
+
+function check_sleep_timer()
+  if not ui.sleep_deadline or mp.get_time() < ui.sleep_deadline then return end
+  ui.sleep_deadline = nil
+  ui.sleep_expired = true
+  hide_end_overlay(true)
+  state.paused = true
+  safe_set_property_bool("pause", true)
+  mark_menu_dirty("main")
+  mark_menu_dirty("sleep")
+  show_overlay()
+  settings_notice("Sleep timer ended. Playback paused.")
+  draw(true, "sleep-timer")
+end
+
 function menu_cache_key(menu)
   if menu == "main" then
     return table.concat({
+      tostring(seek_step_seconds()),
+      tostring(state.download_status),
+      sleep_timer_label(),
       tostring(state.speed),
       tostring(state.sid),
       tostring(state.aid),
@@ -2922,6 +3339,8 @@ function menu_cache_key(menu)
     }, "|")
   elseif menu == "speed" then
     return tostring(state.speed)
+  elseif menu == "seek_step" then
+    return tostring(seek_step_seconds())
   elseif menu == "subs" then
     return table.concat({ tostring(state.sid), tostring(state.sub_visible), tostring(state.sub_delay), tostring(track_cache_generation) }, "|")
   elseif menu == "appearance" then
@@ -2977,6 +3396,9 @@ end
 
 function build_main_settings_rows()
   return {
+    { id = "settings:download", icon = "download", label = "Downloads · save episode files", value = "Open manager…", type = "action" },
+    { id = "settings:seek_step", icon = "skip", label = "Seek step", value = tostring(seek_step_seconds()) .. " seconds", type = "submenu" },
+    { id = "settings:sleep", icon = "speed", label = "Sleep timer", value = sleep_timer_label(), type = "submenu" },
     { id = "settings:subs", icon = "sub", label = "Subtitles / CC", value = current_track_label("sub", "Off"), type = "submenu", active = state.sub_visible and state.sid ~= "no" },
     { id = "settings:appearance", icon = "appearance", label = "Subtitle Appearance", value = subtitle_style_summary(), type = "submenu", active = state.subtitle_style.custom },
     { id = "settings:audio", icon = "audio", label = "Audio", value = current_track_label("audio", "Auto") .. " / " .. format_audio_delay(state.audio_delay), type = "submenu", active = math.abs(tonumber(state.audio_delay) or 0) >= 0.005 },
@@ -2991,7 +3413,20 @@ function build_main_settings_rows()
 end
 
 function build_submenu_rows(menu)
-  if menu == "speed" then
+  if menu == "sleep" then
+    local rows = {}
+    for _, minutes in ipairs({0, 15, 30, 60, 90, 120}) do
+      rows[#rows + 1] = { label = minutes == 0 and "Off" or tostring(minutes) .. " minutes", value = minutes, active = minutes == 0 and not ui.sleep_deadline }
+    end
+    return "Sleep timer", rows, "sleep:"
+  end
+  if menu == "seek_step" then
+    local options = {}
+    for seconds = 5, 60, 5 do
+      options[#options + 1] = { label = tostring(seconds) .. " seconds", value = seconds, active = seek_step_seconds() == seconds }
+    end
+    return "Seek step", options, "seek_step:"
+  elseif menu == "speed" then
     local options = {}
     for _, speed in ipairs(SPEEDS) do
       options[#options + 1] = { label = speed_label(speed), value = speed, active = math.abs((state.speed or 1) - speed) < 0.03 }
@@ -3102,7 +3537,10 @@ function build_submenu_rows(menu)
 end
 
 function submenu_title_prefix(menu)
-  if menu == "speed" then
+  if menu == "sleep" then return "Sleep timer", "sleep:" end
+  if menu == "seek_step" then
+    return "Seek step", "seek_step:"
+  elseif menu == "speed" then
     return "Playback Speed", "speed:"
   elseif menu == "subs" then
     return "Subtitles", "sub:"
@@ -3131,7 +3569,8 @@ function submenu_title_prefix(menu)
 end
 
 function draw_main_settings(ass, width, height, mouse, s)
-  local rows = cached_menu_rows("main", build_main_settings_rows)
+  s = math.min(s, width / 500, height / 600)
+  local rows = fitted_options(cached_menu_rows("main", build_main_settings_rows), height, s, 57 * s, 56 * s)
   local x1, y1, x2, _, row_h, header_h = panel_bounds(width, height, s, #rows)
   local y2 = y1 + header_h + row_h * #rows + 10 * s
   draw_panel_shell(ass, x1, y1, x2, y2, "Settings", s)
@@ -3145,6 +3584,11 @@ end
 function fitted_options(options, height, s, row_h, header_h)
   local max_rows = math.max(5, math.floor((height - 132 * s - header_h) / math.max(1, row_h)))
   local max_options = math.max(3, max_rows - 1)
+  if ui.option_menu_name ~= ui.submenu then
+    ui.option_menu_name = ui.submenu
+    ui.option_menu_scroll = 0
+  end
+  ui.option_menu_max_scroll = math.max(0, #options - max_options)
   if #options <= max_options then return options end
 
   if ui.submenu == "subs" then
@@ -3159,36 +3603,18 @@ function fitted_options(options, height, s, row_h, header_h)
     return output
   end
 
+  -- Every setting remains reachable. A disabled "more items" row previously
+  -- hid controls permanently on smaller windows.
+  ui.option_menu_scroll = math.floor(clamp(ui.option_menu_scroll or 0, 0, ui.option_menu_max_scroll))
   local output = {}
-  local active_included = false
-  for i = 1, max_options - 1 do
+  for i = ui.option_menu_scroll + 1, math.min(#options, ui.option_menu_scroll + max_options) do
     output[#output + 1] = options[i]
-    if options[i] and options[i].active then active_included = true end
   end
-
-  if not active_included then
-    for i = max_options, #options do
-      if options[i] and options[i].active then
-        output[#output + 1] = options[i]
-        active_included = true
-        break
-      end
-    end
-  end
-
-  if not active_included then
-    output[#output + 1] = {
-      label = string.format("%d more items", #options - (max_options - 1)),
-      detail = "Use MPV shortcuts",
-      value = "__more",
-      disabled = true
-    }
-  end
-
   return output
 end
 
 function draw_option_submenu(ass, width, height, mouse, s, title, options, prefix)
+  s = math.min(s, width / 500, height / 600)
   local base_row_h = 57 * s
   local base_header_h = 56 * s
   local menu_options = fitted_options(options, height, s, base_row_h, base_header_h)
@@ -3230,10 +3656,11 @@ function draw_option_submenu(ass, width, height, mouse, s, title, options, prefi
       add_region(prefix .. tostring(option.value), x1, ry1, x2, ry2, option)
     end
   end
-  if ui.submenu == "subs" and #options > #menu_options then
+  if #options > #menu_options then
     local visible_count = math.max(1, #menu_options)
     local max_scroll = math.max(1, #options - visible_count)
-    local ratio = clamp((ui.subtitle_menu_scroll or 0) / max_scroll, 0, 1)
+    local scroll = ui.submenu == "subs" and ui.subtitle_menu_scroll or ui.option_menu_scroll
+    local ratio = clamp((scroll or 0) / max_scroll, 0, 1)
     local track_y1 = by1 + row_h + 7 * s
     local track_y2 = y2 - 18 * s
     local thumb_h = math.max(24 * s, (track_y2 - track_y1) * visible_count / math.max(visible_count, #options))
@@ -3260,6 +3687,20 @@ function draw_settings_panel(ass, width, height, mouse, s)
   end
 end
 
+function apply_osd(width, height, text)
+  text = text or ""
+  if ui.last_ass_text == text and ui.last_ass_width == width and ui.last_ass_height == height then return end
+  ui.last_ass_text = text
+  ui.last_ass_width = width
+  ui.last_ass_height = height
+  mp.set_osd_ass(width, height, text)
+end
+
+function input_draw_interval(loading, dragging, reason)
+  if dragging or (type(reason) == "string" and reason:sub(1, 6) == "mouse-") then return 1 / 60 end
+  return loading and 0.04 or 0.066
+end
+
 function draw(immediate, reason)
   local now = mp.get_time()
   local width, height = mp.get_osd_size()
@@ -3267,34 +3708,41 @@ function draw(immediate, reason)
     width, height = 1280, 720
   end
   local force_minimal_osd = DEBUG_FORCE_MINIMAL_OSD
-  local loading = is_loading() or is_buffering()
-  if not force_minimal_osd and not immediate and not ui.visible and not loading and not ui.pending_draw and not ui.end_overlay then
+  local startup_loading = is_loading() or hold_cover_for_first_video_frame()
+  local loading = startup_loading or is_buffering()
+  local loading_changed = ui.last_render_loading ~= loading
+  local skip_intro_range = nil
+  local skip_outro_range = nil
+  local skip_only = false
+  if not force_minimal_osd and not loading and not ui.end_overlay and not ui.visible then
+    skip_intro_range = manual_skip_range("intro")
+    skip_outro_range = manual_skip_range("outro")
+    skip_only = skip_intro_range ~= nil or skip_outro_range ~= nil
+  end
+  if not force_minimal_osd and not immediate and not loading_changed and not ui.visible and not loading and not ui.pending_draw and not ui.end_overlay and not skip_only and not ui.skip_only_rendered then
     return
   end
   local active_interaction = ui.dragging
-  local min_interval = loading and 0.04 or 0.066
-  if ui.dragging then
-    min_interval = 0.033
-  elseif ui.settings_open then
-    min_interval = 0.12
-  end
-  if not immediate and ui.visible and now - (ui.last_draw_at or 0) < min_interval then
+  local min_interval = input_draw_interval(loading, ui.dragging, reason)
+  if not immediate and not loading_changed and ui.visible and now - (ui.last_draw_at or 0) < min_interval then
     ui.pending_draw = true
     return
   end
   ui.pending_draw = false
+  ui.last_render_loading = loading
   ui.last_draw_at = now
   ui.draw_count = (ui.draw_count or 0) + 1
   if ui.visible and not loading and not state.paused and not ui.settings_open and not ui.dragging and not ui.end_overlay and mp.get_time() - ui.last_interaction > AUTO_HIDE_SECONDS then
     ui.visible = false
-    reset_regions()
-    mp.set_osd_ass(width, height, "")
-    clear_cover_overlay()
-    return
+    skip_intro_range = manual_skip_range("intro")
+    skip_outro_range = manual_skip_range("outro")
+    skip_only = skip_intro_range ~= nil or skip_outro_range ~= nil
   end
-  if not ui.visible and not loading and not ui.end_overlay then
+  if not ui.visible and not loading and not ui.end_overlay and not skip_only then
     reset_regions()
     clear_cover_overlay()
+    apply_osd(width, height, "")
+    ui.skip_only_rendered = false
     return
   end
 
@@ -3306,12 +3754,25 @@ function draw(immediate, reason)
   if force_minimal_osd then
     draw_smoke_test(ass, width, height, s)
     ui.render_has_run = true
-    mp.set_osd_ass(width, height, ass.text)
+    apply_osd(width, height, ass.text)
     return
   end
 
+  if skip_only then
+    clear_cover_overlay()
+    draw_manual_skip_buttons(ass, width, height, mouse, s, skip_intro_range, skip_outro_range, true)
+    ui.regions_ready = #regions > 0
+    ui.region_width = width
+    ui.region_height = height
+    ui.render_has_run = true
+    ui.skip_only_rendered = true
+    apply_osd(width, height, ass.text)
+    return
+  end
+  ui.skip_only_rendered = false
+
   if loading then
-    if is_loading() then
+    if startup_loading then
       maybe_reload_loading_metadata()
     end
     if not ui.native_loading_osd_cleared then
@@ -3321,12 +3782,17 @@ function draw(immediate, reason)
   else
     ui.native_loading_osd_cleared = false
   end
-  local cover_info = update_cover_overlay(is_loading(), width, height, s)
+  local cover_info = update_cover_overlay(startup_loading, width, height, s)
   if loading then
     draw_loading(ass, width, height, s, cover_info)
+    -- Buffer telemetry must not dismiss a menu or replace its hit targets
+    -- between mouse-down and mouse-up. Menus are always the top input layer.
+    if ui.settings_open then draw_settings_panel(ass, width, height, mouse, s) end
     ui.regions_ready = #regions > 0
+    ui.region_width = width
+    ui.region_height = height
     ui.render_has_run = true
-    mp.set_osd_ass(width, height, ass.text)
+    apply_osd(width, height, ass.text)
     if DEBUG_PERF and now - (ui.last_perf_log or 0) > 1 then
       local draw_ms = (mp.get_time() - now) * 1000
       debug_perf(string.format("draws=%d reason=%s loading=true ass=%d ms=%.1f", ui.draw_count or 0, tostring(reason or ""), #ass.text, draw_ms))
@@ -3336,21 +3802,20 @@ function draw(immediate, reason)
     return
   end
 
-  draw_gradient_top(ass, width, height, s)
-  draw_gradient_bottom(ass, width, height, s)
+  -- Top and bottom backgrounds stay completely transparent.
   draw_title_area(ass, width, height, s)
   draw_center_play(ass, width, height, mouse, s)
-  draw_settings_panel(ass, width, height, mouse, s)
   draw_timeline(ass, width, height, mouse, s)
   draw_controls(ass, width, height, mouse, s)
   draw_manual_skip_buttons(ass, width, height, mouse, s)
   draw_end_overlay(ass, width, height, mouse, s)
+  draw_settings_panel(ass, width, height, mouse, s)
 
   ui.regions_ready = #regions > 0
   ui.region_width = width
   ui.region_height = height
   ui.render_has_run = true
-  mp.set_osd_ass(width, height, ass.text)
+    apply_osd(width, height, ass.text)
   if DEBUG_PERF and now - (ui.last_perf_log or 0) > 1 then
     local draw_ms = (mp.get_time() - now) * 1000
     debug_perf(string.format("draws=%d reason=%s visible=%s menu=%s ass=%d hitboxes=%d ms=%.1f", ui.draw_count or 0, tostring(reason or ""), tostring(ui.visible), tostring(ui.submenu), #ass.text, #regions, draw_ms))
@@ -3360,15 +3825,15 @@ function draw(immediate, reason)
 end
 
 function redraw_for_input()
-  show_overlay()
   local width, height = mp.get_osd_size()
-  if ui.visible
-    and ui.regions_ready
+  if ui.regions_ready
     and #regions > 0
     and ui.region_width == width
     and ui.region_height == height then
-    return hit_region()
+    local region, mouse = hit_region()
+    if region then return region, mouse end
   end
+  show_overlay()
   draw(true, "input")
   return hit_region()
 end
@@ -3377,6 +3842,18 @@ function update_property(name, value, should_show)
   state[name] = value
   if should_show then show_overlay() end
   draw(false, "property:" .. tostring(name))
+end
+
+function note_explicit_seek(target)
+  ui.last_video_position = math.max(0, tonumber(target) or 0)
+  ui.playhead_last_advance_at = mp.get_time()
+  -- A user seek during a retry replaces the resume checkpoint. Do not let
+  -- recovery jump back to its older position, especially after a backward seek.
+  if ui.recovery_attempt and ui.recovery_attempt.kind ~= "backup" then
+    ui.recovery_attempt.position = ui.last_video_position
+    ui.recovery_attempt.started_at = mp.get_time()
+    ui.recovery_attempt.restart_seen = false
+  end
 end
 
 function set_seek_from_mouse(mouse, final, preview_command)
@@ -3388,6 +3865,7 @@ function set_seek_from_mouse(mouse, final, preview_command)
   ratio = set_drag_preview_ratio(ratio)
   local target = ratio * state.duration
   if final then
+    note_explicit_seek(target)
     mp.commandv("seek", tostring(target), "absolute+exact")
     state.pos = target
     clear_drag_preview()
@@ -3449,6 +3927,7 @@ function seek_relative(seconds)
   local duration = tonumber(state.duration) or 0
   if duration > 0 then
     local target = clamp((tonumber(state.pos) or 0) + amount, 0, math.max(0, duration - 0.1))
+    note_explicit_seek(target)
     safe_commandv("seek", tostring(target), "absolute+exact")
   else
     safe_commandv("seek", tostring(amount), "relative")
@@ -3478,6 +3957,7 @@ function perform_skip_range(range, mode, close_menu)
     ui.skip_intro_applied = true
   end
 
+  note_explicit_seek(target)
   safe_commandv("seek", tostring(target), "absolute+exact")
   msg.info(string.format(
     "[StreamNyaa Lua] %s skipped %s: %.1f -> %.1f source=%s",
@@ -3533,14 +4013,28 @@ end
 
 function set_window_mode(mode)
   if mode == "mini" then
+    if state.mini_player then return end
+    local width, height = mp.get_osd_size()
+    ui.window_before_mini = {
+      fullscreen = mp.get_property_native("fullscreen", false),
+      maximized = mp.get_property_native("window-maximized", false),
+      ontop = mp.get_property_native("ontop", false),
+      geometry = string.format("%dx%d", width, height),
+    }
     state.mini_player = true
     safe_set_property("fullscreen", "no")
+    safe_set_property("window-maximized", "no")
     safe_set_property("ontop", "yes")
     safe_set_property("geometry", MINI_GEOMETRY)
   else
+    if not state.mini_player then return end
+    local previous = ui.window_before_mini or { maximized = true }
     state.mini_player = false
-    safe_set_property("ontop", "no")
-    safe_set_property("geometry", NORMAL_GEOMETRY)
+    safe_set_property("ontop", previous.ontop and "yes" or "no")
+    if previous.geometry then safe_set_property("geometry", previous.geometry) end
+    safe_set_property("window-maximized", previous.maximized and "yes" or "no")
+    safe_set_property("fullscreen", previous.fullscreen and "yes" or "no")
+    ui.window_before_mini = nil
   end
   show_overlay()
 end
@@ -3567,15 +4061,18 @@ function update_demuxer_cache(value)
     underrun = value["underrun"] == true
     local ranges = value["seekable-ranges"]
     if type(ranges) == "table" then
+      cache_end = 0
       for _, range in ipairs(ranges) do
-        if type(range) == "table" and tonumber(range["end"]) then
+        if type(range) == "table" and tonumber(range["start"]) and tonumber(range["end"])
+          and tonumber(range["start"]) <= (tonumber(state.pos) or 0) + 0.1
+          and tonumber(range["end"]) >= (tonumber(state.pos) or 0) then
           cache_end = math.max(cache_end, tonumber(range["end"]) or 0)
         end
       end
     end
   end
   state.cache_end = cache_end
-  state.demuxer_cache_duration = cache_duration
+  state.demuxer_state_duration = cache_duration
   state.demuxer_underrun = underrun
   if underrun and clean_buffering_percent(demuxer_percent) then
     state.demuxer_buffering_percent = clamp(demuxer_percent, 0, 100)
@@ -3586,6 +4083,17 @@ function update_demuxer_cache(value)
   update_stall_watchdog_timer()
   if not ui.settings_open or is_loading() or is_buffering() then
     draw(false, "demuxer-cache")
+  end
+end
+
+function set_release_subtitle_delay(seconds)
+  seconds = clamp(tonumber(seconds) or 0, -120, 120)
+  state.sub_delay = seconds
+  player_meta.subtitleOffsetSeconds = seconds
+  safe_set_property_number("sub-delay", seconds)
+  local key = tostring(player_meta.subtitleOffsetKey or "")
+  if key:match("^subtitleOffset%.[a-fA-F0-9]+%.%d+$") then
+    emit_player_setting_changed(key, tostring(seconds))
   end
 end
 
@@ -3606,6 +4114,7 @@ function activate_region(region, mouse)
   if id ~= "settings"
     and not starts_with(id, "settings:")
     and not starts_with(id, "speed:")
+    and not starts_with(id, "seek_step:")
     and not starts_with(id, "sub:")
     and not starts_with(id, "appearance:")
     and not starts_with(id, "style:")
@@ -3621,29 +4130,39 @@ function activate_region(region, mouse)
   if id == "end_next_episode" then
     request_next_episode("manual")
   elseif id == "end_replay" then
-    hide_end_overlay()
+    hide_end_overlay(true)
     ui.eof_handled_key = ""
     ui.last_next_episode_request_key = ""
+    note_explicit_seek(0)
     safe_commandv("seek", "0", "absolute+exact")
     safe_set_property_bool("pause", false)
     settings_notice("Replaying episode")
   elseif id == "end_close" then
-    hide_end_overlay()
+    hide_end_overlay(true)
     settings_notice("Episode finished")
   elseif id == "recovery_retry" then
-    request_same_source_recovery("manual")
+    if not request_same_source_recovery("manual") then
+      -- Metadata may have failed before MPV received a stream URL. Ask the
+      -- app to retry the selected release rather than reloading a placeholder.
+      ui.recovery_attempt = nil
+      request_backup_source_recovery("retry")
+    end
+    ui.startup_stream_actions_visible = false
     show_overlay()
   elseif id == "recovery_backup" then
+    ui.recovery_attempt = nil
+    ui.recovery_terminal = false
     request_backup_source_recovery()
     ui.stall_actions_visible = false
+    ui.startup_stream_actions_visible = false
     settings_notice("Requesting a same-episode backup source...")
   elseif id == "play" or id == "center_play" or id == "center_toggle" then
-    if ui.end_overlay then hide_end_overlay() end
+    if ui.end_overlay then hide_end_overlay(true) end
     mp.commandv("cycle", "pause")
   elseif id == "back" then
-    seek_relative(-10)
+    seek_relative(-seek_step_seconds())
   elseif id == "forward" then
-    seek_relative(10)
+    seek_relative(seek_step_seconds())
   elseif id == "next_episode" then
     request_next_episode("manual")
   elseif id == "manual_skip_intro" or id == "manual_skip_outro" then
@@ -3700,6 +4219,21 @@ function activate_region(region, mouse)
     ui.submenu = "video"
   elseif id == "settings:playback" then
     ui.submenu = "playback"
+  elseif id == "settings:download" or id == "download" then
+    safe_commandv("script-message", "streamnyaa-download-request")
+  elseif id == "settings:seek_step" then
+    ui.submenu = "seek_step"
+  elseif id == "settings:sleep" then
+    ui.submenu = "sleep"
+  elseif starts_with(id, "sleep:") then
+    set_sleep_timer(region.data and region.data.value)
+    ui.settings_open = true
+    ui.submenu = "main"
+  elseif starts_with(id, "seek_step:") then
+    apply_player_preference("seekStepSeconds", region.data and region.data.value)
+    emit_player_setting_changed("seekStepSeconds", tostring(seek_step_seconds()))
+    ui.settings_open = true
+    ui.submenu = "main"
   elseif id == "settings:autoplay" then
     state.autoplay = not state.autoplay
     safe_commandv("script-message", "streamnyaa-auto-next-changed", state.autoplay and "true" or "false")
@@ -3733,13 +4267,13 @@ function activate_region(region, mouse)
       request_external_subtitle_import()
       ui.submenu = "subs"
     elseif tostring(value) == "delay_down" then
-      safe_set_property_number("sub-delay", (tonumber(state.sub_delay) or 0) - 0.1)
+      set_release_subtitle_delay((tonumber(state.sub_delay) or 0) - 0.1)
       ui.submenu = "subs"
     elseif tostring(value) == "delay_up" then
-      safe_set_property_number("sub-delay", (tonumber(state.sub_delay) or 0) + 0.1)
+      set_release_subtitle_delay((tonumber(state.sub_delay) or 0) + 0.1)
       ui.submenu = "subs"
     elseif tostring(value) == "delay_reset" then
-      safe_set_property_number("sub-delay", 0)
+      set_release_subtitle_delay(0)
       ui.submenu = "subs"
     elseif tostring(value) == "no" then
       safe_set_property("sid", "no")
@@ -3844,6 +4378,7 @@ function activate_region(region, mouse)
 end
 
 function handle_mouse_move()
+  note_direct_interaction()
   show_overlay()
   local mouse = mouse_pos()
   if not mouse and ui.dragging then
@@ -3874,7 +4409,7 @@ function handle_mouse_move()
     local hover_id = region and tostring(region.id or "") or ""
     if hover_id ~= ui.hover_region_id then
       ui.hover_region_id = hover_id
-      draw(false, "mouse-hover")
+      draw(true, "mouse-hover")
     end
     return
   end
@@ -3882,6 +4417,7 @@ function handle_mouse_move()
 end
 
 function handle_mouse_down()
+  note_direct_interaction()
   local region, mouse = redraw_for_input()
   debug_input("down target=" .. tostring(region and region.id or "none"))
   ui.dragging = nil
@@ -3894,9 +4430,7 @@ function handle_mouse_down()
     begin_drag("volume", mouse)
     set_volume_from_mouse(mouse, false, false)
   end
-  if ui.dragging then
-    draw(true, "mouse-down")
-  end
+  draw(true, "mouse-down")
 end
 
 function handle_mouse_up()
@@ -3910,17 +4444,12 @@ function handle_mouse_up()
     debug_input("finish volume drag")
   else
     local down_region = ui.mouse_down_region
-    local target = region
-    if is_settings_region(region) then
-      if is_actionable_region(region) then
-        target = region
-      elseif is_settings_region(down_region) and is_actionable_region(down_region) then
-        target = down_region
-      end
-    elseif down_region and mouse and inside(mouse, down_region.x1, down_region.y1, down_region.x2, down_region.y2) then
-      target = down_region
+    -- A release over a different control cancels instead of firing that control.
+    if down_region and region and down_region.id == region.id then
+      activate_region(region, mouse)
+    elseif not down_region and not region then
+      activate_region(nil, mouse)
     end
-    activate_region(target, mouse)
   end
   ui.dragging = nil
   clear_drag_preview()
@@ -3941,6 +4470,7 @@ function handle_mouse_press(event)
     activate_region(region, mouse)
     draw(true, "mouse-press")
   elseif ev == "double" then
+    note_direct_interaction()
     show_overlay()
     ui.settings_open = false
     ui.submenu = "main"
@@ -3953,10 +4483,15 @@ function handle_mouse_press(event)
 end
 
 function handle_wheel(delta)
+  note_direct_interaction()
   show_overlay()
-  if ui.settings_open and ui.submenu == "subs" then
-    ui.subtitle_menu_scroll = math.max(0, (ui.subtitle_menu_scroll or 0) + delta)
-    draw(true, delta > 0 and "wheel-subtitles-down" or "wheel-subtitles-up")
+  if ui.settings_open then
+    if ui.submenu == "subs" then
+      ui.subtitle_menu_scroll = math.max(0, (ui.subtitle_menu_scroll or 0) + delta)
+    else
+      ui.option_menu_scroll = clamp((ui.option_menu_scroll or 0) + delta, 0, ui.option_menu_max_scroll or 0)
+    end
+    draw(true, delta > 0 and "wheel-settings-down" or "wheel-settings-up")
     return
   end
   safe_commandv("add", "volume", delta < 0 and "5" or "-5")
@@ -3985,11 +4520,12 @@ function bind_key(key, name, fn)
 end
 
 function close_menu_or_overlay()
+  note_direct_interaction()
   ui.dragging = nil
   clear_drag_preview()
   ui.mouse_down_region = nil
   if ui.end_overlay then
-    hide_end_overlay()
+    hide_end_overlay(true)
     draw(true, "escape-end-overlay")
     return
   end
@@ -4001,11 +4537,16 @@ function close_menu_or_overlay()
     else
       ui.settings_open = false
     end
+  elseif mp.get_property_native("fullscreen", state.fullscreen) then
+    safe_set_property("fullscreen", "no")
+    show_overlay()
+    draw(true, "escape-fullscreen")
+    return
   else
     ui.visible = false
     reset_regions()
     local width, height = mp.get_osd_size()
-    mp.set_osd_ass(width or 1280, height or 720, "")
+    apply_osd(width or 1280, height or 720, "")
   end
   draw(true, "escape")
 end
@@ -4013,17 +4554,58 @@ end
 mp.observe_property("duration", "number", function(_, value)
   state.duration = value or 0
   if has_playable_media() then
-    state.has_started_playback = true
     ui.eof_candidate_key = current_media_key()
-    ui.loading_override_until = 0
+    begin_startup_stream_watchdog(state.path)
   end
   show_overlay()
   draw(true, "duration")
 end)
 mp.observe_property("time-pos", "number", function(_, value)
+  local previous_pos = tonumber(state.pos) or 0
   state.pos = value or 0
-  if has_playable_media() and state.pos >= 0 then
-    state.has_started_playback = true
+  if has_playable_media() and value ~= nil and not state.idle then
+    ui.last_video_position = state.pos
+  end
+  -- Property notifications can arrive after playback-restart, particularly
+  -- when replacing the loading image. Confirm video independently of that event.
+  if not state.has_started_playback and value ~= nil and not state.seeking
+    and not state.paused and not state.paused_for_cache
+    and not is_placeholder_media() and state.path ~= ""
+    and state.pos > previous_pos + 0.01 then
+    local video = mp.get_property_native("video-out-params")
+    if mp.get_property_native("vo-configured", false) and type(video) == "table"
+      and (tonumber(video.w) or 0) > 0 and (tonumber(video.h) or 0) > 0 then
+      state.has_started_playback = true
+      ui.loading_override_until = 0
+      begin_first_video_frame_handoff()
+      safe_set_property("user-data/streamnyaa/has_started", "true")
+      reset_startup_stream_watchdog(true)
+      draw(true, "advancing-first-video-frame")
+    end
+  end
+  if has_playable_media() and state.has_started_playback and not state.seeking and state.pos > previous_pos + 0.05 then
+    ui.last_video_position = state.pos
+    ui.playhead_last_advance_at = mp.get_time()
+    local video = mp.get_property_native("video-out-params")
+    if ui.recovery_terminal and not state.idle and not state.paused_for_cache
+      and mp.get_property_native("vo-configured", false)
+      and type(video) == "table" and (tonumber(video.w) or 0) > 0 and (tonumber(video.h) or 0) > 0 then
+      ui.recovery_terminal = false
+      ui.recovery_attempt = nil
+      ui.stall_actions_visible = false
+      ui.startup_stream_actions_visible = false
+      reset_stall_watchdog(true)
+      safe_set_property("user-data/streamnyaa/recovery_stage", "playing")
+      draw(true, "video-recovered")
+    end
+    if ui.recovery_attempt and ui.recovery_attempt.restart_seen
+      and state.pos > ui.recovery_attempt.position + 0.25 then
+      ui.recovery_attempt = nil
+      ui.recovery_terminal = false
+      reset_stall_watchdog(true)
+      msg.info("[StreamNyaa Lua] Recovery confirmed by advancing video")
+    end
+    reset_startup_stream_watchdog(true)
     ui.eof_candidate_key = current_media_key()
     ui.loading_override_until = 0
   end
@@ -4037,7 +4619,12 @@ mp.observe_property("time-pos", "number", function(_, value)
   update_stall_watchdog_timer()
 end)
 mp.observe_property("pause", "bool", function(_, value)
+  if value == false then ui.sleep_expired = false end
   update_property("paused", value or false, true)
+  update_stall_watchdog_timer()
+end)
+mp.observe_property("seeking", "bool", function(_, value)
+  update_property("seeking", value or false, true)
   update_stall_watchdog_timer()
 end)
 mp.observe_property("volume", "number", function(_, value) update_property("volume", value or 100, false) end)
@@ -4063,16 +4650,36 @@ end)
 mp.observe_property("path", "string", function(_, value)
   local next_path = value or ""
   if next_path ~= state.path then
+    local recovering_same_file = ui.recovery_attempt
+      and (next_path == "" or next_path == ui.recovery_attempt.path)
     reset_skip_range_state()
     reset_end_overlay_state()
     reset_buffering_state()
     reset_stall_watchdog(false)
+    if not recovering_same_file then
+      ui.source_recovery_count = 0
+      ui.recovery_attempt = nil
+      ui.recovery_terminal = false
+      ui.last_video_position = 0
+      ui.playhead_last_advance_at = mp.get_time()
+    end
     ui.marker_log_key = ""
     ui.chapter_state_key = ""
     ui.anim_started = mp.get_time()
-    state.has_started_playback = false
+    if not recovering_same_file then state.has_started_playback = false end
+    ui.first_video_frame_cover_until = 0
+    safe_set_property("user-data/streamnyaa/has_started", "false")
     ui.loading_override_until = mp.get_time() + 2.5
+    if is_placeholder_path(next_path) then
+      ui.last_startup_loading_percent = 0
+      reset_startup_stream_watchdog(true)
+    elseif next_path ~= "" then
+      begin_startup_stream_watchdog(next_path)
+    else
+      reset_startup_stream_watchdog(true)
+    end
   end
+  if next_path ~= "" and not is_placeholder_path(next_path) then ui.last_video_path = next_path end
   update_property("path", next_path, true)
   update_stall_watchdog_timer()
 end)
@@ -4081,8 +4688,8 @@ mp.observe_property("media-title", "string", function(_, value) update_property(
 mp.observe_property("cache-buffering-state", "number", function(_, value)
   local percent = tonumber(value)
   state.cache_percent = percent or 0
-  if clean_buffering_percent(percent) then
-    state.cache_buffering_active = true
+  if clean_buffering_percent(percent) ~= nil then
+    state.cache_buffering_active = percent < 100
     state.cache_buffering_percent = clamp(percent, 0, 100)
   else
     state.cache_buffering_active = false
@@ -4097,7 +4704,7 @@ end)
 mp.observe_property("demuxer-cache-state", "native", function(_, value) update_demuxer_cache(value) end)
 mp.observe_property("demuxer-cache-duration", "number", function(_, value)
   local duration = tonumber(value)
-  if duration and duration > 0 then
+  if duration and duration >= 0 then
     state.demuxer_cache_duration = duration
   else
     state.demuxer_cache_duration = nil
@@ -4166,7 +4773,10 @@ mp.observe_property("track-list", "native", function(_, value)
 end)
 
 bind("MBTN_LEFT", "streamnyaa-click", handle_mouse_press)
-bind("MBTN_LEFT_DBL", "streamnyaa-double-click", function()
+function handle_double_click()
+  local region = redraw_for_input()
+  if ui.settings_open or ui.dragging or region then return end
+  note_direct_interaction()
   show_overlay()
   ui.settings_open = false
   ui.submenu = "main"
@@ -4175,52 +4785,124 @@ bind("MBTN_LEFT_DBL", "streamnyaa-double-click", function()
   ui.mouse_down_region = nil
   safe_commandv("cycle", "fullscreen")
   draw(true, "double-click-binding")
-end)
+end
+bind("MBTN_LEFT_DBL", "streamnyaa-double-click", handle_double_click)
 bind("mouse_move", "streamnyaa-mouse-move", handle_mouse_move)
 bind("WHEEL_UP", "streamnyaa-wheel-up", function() handle_wheel(-1) end)
 bind("WHEEL_DOWN", "streamnyaa-wheel-down", function() handle_wheel(1) end)
 
 bind_key("ESC", "streamnyaa-escape", close_menu_or_overlay)
-bind_key("SPACE", "streamnyaa-space", function() show_overlay(); safe_commandv("cycle", "pause"); draw(true, "key-space") end)
-bind_key("LEFT", "streamnyaa-left", function() show_overlay(); seek_relative(-10); draw(true, "key-left") end)
-bind_key("RIGHT", "streamnyaa-right", function() show_overlay(); seek_relative(10); draw(true, "key-right") end)
+function keyboard_action(reason, fn)
+  note_direct_interaction()
+  show_overlay()
+  safe_set_property("user-data/streamnyaa/last_shortcut", tostring(reason or "unknown"))
+  fn()
+  draw(true, reason)
+end
+
+function keyboard_toggle_pause(reason)
+  if ui.end_overlay then activate_region({ id = ui.end_focus }, nil); draw(true, reason); return end
+  keyboard_action(reason, function() safe_commandv("cycle", "pause") end)
+end
+
+function keyboard_seek(seconds, reason)
+  if ui.end_overlay then
+    local choices = ui.end_status == "unavailable" and {"end_replay", "end_close"} or ui.end_next_pending and {"end_replay", "end_close"} or {"end_next_episode", "end_replay", "end_close"}
+    local current = 1
+    for i, id in ipairs(choices) do if id == ui.end_focus then current = i end end
+    ui.end_focus = choices[((current - 1 + (seconds > 0 and 1 or -1)) % #choices) + 1]
+    draw(true, reason)
+    return
+  end
+  keyboard_action(reason, function() seek_relative(seconds) end)
+end
+
+function keyboard_seek_percent(percent, reason)
+  keyboard_action(reason, function()
+    if (tonumber(state.duration) or 0) > 0 then
+      note_explicit_seek(state.duration * clamp(percent / 100, 0, 1))
+      safe_commandv("seek", tostring(percent), "absolute-percent+exact")
+    end
+  end)
+end
+
+function keyboard_change_speed(multiplier, reason)
+  keyboard_action(reason, function()
+    safe_commandv("multiply", "speed", tostring(multiplier))
+    mp.add_timeout(0.05, function() emit_player_setting_changed("playbackSpeed", tostring(mp.get_property_number("speed") or state.speed or 1)) end)
+  end)
+end
+
+function keyboard_toggle_mute(reason)
+  keyboard_action(reason, function()
+    safe_commandv("cycle", "mute")
+    mp.add_timeout(0.05, function() emit_player_setting_changed("muted", mp.get_property_bool("mute") and "true" or "false") end)
+  end)
+end
+
+bind_key("TAB", "streamnyaa-end-focus", function()
+  if ui.end_overlay then keyboard_seek(1, "end-focus") end
+end)
+bind_key("ENTER", "streamnyaa-end-activate", function()
+  if ui.end_overlay then activate_region({ id = ui.end_focus }, nil); draw(true, "end-activate") end
+end)
+bind_key("SPACE", "streamnyaa-space", function() keyboard_toggle_pause("key-space") end)
+bind_key("k", "streamnyaa-k", function() keyboard_toggle_pause("key-k") end)
+bind_key("K", "streamnyaa-k-shift", function() keyboard_toggle_pause("key-k-shift") end)
+bind_key("LEFT", "streamnyaa-left", function() keyboard_seek(-5, "key-left") end)
+bind_key("RIGHT", "streamnyaa-right", function() keyboard_seek(5, "key-right") end)
+bind_key("j", "streamnyaa-j", function() keyboard_seek(-seek_step_seconds(), "key-j") end)
+bind_key("J", "streamnyaa-j-shift", function() keyboard_seek(-seek_step_seconds(), "key-j-shift") end)
+bind_key("l", "streamnyaa-l", function() keyboard_seek(seek_step_seconds(), "key-l") end)
+bind_key("L", "streamnyaa-l-shift", function() keyboard_seek(seek_step_seconds(), "key-l-shift") end)
 bind_key("UP", "streamnyaa-up", function()
+  note_direct_interaction()
   show_overlay()
   safe_commandv("add", "volume", "5")
   mp.add_timeout(0.05, function() emit_player_setting_changed("volume", tostring(mp.get_property_number("volume") or state.volume or 100)) end)
   draw(true, "key-up")
 end)
 bind_key("DOWN", "streamnyaa-down", function()
+  note_direct_interaction()
   show_overlay()
   safe_commandv("add", "volume", "-5")
   mp.add_timeout(0.05, function() emit_player_setting_changed("volume", tostring(mp.get_property_number("volume") or state.volume or 100)) end)
   draw(true, "key-down")
 end)
 bind_key("m", "streamnyaa-mute", function()
-  show_overlay()
-  safe_commandv("cycle", "mute")
-  mp.add_timeout(0.05, function() emit_player_setting_changed("muted", mp.get_property_bool("mute") and "true" or "false") end)
-  draw(true, "key-mute")
+  keyboard_toggle_mute("key-mute")
 end)
-bind_key("c", "streamnyaa-cc", function() show_overlay(); toggle_subtitles(); draw(true, "key-cc") end)
-bind_key("C", "streamnyaa-cc-shift", function() show_overlay(); toggle_subtitles(); draw(true, "key-cc-shift") end)
-bind_key("a", "streamnyaa-audio", function() show_overlay(); safe_commandv("cycle", "audio"); draw(true, "key-audio") end)
-bind_key("S", "streamnyaa-settings", function() show_overlay(); ui.dragging = nil; clear_drag_preview(); ui.settings_open = not ui.settings_open; ui.submenu = "main"; update_stall_watchdog_timer(); draw(true, "key-settings") end)
-bind_key("i", "streamnyaa-skip-intro", function() show_overlay(); skip_intro(); draw(true, "key-skip-intro") end)
-bind_key("p", "streamnyaa-pip", function() show_overlay(); toggle_mini_player(); draw(true, "key-mini") end)
-bind_key("f", "streamnyaa-fullscreen", function() show_overlay(); safe_commandv("cycle", "fullscreen"); draw(true, "key-fullscreen") end)
-bind_key("[", "streamnyaa-speed-down", function()
-  show_overlay()
-  safe_commandv("multiply", "speed", "0.9091")
-  mp.add_timeout(0.05, function() emit_player_setting_changed("playbackSpeed", tostring(mp.get_property_number("speed") or state.speed or 1)) end)
-  draw(true, "key-speed-down")
+bind_key("M", "streamnyaa-mute-shift", function() keyboard_toggle_mute("key-mute-shift") end)
+bind_key("c", "streamnyaa-cc", function() keyboard_action("key-cc", toggle_subtitles) end)
+bind_key("C", "streamnyaa-cc-shift", function() keyboard_action("key-cc-shift", toggle_subtitles) end)
+bind_key("a", "streamnyaa-audio", function() keyboard_action("key-audio", function() safe_commandv("cycle", "audio") end) end)
+bind_key("s", "streamnyaa-settings", function() keyboard_action("key-settings", function() ui.dragging = nil; clear_drag_preview(); ui.settings_open = not ui.settings_open; ui.submenu = "main"; update_stall_watchdog_timer() end) end)
+bind_key("S", "streamnyaa-settings-shift", function() keyboard_action("key-settings-shift", function() ui.dragging = nil; clear_drag_preview(); ui.settings_open = not ui.settings_open; ui.submenu = "main"; update_stall_watchdog_timer() end) end)
+bind_key("i", "streamnyaa-skip-intro", function() keyboard_action("key-skip-intro", skip_intro) end)
+bind_key("o", "streamnyaa-skip-outro", function() keyboard_action("key-skip-outro", skip_outro) end)
+bind_key("p", "streamnyaa-pip", function() keyboard_action("key-mini", toggle_mini_player) end)
+bind_key("f", "streamnyaa-fullscreen", function() keyboard_action("key-fullscreen", function() safe_commandv("cycle", "fullscreen") end) end)
+bind_key("F", "streamnyaa-fullscreen-shift", function() keyboard_action("key-fullscreen-shift", function() safe_commandv("cycle", "fullscreen") end) end)
+bind_key("[", "streamnyaa-speed-down", function() keyboard_change_speed(0.9091, "key-speed-down") end)
+bind_key("]", "streamnyaa-speed-up", function() keyboard_change_speed(1.1, "key-speed-up") end)
+bind_key("z", "streamnyaa-subtitle-earlier", function()
+  keyboard_action("key-subtitle-earlier", function() set_release_subtitle_delay((tonumber(state.sub_delay) or 0) - 0.1) end)
 end)
-bind_key("]", "streamnyaa-speed-up", function()
-  show_overlay()
-  safe_commandv("multiply", "speed", "1.1")
-  mp.add_timeout(0.05, function() emit_player_setting_changed("playbackSpeed", tostring(mp.get_property_number("speed") or state.speed or 1)) end)
-  draw(true, "key-speed-up")
+bind_key("x", "streamnyaa-subtitle-later", function()
+  keyboard_action("key-subtitle-later", function() set_release_subtitle_delay((tonumber(state.sub_delay) or 0) + 0.1) end)
 end)
+bind_key("N", "streamnyaa-next-episode", function() keyboard_action("key-next-episode", function() request_next_episode("manual") end) end)
+bind_key("HOME", "streamnyaa-home", function() keyboard_seek_percent(0, "key-home") end)
+bind_key("END", "streamnyaa-end", function() keyboard_seek_percent(100, "key-end") end)
+
+function bind_percent_key(digit)
+  local percent = digit * 10
+  bind_key(tostring(digit), "streamnyaa-percent-" .. tostring(digit), function()
+    keyboard_seek_percent(percent, "key-percent-" .. tostring(digit))
+  end)
+end
+
+for digit = 0, 9 do bind_percent_key(digit) end
 
 function log_script_message(name, ...)
   if not DEBUG_SCRIPT_MESSAGES then return end
@@ -4242,6 +4924,12 @@ function log_script_message(name, ...)
       .. tostring(mp.get_time())
   )
 end
+
+mp.register_script_message("streamnyaa-download-status", function(status)
+  state.download_status = status ~= "" and status or nil
+  mark_menus_dirty("main")
+  draw(true)
+end)
 
 mp.register_script_message("streamnyaa-import-subtitle-path", function(path)
   log_script_message("streamnyaa-import-subtitle-path", path)
@@ -4283,7 +4971,6 @@ mp.register_event("file-loaded", function()
   ui.submenu = "main"
   hide_end_overlay()
   ui.eof_handled_key = ""
-  reset_buffering_state()
   reset_stall_watchdog(false)
   reset_skip_range_state()
   ui.marker_log_key = ""
@@ -4309,23 +4996,44 @@ mp.register_event("end-file", function(event)
     ui.eof_candidate_key = ""
     hide_end_overlay()
   end
+  if event and event.reason == "error" and ui.last_video_path ~= "" then
+    msg.warn("[StreamNyaa Lua] Video decoder ended with an error; requesting bounded recovery")
+    request_backup_source_recovery()
+  end
   draw(true, "end-file")
 end)
 mp.register_event("playback-restart", function()
+  if has_playable_media() and not is_placeholder_media() then
+    local offset_key = tostring(player_meta.subtitleOffsetKey or "")
+    if ui.restored_offset_key ~= offset_key then
+      safe_set_property_number("sub-delay", tonumber(player_meta.subtitleOffsetSeconds) or 0)
+      ui.restored_offset_key = offset_key
+    end
+    local first_frame = not state.has_started_playback
+    state.has_started_playback = true
+    if first_frame then begin_first_video_frame_handoff() end
+    if ui.recovery_attempt then ui.recovery_attempt.restart_seen = true end
+    safe_set_property("user-data/streamnyaa/has_started", "true")
+    reset_startup_stream_watchdog(true)
+    ui.loading_override_until = 0
+  end
   show_overlay()
   hide_end_overlay()
   ui.eof_handled_key = ""
   ui.last_next_episode_request_key = ""
-  reset_buffering_state()
-  if mp.get_time() >= (ui.stall_ignore_restart_until or 0) then
+  -- Cache observers own telemetry. Clearing it here can lose an unchanged
+  -- paused-for-cache/cache-duration value immediately after a reload.
+  if not ui.recovery_attempt and mp.get_time() >= (ui.stall_ignore_restart_until or 0) then
     reset_stall_watchdog(true)
   end
+  restore_same_source_preferences()
   reset_skip_range_state()
   draw(true, "playback-restart")
 end)
 
+mp.add_periodic_timer(1, check_sleep_timer)
 mp.add_periodic_timer(0.05, function()
-  local loading = is_loading() or is_buffering()
+  local loading = is_loading() or is_buffering() or hold_cover_for_first_video_frame()
   if loading then
     draw(true, "timer-loading")
   elseif ui.dragging then
@@ -4339,6 +5047,86 @@ end)
 
 stall_watchdog_timer = mp.add_periodic_timer(STALL_SAMPLE_SECONDS, check_playback_stall)
 stall_watchdog_timer:stop()
+startup_stream_watchdog_timer = mp.add_periodic_timer(STALL_SAMPLE_SECONDS, check_startup_stream_stall)
+
+local stall_test_started = false
+if script_options.stall_test_mode then
+  mp.register_event("file-loaded", function()
+    if stall_test_started then return end
+    stall_test_started = true
+    mp.add_timeout(0.5, function()
+      state.has_started_playback = true
+      state.idle = false
+      state.core_idle = false
+      state.paused = true
+      state.paused_for_cache = true
+      state.duration = math.max(60, tonumber(state.duration) or 0)
+      log_buffering_transition()
+      ui.stall_last_pos = tonumber(state.pos) or 0
+      ui.stall_last_buffer = buffered_seconds()
+      ui.stall_last_progress_at = mp.get_time() - STALL_RECOVERY_SECONDS - 1
+      ui.stall_started_at = 0
+      check_playback_stall()
+      mp.add_timeout(0.8, function()
+        state.has_started_playback = true
+        state.idle = false
+        state.core_idle = false
+        state.paused = true
+        state.paused_for_cache = true
+        ui.stall_last_pos = tonumber(state.pos) or 0
+        ui.stall_last_buffer = buffered_seconds()
+        ui.stall_last_progress_at = mp.get_time() - STALL_RECOVERY_SECONDS - 1
+        ui.stall_started_at = mp.get_time() - STALL_RECOVERY_SECONDS - STALL_ACTION_SECONDS - 1
+        ui.stall_recovery_attempted = true
+        ui.stall_recovery_at = mp.get_time() - STALL_ACTION_SECONDS - 1
+        if ui.recovery_attempt then ui.recovery_attempt.started_at = ui.stall_recovery_at end
+        check_playback_stall()
+        ui.recovery_attempt = nil
+        ui.recovery_terminal = false
+        state.path = "startup-stall-test://stream"
+        state.has_started_playback = false
+        state.duration = 0
+        state.idle = false
+        state.core_idle = false
+        state.paused = false
+        state.paused_for_cache = true
+        state.seeking = false
+        ui.startup_stream_key = state.path
+        ui.startup_stream_started_at = mp.get_time() - STARTUP_STREAM_RETRY_SECONDS - 1
+        ui.startup_stream_retried = false
+        ui.startup_stream_retry_at = 0
+        ui.startup_stream_backup_requested = false
+        ui.startup_stream_backup_at = 0
+        msg.info(string.format(
+          "[StreamNyaa Lua] Startup stall test invoking initial recovery path=%s placeholder=%s playable=%s duration=%s paused=%s",
+          tostring(state.path), tostring(is_placeholder_media()), tostring(has_playable_media()), tostring(state.duration), tostring(state.paused)
+        ))
+        local startup_ok, startup_error = pcall(check_startup_stream_stall)
+        if not startup_ok then msg.error("[StreamNyaa Lua] Startup stall test failed: " .. tostring(startup_error)) end
+        mp.add_timeout(0.4, function()
+          state.path = "startup-stall-test://stream"
+          state.has_started_playback = false
+          state.duration = 0
+          state.idle = false
+          state.core_idle = false
+          state.paused = false
+          state.paused_for_cache = true
+          state.seeking = false
+          ui.startup_stream_key = state.path
+          ui.startup_stream_started_at = math.max(0.01, mp.get_time() - STARTUP_STREAM_RETRY_SECONDS - 0.05)
+          ui.startup_stream_retried = true
+          ui.startup_stream_retry_at = mp.get_time() - STARTUP_STREAM_BACKUP_SECONDS - 1
+          if ui.recovery_attempt then ui.recovery_attempt.started_at = ui.startup_stream_retry_at end
+          ui.startup_stream_backup_requested = false
+          ui.startup_stream_backup_at = 0
+          msg.info("[StreamNyaa Lua] Startup stall test invoking backup recovery")
+          local backup_ok, backup_error = pcall(check_startup_stream_stall)
+          if not backup_ok then msg.error("[StreamNyaa Lua] Startup backup test failed: " .. tostring(backup_error)) end
+        end)
+      end)
+    end)
+  end)
+end
 
 mp.register_script_message("streamnyaa-reload-meta", function(meta_file)
   log_script_message("streamnyaa-reload-meta", meta_file)
@@ -4346,11 +5134,12 @@ mp.register_script_message("streamnyaa-reload-meta", function(meta_file)
     script_options.meta_file = tostring(meta_file)
   end
   debug_cover("reload metadata message received: " .. tostring(script_options.meta_file or ""))
-  local was_loading = is_loading() or is_buffering()
   load_player_meta()
   msg.info("[StreamNyaa Lua] render requested after metadata reload")
   ui.anim_started = mp.get_time()
-  if was_loading or not has_playable_media() then
+  -- Metadata does not own decoder lifecycle. Only a new media path may reset
+  -- a playing stream; refreshing episode/cover data during buffering may not.
+  if not has_playable_media() then
     ui.loading_override_until = mp.get_time() + 2.5
     state.has_started_playback = false
   end
@@ -4360,15 +5149,65 @@ end)
 
 mp.register_script_message("streamnyaa-playback-ready", function()
   log_script_message("streamnyaa-playback-ready")
-  msg.info("[StreamNyaa Lua] playback-ready received")
-  ui.loading_override_until = 0
-  state.has_started_playback = true
+  -- This message confirms that the native MPV window and IPC bridge are ready;
+  -- it does not mean the torrent has produced a decoded video frame. Keep the
+  -- artwork visible until playback-restart or advancing time-pos proves that.
+  msg.info("[StreamNyaa Lua] player shell ready; waiting for the first video frame")
+  if is_placeholder_media() then
+    ui.recovery_terminal = false
+    ui.recovery_attempt = nil
+    reset_stall_watchdog(false)
+  end
   show_overlay()
-  draw(true, "playback-ready")
+  draw(true, "player-shell-ready")
 end)
+
+mp.register_script_message("streamnyaa-source-generation", function(value)
+  local generation = tonumber(value)
+  if not generation or generation < 1 or generation % 1 ~= 0 then return end
+  if generation <= (ui.source_generation or 0) then return end
+  ui.source_generation = generation
+  ui.recovery_terminal = false
+  ui.recovery_attempt = nil
+end)
+
+mp.register_script_message("streamnyaa-playback-failed", function(value)
+  -- Old native tasks must not cover a newer video with their error screen.
+  if ui.source_generation and tonumber(value) ~= ui.source_generation then return end
+  ui.recovery_terminal = true
+  ui.stall_actions_visible = true
+  ui.startup_stream_actions_visible = true
+  safe_set_property("user-data/streamnyaa/recovery_stage", "failed")
+  show_overlay()
+  draw(true, "stream-start-failed")
+end)
+
+function apply_custom_shortcuts(config)
+  if type(config) ~= "table" then return end
+  local actions = {
+    pause = function() keyboard_toggle_pause("custom-pause") end,
+    fullscreen = function() keyboard_action("custom-fullscreen", function() safe_commandv("cycle", "fullscreen") end) end,
+    mute = function() keyboard_toggle_mute("custom-mute") end,
+    back = function() keyboard_seek(-seek_step_seconds(), "custom-back") end,
+    forward = function() keyboard_seek(seek_step_seconds(), "custom-forward") end,
+    settings = function() keyboard_action("custom-settings", function() ui.dragging = nil; clear_drag_preview(); ui.settings_open = not ui.settings_open; ui.submenu = "main"; update_stall_watchdog_timer() end) end,
+  }
+  local used = {}
+  for action in pairs(actions) do
+    local key = config[action]
+    if type(key) ~= "string" or #key > 12 or used[key] then return end
+    if not (key == "SPACE" or key:match("^[a-z]$") or key:match("^F%d%d?$") or key:match("^Ctrl%+[a-z]$") or key:match("^Alt%+[a-z]$")) then return end
+    used[key] = true
+  end
+  for _, name in ipairs({"streamnyaa-space", "streamnyaa-fullscreen", "streamnyaa-mute", "streamnyaa-j", "streamnyaa-l", "streamnyaa-settings"}) do mp.remove_key_binding(name) end
+  for action, callback in pairs(actions) do bind_key(config[action], "streamnyaa-custom-" .. action, callback) end
+end
 
 load_persisted_player_preferences()
 load_player_meta()
+local shortcut_content = read_binary_file(tostring(script_options.meta_file or ""))
+local shortcut_metadata = shortcut_content and utils.parse_json(shortcut_content) or nil
+if type(shortcut_metadata) == "table" then apply_custom_shortcuts(shortcut_metadata.shortcuts) end
 msg.info("[StreamNyaa Lua] render requested after startup metadata load")
 refresh_track_cache(state.tracks)
 ui.initialized = true
@@ -4377,3 +5216,34 @@ mp.add_timeout(0.35, function()
   safe_commandv("script-message", "streamnyaa-lua-ready")
 end)
 draw(true, "init")
+
+-- Actual playback coverage: seeking never fills the skipped interval.
+local coverage = {version=2, intervals={}, furthest=0, lastPosition=0}
+local coverage_sample = nil
+mp.register_event("file-loaded", function() coverage={version=2,intervals={},furthest=0,lastPosition=0}; coverage_sample=nil end)
+mp.register_event("seek", function() coverage_sample=nil end)
+mp.add_periodic_timer(0.5, function()
+ local pos=mp.get_property_number("time-pos")
+ local now=mp.get_time()
+ local speed=mp.get_property_number("speed",1)
+ local playing=not mp.get_property_native("pause",true) and not mp.get_property_native("paused-for-cache",false) and not mp.get_property_native("seeking",false)
+ if not pos or pos<0 then coverage_sample=nil; return end
+ coverage.lastPosition=pos
+ if playing and coverage_sample then
+  local delta=pos-coverage_sample.pos
+  local elapsed=now-coverage_sample.time
+  if elapsed>0 and elapsed<2 and delta>0 and delta<=elapsed*math.max(speed,coverage_sample.speed)+0.35 then
+   local ranges=coverage.intervals
+   ranges[#ranges+1]={coverage_sample.pos,pos}
+   table.sort(ranges,function(a,b)return a[1]<b[1] end)
+   local merged={}
+   for _,range in ipairs(ranges) do
+    local last=merged[#merged]
+    if last and range[1]<=last[2]+0.05 then last[2]=math.max(last[2],range[2]) else merged[#merged+1]=range end
+   end
+   coverage.intervals=merged; coverage.furthest=math.max(coverage.furthest,pos)
+  end
+ end
+ coverage_sample=playing and {pos=pos,time=now,speed=speed} or nil
+ mp.set_property("user-data/streamnyaa/watched-coverage",require('mp.utils').format_json(coverage))
+end)

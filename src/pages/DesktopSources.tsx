@@ -1,9 +1,10 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, memo, useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Copy, Loader2, Play, Search, SlidersHorizontal } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { searchNyaa, type NyaaItem } from '../api/nyaa';
 import Seo from '../components/Seo';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter, type TorrentSourceFilter } from '../lib/torrentBadges';
 import {
   loadDesktopAudioPreference,
@@ -43,9 +44,21 @@ function saveRecentSourceSearches(values: string[]) {
   }
 }
 
-function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle: string; onStatus: (value: string) => void }) {
+const SourceCard = memo(function SourceCard({
+  item,
+  animeTitle,
+  animeId,
+  episode: routeEpisode,
+  onStatus,
+}: {
+  item: NyaaItem;
+  animeTitle: string;
+  animeId?: string;
+  episode?: string;
+  onStatus: (value: string) => void;
+}) {
   const score = sourceQualityScore(item);
-  const episode = sourceEpisode(item.title);
+  const episode = routeEpisode || sourceEpisode(item.title);
 
   const play = async () => {
     onStatus(`Opening ${item.title}`);
@@ -56,6 +69,7 @@ function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle
         infoHash: item.infoHash,
         title: item.title,
         animeTitle: animeTitle || item.title,
+        animeId: animeId || undefined,
         episode: episode || null,
         size: item.size,
         seeders: item.seeders,
@@ -71,20 +85,20 @@ function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 flex-1">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-white/10 bg-white/[0.055] px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-white/70">
+            <span className="rounded-full border border-white/10 bg-white/[0.055] px-2.5 py-1 text-[11px] font-semibold normal-case tracking-wide text-white/70">
               {sourceQualityLabel(score)} {score}
             </span>
-            <span className="rounded-full border border-white/10 bg-black/28 px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-white/46">
+            <span className="rounded-full border border-white/10 bg-black/28 px-2.5 py-1 text-[11px] font-semibold normal-case tracking-wide text-white/46">
               {sourceFreshnessLabel(item)}
             </span>
             {episode ? (
-              <span className="rounded-full border border-white/10 bg-black/28 px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-white/56">
+              <span className="rounded-full border border-white/10 bg-black/28 px-2.5 py-1 text-[11px] font-semibold normal-case tracking-wide text-white/56">
                 Episode {episode}
               </span>
             ) : null}
           </div>
-          <h2 className="break-words text-[15px] font-black leading-6 text-white transition-colors group-hover:text-white/92">{item.title}</h2>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-bold text-white/48">
+          <h2 className="break-words text-[15px] font-semibold leading-6 text-white transition-colors group-hover:text-white/92">{item.title}</h2>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold text-white/48">
             <span>{item.size}</span>
             <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-green-400">{item.seeders} seeders</span>
             <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-red-400">{item.leechers} leechers</span>
@@ -120,11 +134,13 @@ function SourceCard({ item, animeTitle, onStatus }: { item: NyaaItem; animeTitle
       </div>
     </article>
   );
-}
+});
 
 export default function DesktopSources() {
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
+  const routeAnimeId = searchParams.get('animeId') || '';
+  const routeEpisode = searchParams.get('ep') || '';
   const [input, setInput] = useState(initialQuery);
   const [query, setQuery] = useState(initialQuery);
   const [audioMode, setAudioMode] = useState<'sub' | 'dual'>(() => (
@@ -175,15 +191,25 @@ export default function DesktopSources() {
     setStatus('');
   }, [query, searchParams]);
 
+  const contextualEpisode = query === initialQuery ? routeEpisode : '';
+  const contextualAnimeId = query === initialQuery ? routeAnimeId : '';
+  const sourceSearchQuery = contextualEpisode
+    ? `${query} episode ${String(contextualEpisode).padStart(2, '0')}`
+    : query;
   const searchQuery = useQuery({
-    queryKey: ['desktop-sources', query, audioMode],
-    queryFn: () => {
+    queryKey: ['desktop-sources', sourceSearchQuery, audioMode],
+    queryFn: ({ signal }) => {
       const audioHint = audioMode === 'dual' ? ' dual audio' : '';
-      return searchNyaa(`${query}${audioHint}`.trim(), '1_2', '0', '1', { deep: true, pages: 2, wide: audioMode === 'dual' });
+      return searchNyaa(`${sourceSearchQuery}${audioHint}`.trim(), '1_2', '0', '1', {
+        deep: true,
+        pages: 2,
+        wide: audioMode === 'dual',
+        signal,
+      });
     },
     enabled: query.trim().length >= 2,
     staleTime: 1000 * 60 * 3,
-    retry: 1,
+    retry: false,
   });
 
   const results = useMemo(() => {
@@ -219,7 +245,7 @@ export default function DesktopSources() {
       <Seo title="Source Browser | StreamNyaa Desktop" description="Desktop source search." canonicalPath="/nyaa" robots="noindex, nofollow" />
 
       <section className="sn-hero-panel p-6">
-        <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">Sources</p>
+        <p className="text-[11px] font-semibold normal-case tracking-normal text-primary">Sources</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-white">Search episode sources without batch clutter.</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">
           Desktop source results are episode-focused by default. Batch and season-pack torrents are hidden here.
@@ -240,7 +266,7 @@ export default function DesktopSources() {
           </button>
         </form>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-bold text-white/46">
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/46">
           <span className="text-white/34">Examples</span>
           {examples.map((example) => (
             <button
@@ -257,7 +283,7 @@ export default function DesktopSources() {
         </div>
 
         {recentSearches.length ? (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold text-white/46">
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/46">
             <span className="text-white/34">Recent</span>
             {recentSearches.map((item) => (
               <button
@@ -285,7 +311,7 @@ export default function DesktopSources() {
               onClick={() => applyPreset(preset as 'quality' | 'fastest' | 'small' | 'dual')}
               className="sn-card-hover sn-glass-card group p-4 text-left"
             >
-              <span className="text-sm font-black text-white">{label}</span>
+              <span className="text-sm font-semibold text-white">{label}</span>
               <span className="mt-1 block text-xs font-semibold leading-5 text-white/42 group-hover:text-white/55">{detail}</span>
             </button>
           ))}
@@ -307,6 +333,8 @@ export default function DesktopSources() {
             </button>
           ))}
           {[
+            ['quality-2160p', '4K / 2160p'],
+            ['quality-1440p', '2K / 1440p'],
             ['quality-1080p', '1080p'],
             ['quality-720p', '720p'],
             ['trusted', 'Trusted'],
@@ -343,18 +371,24 @@ export default function DesktopSources() {
       </section>
 
       {status ? (
-        <div className="sn-glass-card mt-4 px-4 py-3 text-sm font-bold text-white/70">{status}</div>
+        <div className="sn-glass-card mt-4 px-4 py-3 text-sm font-semibold text-white/70">{status}</div>
       ) : null}
 
       <section className="mt-6">
-        {!query ? (
+        {!query || query.trim().length < 2 ? (
           <div className="sn-empty-state px-6 py-16 text-center text-white/56">
-            Search by title plus episode, for example: <span className="font-black text-white">Witch Hat Atelier 07</span>
+            Search by title plus episode, for example: <span className="font-semibold text-white">Witch Hat Atelier 07</span>
           </div>
-        ) : searchQuery.isLoading ? (
-          <div className="sn-empty-state flex items-center justify-center py-20 text-white/60">
-            <Loader2 className="mr-3 h-6 w-6 animate-spin text-primary" />
-            Searching sources...
+        ) : searchQuery.isLoading && !searchQuery.data ? (
+          <DesktopLoadingProgress variant="screen" label="Searching verified sources" percent={46} detail="Exact episode matches are checked before broader title aliases." />
+        ) : searchQuery.isError && !searchQuery.data ? (
+          <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] px-6 py-10 text-center" role="status">
+            <p className="text-lg font-semibold text-white">Search couldn’t finish.</p>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Your search is preserved. Retry when the connection is ready.</p>
+            <button type="button" onClick={() => void searchQuery.refetch()} className="sn-primary-action mt-5 h-11 px-5">
+              <Loader2 className={`h-4 w-4 ${searchQuery.isFetching ? 'animate-spin' : ''}`} />
+              Retry search
+            </button>
           </div>
         ) : results.length ? (
           <div className="space-y-3">
@@ -363,29 +397,29 @@ export default function DesktopSources() {
               <span>Batch sources hidden</span>
             </div>
             <div className="sn-glass-panel p-4">
-              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.22em] text-primary">Recommended Source</p>
-              <SourceCard item={results[0]} animeTitle={query} onStatus={setStatus} />
+              <p className="mb-3 text-[11px] font-semibold normal-case tracking-normal text-primary">Recommended Source</p>
+              <SourceCard item={results[0]} animeTitle={query} animeId={contextualAnimeId} episode={contextualEpisode} onStatus={setStatus} />
             </div>
             {results.length > 1 ? (
               <div className="pt-2">
                 <div className="mb-3 flex items-center justify-between border-t border-white/8 pt-4">
-                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/38">More Sources</p>
-                  <p className="text-xs font-bold text-white/36">{results.length - 1} alternatives</p>
+                  <p className="text-[11px] font-semibold normal-case tracking-normal text-white/38">More Sources</p>
+                  <p className="text-xs font-semibold text-white/36">{results.length - 1} alternatives</p>
                 </div>
                 <div className="space-y-3">
                   {results.slice(1).map((item) => (
-                    <SourceCard key={item.infoHash || item.link || item.title} item={item} animeTitle={query} onStatus={setStatus} />
+                    <SourceCard key={item.infoHash || item.link || item.title} item={item} animeTitle={query} animeId={contextualAnimeId} episode={contextualEpisode} onStatus={setStatus} />
                   ))}
                 </div>
               </div>
             ) : null}
           </div>
-        ) : (
+        ) : searchQuery.isSuccess ? (
           <div className="sn-empty-state px-6 py-16 text-center">
-            <p className="text-lg font-black text-white">No individual episode sources found.</p>
+            <p className="text-lg font-semibold text-white">No individual episode sources found.</p>
             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Try the romanized title, remove the episode number, or search a different release spelling.</p>
           </div>
-        )}
+        ) : null}
       </section>
     </div>
   );

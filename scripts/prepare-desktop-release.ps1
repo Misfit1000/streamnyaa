@@ -22,14 +22,39 @@ if (-not $version) {
 $releaseRoot = Join-Path $repoRoot ("desktop\releases\v{0}" -f $version)
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 
+if ($version -eq '0.1.3') {
+  $validationMarker = Join-Path $releaseRoot 'auth-recovery-live-validation.json'
+  if (-not (Test-Path $validationMarker)) {
+    throw 'The 0.1.3 recovery installer cannot be replaced before live desktop validation.'
+  }
+  $validation = Get-Content -Raw $validationMarker | ConvertFrom-Json
+  if (-not $validation.validated -or [string]$validation.releaseRevision -ne 'auth-recovery-hotfix-2') {
+    throw 'The live validation marker does not authorize auth-recovery-hotfix-2 packaging.'
+  }
+}
+
+$rollbackInstaller = Get-ChildItem (Join-Path $repoRoot 'desktop\releases\v0.1.4') -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($rollbackInstaller -and $installer.Length -gt ($rollbackInstaller.Length + 2MB)) {
+  throw ("Installer size grew by more than 2 MiB over 0.1.4 ({0} -> {1} bytes)." -f $rollbackInstaller.Length, $installer.Length)
+}
+
 $copiedInstaller = Join-Path $releaseRoot $installer.Name
 Copy-Item -LiteralPath $installer.FullName -Destination $copiedInstaller -Force
 
-$hash = (Get-FileHash -Algorithm SHA256 $copiedInstaller).Hash
+$sha256 = [Security.Cryptography.SHA256]::Create()
+$installerStream = [IO.File]::OpenRead($copiedInstaller)
+try {
+  $hash = ([BitConverter]::ToString($sha256.ComputeHash($installerStream))).Replace('-', '')
+}
+finally {
+  $installerStream.Dispose()
+  $sha256.Dispose()
+}
 $sizeBytes = (Get-Item $copiedInstaller).Length
 $manifest = [ordered]@{
   product = 'StreamNyaa Desktop'
   version = $version
+  releaseRevision = 'desktop-loading-reliability-12'
   generatedAt = (Get-Date).ToString('o')
   installer = @{
     fileName = [IO.Path]::GetFileName($copiedInstaller)
@@ -38,6 +63,38 @@ $manifest = [ordered]@{
     sha256 = $hash
   }
   notes = @(
+    'Adds adaptive click-ahead route, episode, artwork, and playback preparation without downloading video early.',
+    'Rebuilds Explore with persistent controls, saved results, and uninterrupted background refresh.',
+    'Shows verified aired and total episode counts, and hides unaired episodes from Watch selection.',
+    'Moves catalog, playback-option, and query snapshot persistence away from interaction frames.',
+    'Adds a resolution-aware launch sequence and complete neutral landscape artwork with real anime titles and native loading stages.',
+    'Shows live playable-buffer percentage and seconds, including while stalled and recovering.',
+    'Adds bounded recovery for streams that never expose a playable timeline: current-stream reload, automatic alternate playback, then manual actions.',
+    'Adds credential-free schedule revision tracking that labels changed AniList episode slots as rescheduled without guessing cancellations.',
+    'Adds a compact notification center for confirmed delays and cancellations, personal/global feed controls, and categorized desktop settings navigation.',
+    'Makes Explore resilient through saved catalogs and hedged refreshes, activates global search, adds upcoming-airing notifications, and surfaces player keybinds in simplified settings.',
+    'Closes the pre-playback freeze gap, renders live buffer percentage inside the native player, and upgrades loading art to a cinematic full-bleed composition.',
+    'Keeps the exact saved schedule visible during connection failures and distinguishes verified empty days from refresh errors.',
+    'Refines the native player with compact live buffering feedback, raised skip controls, and a cleaner next-episode panel.',
+    'Uses genuine landscape artwork for player startup, removes poster-card composition, and applies a smooth neutral readability gradient.',
+    'Sharpens startup artwork, enlarges and repositions the responsive anime title, and adds restrained live loading motion.',
+    'Keeps cancelled, timed-out, failed, and genuinely empty requests distinct across Home, Watch, Sources, Explore, and collection pages.',
+    'Restores verified Home catalogs instantly, rejects malformed metadata before caching, and reconnects active screens automatically.',
+    'Hardens native URL/path validation, bounds remote response sizes, redacts diagnostics, and narrows desktop callback routes.',
+    'Uses only verified high-resolution landscape artwork for player startup and rejects blurry portrait substitutions.',
+    'Keeps loading artwork visible until the first decoded frame, removes the purple handoff gap, and adds a balanced center play/pause control with refined vector icons.',
+    'Restores valid ultrawide artwork, uses the supported scaled bitmap API, and replaces buffering cards with a minimal circle and measured percentage.',
+    'Keeps recovery deadlines alive through reload/idle events, bounds continuous buffering, and stops animation when automatic recovery is exhausted.',
+    'Coordinates and cancels shared desktop data requests with bounded deadlines, provider rate limits, and automatic active-screen recovery.',
+    'Preserves verified partial results so slow or interrupted metadata and source refreshes never erase usable content.',
+    'Traverses the complete verified series timeline across bounded resumable batches without collapsing distinct installments.',
+    'Removes player control backplates, scales controls to the viewport, and replaces the end card with a compact centered status-driven prompt.',
+    'Applies patched dependency overrides and ships with a zero-vulnerability npm audit.',
+    'Resumes and verifies cached torrent media instead of rejecting existing files during source replay or recovery.',
+    'Prevents stale player cleanup from stopping a newer torrent session and tracks the native engine by process ownership.',
+    'Reads rqbit 8 telemetry correctly so playable-buffer bytes, live peers, and transfer speed no longer remain at zero.',
+    'Never opens a zero-data stream after a timer; bounded recovery now fails over before the player can buffer indefinitely.',
+    'Keeps local engine errors out of release-health history and shows each source-health badge only once.',
     'Run the manual desktop release checklist before publishing this installer.',
     'Code-sign the installer before distribution.',
     'Keep the previous stable installer for rollback.'

@@ -1,6 +1,10 @@
 import { useStore } from '../store/useStore';
+import { enrichDesktopScheduleRevisions } from '../lib/scheduleRevisions';
 import { extractNumericId } from '../lib/slug';
 import { fetchDesktopMetadataApi, isDesktopApp } from '../lib/desktop';
+import { desktopDataError } from '../lib/desktopData';
+import { readEpisodePage, saveEpisodePage } from '../lib/desktopEpisodeCache';
+import type { DesktopRequestOptions } from '../lib/desktopRequests';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 const LOCAL_METADATA_PREFIX = 'streamnyaa.metadataCache.v2.';
@@ -20,6 +24,10 @@ type MetadataCacheEntry = {
 const memoryMetadataCache = new Map<string, MetadataCacheEntry>();
 const inFlightMetadataRequests = new Map<string, Promise<Response>>();
 const providerCooldowns = new Map<MetadataProvider, number>();
+const desktopProviderFailures = new Map<MetadataProvider, { until: number; error: ReturnType<typeof desktopDataError> }>();
+const desktopRequestFailures = new Map<string, { until: number; error: ReturnType<typeof desktopDataError> }>();
+const pendingMetadataWrites = new Map<string, MetadataCacheEntry>();
+let metadataPersistTimer: number | undefined;
 
 const hashCacheKey = (input: string) => {
   let hash = 5381;
@@ -34,6 +42,9 @@ const cacheKeyFor = (provider: MetadataProvider, value: unknown) => {
   return `${LOCAL_METADATA_PREFIX}${provider}.${hashCacheKey(serialized)}`;
 };
 
+const metadataState = (response: Response) => ({
+  status: response.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' ? 'stale' : 'authoritative',
+});
 const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale') => new Response(JSON.stringify(value), {
   status: 200,
   headers: {
@@ -42,11 +53,40 @@ const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale') =
   },
 });
 
+export const isValidDesktopMetadataPayload = (provider: MetadataProvider, value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (provider === 'anilist') {
+    return Boolean(record.data && typeof record.data === 'object' && !Array.isArray(record.data))
+      && (!Array.isArray(record.errors) || record.errors.length === 0);
+  }
+  if (provider === 'jikan') {
+    return Object.prototype.hasOwnProperty.call(record, 'data')
+      && (Array.isArray(record.data) || Boolean(record.data && typeof record.data === 'object'));
+  }
+  return true;
+};
+
+const readValidatedMetadataJson = async (provider: MetadataProvider, response: Response) => {
+  let json: unknown;
+  try {
+    json = await response.clone().json();
+  } catch (error) {
+    throw desktopDataError(provider, error);
+  }
+  if (!isValidDesktopMetadataPayload(provider, json)) {
+    throw desktopDataError(provider, new Error('The metadata response had an invalid shape.'));
+  }
+  return json;
+};
+
+
+
 const pruneLocalMetadataCache = () => {
   if (typeof window === 'undefined') return;
   try {
     Object.keys(localStorage)
-      .filter((key) => LEGACY_METADATA_PREFIXES.some((prefix) => key.startsWith(prefix)))
+.filter((key) => !key.startsWith(LOCAL_METADATA_PREFIX) && LEGACY_METADATA_PREFIXES.some((prefix) => key.startsWith(prefix)))
       .forEach((key) => localStorage.removeItem(key));
 
     const entries = Object.keys(localStorage)
@@ -169,13 +209,11 @@ const readLocalMetadata = (key: string, allowStale = false) => {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as MetadataCacheEntry;
-    if (!parsed || typeof parsed.expiresAt !== 'number') return null;
+    if (!parsed || !Number.isFinite(parsed.expiresAt) || !Number.isFinite(parsed.savedAt) || parsed.savedAt > now + 60_000
+      || !isValidDesktopMetadataPayload(key.split('.')[3] as MetadataProvider, parsed.value)) return null;
     if (parsed.expiresAt <= now) {
-      if (!allowStale || now - Number(parsed.savedAt || 0) > LOCAL_METADATA_MAX_STALE_MS) {
-        localStorage.removeItem(key);
-        memoryMetadataCache.delete(key);
-        return null;
-      }
+      if (now - Number(parsed.savedAt || 0) > LOCAL_METADATA_MAX_STALE_MS) return null;
+      if (!allowStale) return null;
     }
     memoryMetadataCache.set(key, parsed);
     return parsed;
@@ -183,6 +221,33 @@ const readLocalMetadata = (key: string, allowStale = false) => {
     return null;
   }
 };
+
+const flushPendingMetadataWrites = () => {
+  if (typeof window === 'undefined' || !pendingMetadataWrites.size) return;
+  const entries = [...pendingMetadataWrites.entries()];
+  pendingMetadataWrites.clear();
+  try {
+    entries.forEach(([key, entry]) => localStorage.setItem(key, JSON.stringify(entry)));
+    pruneLocalMetadataCache();
+  } catch {
+    // The memory cache remains authoritative for this session.
+  }
+};
+
+const scheduleMetadataPersistence = () => {
+  if (typeof window === 'undefined') return;
+  if (metadataPersistTimer !== undefined) window.clearTimeout(metadataPersistTimer);
+  metadataPersistTimer = window.setTimeout(() => {
+    metadataPersistTimer = undefined;
+    const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number };
+    if (idleWindow.requestIdleCallback) idleWindow.requestIdleCallback(flushPendingMetadataWrites, { timeout: 2_000 });
+    else flushPendingMetadataWrites();
+  }, 700);
+};
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flushPendingMetadataWrites);
+}
 
 const writeLocalMetadata = (key: string, value: unknown, ttlSeconds: number) => {
   const boundedTtlSeconds = Math.max(60, Math.min(60 * 60 * 24 * 30, Math.floor(ttlSeconds || 0)));
@@ -194,17 +259,8 @@ const writeLocalMetadata = (key: string, value: unknown, ttlSeconds: number) => 
   memoryMetadataCache.set(key, entry);
 
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(entry));
-    pruneLocalMetadataCache();
-  } catch {
-    try {
-      pruneLocalMetadataCache();
-      localStorage.setItem(key, JSON.stringify(entry));
-    } catch {
-      // The direct request already succeeded, so cache write failure should not break the page.
-    }
-  }
+  pendingMetadataWrites.set(key, entry);
+  scheduleMetadataPersistence();
 };
 
 const providerInCooldown = (provider: MetadataProvider) => {
@@ -233,10 +289,19 @@ const fetchWithLocalMetadataCache = async (
   const cached = readLocalMetadata(key);
   if (cached) return jsonResponse(cached.value, 'local-hit');
   const stale = readLocalMetadata(key, true);
+  const providerFailure = desktopProviderFailures.get(provider);
+  const recentFailure = isDesktopApp() ? (providerFailure && providerFailure.until > Date.now()
+    ? providerFailure : desktopRequestFailures.get(key)) : undefined;
+  if (recentFailure && recentFailure.until > Date.now()) {
+    if (stale) return jsonResponse(stale.value, 'local-stale');
+    throw recentFailure.error;
+  }
   if (stale && providerInCooldown(provider)) return jsonResponse(stale.value, 'local-stale');
 
   const requestKey = `${provider}:${key}`;
-  const existingRequest = inFlightMetadataRequests.get(requestKey);
+  // React Query retains the visible snapshot while this refresh is pending.
+  // Returning stale success here would hide completion from the exact subscriber.
+  const existingRequest = isDesktopApp() ? undefined : inFlightMetadataRequests.get(requestKey);
   if (existingRequest) {
     try {
       return (await existingRequest).clone();
@@ -254,19 +319,35 @@ const fetchWithLocalMetadataCache = async (
       return response;
     }
 
-    const json = await response.clone().json();
+    const json = await readValidatedMetadataJson(provider, response);
     writeLocalMetadata(key, json, ttlSeconds);
     providerCooldowns.delete(provider);
+    desktopProviderFailures.delete(provider);
+    desktopRequestFailures.delete(key);
     return response;
   })();
 
-  inFlightMetadataRequests.set(requestKey, nextRequest);
+  if (!isDesktopApp()) inFlightMetadataRequests.set(requestKey, nextRequest);
 
   try {
     return (await nextRequest).clone();
   } catch (error) {
+    const failure = desktopDataError(provider, error);
+    if (failure.code === 'cancelled') throw failure;
+    if (isDesktopApp() && failure.code !== 'invalid') {
+      const wait = failure.code === 'access-denied' ? 300_000 : failure.code === 'rate-limited'
+        ? Math.max(1000, Math.min(86_400_000, failure.retryAfterMs || 60_000)) : 30_000;
+      if (failure.code === 'access-denied' || failure.code === 'rate-limited') {
+        desktopProviderFailures.set(provider, { until: Date.now() + wait, error: failure });
+      } else {
+        // A failed search must not disable working schedules, details and shelves.
+        desktopRequestFailures.set(key, { until: Date.now() + wait, error: failure });
+        if (desktopRequestFailures.size > 500) desktopRequestFailures.delete(desktopRequestFailures.keys().next().value!);
+      }
+    }
+    if (failure.code === 'rate-limited') providerCooldowns.set(provider, Date.now() + (failure.retryAfterMs || 60_000));
     if (stale) return jsonResponse(stale.value, 'local-stale');
-    throw error;
+    throw failure;
   } finally {
     if (inFlightMetadataRequests.get(requestKey) === nextRequest) {
       inFlightMetadataRequests.delete(requestKey);
@@ -280,26 +361,23 @@ const fetchAniListDirect = (body: Record<string, unknown>) => fetch(ANILIST_URL,
   body: JSON.stringify(body),
 });
 
-const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600) => {
+export const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600, options: DesktopRequestOptions = {}) => {
+  if (options.signal?.aborted) throw desktopDataError('anilist', new DOMException('Cancelled', 'AbortError'));
   const cacheKey = cacheKeyFor('anilist', body);
   return fetchWithLocalMetadataCache('anilist', cacheKey, ttlSeconds, async () => {
     if (isDesktopApp()) {
-      try {
-        const desktopResponse = await fetchDesktopMetadataApi({
-          provider: 'anilist',
-          body,
-          ttl_seconds: ttlSeconds,
-        });
-        return new Response(JSON.stringify(desktopResponse.data), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-StreamNyaa-Desktop-Cache': 'bridge',
-          },
-        });
-      } catch {
-        return fetchAniListDirect(body);
-      }
+      const desktopResponse = await fetchDesktopMetadataApi({
+        provider: 'anilist',
+        body,
+        ttl_seconds: ttlSeconds,
+      }, options);
+      return new Response(JSON.stringify(desktopResponse.data), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-StreamNyaa-Desktop-Cache': desktopResponse.cache_status || 'bridge',
+        },
+      });
     }
 
     const gatewayResponse = await fetch(`/api/stream-sources?provider=anilist&ttl=${ttlSeconds}`, {
@@ -315,26 +393,23 @@ const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600) =
 
 const fetchJikanPathDirect = (path: string) => fetch(`https://api.jikan.moe/v4${path}`);
 
-const fetchJikanPath = async (path: string, ttlSeconds = 21600) => {
+export const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: DesktopRequestOptions = {}) => {
+  if (options.signal?.aborted) throw desktopDataError('jikan', new DOMException('Cancelled', 'AbortError'));
   const cacheKey = cacheKeyFor('jikan', path);
   return fetchWithLocalMetadataCache('jikan', cacheKey, ttlSeconds, async () => {
     if (isDesktopApp()) {
-      try {
-        const desktopResponse = await fetchDesktopMetadataApi({
-          provider: 'jikan',
-          path,
-          ttl_seconds: ttlSeconds,
-        });
-        return new Response(JSON.stringify(desktopResponse.data), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'X-StreamNyaa-Desktop-Cache': 'bridge',
-          },
-        });
-      } catch {
-        return fetchJikanPathDirect(path);
-      }
+      const desktopResponse = await fetchDesktopMetadataApi({
+        provider: 'jikan',
+        path,
+        ttl_seconds: ttlSeconds,
+      }, options);
+      return new Response(JSON.stringify(desktopResponse.data), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-StreamNyaa-Desktop-Cache': desktopResponse.cache_status || 'bridge',
+        },
+      });
     }
 
     const gatewayResponse = await fetch(`/api/stream-sources?provider=jikan&ttl=${ttlSeconds}&path=${encodeURIComponent(path)}`).catch(() => null);
@@ -435,9 +510,9 @@ export const fetchAniDbAnimeMetadata = async (aid: number, ttlSeconds = 604800) 
   });
 };
 
-const mapAnilistToJikan = (m: any) => ({
+export const mapAnilistToJikan = (m: any) => ({
   id: m.id,
-  mal_id: m.idMal || m.id,
+  mal_id: m.idMal || null,
   anilist_id: m.id,
   title: m.title.english || m.title.romaji || m.title.native,
   title_romaji: m.title.romaji,
@@ -477,13 +552,14 @@ const mapAnilistToJikan = (m: any) => ({
   isAdult: m.isAdult || false,
   streamingEpisodes: m.streamingEpisodes || [],
   nextAiringEpisode: m.nextAiringEpisode,
+  latestEpisode: m.latestEpisode || (m.nextAiringEpisode?.episode ? Math.max(0, Number(m.nextAiringEpisode.episode) - 1) : null),
   relations: m.relations?.edges?.map((edge: any) => ({
     relation: edge.relationType,
     entry: [
       {
         id: edge.node.id,
         anilist_id: edge.node.id,
-        mal_id: edge.node.idMal || edge.node.id,
+        mal_id: edge.node.idMal || null,
         type: edge.node.type,
         format: edge.node.format,
         status: edge.node.status,
@@ -506,7 +582,7 @@ const mapAnilistToJikan = (m: any) => ({
     return {
       id: r.id,
       anilist_id: r.id,
-      mal_id: r.idMal || r.id,
+      mal_id: r.idMal || null,
       type: r.type,
       title: r.title?.english || r.title?.romaji || r.title?.native,
       title_romaji: r.title?.romaji,
@@ -534,7 +610,9 @@ const mapJikanDetailToAnime = (item: any) => ({
       large_image_url: item.image_url || '',
     },
   },
-  banner_image: item.trailer?.images?.maximum_image_url || item.images?.jpg?.large_image_url || item.images?.webp?.large_image_url,
+  // A portrait cover is not a banner. Keeping it out of this field prevents
+  // the desktop player from mistaking poster cards for cinematic loading art.
+  banner_image: item.trailer?.images?.maximum_image_url || '',
   synopsis: item.synopsis || '',
   episodes: item.episodes,
   status: item.status,
@@ -572,7 +650,7 @@ const fetchJikanAnimeStats = async (malId: number) => {
   }
 };
 
-export const fetchTopAiring = async () => {
+export const fetchTopAiring = async (options: DesktopRequestOptions = {}) => {
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
   const query = `
     query {
@@ -593,19 +671,20 @@ export const fetchTopAiring = async () => {
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
     }
   `;
-  const res = await fetchAniList({ query }, 21600);
+  const res = await fetchAniList({ query }, 21600, options);
   if (!res.ok) throw new Error('Failed to fetch top airing anime');
   const data = await res.json();
   const rawData = data.data.Page.media.map(mapAnilistToJikan);
-  return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.mal_id === anime.mal_id)) };
+  return { streamnyaa: metadataState(res), data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.anilist_id === anime.anilist_id)) };
 };
 
-export const fetchRecentEpisodesWithLimit = async (limit = 12) => {
+export const fetchRecentEpisodesWithLimit = async (limit = 12, options: DesktopRequestOptions = {}) => {
   const nsfwMode = useStore.getState().nsfwMode;
   const perPage = Math.max(12, Math.min(50, Math.ceil(limit)));
   const query = `
@@ -630,7 +709,7 @@ export const fetchRecentEpisodesWithLimit = async (limit = 12) => {
       }
     }
   `;
-  const res = await fetchAniList({ query }, 300);
+  const res = await fetchAniList({ query }, 300, options);
   if (!res.ok) throw new Error('Failed to fetch recent episodes');
   const data = await res.json();
   
@@ -647,7 +726,7 @@ export const fetchRecentEpisodesWithLimit = async (limit = 12) => {
     return true;
   });
   
-  return { 
+  return { streamnyaa: metadataState(res),
     data: schedules.slice(0, limit).map((schedule: any) => ({
       ...mapAnilistToJikan(schedule.media),
       latestEpisode: schedule.episode
@@ -655,7 +734,7 @@ export const fetchRecentEpisodesWithLimit = async (limit = 12) => {
   };
 };
 
-export const fetchUpcomingAnime = async () => {
+export const fetchUpcomingAnime = async (options: DesktopRequestOptions = {}) => {
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
   const query = `
     query {
@@ -676,19 +755,21 @@ export const fetchUpcomingAnime = async () => {
           genres
           averageScore
           popularity
+          startDate { year month day }
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
     }
   `;
-  const res = await fetchAniList({ query }, 21600);
+  const res = await fetchAniList({ query }, 21600, options);
   if (!res.ok) throw new Error('Failed to fetch upcoming anime');
   const data = await res.json();
   const rawData = data.data.Page.media.map(mapAnilistToJikan);
-  return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.mal_id === anime.mal_id)) };
+  return { streamnyaa: metadataState(res), data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.anilist_id === anime.anilist_id)) };
 };
 
-export const fetchPopularAnime = async () => {
+export const fetchPopularAnime = async (options: DesktopRequestOptions = {}) => {
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
   const query = `
     query {
@@ -709,16 +790,17 @@ export const fetchPopularAnime = async () => {
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
     }
   `;
-  const res = await fetchAniList({ query }, 21600);
+  const res = await fetchAniList({ query }, 21600, options);
   if (!res.ok) throw new Error('Failed to fetch popular anime');
   const data = await res.json();
   const rawData = data.data.Page.media.map(mapAnilistToJikan);
-  return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.mal_id === anime.mal_id)) };
+  return { streamnyaa: metadataState(res), data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.anilist_id === anime.anilist_id)) };
 };
 
 export const fetchSeasonalAnime = async () => {
@@ -742,6 +824,7 @@ export const fetchSeasonalAnime = async () => {
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -751,10 +834,10 @@ export const fetchSeasonalAnime = async () => {
   if (!res.ok) throw new Error('Failed to fetch seasonal anime');
   const data = await res.json();
   const rawData = data.data.Page.media.map(mapAnilistToJikan);
-  return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.mal_id === anime.mal_id)) };
+  return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.anilist_id === anime.anilist_id)) };
 };
 
-type AnimeDetailsLookupOptions = {
+type AnimeDetailsLookupOptions = DesktopRequestOptions & {
   anilistId?: string | number | null;
   malId?: string | number | null;
   routeTitle?: string | null;
@@ -764,6 +847,7 @@ const ANIME_DETAIL_SELECTION = `
   id
   idMal
   title { romaji english native }
+  synonyms
   description
   episodes
   status
@@ -830,6 +914,16 @@ const ANIME_DETAIL_QUERY_BY_ANILIST = `
   }
 `;
 
+export async function fetchAnimeInstallments(entries: any[], options: DesktopRequestOptions = {}) {
+  const ids = [...new Set(entries.map(e => Number(e.anilist_id)).filter(id => Number.isSafeInteger(id) && id > 0))].sort((a, b) => a - b);
+  if (!ids.length) return [];
+  const query = 'query($ids: [Int]) { Page(perPage: 50) { media(id_in: $ids, type: ANIME) { ' + ANIME_DETAIL_SELECTION + ' } } }';
+  const response = await fetchAniList({ query, variables: { ids } }, 21600, options);
+  const payload = await response.json();
+  if (!Array.isArray(payload?.data?.Page?.media)) throw desktopDataError('anilist', new Error('Invalid timeline response.'));
+  return payload.data.Page.media.filter((entry: any) => ids.includes(Number(entry?.id))).map(mapAnilistToJikan);
+}
+
 const ANIME_DETAIL_SEARCH_QUERY = `
   query($search: String) {
     Page(page: 1, perPage: 12) {
@@ -870,6 +964,7 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
   const titleHint = String(options.routeTitle || titleHintFromRoute(id) || '').trim();
 
   const candidates: any[] = [];
+  let detailState = { status: 'authoritative' };
   const seen = new Set<number>();
 
   const pushCandidate = (media: any) => {
@@ -880,31 +975,32 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
   };
 
   const loadSingle = async (query: string, variables: Record<string, unknown>) => {
-    const response = await fetchAniList({ query, variables }, 21600);
+    const response = await fetchAniList({ query, variables }, 21600, options);
+    detailState = metadataState(response);
     if (!response.ok) return;
     const payload = await response.json();
     if (payload?.errors || !payload?.data?.Media) return;
-    pushCandidate(payload.data.Media);
+    const candidate = payload.data.Media;
+    if (query === ANIME_DETAIL_QUERY_BY_ANILIST && Number(candidate.id) !== Number(variables.id)
+      || query === ANIME_DETAIL_QUERY_BY_MAL && Number(candidate.idMal) !== Number(variables.id)) {
+      throw desktopDataError('anilist', new Error('Invalid anime identity.'));
+    }
+    pushCandidate(candidate);
   };
 
-  if (preferredMalId) {
-    await loadSingle(ANIME_DETAIL_QUERY_BY_MAL, { id: preferredMalId });
-  }
-  if (preferredAniListId && preferredAniListId !== preferredMalId) {
-    await loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: preferredAniListId });
-  } else if (!preferredAniListId && routeNumericId && routeNumericId !== preferredMalId) {
-    await loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: routeNumericId });
-  }
-
-  if (titleHint) {
-    const searchResponse = await fetchAniList(
-      { query: ANIME_DETAIL_SEARCH_QUERY, variables: { search: titleHint } },
-      21600,
-    );
-    if (searchResponse.ok) {
-      const searchPayload = await searchResponse.json();
-      (searchPayload?.data?.Page?.media || []).forEach(pushCandidate);
-    }
+  const failures: unknown[] = [];
+  try {
+    if (preferredAniListId) await loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: preferredAniListId });
+    else if (preferredMalId) await loadSingle(ANIME_DETAIL_QUERY_BY_MAL, { id: preferredMalId });
+  } catch (error) { failures.push(error); }
+  if (options.signal?.aborted) throw desktopDataError('anilist', new DOMException('Cancelled', 'AbortError'));
+  // Resolve legacy routes only if the explicit identity could not be loaded.
+  if (!candidates.length && titleHint && !preferredAniListId && !toPositiveInt(options.malId)) {
+    try {
+      const response = await fetchAniList({ query: ANIME_DETAIL_SEARCH_QUERY, variables: { search: titleHint } }, 21600, options);
+      const payload = await response.json();
+      (payload?.data?.Page?.media || []).filter((candidate: any) => titleMatchScore(titleHint, candidate) >= 60).forEach(pushCandidate);
+    } catch (error) { failures.push(error); }
   }
 
   const media = [...candidates].sort(
@@ -922,13 +1018,14 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
   )[0];
 
   if (!media) {
-    const fallbackMalId = preferredMalId || routeNumericId;
+const fallbackMalId = preferredMalId;
     if (fallbackMalId) {
+      for (const detailPath of [`/anime/${fallbackMalId}/full`, `/anime/${fallbackMalId}`]) {
       try {
-        const jikanRes = await fetchJikanPath(`/anime/${fallbackMalId}/full`, 21600);
+const jikanRes = await fetchJikanPath(detailPath, 21600, options);
         if (jikanRes.ok) {
           const jikanJson = await jikanRes.json();
-          if (jikanJson?.data) {
+          if (jikanJson?.data && Number(jikanJson.data.mal_id) === fallbackMalId) {
             const mapped = mapJikanDetailToAnime(jikanJson.data);
             if (!useStore.getState().nsfwMode && mapped.isAdult) {
               throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
@@ -938,9 +1035,12 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
         }
       } catch (error) {
         if (error instanceof Error && error.message.includes('NSFW')) throw error;
+        const failure = desktopDataError('jikan', error);
+        if (options.signal?.aborted || ['cancelled', 'access-denied', 'rate-limited'].includes(failure.code)) throw error;
+      }
       }
     }
-    throw new Error('Failed to fetch anime details');
+    throw desktopDataError('anilist', failures[0] || new Error('Anime details are temporarily unavailable.'));
   }
 
   const nsfwMode = useStore.getState().nsfwMode;
@@ -949,9 +1049,11 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
   }
 
   const mappedAnime = mapAnilistToJikan(media);
-  const jikanStats = media.idMal ? await fetchJikanAnimeStats(media.idMal) : null;
+  // Optional statistics must never add a second provider to the critical navigation path.
+  const jikanStats = null;
 
   return {
+    streamnyaa: detailState,
     data: {
       ...mappedAnime,
       ...(jikanStats || {}),
@@ -959,7 +1061,7 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
   };
 };
 
-export const fetchRecentEpisodes = async () => fetchRecentEpisodesWithLimit(12);
+export const fetchRecentEpisodes = async (options: DesktopRequestOptions = {}) => fetchRecentEpisodesWithLimit(12, options);
 
 export const fetchMangaDetails = async (id: string) => {
   const query = `
@@ -1066,18 +1168,111 @@ export const fetchMangaDetails = async (id: string) => {
   };
 };
 
-export const fetchAnimeEpisodes = async (id: string, page: number = 1) => {
+export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: DesktopRequestOptions = {}) => {
+  if (!/^[1-9]\d*$/.test(id)) throw desktopDataError('jikan', new Error('Invalid MAL episode identity.'));
+  if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw desktopDataError('jikan', new Error('Invalid episode page.'));
   try {
-    const res = await fetchJikanPath(`/anime/${extractNumericId(id)}/episodes?page=${page}`, 21600);
-    const json = await res.json();
-    return json;
+    const path = page === 1 ? `/anime/${id}/episodes` : `/anime/${id}/episodes?page=${page}`;
+    let res: Response;
+    try {
+      res = await fetchJikanPath(path, 600, options);
+      if (!res.ok) throw desktopDataError('jikan', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
+    } catch (error) {
+      const failure = desktopDataError('jikan', error);
+      // Both are documented forms of page one. Try the explicit form once for
+      // an upstream timeout/server failure, never after denial or throttling.
+      if (page !== 1 || options.signal?.aborted || !(['timeout'].includes(failure.code) || (failure.statusCode || 0) >= 500)) throw error;
+      res = await fetchJikanPath(`/anime/${id}/episodes?page=1`, 600, options);
+    }
+    if (!res.ok) throw desktopDataError('jikan', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
+    const json = await res.json().catch((error) => {
+      throw desktopDataError('jikan', error);
+    });
+    if (!json || !Array.isArray(json.data)) {
+      throw desktopDataError('jikan', new Error('Episode metadata response was invalid.'));
+    }
+    const stale = res.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' || res.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale';
+    if (!stale) saveEpisodePage(id, page, json);
+    return {
+      ...json,
+      streamnyaa: {
+        status: stale ? 'stale' : 'authoritative',
+        provider: 'jikan',
+        cached: Boolean(res.headers.get('X-StreamNyaa-Local-Cache')) || ['memory','disk','stale'].includes(res.headers.get('X-StreamNyaa-Desktop-Cache') || ''),
+      },
+    };
   } catch (error) {
-    console.error("Failed to fetch episodes from Jikan", error);
+    if (options.signal?.aborted || desktopDataError('jikan', error).code === 'cancelled') throw error;
+    const saved = isDesktopApp() ? readEpisodePage(id, page) : undefined;
+    if (saved) return { data: saved.data, pagination: saved.pagination, streamnyaa: { status: 'stale', provider: 'jikan', savedAt: saved.savedAt } };
+    if (isDesktopApp()) throw error;
+    console.error('Failed to fetch episodes from Jikan', error);
     return { data: [], pagination: { last_visible_page: 1 } };
   }
 };
 
-export const searchAnime = async (query: string, page = 1, type = '', rating = '', genres = '', sort = '', statusState = '') => {
+/** Resolve the final page separately; one partial page cannot establish the latest episode. */
+export async function fetchAnimeEpisodeWindow(id: string, page = 1, options: DesktopRequestOptions = {}) {
+  const current = await fetchAnimeEpisodes(id, page, options);
+  const last = Number(current.pagination?.last_visible_page || 1);
+  if (!Number.isSafeInteger(last) || last < 1 || last > 1000) throw new Error('Invalid episode pagination.');
+  if (last === page || last === 1) return { ...current, latestPageResolved: true };
+  try {
+    const tail = await fetchAnimeEpisodes(id, last, options);
+    const merged = new Map<number, any>();
+    for (const episode of [...current.data, ...tail.data]) merged.set(Number(episode.mal_id), episode);
+    return { ...current, data: [...merged.values()], latestPageResolved: true };
+  } catch (error) {
+    if (options.signal?.aborted || desktopDataError('jikan', error).code === 'cancelled') throw error;
+    return { ...current, latestPageResolved: false };
+  }
+}
+
+export const fetchJikanExploreCatalog = async (options: {
+  mode: 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year';
+  query?: string;
+  year?: number;
+  season?: string;
+  type?: string;
+  genre?: string;
+  status?: string;
+}, requestOptions: DesktopRequestOptions = {}) => {
+  const params = new URLSearchParams({ limit: '25' });
+  const query = String(options.query || '').trim();
+  const rawType = String(options.type || '').trim().toUpperCase();
+  const type = rawType === 'TV_SHORT' ? 'tv' : rawType.toLowerCase();
+  const status = String(options.status || '').trim().toLowerCase();
+  const genreIds: Record<string, string> = {
+    action: '1', adventure: '2', comedy: '4', mystery: '7', drama: '8', fantasy: '10', romance: '22',
+    'sci-fi': '24', sports: '30', 'slice of life': '36', supernatural: '37', thriller: '41',
+  };
+  if (query) params.set('q', query);
+  if (type) params.set('type', type);
+  if (status) params.set('status', status);
+  const genreId = genreIds[String(options.genre || '').trim().toLowerCase()];
+  if (genreId) params.set('genres', genreId);
+
+  let path = `/anime?${params.toString()}`;
+  if (!query && options.mode === 'upcoming') path = '/seasons/upcoming?limit=25';
+  else if (!query && options.mode === 'seasonal' && options.year && options.season) {
+    path = `/seasons/${options.year}/${String(options.season).toLowerCase()}?limit=25`;
+  } else if (!query && options.mode === 'year' && options.year) {
+    params.set('start_date', `${options.year}-01-01`);
+    params.set('end_date', `${options.year}-12-31`);
+    params.set('order_by', 'score');
+    params.set('sort', 'desc');
+    path = `/anime?${params.toString()}`;
+  } else if (!query && options.mode === 'top') path = '/top/anime?limit=25';
+  else if (!query) path = '/top/anime?filter=airing&limit=25';
+
+  const response = await fetchJikanPath(path, 900, requestOptions);
+  if (!response.ok) throw new Error('The secondary catalog provider did not respond.');
+  const payload = await response.json();
+  if (!Array.isArray(payload?.data)) throw new Error('The secondary catalog returned an invalid response.');
+  return payload;
+};
+
+export const searchAnime = async (query: string, page = 1, type = '', rating = '', genres = '', sort = '', statusState = '', options: DesktopRequestOptions = {}) => {
   let typeArg = type ? `, format: ${type.toUpperCase()}` : '';
   let genreArg = genres ? `, genre: "${genres}"` : '';
   let isAdultArg = '';
@@ -1138,6 +1333,7 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -1168,6 +1364,7 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -1177,11 +1374,11 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
   const res = await fetchAniList({
     query: query ? gqlQuery : emptySearchQuery,
     variables: query ? { search: query, page } : { page },
-  }, 1800);
+  }, 1800, options);
   if (!res.ok) throw new Error('Failed to search anime');
   const data = await res.json();
   
-  return {
+  return { streamnyaa: metadataState(res),
     data: data.data.Page.media.map(mapAnilistToJikan),
     pagination: {
       has_next_page: data.data.Page.pageInfo.hasNextPage,
@@ -1190,7 +1387,7 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
   };
 };
 
-export const fetchTopAnimeByYear = async (year: number, maxPages = 1) => {
+export const fetchTopAnimeByYear = async (year: number, maxPages = 1, options: DesktopRequestOptions = {}) => {
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
   const gqlQuery = `
     query($page: Int, $seasonYear: Int) {
@@ -1215,6 +1412,7 @@ export const fetchTopAnimeByYear = async (year: number, maxPages = 1) => {
           genres
           averageScore
           popularity
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
@@ -1222,10 +1420,12 @@ export const fetchTopAnimeByYear = async (year: number, maxPages = 1) => {
   `;
 
   const pages: any[] = [];
+  let stale = false;
   let page = 1;
   let hasNext = true;
   while (hasNext && page <= maxPages) {
-    const res = await fetchAniList({ query: gqlQuery, variables: { page, seasonYear: year } }, 21600);
+    const res = await fetchAniList({ query: gqlQuery, variables: { page, seasonYear: year } }, 21600, options);
+    stale ||= metadataState(res).status === 'stale';
     if (!res.ok) throw new Error('Failed to fetch yearly top anime');
     const data = await res.json();
     if (data.errors) throw new Error('Failed to fetch yearly top anime');
@@ -1234,10 +1434,10 @@ export const fetchTopAnimeByYear = async (year: number, maxPages = 1) => {
     page += 1;
   }
   const rawData = pages.map(mapAnilistToJikan);
-  return { data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.mal_id === anime.mal_id)) };
+  return { streamnyaa: { status: stale ? 'stale' : 'authoritative' }, data: rawData.filter((anime: any, index: number, self: any[]) => index === self.findIndex((a) => a.anilist_id === anime.anilist_id)) };
 };
 
-export const fetchAnimeSeason = async (season: string, year: number, page = 1) => {
+export const fetchAnimeSeason = async (season: string, year: number, page = 1, options: DesktopRequestOptions = {}) => {
   const validSeason = season.toUpperCase();
   const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
   const gqlQuery = `
@@ -1262,17 +1462,18 @@ export const fetchAnimeSeason = async (season: string, year: number, page = 1) =
           coverImage { extraLarge large color } bannerImage
           genres
           averageScore
+          nextAiringEpisode { episode airingAt }
           isAdult
         }
       }
     }
   `;
 
-  const res = await fetchAniList({ query: gqlQuery, variables: { page, seasonYear: year, season: validSeason } }, 21600);
+  const res = await fetchAniList({ query: gqlQuery, variables: { page, seasonYear: year, season: validSeason } }, 21600, options);
   if (!res.ok) throw new Error('Failed to fetch seasonal anime');
   const data = await res.json();
   if (data.errors) throw new Error('Failed to fetch seasonal anime');
-  return {
+  return { streamnyaa: metadataState(res),
     data: (data.data.Page.media || []).map(mapAnilistToJikan),
     pagination: {
       has_next_page: data.data.Page.pageInfo.hasNextPage,
@@ -1305,7 +1506,7 @@ export const fetchGenres = async () => {
   };
 };
 
-export const fetchSchedule = async (page = 1, startDate: number, endDate: number) => {
+export const fetchSchedule = async (page = 1, startDate: number, endDate: number, options: DesktopRequestOptions = {}) => {
   const nsfwMode = useStore.getState().nsfwMode;
   const query = `
     query($page: Int, $start: Int, $end: Int) {
@@ -1336,7 +1537,7 @@ export const fetchSchedule = async (page = 1, startDate: number, endDate: number
     }
   `;
   
-  const res = await fetchAniList({ query, variables: { page, start: startDate, end: endDate } }, 180);
+const res = await fetchAniList({ query, variables: { page, start: startDate, end: endDate } }, 180, options);
   
   if (!res.ok) throw new Error('Failed to fetch schedule');
   const data = await res.json();
@@ -1348,19 +1549,21 @@ export const fetchSchedule = async (page = 1, startDate: number, endDate: number
   
   const seen = new Set();
   schedules = schedules.filter((s: any) => {
-    const id = s.media.idMal || s.media.id;
+    const id = `${s.media.id}:${s.episode}:${s.airingAt}`;
     if (seen.has(id)) return false;
     seen.add(id);
     return true;
   });
   
-  return {
-    data: schedules.map((schedule: any) => ({
+  const mappedSchedules = schedules.map((schedule: any) => ({
       ...mapAnilistToJikan(schedule.media),
       airingAt: schedule.airingAt,
       airingEpisode: schedule.episode,
       scheduleId: schedule.id
-    })),
+    }));
+
+  return { streamnyaa: metadataState(res),
+    data: isDesktopApp() ? enrichDesktopScheduleRevisions(mappedSchedules) : mappedSchedules,
     pagination: {
       has_next_page: data.data.Page.pageInfo.hasNextPage,
       last_visible_page: data.data.Page.pageInfo.lastPage
@@ -1368,29 +1571,28 @@ export const fetchSchedule = async (page = 1, startDate: number, endDate: number
   };
 };
 
-export const fetchCompleteSchedule = async (startDate: number, endDate: number, maxPages = 10) => {
-  const items: any[] = [];
-  const seen = new Set<string>();
-  let page = 1;
-  let hasNextPage = true;
-
+export const fetchCompleteSchedule = async (startDate: number, endDate: number, maxPages = 10, options: DesktopRequestOptions = {}) => {
+  const items: any[] = [], seen = new Set<string>();
+  let page = 1, hasNextPage = true, stale = false;
+  let retryAfterMs: number | undefined;
   while (hasNextPage && page <= maxPages) {
-    const response = await fetchSchedule(page, startDate, endDate);
-    response.data.forEach((anime: any) => {
-      const key = String(anime?.mal_id || anime?.id || anime?.scheduleId || anime?.title || '');
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      items.push(anime);
-    });
-    hasNextPage = Boolean(response.pagination?.has_next_page);
-    page += 1;
+    try {
+      const response = await fetchSchedule(page, startDate, endDate, options);
+      stale ||= response.streamnyaa.status === 'stale';
+      response.data.forEach((anime: any) => {
+        const key = `${anime?.anilist_id || anime?.mal_id || anime?.id}:${anime?.airingEpisode}:${anime?.airingAt}`;
+        if (seen.has(key)) return;
+        seen.add(key); items.push(anime);
+      });
+      hasNextPage = Boolean(response.pagination?.has_next_page);
+      page += 1;
+    } catch (error) {
+      if (options.signal?.aborted || !items.length) throw error;
+      retryAfterMs = (error as { retryAfterMs?: number })?.retryAfterMs;
+      break;
+    }
   }
-
-  return {
-    data: items,
-    pagination: {
-      has_next_page: hasNextPage,
-      last_visible_page: page - 1,
-    },
-  };
+  return { data: items, complete: !hasNextPage, retryAfterMs,
+    streamnyaa: { status: stale ? 'stale' : 'authoritative' },
+    pagination: { has_next_page: hasNextPage, last_visible_page: page - 1 } };
 };

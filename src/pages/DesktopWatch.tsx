@@ -1,19 +1,35 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
+import { clearInterruptedPlayback } from '../lib/desktopInterruptedSession';
+import { enqueueDownload, enqueueDownloadSelection } from '../lib/desktopDownloads';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
 import Seo from '../components/Seo';
-import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
+import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
+import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
+import { fetchAnimeDetails, fetchAnimeEpisodeWindow, fetchAnimeInstallments } from '../api/jikan';
+import { loadSeriesTimeline, type TimelineResult } from '../lib/desktopSeriesTimeline';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
+import { episodeRangeContains, isEpisodeInteractiveTarget, isIntentionalHorizontalDrag } from '../lib/desktopEpisodeInteraction';
 import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
+import { preloadDesktopWatchData } from '../lib/desktopRoutePreload';
+import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
+import { desktopAnimeQueryKey } from '../lib/desktopRequests';
+import { verifiedAiredEpisodeCount } from '../lib/animeEpisodes';
+import { SourceAccumulator, type SourceDiscovery } from '../lib/desktopSourceDiscovery';
+import { totalEpisodeCount } from '../lib/animeEpisodes';
+import { desktopDataError } from '../lib/desktopData';
+import { desktopLandscapeImageCandidates } from '../lib/desktopArtwork';
 import {
-  findLocalPlaybackHistoryItem,
   desktopEpisodeWatchState,
   formatPlaybackTime,
   controlLocalPlayer,
   getLocalPlaybackProgress,
   listenDesktopPlayerNextEpisode,
+  updateDesktopNextEpisodeStatus,
+  cancelDesktopNextEpisodeStartup,
   listenDesktopPlayerRecoveryRequest,
   loadDesktopWatchProgress,
   loadDesktopPlayerPreferences,
@@ -21,7 +37,9 @@ import {
   loadDesktopAutoOpenBestSource,
   loadDesktopAudioPreference,
   openLocalSourceNow,
+  resolveDesktopPlaybackCheckpoint,
   saveDesktopWatchProgress,
+  setDesktopEpisodeWatched,
   subscribeDesktopAutoPlayNextEpisode,
   subscribeDesktopPlayerPreferences,
   subscribeDesktopWatchProgress,
@@ -45,7 +63,7 @@ type SourceFilterMode = 'strict' | 'balanced' | 'broad';
 type SourceMatchTier = 'exact' | 'likely' | 'broad' | 'rejected';
 type SourcePlayableStatus = 'verified' | 'untested' | 'low-seed' | 'likely-wrong' | 'unsupported';
 type SourceConfidenceBand = 'high' | 'medium' | 'low' | 'failed';
-type SourceQualityFilter = 'auto' | '2160p' | '1080p' | '720p' | '480p' | 'other';
+type SourceQualityFilter = 'auto' | '2160p' | '1440p' | '1080p' | '720p' | '480p' | 'other';
 type EpisodeViewMode = 'cards' | 'grid';
 type PlaybackNotice = { tone: 'loading' | 'success' | 'error'; text: string };
 type PlaybackStageView = { headline: string; detail: string; progress: number; step: 1 | 2 | 3 | 4; status: string };
@@ -58,7 +76,7 @@ type EpisodeMetaEntry = {
 };
 type InstallmentKind = 'season' | 'movie' | 'ova' | 'ona' | 'special' | 'other';
 type InstallmentItem = {
-  mal_id: string | number;
+  mal_id: string | number | null;
   anilist_id: string | number | null;
   name: string;
   current: boolean;
@@ -86,10 +104,12 @@ const EPISODE_WINDOW_SIZE = 72;
 const EPISODE_GRID_PAGE_SIZE = 120;
 const EPISODE_CARD_SEARCH_LIMIT = 36;
 const AUTO_COMPACT_EPISODE_THRESHOLD = 180;
-const EPISODE_RAIL_DRAG_THRESHOLD = 8;
+const EPISODE_RAIL_DRAG_THRESHOLD = 12;
 const TIMELINE_SKELETON_CARD_COUNT = 5;
-const SOURCE_QUERY_BATCH_SIZE = 6;
-const SOURCE_RETRY_LIMIT = 5;
+const SOURCE_QUERY_BATCH_SIZE = 2;
+const SOURCE_QUERY_TIMEOUT_MS = 4_000;
+const SOURCE_SEARCH_BUDGET_MS = 12_000;
+const SOURCE_RETRY_LIMIT = 4;
 const FAILED_SOURCE_MEMORY_KEY = 'streamnyaa.desktopFailedSources';
 const FAILED_SOURCE_MEMORY_TTL = 1000 * 60 * 60 * 24;
 const SOURCE_SUCCESS_MEMORY_TTL = 1000 * 60 * 60 * 24 * 7;
@@ -114,8 +134,10 @@ type SourceFailureRecord = {
   animeId?: string | number;
   episode?: number;
   failureCount?: number;
+  consecutiveFailures?: number;
   successAt?: number;
   successCount?: number;
+  averageStartupMs?: number;
 };
 
 function posterFor(anime: any) {
@@ -138,7 +160,6 @@ function wideImageFor(anime: any) {
   return anime?.bannerImage
     || anime?.banner_image
     || anime?.backdrop
-    || anime?.background
     || anime?.trailer?.images?.maximum_image_url
     || anime?.trailer?.images?.large_image_url
     || posterFor(anime);
@@ -192,7 +213,7 @@ function SafeImage({
     return (
       <div className={fallbackClassName || className}>
         <div className="flex h-full w-full items-end bg-[radial-gradient(circle_at_34%_18%,rgba(225,29,72,0.38),transparent_36%),linear-gradient(145deg,#1a1016,#060609)] p-4">
-          <span className="line-clamp-3 text-sm font-black leading-tight text-white/76">{alt || 'Anime'}</span>
+          <span className="line-clamp-3 text-sm font-semibold leading-tight text-white/76">{alt || 'Anime'}</span>
         </div>
       </div>
     );
@@ -227,29 +248,10 @@ function titleFromRoute(id = '') {
   return raw.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function fallbackAnimeFromRoute(id = '') {
-  const numeric = Number(String(id).match(/^\d+/)?.[0] || 0);
-  const title = titleFromRoute(id);
-  return {
-    id: numeric || id,
-    mal_id: numeric || id,
-    anilist_id: numeric || null,
-    title,
-    title_romaji: title,
-    title_english: title,
-    images: { jpg: {}, webp: {} },
-    banner_image: '',
-    synopsis: '',
-    episodes: null,
-    status: '',
-    score: 0,
-    type: '',
-    year: null,
-    genres: [],
-    streamingEpisodes: [],
-    nextAiringEpisode: null,
-    relations: [],
-  };
+function fallbackAnimeFromRoute(_id = '') {
+  // Empty shell only: never infer either provider's identity or availability from a slug.
+  return { title: 'Loading anime…', images: { jpg: {}, webp: {} }, relations: [], episodes: null,
+    streamingEpisodes: [], mal_id: null, anilist_id: null, id: null, status: '' };
 }
 
 function formatCompactLabel(value: unknown) {
@@ -282,6 +284,28 @@ function youtubeVideoIdFor(value = '') {
   } catch {
     return '';
   }
+}
+
+function playerLandscapeCandidates(anime: any, episodeImage?: string) {
+  const trailer = anime?.trailer || {};
+  const directTrailerId = youtubeVideoIdFor(String(trailer?.url || ''));
+  const declaredTrailerId = String(trailer?.youtube_id || trailer?.id || '').trim();
+  const youtubeId = directTrailerId
+    || (/^[a-zA-Z0-9_-]{6,20}$/.test(declaredTrailerId)
+      && (!trailer?.site || String(trailer.site).toLowerCase() === 'youtube')
+      ? declaredTrailerId
+      : '');
+
+  return desktopLandscapeImageCandidates([
+    anime?.bannerImage,
+    anime?.banner_image,
+    anime?.backdrop,
+    episodeImage,
+    trailer?.images?.maximum_image_url,
+    trailer?.images?.large_image_url,
+    trailer?.thumbnail,
+    youtubeId ? `https://i.ytimg.com/vi/${youtubeId}/maxresdefault.jpg` : '',
+  ]);
 }
 
 function trailerUrlFor(anime: any) {
@@ -392,8 +416,8 @@ function parseSourceAnimeTitle(value = '') {
     /\bS\d{1,2}E\d{1,4}\b/i,
     /\b(?:ep|episode)\.?\s*0?\d{1,4}\b/i,
     /\s+-\s+0?\d{1,4}(?:v\d+)?\b/i,
-    /\s+-\s+\[[^\]]*(?:480|720|1080|2160)p[^\]]*\]/i,
-    /\s+-\s+\([^)]+(?:480|720|1080|2160)p[^)]*\)/i,
+    /\s+-\s+\[[^\]]*(?:480|720|1080|1440|2160)p[^\]]*\]/i,
+    /\s+-\s+\([^)]+(?:480|720|1080|1440|2160)p[^)]*\)/i,
   ];
   const splitAt = splitPatterns
     .map((pattern) => {
@@ -405,7 +429,7 @@ function parseSourceAnimeTitle(value = '') {
   if (splitAt) title = title.slice(0, splitAt);
 
   title = title
-    .replace(/\b(?:480|720|1080|2160)p\b.*$/i, ' ')
+    .replace(/\b(?:480|720|1080|1440|2160)p\b.*$/i, ' ')
     .replace(/\b(?:x26[45]|h\.?26[45]|avc|hevc|aac|flac|opus|ddp\d?(?:\.\d)?|10bits?|8bits?)\b.*$/i, ' ')
     .replace(/\b(?:web(?:rip|dl)?|blu(?:ray)?|bd(?:rip)?|hdtv|amzn|cr|netflix|nf)\b.*$/i, ' ')
     .replace(/\b(?:dual|multi)[\s-]?audio\b.*$/i, ' ')
@@ -529,14 +553,25 @@ function isObsoleteLargeSourceFailure(message = '') {
   return /too large for reliable desktop streaming|choose a smaller release|large_source/i.test(message);
 }
 
+export function isLocalPlaybackFailure(message = '') {
+  if (/^local engine:/i.test(message)) return true;
+  return /(?:127\.0\.0\.1|localhost|allow_overwrite|file exists|os error 80|local stream engine|torrent engine|stream engine|local stream request|playback shutdown is busy|cleanup is busy|operation lock|source switch|superseded|stale|cancelled|canceled|user selected|player handoff|native player|\bmpv\b|ipc)/i.test(message);
+}
+
+export function isSourceSpecificFailure(message = '') {
+  if (!message.trim() || isObsoleteLargeSourceFailure(message) || isLocalPlaybackFailure(message)) return false;
+  return /(?:no playable (?:video|media)|no matching (?:playable )?(?:video|media)(?: file)?|invalid (?:torrent|magnet|metadata)|info hash mismatch|unsupported (?:codec|container|video)|decoder (?:failed|error)|no peers?|no seeds?|zero peers?|metadata (?:unavailable|timed out)|peer discovery timed out|midstream buffer stopped advancing|buffer stalled)/i.test(message);
+}
+
 function compactSourceFailures(records: Record<string, SourceFailureRecord>) {
   const now = Date.now();
   const entries = Object.entries(records)
     .map(([key, record]) => {
       const cleaned = { ...record };
-      if (isObsoleteLargeSourceFailure(cleaned.message || '')) {
+      if (!isSourceSpecificFailure(cleaned.message || '')) {
         cleaned.failedAt = 0;
         cleaned.message = '';
+        cleaned.consecutiveFailures = 0;
       }
       return [key, cleaned] as const;
     })
@@ -577,8 +612,7 @@ function rememberSourceFailure(
 ) {
   const key = sourceFailureKey(source);
   if (!key) return;
-  if (isObsoleteLargeSourceFailure(message)) return;
-  if (/superseded|stale|cancelled|canceled|user selected|playback request was superseded|source switch/i.test(message)) return;
+  if (!isSourceSpecificFailure(message)) return;
   const records = loadSourceFailureRecords();
   const previous = records[key] || {};
   records[key] = {
@@ -588,11 +622,12 @@ function rememberSourceFailure(
     animeId: context.animeId,
     episode: context.episode,
     failureCount: Math.min(20, Number(previous.failureCount || 0) + 1),
+    consecutiveFailures: Math.min(10, Number(previous.consecutiveFailures || 0) + 1),
   };
   saveSourceFailureRecords(records);
 }
 
-function rememberSourceSuccess(source: RankedNyaaItem) {
+function rememberSourceSuccess(source: RankedNyaaItem, startupMs?: number) {
   const key = sourceFailureKey(source);
   if (!key) return;
   const records = loadSourceFailureRecords();
@@ -601,8 +636,12 @@ function rememberSourceSuccess(source: RankedNyaaItem) {
     ...previous,
     failedAt: 0,
     message: '',
+    consecutiveFailures: 0,
     successAt: Date.now(),
     successCount: Math.min(50, Number(previous.successCount || 0) + 1),
+    averageStartupMs: Number.isFinite(startupMs)
+      ? Math.round(Number(previous.averageStartupMs || startupMs) * 0.65 + Number(startupMs) * 0.35)
+      : previous.averageStartupMs,
   };
   saveSourceFailureRecords(records);
 }
@@ -613,6 +652,7 @@ function sourceFailureFor(source: RankedNyaaItem, records: Record<string, Source
   if (!record?.failedAt) return null;
   if (Date.now() - Number(record.failedAt) > FAILED_SOURCE_MEMORY_TTL) return null;
   if (record.successAt && Number(record.successAt) > Number(record.failedAt)) return null;
+  if (Number(record.consecutiveFailures || 0) < 2) return null;
   return record;
 }
 
@@ -800,9 +840,10 @@ function hasEpisodeSignal(title = '', episode: number) {
     .replace(/\bseason\s+0?\d{1,3}\b/ig, ' ')
     .replace(/\b\d{1,3}(?:st|nd|rd|th)\s+season\b/ig, ' ')
     .replace(/\b(?:movie|film|ova|ona|special|part|cour|vol(?:ume)?)\s+0?\d{1,3}\b/ig, ' ')
-    .replace(/\b(?:720|1080|2160)p\b/ig, ' ')
+    .replace(/\b(?:720|1080|1440|2160)p\b/ig, ' ')
     .replace(/\bx26[45]\b/ig, ' ')
     .replace(/\bh\.?26[45]\b/ig, ' ');
+  if (episodeRangeContains(sanitized, episode)) return true;
   return [
     new RegExp(`\\bS\\d{1,2}E${padded}\\b`, 'i'),
     new RegExp(`\\bE${padded}\\b`, 'i'),
@@ -1078,12 +1119,8 @@ function installmentTitleScore(item: Omit<InstallmentItem, 'label'>) {
 }
 
 function installmentIdentity(item: Omit<InstallmentItem, 'label'>) {
-  if (item.kind === 'season') {
-    if (item.seasonNumber && item.partNumber) return `season:${item.seasonNumber}:part:${item.partNumber}`;
-    if (item.seasonNumber) return `season:${item.seasonNumber}`;
-  }
-  const normalizedTitle = cleanTitle(stripSeasonDecorators(item.name || '')).toLowerCase();
-  return `${item.kind}:${normalizedTitle || item.year || item.mal_id}`;
+  // Different verified installments can have identical translated titles or season labels.
+  return item.anilist_id ? 'anilist:' + item.anilist_id : 'mal:' + item.mal_id;
 }
 
 function preferInstallmentCandidate(
@@ -1099,15 +1136,7 @@ function preferInstallmentCandidate(
 }
 
 function knownAiredEpisodeCount(anime: any, episodeItems: any[] = []) {
-  const pageMax = episodeItems.length
-    ? Math.max(...episodeItems.map((episode: any) => Number(episode?.mal_id) || 0))
-    : 0;
-  if (anime?.nextAiringEpisode?.episode) return Math.max(Number(anime.nextAiringEpisode.episode) - 1, pageMax, 0);
-  if (String(anime?.status || '').toUpperCase() === 'FINISHED') return Math.max(Number(anime?.episodes || 1), pageMax, 1);
-  if (String(anime?.status || '').toUpperCase() === 'RELEASING') {
-    return Math.max(Number(anime?.episodes || 0), Number(anime?.streamingEpisodes?.length || 0), pageMax, 1);
-  }
-  return Math.max(pageMax, Number(anime?.episodes || 0), 0);
+  return verifiedAiredEpisodeCount(anime, episodeItems);
 }
 
 function episodeNumberFromTitle(value = '') {
@@ -1178,7 +1207,10 @@ function sourceHistoryBoost(source: RankedNyaaItem, records: Record<string, Sour
   const success = sourceSuccessFor(source, records);
   if (!success) return 0;
   const ageRatio = Math.max(0, Math.min(1, (Date.now() - Number(success.successAt || 0)) / SOURCE_SUCCESS_MEMORY_TTL));
-  return Math.round((18 + Math.min(12, Number(success.successCount || 1) * 3)) * (1 - ageRatio));
+  const latencyBonus = Number(success.averageStartupMs || 0) > 0
+    ? clampNumber(Math.round((6_000 - Number(success.averageStartupMs)) / 1_000), -2, 5)
+    : 0;
+  return Math.round((18 + Math.min(12, Number(success.successCount || 1) * 3) + latencyBonus) * (1 - ageRatio));
 }
 
 function sourceConfidenceScore(
@@ -1238,7 +1270,6 @@ function sourceConfidenceBadges(
   audioMode: AudioMode,
 ) {
   const badges: string[] = [];
-  if (sourceSuccessFor(source, records)) badges.push('Worked before');
   if (source.rawSeeders >= 50) badges.push('Healthy peers');
   else if (source.rawSeeders > 0) badges.push('Has seeders');
   if (source.matchReasons.includes('Exact episode') || source.matchReasons.includes('Movie match')) badges.push('Exact episode');
@@ -1295,7 +1326,9 @@ function sourceQualityReasons(
   if (source.rawSeeders >= 100) reasons.push('Fast start');
   else if (source.rawSeeders >= 50) reasons.push('Stable peers');
   else if (source.rawSeeders >= 15) reasons.push('Usable peers');
-  if (/\b1080p\b/i.test(source.title)) reasons.push('1080p');
+  if (/\b(?:2160p|4k|uhd)\b/i.test(source.title)) reasons.push('4K');
+  else if (/\b1440p\b/i.test(source.title)) reasons.push('2K');
+  else if (/\b1080p\b/i.test(source.title)) reasons.push('1080p');
   if (/\b(hevc|h\.?265|x265)\b/i.test(source.title)) reasons.push('HEVC');
   if (source.rawSize > 0 && source.rawSize <= 5 * 1024 * 1024 * 1024) reasons.push('Sane size');
   return reasons.filter((reason, index, list) => list.indexOf(reason) === index).slice(0, 6);
@@ -1303,6 +1336,7 @@ function sourceQualityReasons(
 
 function sourceQualityBucket(title = ''): SourceQualityFilter {
   if (/\b(?:2160p|4k|uhd)\b/i.test(title)) return '2160p';
+  if (/\b1440p\b/i.test(title)) return '1440p';
   if (/\b1080p\b/i.test(title)) return '1080p';
   if (/\b720p\b/i.test(title)) return '720p';
   if (/\b480p\b/i.test(title)) return '480p';
@@ -1312,6 +1346,8 @@ function sourceQualityBucket(title = ''): SourceQualityFilter {
 function sourceQualityLabel(quality: SourceQualityFilter) {
   if (quality === 'auto') return 'Auto';
   if (quality === 'other') return 'Other';
+  if (quality === '2160p') return '4K / 2160p';
+  if (quality === '1440p') return '2K / 1440p';
   return quality;
 }
 
@@ -1438,7 +1474,7 @@ function shouldSkipInstallment(item: any, kind: InstallmentKind, current: boolea
   const status = String(item?.status || '').toUpperCase();
   if (!current && (!ALLOWED_INSTALLMENT_KINDS.has(kind) || !displayKinds.has(kind))) return true;
   if (!current && mediaType && !['ANIME', 'TV', 'TV_SHORT', 'OVA', 'ONA', 'SPECIAL', 'MOVIE'].includes(mediaType)) return true;
-  if (!current && status === 'NOT_YET_RELEASED') return true;
+  // Upcoming related entries belong in the timeline; their Watch page gates playback.
   if (kind === 'season' && /\b(director'?s cut|recap|compilation|digest|summary|tv edit(?:ion)?)\b/i.test(title)) return true;
   return false;
 }
@@ -1451,7 +1487,10 @@ function isSameTitleLineInstallment(rootAnime: any, item: any, kind: Installment
 
   const rootTitle = titleForInstallment(rootAnime);
   const nextTitle = titleForInstallment(item);
-  if (!sameSeriesFamily(rootTitle, nextTitle)) return false;
+  if (relationType === 'PREQUEL' || relationType === 'SEQUEL' || relationType === 'PARENT') return true;
+  const rootTitles = [rootTitle, rootAnime?.title_romaji, rootAnime?.title_english, ...(rootAnime?.synonyms || [])].filter(Boolean);
+  const nextTitles = [nextTitle, item?.title_romaji, item?.title_english, ...(item?.synonyms || [])].filter(Boolean);
+  if (!rootTitles.some(a => nextTitles.some(b => sameSeriesFamily(a, b)))) return false;
   if (kind !== 'season') return true;
   if (relationType === 'PREQUEL' || relationType === 'SEQUEL' || relationType === 'PARENT') return true;
   if (hasSeasonTitleSignal(nextTitle)) return true;
@@ -1463,16 +1502,15 @@ function buildInstallmentItems(anime: any, discoveredItems: any[] = []): Install
   const displayKinds = displayKindsFor(currentKind);
   const deduped = new Map<string, Omit<InstallmentItem, 'label'>>();
   const pushItem = (item: any, current: boolean, relation?: string) => {
-    const malId = String(item?.mal_id || item?.id || '');
-    if (!malId) return;
+    if (!item?.mal_id && !item?.anilist_id) return;
     const format = normalizeInstallmentFormat(item?.format || item?.type || anime?.type || 'TV');
     const kind = installmentKindFor(format);
     if (shouldSkipInstallment(item, kind, current, displayKinds)) return;
     if (!isSameTitleLineInstallment(anime, item, kind, current, relation)) return;
     const title = titleForInstallment(item);
     const nextItem: Omit<InstallmentItem, 'label'> = {
-      mal_id: item?.mal_id || item?.id,
-      anilist_id: item?.anilist_id || item?.id || null,
+      mal_id: item?.mal_id || null,
+      anilist_id: item?.anilist_id || null,
       name: title || 'Untitled',
       current,
       format,
@@ -1509,16 +1547,16 @@ function buildInstallmentItems(anime: any, discoveredItems: any[] = []): Install
 
   (anime?.relations || []).forEach((relation: any) => {
     (relation?.entry || [])
-      .filter((entry: any) => entry?.mal_id)
+      .filter((entry: any) => entry?.mal_id || entry?.anilist_id)
       .filter((entry: any) => relationTypeAllowed({ ...entry, relation: relation?.relation }, currentKind))
       .forEach((entry: any) => pushItem(entry, false, relation?.relation));
   });
 
   discoveredItems
-    .filter((entry: any) => entry?.mal_id || entry?.id)
+    .filter((entry: any) => entry?.mal_id || entry?.anilist_id)
     .forEach((entry: any) => pushItem(
       entry,
-      String(entry?.mal_id || entry?.id) === String(anime?.mal_id || anime?.id || ''),
+      Boolean(entry?.anilist_id && entry.anilist_id === anime?.anilist_id) || Boolean(entry?.mal_id && entry.mal_id === anime?.mal_id),
       entry?.relation || 'SEQUEL',
     ));
 
@@ -1595,11 +1633,11 @@ function TimelineSkeletonCard() {
   return (
     <div
       aria-hidden="true"
-      className="relative h-[118px] overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] shadow-lg shadow-black/18"
+      className="relative h-[118px] overflow-hidden rounded-xl border border-white/10 bg-white/[0.04] shadow-none shadow-black/18"
     >
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_46%,rgba(255,255,255,0.04)),radial-gradient(circle_at_86%_0%,rgba(244,63,94,0.14),transparent_46%)]" />
       <div className="relative flex h-full gap-4 p-4">
-        <div className="h-14 w-14 shrink-0 animate-pulse rounded-2xl bg-white/10" />
+        <div className="h-14 w-14 shrink-0 animate-pulse rounded-xl bg-white/10" />
         <div className="min-w-0 flex-1">
           <div className="h-5 w-28 animate-pulse rounded bg-white/10" />
           <div className="mt-3 h-3 w-40 animate-pulse rounded bg-white/8" />
@@ -1648,20 +1686,28 @@ function railWheelScroll(event: RailWheelEvent, rail: HTMLDivElement | null) {
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'string' && error.trim()) return error;
+  let message = '';
+  if (error instanceof Error && error.message.trim()) message = error.message;
+  else if (typeof error === 'string' && error.trim()) message = error;
   if (error && typeof error === 'object' && 'message' in error) {
     const value = String((error as { message?: unknown }).message || '').trim();
-    if (value) return value;
+    if (value) message = value;
   }
-  return fallback;
+  if (!message) return fallback;
+  if (/no\s+(peer|seed)|zero\s+(peer|seed)|timed?\s*out/i.test(message)) {
+    return 'The stream could not establish a healthy connection. Retry or choose another playback option.';
+  }
+  if (/provider|torrent|magnet|metadata|info\s*hash|tracker|dht/i.test(message)) {
+    return 'Playback could not be prepared. Retry or choose another playback option.';
+  }
+  return message;
 }
 
 function EpisodeWatchIndicator({ state }: { state: DesktopEpisodeWatchState }) {
   if (!state.started) return null;
   return (
     <>
-      <span className="absolute right-2 top-2 z-20 inline-flex h-7 items-center gap-1.5 rounded-md bg-black/72 px-2 text-[10px] font-bold uppercase text-white shadow-lg shadow-black/25 backdrop-blur-md">
+      <span className="absolute right-2 top-2 z-20 inline-flex h-7 items-center gap-1.5 rounded-md bg-black/72 px-2 text-[10px] font-semibold normal-case text-white shadow-none shadow-black/25 backdrop-blur-md">
         {state.completed ? <Check className="h-3.5 w-3.5 text-primary" strokeWidth={2.5} /> : null}
         {state.completed ? 'Watched' : `${Math.max(1, Math.round(state.progressPercent))}%`}
       </span>
@@ -1675,6 +1721,9 @@ function EpisodeWatchIndicator({ state }: { state: DesktopEpisodeWatchState }) {
 }
 
 export default function DesktopWatch() {
+  const hideEpisodeSpoilers = useHideEpisodeSpoilers();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
@@ -1699,9 +1748,11 @@ export default function DesktopWatch() {
   const [seekDraft, setSeekDraft] = useState<number | null>(null);
   const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
   const [playbackNotice, setPlaybackNotice] = useState<PlaybackNotice | null>(null);
+  const [recoveryExhausted, setRecoveryExhausted] = useState(false);
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(() => new Set());
   const [failedSourceVersion, setFailedSourceVersion] = useState(0);
+  const [sourceSearchProgress, setSourceSearchProgress] = useState(18);
   const [watchProgressRecords, setWatchProgressRecords] = useState(() => loadDesktopWatchProgress());
   const routeAniListId = searchParams.get('aid') || '';
   const routeMalId = searchParams.get('mid') || '';
@@ -1710,6 +1761,7 @@ export default function DesktopWatch() {
   const episodeDragRef = useRef({ dragging: false, moved: false, pointerId: 0, startX: 0, startY: 0, scrollLeft: 0 });
   const suppressEpisodeClickRef = useRef(false);
   const sourceSectionRef = useRef<HTMLElement | null>(null);
+  const playbackOptionsRef = useRef<HTMLDetailsElement>(null);
   const selectedSeasonRef = useRef<HTMLButtonElement | null>(null);
   const selectedEpisodeRef = useRef<HTMLDivElement | null>(null);
   const playActionLockRef = useRef(false);
@@ -1726,10 +1778,20 @@ export default function DesktopWatch() {
   const playableSourcesRef = useRef<RankedNyaaItem[]>([]);
   const playableSourcesEpisodeRef = useRef(0);
   const playSourceRef = useRef<(source: RankedNyaaItem, resumeOverride?: number) => void | Promise<void>>(() => {});
+  const lastRequestedSourceRef = useRef<{ source: RankedNyaaItem; animeId: string; episode: number } | null>(null);
   const playNextEpisodeRef = useRef<(reason?: 'manual' | 'ended' | string) => void>(() => {});
   const playbackValueRef = useRef(playback);
+  const playbackProgressValueRef = useRef<DesktopPlaybackProgress | null | undefined>(null);
   const pendingAutoPlayEpisodeRef = useRef<number | null>(null);
   const preferenceSyncRetryRef = useRef<number | null>(null);
+  const midstreamRecoveryCountRef = useRef(0);
+  const preparedNextEpisodeRef = useRef('');
+  const sourceProgressTokenRef = useRef(0);
+  const nextRequestRef = useRef<{ id: string; episode: number } | null>(null);
+  const reportNextStatus = useCallback((status: 'preparing' | 'opening' | 'unavailable' | 'failed' | 'idle') => {
+    const request = nextRequestRef.current;
+    if (request) void updateDesktopNextEpisodeStatus(request.id, status).catch(() => undefined);
+  }, []);
 
   const toggleSourceDetails = useCallback((sourceId: string) => {
     setExpandedSourceIds((current) => {
@@ -1829,30 +1891,37 @@ export default function DesktopWatch() {
   }, [searchParams, setSearchParams]);
 
   const detailsQuery = useQuery({
-    queryKey: ['anime', id, routeAniListId, routeMalId],
-    queryFn: () => fetchAnimeDetails(id!, {
+queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
+    queryFn: ({ signal }) => fetchAnimeDetails(id!, {
+      signal,
       anilistId: routeAniListId,
       malId: routeMalId,
       routeTitle: titleFromRoute(id),
     }),
     enabled: !!id,
-    placeholderData: (previous) => previous,
+    refetchInterval: query => query.state.error ? 60_000 : false,
     staleTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    retry: false,
+    retryDelay: (attempt) => 250 + attempt * 450,
   });
 
-  const fallbackAnime = useMemo(() => fallbackAnimeFromRoute(id), [id]);
+  const fallbackAnime = useMemo(
+    () => readDesktopWatchSnapshot(id || '') || fallbackAnimeFromRoute(id),
+    [id],
+  );
   const usingPlaceholderDetails = Boolean((detailsQuery as { isPlaceholderData?: boolean }).isPlaceholderData);
   const resolvedAnime = usingPlaceholderDetails ? null : detailsQuery.data?.data;
   const anime = resolvedAnime || fallbackAnime;
-  const animeNotYetAired = routeMarkedUpcoming || isUpcomingAnime(anime);
+  const animeNotYetAired = (!resolvedAnime && routeMarkedUpcoming) || isUpcomingAnime(anime);
   const hasFullMetadata = Boolean(resolvedAnime);
   const metadataFailed = detailsQuery.isError && !usingPlaceholderDetails;
   const metadataLoading = Boolean(id)
     && !metadataFailed
     && (detailsQuery.isLoading || usingPlaceholderDetails || (detailsQuery.isFetching && !hasFullMetadata));
-  const episodeLookupId = String(routeMalId || anime?.mal_id || id || '').trim();
-  const canFetchEpisodeMetadata = /\d/.test(episodeLookupId);
+  const episodeLookupId = String(resolvedAnime?.mal_id || routeMalId || (fallbackAnime?.anilist_id !== fallbackAnime?.mal_id ? fallbackAnime?.mal_id : '') || '').trim();
+  const canFetchEpisodeMetadata = /^[1-9]\d*$/.test(episodeLookupId);
   const currentInstallmentKind = useMemo(
     () => installmentKindFor(normalizeInstallmentFormat(anime?.type || 'TV')),
     [anime?.type],
@@ -1862,135 +1931,73 @@ export default function DesktopWatch() {
     [currentInstallmentKind],
   );
   const requestedEpisode = Math.max(0, Number(searchParams.get('ep') || 0));
-  const estimatedEpisode = requestedEpisode || knownAiredEpisodeCount(anime) || 1;
+  const estimatedEpisode = requestedEpisode || 1;
   const episodePage = Math.max(1, Math.ceil(estimatedEpisode / 100));
   const timelineCacheKey = useMemo(
-    () => String(
-      anime?.mal_id
-        || routeMalId
-        || anime?.anilist_id
-        || routeAniListId
-        || anime?.id
-        || id
-        || '',
-    ).trim(),
+    () => desktopAnimeQueryKey(id || '', anime?.anilist_id || routeAniListId, anime?.mal_id || routeMalId)[1],
     [anime?.anilist_id, anime?.id, anime?.mal_id, id, routeAniListId, routeMalId],
   );
 
   const installmentGraphQuery = useQuery({
     queryKey: ['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind],
-    queryFn: async () => {
-      type GraphQueueEntry = {
-        routeId: string;
-        malId: string;
-        anilistId: string;
-        title: string;
-        relation: string;
-      };
-      const identityFor = (value: { malId?: string; anilistId?: string; routeId?: string }) =>
-        value.anilistId
-          ? `aid:${value.anilistId}`
-          : value.malId
-            ? `mid:${value.malId}`
-            : `route:${value.routeId || ''}`;
-      const seen = new Set<string>([
-        identityFor({
-          malId: String(anime?.mal_id || ''),
-          anilistId: String(anime?.anilist_id || anime?.id || ''),
-          routeId: String(id || ''),
-        }),
-      ]);
-      const preferredQueue: GraphQueueEntry[] = [];
-      const secondaryQueue: GraphQueueEntry[] = [];
-      const enqueue = (entry: any) => {
-        const queueEntry: GraphQueueEntry = {
-          routeId: String(entry?.mal_id || entry?.id || ''),
-          malId: String(entry?.mal_id || ''),
-          anilistId: String(entry?.anilist_id || entry?.id || ''),
-          title: titleForInstallment(entry),
-          relation: String(entry?.relation || ''),
-        };
-        const identity = identityFor(queueEntry);
-        if (!queueEntry.routeId || seen.has(identity)) return;
-        if (preferredQueue.some((item) => identityFor(item) === identity) || secondaryQueue.some((item) => identityFor(item) === identity)) return;
-        if (installmentDiscoveryPriority(entry, currentDisplayKinds) === 0) preferredQueue.push(queueEntry);
-        else secondaryQueue.push(queueEntry);
-      };
-      const graphEntryAllowed = (entry: any) => {
-        const format = normalizeInstallmentFormat(entry?.format || entry?.type || 'TV');
-        const kind = installmentKindFor(format);
+    queryFn: async ({ signal }) => loadSeriesTimeline({
+      root: anime,
+      previous: queryClient.getQueryData<TimelineResult>(['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind]),
+      signal,
+      children: relationEntriesForGraph,
+      allowed: (entry) => {
+        const kind = installmentKindFor(normalizeInstallmentFormat(entry?.format || entry?.type || 'TV'));
         return relationTypeAllowed(entry, currentInstallmentKind)
           && !shouldSkipInstallment(entry, kind, false, currentDisplayKinds)
           && isSameTitleLineInstallment(anime, entry, kind, false, entry?.relation);
-      };
-
-      relationEntriesForGraph(anime)
-        .filter(graphEntryAllowed)
-        .forEach(enqueue);
-      const discovered: any[] = [];
-      const maxNodes = 36;
-      const batchSize = 6;
-      let depth = 0;
-
-      while ((preferredQueue.length || secondaryQueue.length) && discovered.length < maxNodes && depth < 8) {
-        const batch: GraphQueueEntry[] = [];
-        while (batch.length < batchSize && (preferredQueue.length || secondaryQueue.length) && discovered.length + batch.length < maxNodes) {
-          const nextEntry = preferredQueue.shift() || secondaryQueue.shift();
-          if (!nextEntry) continue;
-          const nextIdentity = identityFor(nextEntry);
-          if (seen.has(nextIdentity)) continue;
-          seen.add(nextIdentity);
-          batch.push(nextEntry);
+      },
+      fetchBatch: async (entries, requestSignal) => {
+        const results = await fetchAnimeInstallments(entries.filter(entry => entry.anilist_id), { signal: requestSignal, priority: 'background' });
+        for (const entry of entries.filter(entry => !entry.anilist_id && entry.mal_id)) {
+          const detail = await fetchAnimeDetails(String(entry.mal_id), { malId: entry.mal_id, signal: requestSignal, priority: 'background' });
+          results.push(detail.data);
         }
-        if (!batch.length) break;
-
-        const details = await Promise.allSettled(batch.map((nextEntry) => fetchAnimeDetails(nextEntry.routeId, {
-          anilistId: nextEntry.anilistId,
-          malId: nextEntry.malId,
-          routeTitle: nextEntry.title,
-        }).then((detail) => ({ detail, nextEntry }))));
-
-        details.forEach((result) => {
-          if (result.status !== 'fulfilled') return;
-          const { detail, nextEntry } = result.value;
-          const relatedAnime = detail?.data;
-          if (!relatedAnime) return;
-          discovered.push({ ...relatedAnime, relation: nextEntry.relation });
-
-          relationEntriesForGraph(relatedAnime)
-            .filter(graphEntryAllowed)
-            .forEach(enqueue);
-        });
-        depth += 1;
-      }
-
-      return discovered;
-    },
+        return results;
+      },
+      onPartial: (result) => queryClient.setQueryData(['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind], result),
+    }),
     enabled: Boolean(timelineCacheKey) && hasFullMetadata,
     staleTime: 1000 * 60 * 15,
     gcTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
   });
-  const installmentGraphData = installmentGraphQuery.data;
+  const installmentGraphData = installmentGraphQuery.data?.items;
   const installmentGraphInitialLoading = Boolean(hasFullMetadata && !metadataFailed && installmentGraphQuery.isLoading);
 
-  const { data: episodeData } = useQuery({
-    queryKey: ['episodes', episodeLookupId, episodePage],
-    queryFn: async () => {
-      if (!canFetchEpisodeMetadata) {
-        return { data: [], pagination: { last_visible_page: 1 } };
-      }
-      return fetchAnimeEpisodes(episodeLookupId, episodePage);
-    },
+  const episodeQuery = useQuery({
+    queryKey: ['episodes', episodeLookupId, episodePage, 3],
+    queryFn: ({ signal }) => fetchAnimeEpisodeWindow(episodeLookupId, episodePage, { signal }),
     enabled: canFetchEpisodeMetadata,
-    placeholderData: (previous) => previous,
+    refetchInterval: query => query.state.error || query.state.data?.latestPageResolved === false || query.state.data?.streamnyaa?.status === 'stale' ? 60_000 : false,
+    retry: false,
     staleTime: 1000 * 60 * 10,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
   });
+  const episodeData = episodeQuery.data;
 
   const pageItems = episodeData?.data || [];
   const airedCount = knownAiredEpisodeCount(anime, pageItems);
-  const selectedEpisode = Math.max(1, Math.min(requestedEpisode || airedCount || 1, airedCount || 1));
+  const episodeCountLabel = episodeData?.streamnyaa?.status === 'stale' ? 'Last known aired' : episodeData?.latestPageResolved === false && knownAiredEpisodeCount(anime) == null ? 'Loaded through episode' : 'Latest aired';
+  const selectedEpisode = requestedEpisode > 0 ? requestedEpisode : 1;
+  const episodeCatalogEstimated = !episodeData?.data?.length && !animeNotYetAired;
+  const selectedEpisodeWatchState = desktopEpisodeWatchState(anime, selectedEpisode, watchProgressRecords);
+  const sourceBrowserPath = useMemo(() => {
+    const query = new URLSearchParams({
+      q: anime.title,
+      ep: String(selectedEpisode),
+      ...(anime.mal_id || anime.id ? { animeId: String(anime.mal_id || anime.id) } : {}),
+    });
+    return `/nyaa?${query.toString()}`;
+  }, [anime.id, anime.mal_id, anime.title, selectedEpisode]);
+  const toggleSelectedEpisodeWatched = () => {
+    setDesktopEpisodeWatched(anime, selectedEpisode, !selectedEpisodeWatchState.completed);
+  };
   const episodeSearchTerm = episodeSearch.trim().toLowerCase();
   const longEpisodeRun = airedCount > EPISODE_WINDOW_SIZE;
   const pageEpisodeMap = useMemo<Map<number, EpisodeMetaEntry>>(() => {
@@ -2012,7 +2019,7 @@ export default function DesktopWatch() {
     return new Map(entries);
   }, [anime?.streamingEpisodes]);
   const allEpisodes = useMemo(() => {
-    const count = Math.max(airedCount || pageItems.length || 1, selectedEpisode || 1);
+    const count = animeNotYetAired ? 0 : Math.min(100000, Math.max(airedCount ?? Math.max(selectedEpisode, 12), 0));
     return Array.from({ length: count }, (_, index) => {
       const number = index + 1;
       const pageEpisode = pageEpisodeMap.get(number);
@@ -2023,7 +2030,7 @@ export default function DesktopWatch() {
         image: streamingEpisode?.thumbnail || pageEpisode?.image || wideImageFor(anime),
       };
     });
-  }, [airedCount, anime, pageEpisodeMap, pageItems.length, selectedEpisode, streamingEpisodeMap]);
+  }, [airedCount, anime, animeNotYetAired, pageEpisodeMap, pageItems.length, selectedEpisode, streamingEpisodeMap]);
   const episodeRanges = useMemo(() => {
     const count = Math.max(allEpisodes.length, 1);
     return Array.from({ length: Math.ceil(count / EPISODE_GRID_PAGE_SIZE) }, (_, index) => {
@@ -2096,7 +2103,7 @@ export default function DesktopWatch() {
     const animeInfo: any = anime;
     const year = Number(animeInfo?.year || animeInfo?.seasonYear || 0);
     const type = compactAnimeType(animeInfo?.type || animeInfo?.format || '');
-    const episodeCount = airedCount || Number(animeInfo?.episodes || animeInfo?.episodeCount || 0) || 0;
+    const totalEpisodes = totalEpisodeCount(animeInfo);
     const score = Number(animeInfo?.score || 0);
     const rawStatus = String(animeInfo?.status || '').trim();
     const rawSeason = String(animeInfo?.season || '').trim();
@@ -2124,7 +2131,7 @@ export default function DesktopWatch() {
       primaryMeta: [
         year ? String(year) : '',
         type,
-        episodeCount ? `${episodeCount} ${episodeCount === 1 ? 'episode' : 'episodes'}` : '',
+        `${episodeCountLabel} ${airedCount ?? '?'}/${totalEpisodes ?? '?'}`,
       ].filter(Boolean),
       secondaryMeta: [
         score ? `Rating ${score.toFixed(1)}` : '',
@@ -2138,7 +2145,7 @@ export default function DesktopWatch() {
       visibleSynopsis,
       canExpandSynopsis,
     };
-  }, [airedCount, anime, synopsisExpanded]);
+  }, [airedCount, episodeCountLabel, anime, synopsisExpanded]);
   const trailerEmbedUrl = useMemo(() => youtubeEmbedUrlFor(leftPanelInfo.trailerUrl), [leftPanelInfo.trailerUrl]);
   const trailerPreviewImages = useMemo(
     () => {
@@ -2158,29 +2165,56 @@ export default function DesktopWatch() {
   }, [anime?.mal_id, anime?.id, leftPanelInfo.trailerUrl]);
 
   const sourceSearchReady = useMemo(() => {
-    if (animeNotYetAired) return false;
+    if (animeNotYetAired || (!anime?.anilist_id && !anime?.mal_id)) return false;
+    if (airedCount === 0) return false;
     if (selectedEpisode <= 0) return false;
     return sourceSearchTitleVariants(anime, id, selectedInstallment).some((title) => {
       const cleaned = cleanTitle(title).trim().toLowerCase();
       return Boolean(cleaned && isSafeSourceQueryTitle(cleaned));
     });
-  }, [anime, animeNotYetAired, id, selectedEpisode, selectedInstallment]);
+  }, [airedCount, anime, animeNotYetAired, id, selectedEpisode, selectedInstallment]);
 
-  const { data: sources, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
-    queryKey: ['desktop-watch-sources', anime?.title, anime?.title_english, anime?.title_romaji, selectedInstallment?.mal_id, selectedInstallment?.label, selectedEpisode, audioMode, audioPreference, sourceMode],
+  const sourceQueryKey = useMemo(() => [
+    'desktop-watch-sources', anime?.anilist_id ? 'anilist:' + anime.anilist_id : 'mal:' + anime?.mal_id,
+    selectedEpisode, audioMode, audioPreference, sourceMode,
+  ] as const, [anime?.anilist_id, anime?.mal_id, selectedEpisode, audioMode, audioPreference, sourceMode]);
+
+  const { data: sources, error: sourcesError, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
+    queryKey: sourceQueryKey,
     queryFn: async ({ signal }) => {
+      const progressToken = ++sourceProgressTokenRef.current;
+      const reportProgress = (value: number) => {
+        if (sourceProgressTokenRef.current === progressToken && !signal?.aborted) {
+          setSourceSearchProgress((current) => Math.max(current, value));
+        }
+      };
+      setSourceSearchProgress(18);
       const epPadded = String(selectedEpisode).padStart(2, '0');
       const titleCandidates = sourceSearchTitleVariants(anime, id, selectedInstallment)
         .filter(isSafeSourceQueryTitle)
-        .slice(0, 6);
+        .slice(0, 5);
       const seasonHints = sourceSearchSeasonHints(anime, id, selectedInstallment);
       const partHints = sourceSearchPartHints(anime, id, selectedInstallment);
       const audioSuffix = audioMode === 'dub' ? ' dub' : '';
       const requestId = `${Date.now().toString(36)}-${selectedEpisode}-${sourceMode}`;
       const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
       const elapsedMs = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
+      const remainingBudgetMs = () => Math.max(0, SOURCE_SEARCH_BUDGET_MS - elapsedMs());
       const isAborted = () => Boolean(signal?.aborted);
+      const accumulator = new SourceAccumulator<RankedNyaaItem>((items) => dedupeNyaaItems(items) as RankedNyaaItem[]);
+      let completedSourceQueries = 0;
+      let timedOutSourceQueries = 0;
+      let failedSourceQueries = 0;
       const finish = (items: RankedNyaaItem[], stage: string) => {
+        if (isAborted()) {
+          throw desktopDataError('nyaa', new DOMException('Playback preparation was cancelled.', 'AbortError'));
+        }
+        if (!items.length && completedSourceQueries === 0 && (timedOutSourceQueries > 0 || failedSourceQueries > 0)) {
+          throw desktopDataError('nyaa', new Error('Playback preparation could not complete before the connection limit.'));
+        }
+        accumulator.add(items);
+        if (timedOutSourceQueries || failedSourceQueries || remainingBudgetMs() <= 0) accumulator.interrupt();
+        reportProgress(96);
         debugSourceLoading('done', {
           request: requestId,
           stage,
@@ -2191,7 +2225,7 @@ export default function DesktopWatch() {
           totalMs: elapsedMs(),
           aborted: isAborted(),
         });
-        return items;
+        return accumulator.result();
       };
 
       debugSourceLoading('start', {
@@ -2228,23 +2262,53 @@ export default function DesktopWatch() {
       };
 
       const combineSources = (items: RankedNyaaItem[]) => dedupeNyaaItems(items) as RankedNyaaItem[];
+      const publishPartial = (items: RankedNyaaItem[], stage: string) => {
+        if (isAborted() || !items.length) return;
+        const partial = combineSources(items);
+        accumulator.add(partial);
+        queryClient.setQueryData<SourceDiscovery<RankedNyaaItem>>(sourceQueryKey, { items: accumulator.result().items, complete: false });
+        reportProgress(stage === 'exact' ? 54 : stage === 'season' ? 74 : 88);
+        debugSourceLoading('partial', { request: requestId, stage, count: partial.length, totalMs: elapsedMs() });
+      };
 
       const runQuery = async (query: string, options: { pages?: number; wide?: boolean; deep?: boolean }) => {
-        if (isAborted()) return [];
+        if (isAborted() || remainingBudgetMs() <= 0) return [];
         const queryStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        const result = await searchNyaa(query, '1_2', '0', '1', options);
+        const timeoutMs = Math.min(SOURCE_QUERY_TIMEOUT_MS, remainingBudgetMs());
+        let result: NyaaItem[] | null;
+        try {
+          result = await searchNyaa(query, '1_2', '0', '1', { ...options, signal, deadlineMs: timeoutMs });
+        } catch (error) {
+          if (isAborted()) throw error;
+          failedSourceQueries += 1;
+          debugSourceLoading('query-failed', { request: requestId, ms: Math.round(elapsedMs()) });
+          return [];
+        }
         const queryMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - queryStartedAt);
         if (isAborted()) {
           debugSourceLoading('stale-query', { request: requestId, query, ms: queryMs });
           return [];
         }
+        if (!result) {
+          timedOutSourceQueries += 1;
+          debugSourceLoading('query-timeout', { request: requestId, query, ms: queryMs });
+          return [];
+        }
+        if ((result as NyaaItem[] & { complete?: boolean }).complete === false) accumulator.interrupt();
+        completedSourceQueries += 1;
         const normalized = normalizeSourcePool(result);
         debugSourceLoading('provider', { request: requestId, query, raw: result.length, usable: normalized.length, ms: queryMs });
         return normalized;
       };
 
       const attemptedQueries = new Set<string>();
-      const tryQueries = async (queries: string[], options: { pages?: number; wide?: boolean; deep?: boolean }) => {
+      const tryQueries = async (
+        queries: string[],
+        options: { pages?: number; wide?: boolean; deep?: boolean },
+        maxQueries: number,
+        stage: 'exact' | 'season' | 'broad',
+        baseItems: RankedNyaaItem[] = [],
+      ) => {
         const pending: string[] = [];
         for (const rawQuery of queries) {
           const query = rawQuery.replace(/\s+/g, ' ').trim();
@@ -2253,17 +2317,22 @@ export default function DesktopWatch() {
           if (attemptedQueries.has(key)) continue;
           attemptedQueries.add(key);
           pending.push(query);
+          if (pending.length >= maxQueries) break;
         }
 
+        let accumulated: RankedNyaaItem[] = [];
         for (let index = 0; index < pending.length; index += SOURCE_QUERY_BATCH_SIZE) {
-          if (isAborted()) return [];
+          if (isAborted() || remainingBudgetMs() <= 0) { accumulator.interrupt(); return accumulated; }
           const batch = pending.slice(index, index + SOURCE_QUERY_BATCH_SIZE);
           const results = await Promise.all(batch.map(async (query) => ({ query, items: await runQuery(query, options) })));
           if (isAborted()) return [];
           const hitItems = combineSources(results.flatMap((result) => result.items));
-          if (hitItems.length) return hitItems;
+          accumulated = combineSources([...accumulated, ...hitItems]);
+          if (accumulated.length) publishPartial(combineSources([...baseItems, ...accumulated]), stage);
+          const healthyMatches = accumulated.filter((source) => source.playable && source.rawSeeders > 0);
+          if (healthyMatches.length >= 3) return accumulated;
         }
-        return [];
+        return accumulated;
       };
 
       const seasonCodeEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
@@ -2284,9 +2353,12 @@ export default function DesktopWatch() {
           `${cleanedTitle} ep ${selectedEpisode}${audioSuffix}`,
         ];
       });
-      const exact = await tryQueries([...seasonCodeEpisodeQueries, ...exactEpisodeQueries], { pages: 2, wide: false, deep: false });
+      const exactQueries = [...seasonCodeEpisodeQueries.slice(0, 1), ...exactEpisodeQueries.slice(0, 1), ...seasonCodeEpisodeQueries.slice(1), ...exactEpisodeQueries.slice(1)];
+      const exact = await tryQueries(exactQueries, { pages: 1, wide: false, deep: false }, 6, 'exact');
       if (isAborted()) return finish([], 'aborted-after-exact');
-      if (exact.some((source) => source.matchTier === 'exact')) return finish(exact, 'exact');
+      publishPartial(exact, 'exact');
+      if (exact.filter((source) => source.matchTier === 'exact' && source.playable && source.rawSeeders > 0).length >= 3) return finish(exact, 'exact');
+      if (remainingBudgetMs() <= 0) return finish(exact, 'budget-after-exact');
 
       const seasonEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
         const stripped = stripSeasonDecorators(title) || cleanTitle(title);
@@ -2301,11 +2373,13 @@ export default function DesktopWatch() {
         });
         return queries;
       }));
-      const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 2, wide: true, deep: true });
+      const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 1, wide: true, deep: true }, 12, 'season', exact);
       if (isAborted()) return finish([], 'aborted-after-season');
       const combinedSeason = combineSources([...exact, ...seasonEpisode]);
+      publishPartial(combinedSeason, 'season');
       if (sourceMode === 'strict') return finish(combinedSeason, 'strict-season');
-      if (combinedSeason.some((source) => source.matchTier === 'exact' || source.matchTier === 'likely')) return finish(combinedSeason, 'exact-or-likely');
+      if (combinedSeason.filter((source) => source.playable && (source.matchTier === 'exact' || source.matchTier === 'likely')).length >= 3) return finish(combinedSeason, 'exact-or-likely');
+      if (remainingBudgetMs() <= 0) return finish(combinedSeason, 'budget-after-season');
 
       const broadEpisodeQueries = titleCandidates.flatMap((title) => {
         const cleanedTitle = cleanTitle(title);
@@ -2315,25 +2389,30 @@ export default function DesktopWatch() {
           `${cleanedTitle} ${selectedEpisode}`,
         ];
       });
-      const broad = await tryQueries(broadEpisodeQueries, { pages: 5, wide: true, deep: true });
+      const broad = await tryQueries(broadEpisodeQueries, { pages: 2, wide: true, deep: true }, 8, 'broad', combinedSeason);
       const combinedEpisode = combineSources([...exact, ...seasonEpisode, ...broad]);
       if (isAborted()) return finish([], 'aborted-after-broad');
-      if (combinedEpisode.some((source) => source.matchTier === 'exact' || source.matchTier === 'likely') || (sourceMode === 'balanced' && combinedEpisode.length)) return finish(combinedEpisode, 'broad-needed');
+      publishPartial(combinedEpisode, 'broad');
+      if (combinedEpisode.filter((source) => source.playable && (source.matchTier === 'exact' || source.matchTier === 'likely')).length >= 3) return finish(combinedEpisode, 'broad-needed');
+      if (remainingBudgetMs() <= 0) return finish(combinedEpisode, 'budget-after-broad');
 
-      const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 5, wide: true, deep: true });
+      const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 2, wide: true, deep: true }, 4, 'broad', combinedEpisode);
       if (isAborted()) return finish([], 'aborted-after-fallback');
       if (fallback.length) return finish(combineSources([...combinedEpisode, ...fallback]), 'fallback');
 
-      return finish([], 'empty');
+      return finish(combinedEpisode, 'empty');
     },
     enabled: sourceSearchReady,
     staleTime: 1000 * 60 * 15,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: true,
+    retry: false,
+    retryDelay: (attempt) => 350 + attempt * 600,
   });
 
   const failedSourceRecords = useMemo(() => loadSourceFailureRecords(), [failedSourceVersion]);
   const allRankedSources = useMemo<RankedNyaaItem[]>(() => {
-    const items = [...((sources || []) as RankedNyaaItem[])];
+    const items = [...(sources?.items || [])];
     return items.sort((a, b) => {
       if (sortBy === 'seeders') return b.rawSeeders - a.rawSeeders;
       if (sortBy === 'size') return a.rawSize - b.rawSize;
@@ -2384,14 +2463,15 @@ export default function DesktopWatch() {
   const sourceQualityOptions = useMemo<SourceQualityFilter[]>(() => {
     const options: SourceQualityFilter[] = ['auto'];
     if (qualityCounts.has('2160p')) options.push('2160p');
+    if (qualityCounts.has('1440p')) options.push('1440p');
     options.push('1080p', '720p', '480p');
     if (qualityCounts.has('other')) options.push('other');
     return options;
   }, [qualityCounts]);
   const playableSources = useMemo(() => (
     sourceQuality === 'auto'
-      ? modeFilteredSources
-      : modeFilteredSources.filter((source) => sourceQualityBucket(source.title) === sourceQuality)
+      ? modeFilteredSources.filter(source => source.playable)
+      : modeFilteredSources.filter((source) => source.playable && sourceQualityBucket(source.title) === sourceQuality)
   ), [modeFilteredSources, sourceQuality]);
   const sortedSources = useMemo(() => (
     sourceQuality === 'auto'
@@ -2413,21 +2493,27 @@ export default function DesktopWatch() {
   }, [sourceMode, visibleTierCounts]);
   const sourceSectionTitle = animeNotYetAired
     ? 'Still not aired'
-    : sourcesLoading || (sourcesFetching && !sources?.length)
-    ? `Finding sources for Episode ${selectedEpisode}...`
+    : sourcesLoading || (sourcesFetching && !sources?.items.length)
+    ? `Preparing Episode ${selectedEpisode}...`
     : sortedSources.length
-      ? `Sources for Episode ${selectedEpisode}`
-      : `No reliable sources found for Episode ${selectedEpisode}`;
+      ? `Playback options for Episode ${selectedEpisode}`
+      : sourcesError
+        ? `Playback preparation paused for Episode ${selectedEpisode}`
+        : `Episode ${selectedEpisode} is not playable yet`;
   const sourceSectionSubtitle = animeNotYetAired
-    ? 'This title is listed as upcoming. StreamNyaa will enable source search after episodes are released.'
+    ? 'This title is upcoming. StreamNyaa will enable playback after episodes are released.'
     : sortedSources.length
-    ? 'Ranked by episode accuracy, quality, seeds, and subtitle preference.'
-    : sourcesLoading || (sourcesFetching && !sources?.length)
-      ? 'Checking episode match, seed health, audio preference, and release quality.'
+    ? 'Optimized by episode accuracy, quality, startup speed, and audio preference.'
+    : sourcesLoading || (sourcesFetching && !sources?.items.length)
+      ? 'Checking episode match, connection health, audio preference, and video quality.'
+    : sourcesError
+      ? 'StreamNyaa could not finish preparing playback. Saved options remain available; retry when the connection recovers.'
     : sourceMode === 'broad'
-      ? 'Try another episode, audio preference, or refresh the source list.'
+      ? 'Try another episode, audio preference, or refresh playback options.'
       : 'Try Broad mode to include less certain matches.';
-  const sourcesBusy = sourcesLoading || sourcesFetching;
+  const sourceSearchInProgress = sourcesLoading || sourcesFetching;
+  // A progressive search must not hide or disable verified results already found.
+  const sourcesBusy = sourceSearchInProgress && !playableSources.some(source => source.playable);
   const nextPlayableSource = useMemo(
     () => playableSources.find((source) => !sourceFailureFor(source, failedSourceRecords)) || playableSources[0] || null,
     [failedSourceRecords, playableSources],
@@ -2437,6 +2523,11 @@ export default function DesktopWatch() {
     selectedEpisodeNumberRef.current = selectedEpisode;
     maxEpisodeRef.current = Math.max(airedCount || 0, allEpisodes.length || 0, selectedEpisode || 1);
   }, [airedCount, allEpisodes.length, selectedEpisode]);
+
+  useEffect(() => {
+    midstreamRecoveryCountRef.current = 0;
+    setRecoveryExhausted(false);
+  }, [selectedEpisode]);
 
   useEffect(() => {
     activeSourceIdValueRef.current = activeSourceId;
@@ -2451,7 +2542,6 @@ export default function DesktopWatch() {
   }, [sourcesBusy]);
 
   useEffect(() => {
-    if (sourcesBusy) return;
     playableSourcesRef.current = playableSources;
     playableSourcesEpisodeRef.current = selectedEpisode;
   }, [playableSources, selectedEpisode, sourcesBusy]);
@@ -2467,16 +2557,74 @@ export default function DesktopWatch() {
     refetchInterval: (query) => {
       const progress = query.state.data;
       if (progress?.state === 'stopped') return false;
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return 5_000;
-      return progress?.state === 'playing' || progress?.state === 'ready' ? 2_500 : 1_200;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return 8_000;
+      if (progress?.buffering || ['retrying', 'switching'].includes(String(progress?.recovery_stage || ''))) return 900;
+      return progress?.state === 'playing' || progress?.state === 'ready' ? 4_000 : 1_200;
     },
     retry: 1,
   });
   const playbackStage = useMemo(() => playbackStageMeta(playbackProgress), [playbackProgress]);
-  const playbackSteps = ['Metadata', 'Peers', 'Buffer', 'Play'];
+  const playbackSteps = ['Prepare', 'Connect', 'Buffer', 'Play'];
+
+  useEffect(() => {
+    const busy = Boolean(playback && (
+      playbackProgress?.buffering
+      || playbackProgress?.recovery_stage === 'retrying'
+      || playbackProgress?.recovery_stage === 'switching'
+      || sourcesBusy
+    ));
+    window.dispatchEvent(new CustomEvent('streamnyaa:playback-workload', { detail: { busy } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent('streamnyaa:playback-workload', { detail: { busy: false } }));
+    };
+  }, [playback, playbackProgress?.buffering, playbackProgress?.recovery_stage, sourcesBusy]);
+
+  useEffect(() => {
+    if (!playback || !playbackProgress?.ok) return;
+    const duration = Number(playbackProgress.duration_seconds || 0);
+    const current = Number(playbackProgress.current_seconds || 0);
+    if (duration <= 0 || current / duration < 0.6) return;
+    const nextEpisode = selectedEpisode + 1;
+    if (nextEpisode > Math.max(1, maxEpisodeRef.current)) return;
+    const prepareKey = `${id}|${nextEpisode}`;
+    if (preparedNextEpisodeRef.current === prepareKey) return;
+    preparedNextEpisodeRef.current = prepareKey;
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set('ep', String(nextEpisode));
+    const prepare = () => void preloadDesktopWatchData(`${nextUrl.pathname}${nextUrl.search}`, true);
+    const idleWindow = window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number };
+    const handle = idleWindow.requestIdleCallback?.(prepare, { timeout: 1_500 });
+    const timer = handle === undefined ? window.setTimeout(prepare, 500) : undefined;
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [id, playback, playbackProgress?.current_seconds, playbackProgress?.duration_seconds, playbackProgress?.ok, selectedEpisode]);
+
+  useEffect(() => {
+    playbackProgressValueRef.current = playbackProgress;
+  }, [playbackProgress]);
+
+  const persistActivePlaybackCheckpoint = useCallback((positionOverride?: number) => {
+    const activePlayback = playbackValueRef.current;
+    const progress = playbackProgressValueRef.current;
+    if (!activePlayback || !progress?.ok || progress.state === 'stopped') return;
+
+    const measuredPosition = Number.isFinite(positionOverride) ? positionOverride : progress.current_seconds;
+    if (typeof measuredPosition !== 'number' || !Number.isFinite(measuredPosition) || measuredPosition < 0) return;
+    const positionSeconds = measuredPosition;
+    const durationSeconds = Math.max(0, Number(progress.duration_seconds || activePlayback.source.durationSeconds || 0));
+    if (positionSeconds <= 0 && durationSeconds <= 0) return;
+    updateLocalPlaybackHistoryProgress(activePlayback.source, {currentSeconds:positionSeconds,durationSeconds,watchedCoverage:progress.watched_coverage});
+  }, []);
+
+  useEffect(() => () => {
+    persistActivePlaybackCheckpoint();
+  }, [persistActivePlaybackCheckpoint]);
 
   useEffect(() => {
     if (playback && playbackProgress?.state === 'stopped') {
+      persistActivePlaybackCheckpoint();
+      clearInterruptedPlayback();
       setPlayback(null);
       setPlaybackNotice({ tone: 'success', text: playbackProgress.message || 'Playback ended and temporary files were cleaned.' });
     }
@@ -2484,30 +2632,15 @@ export default function DesktopWatch() {
 
   useEffect(() => {
     if (!playback || !playbackProgress?.ok || playbackProgress.state === 'stopped') return;
-    if (!playbackProgress.current_seconds && !playbackProgress.duration_seconds && !playbackProgress.progress) return;
-    updateLocalPlaybackHistoryProgress(playback.source, {
-      currentSeconds: playbackProgress.current_seconds,
-      durationSeconds: playbackProgress.duration_seconds,
-      progressPercent: playbackProgress.progress,
-    });
-    saveDesktopWatchProgress({
-      animeId: playback.source.animeId || playback.source.animeTitle || playback.source.title,
-      title: playback.source.animeTitle || playback.source.title,
-      poster: playback.source.poster || playback.source.image || playback.source.banner,
-      episode: playback.source.episode || selectedEpisode || 1,
-      positionSeconds: Number(playbackProgress.current_seconds || 0),
-      durationSeconds: playbackProgress.duration_seconds || undefined,
-      progressPercent: playbackProgress.progress || undefined,
-      updatedAt: Date.now(),
-    });
+    if (!playbackProgress.current_seconds && !playbackProgress.duration_seconds) return;
+    persistActivePlaybackCheckpoint();
   }, [
     playback,
     playbackProgress?.current_seconds,
     playbackProgress?.duration_seconds,
     playbackProgress?.ok,
-    playbackProgress?.progress,
     playbackProgress?.state,
-    selectedEpisode,
+    persistActivePlaybackCheckpoint,
   ]);
 
   useEffect(() => {
@@ -2516,7 +2649,7 @@ export default function DesktopWatch() {
 
   useEffect(() => {
     selectedEpisodeRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-  }, [displayedEpisodes, episodeViewMode, selectedEpisode, selectedEpisodeInfo?.number]);
+  }, [id, episodeViewMode, selectedEpisode]);
 
   useEffect(() => {
     setEpisodeJumpValue(String(selectedEpisode));
@@ -2536,29 +2669,26 @@ export default function DesktopWatch() {
   const submitEpisodeJump = useCallback(() => {
     const parsed = Number(episodeJumpValue || 0);
     if (!Number.isFinite(parsed) || parsed <= 0) return;
-    selectEpisode(clampNumber(Math.round(parsed), 1, Math.max(1, airedCount || selectedEpisode || 1)));
-  }, [airedCount, episodeJumpValue, selectEpisode, selectedEpisode]);
+    selectEpisode(clampNumber(Math.round(parsed), 1, Math.max(1, /FINISHED|COMPLETED/i.test(String(anime.status)) ? (Number(anime.episodes) || 9999) : 9999)));
+  }, [anime.status, anime.episodes, episodeJumpValue, selectEpisode]);
 
   const submitEpisodeSearch = useCallback(() => {
     const trimmed = episodeSearch.trim();
     if (!trimmed) return;
     const exactEpisode = Number(trimmed);
     if (Number.isFinite(exactEpisode) && exactEpisode > 0) {
-      selectEpisode(clampNumber(Math.round(exactEpisode), 1, Math.max(1, airedCount || selectedEpisode || 1)));
+      selectEpisode(clampNumber(Math.round(exactEpisode), 1, Math.max(1, airedCount ?? 9999)));
     } else if (searchedEpisodes[0]) {
       selectEpisode(searchedEpisodes[0].number);
     }
   }, [airedCount, episodeSearch, searchedEpisodes, selectEpisode, selectedEpisode]);
 
   const sourcePayloadFor = useCallback((source: NyaaItem, resumeOverride?: number): LocalPlaybackSource => {
-    const historyEntry = findLocalPlaybackHistoryItem({
-      animeTitle: anime.title,
-      animeId: anime.mal_id || anime.id,
-      episode: selectedEpisode,
-      magnet: source.magnet,
-      title: source.title,
-    });
-    return {
+    const bannerCandidates = playerLandscapeCandidates(
+      anime,
+      hideEpisodeSpoilers ? undefined : streamingEpisodeMap.get(selectedEpisode)?.thumbnail || selectedEpisodeInfo?.image,
+    );
+    const baseSource: LocalPlaybackSource = {
       magnet: source.magnet,
       torrentUrl: torrentUrlFor(source),
       infoHash: source.infoHash,
@@ -2570,12 +2700,20 @@ export default function DesktopWatch() {
       seeders: source.seeders,
       image: posterFor(anime),
       poster: posterFor(anime),
-      banner: wideImageFor(anime),
-      progressPercent: historyEntry?.progressPercent ?? 0,
-      resumeSeconds: Number.isFinite(resumeOverride) ? Math.max(0, Number(resumeOverride)) : (historyEntry?.resumeSeconds ?? 0),
-      durationSeconds: historyEntry?.durationSeconds ?? 0,
+      banner: bannerCandidates[0] || '',
+      bannerCandidates,
     };
-  }, [anime, selectedEpisode]);
+    const checkpoint = resolveDesktopPlaybackCheckpoint(baseSource);
+    const hasResumeOverride = Number.isFinite(resumeOverride);
+    return {
+      ...baseSource,
+      progressPercent: checkpoint?.progressPercent ?? 0,
+      progressUpdatedAt: hasResumeOverride ? Date.now() : checkpoint?.updatedAt,
+      resumeSeconds: hasResumeOverride ? Math.max(0, Number(resumeOverride)) : (checkpoint?.positionSeconds ?? 0),
+      durationSeconds: checkpoint?.durationSeconds ?? 0,
+      completed: checkpoint?.completed ?? false,
+    };
+  }, [anime, selectedEpisode, selectedEpisodeInfo?.image, streamingEpisodeMap, hideEpisodeSpoilers]);
 
   const openOneSource = useCallback(async (source: NyaaItem, resumeOverride?: number) => {
     const playbackSource = sourcePayloadFor(source, resumeOverride);
@@ -2586,6 +2724,10 @@ export default function DesktopWatch() {
   }, [sourcePayloadFor]);
 
   const playSource = useCallback(async (source: RankedNyaaItem, resumeOverride?: number) => {
+    const current = playbackValueRef.current?.source;
+    const currentSeconds = playbackProgressValueRef.current?.current_seconds;
+    if (resumeOverride === undefined && current && String(current.animeId) === String(anime.mal_id || anime.id)
+      && String(current.episode) === String(selectedEpisode) && Number.isFinite(currentSeconds) && Number(currentSeconds) >= 0) resumeOverride = Number(currentSeconds);
     const initialSourceId = source.infoHash || source.magnet || source.title;
     if (playActionLockRef.current && activeSourceId === initialSourceId) {
       setPlaybackNotice({ tone: 'loading', text: 'This source is already opening.' });
@@ -2595,6 +2737,7 @@ export default function DesktopWatch() {
       setPlaybackNotice({ tone: 'error', text: `${source.playableLabel} source. StreamNyaa will only play sources that pass the same-anime, same-installment, same-episode checks.` });
       return;
     }
+    persistActivePlaybackCheckpoint(resumeOverride);
     const requestId = playbackRequestIdRef.current + 1;
     playbackRequestIdRef.current = requestId;
     playActionLockRef.current = true;
@@ -2621,6 +2764,7 @@ export default function DesktopWatch() {
       for (let index = 0; index < retryPool.length; index += 1) {
         if (playbackRequestIdRef.current !== requestId) return;
         const candidate = retryPool[index];
+        lastRequestedSourceRef.current = { source: candidate, animeId: String(anime?.mal_id || anime?.id || ''), episode: selectedEpisode };
         const sourceId = candidate.infoHash || candidate.magnet;
         setActiveSourceId(sourceId);
         if (index > 0) {
@@ -2631,9 +2775,12 @@ export default function DesktopWatch() {
         }
 
         try {
+          const candidateStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
           const { result, playbackSource } = await openOneSource(candidate, resumeOverride);
           if (playbackRequestIdRef.current !== requestId) return;
-          rememberSourceSuccess(candidate);
+          const candidateStartupMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - candidateStartedAt;
+          rememberSourceSuccess(candidate, candidateStartupMs);
+          setRecoveryExhausted(false);
           setFailedSourceVersion((value) => value + 1);
           setPlayback({ torrentId: result.torrent_id!, title: result.title || candidate.title, source: playbackSource });
           syncPlayerPreferences('player-opened');
@@ -2646,7 +2793,7 @@ export default function DesktopWatch() {
           return;
         } catch (error) {
           if (playbackRequestIdRef.current !== requestId) return;
-          const message = errorMessage(error, 'Source link could not open.');
+          const message = errorMessage(error, 'Playback could not start.');
           if (/playback source switch was superseded|playback request was superseded/i.test(message)) {
             return;
           }
@@ -2665,17 +2812,18 @@ export default function DesktopWatch() {
       throw new Error(errors[errors.length - 1] || 'Source link could not open.');
     } catch (error) {
       if (playbackRequestIdRef.current !== requestId) return;
+      reportNextStatus('failed');
       const fallbackHint = retryPool.length > 1
         ? ` StreamNyaa also tried ${Math.min(retryPool.length - 1, SOURCE_RETRY_LIMIT - 1)} backup source${retryPool.length > 2 ? 's' : ''}.`
         : '';
-      setPlaybackNotice({ tone: 'error', text: `${errorMessage(error, 'Source link could not open.')}${fallbackHint}` });
+      setPlaybackNotice({ tone: 'error', text: `${errorMessage(error, 'Playback could not start.')}${fallbackHint}` });
     } finally {
       if (playbackRequestIdRef.current === requestId) {
         setActiveSourceId(null);
         playActionLockRef.current = false;
       }
     }
-  }, [activeSourceId, anime?.id, anime?.mal_id, exactSources.length, likelySources.length, openOneSource, playableSources, selectedEpisode, sourceMode, syncPlayerPreferences]);
+  }, [activeSourceId, anime?.id, anime?.mal_id, exactSources.length, likelySources.length, openOneSource, persistActivePlaybackCheckpoint, playableSources, selectedEpisode, sourceMode, syncPlayerPreferences]);
 
   useEffect(() => {
     playSourceRef.current = playSource;
@@ -2685,6 +2833,20 @@ export default function DesktopWatch() {
     if (!nextPlayableSource) return;
     void playSource(nextPlayableSource);
   }, [nextPlayableSource, playSource]);
+
+  const retryCurrentSource = useCallback(() => {
+    const currentSource = playbackValueRef.current?.source;
+    if (!currentSource) return;
+    const currentId = currentSource.infoHash || currentSource.magnet || currentSource.title;
+    const candidate = playableSources.find((source) => (
+      (source.infoHash || source.magnet || source.title) === currentId
+    ));
+    if (!candidate) return;
+    const position = Number(playbackProgressValueRef.current?.current_seconds || currentSource.resumeSeconds || 0);
+    setRecoveryExhausted(false);
+    setPlaybackNotice({ tone: 'loading', text: `Retrying the current release at ${formatPlaybackTime(position)}...` });
+    void playSource(candidate, position);
+  }, [playSource, playableSources]);
 
   const runPlayerControl = useCallback(async (action: DesktopPlayerControlAction, value?: number) => {
     if (!playback) return;
@@ -2745,6 +2907,7 @@ export default function DesktopWatch() {
       ? playableSourcesRef.current[0]
       : undefined;
     if (bestSource) {
+      reportNextStatus('opening');
       void playSourceRef.current(bestSource);
       return;
     }
@@ -2759,10 +2922,12 @@ export default function DesktopWatch() {
     const nextEpisode = currentEpisode + 1;
     console.info(`[StreamNyaa Watch] Received next episode event reason=${normalizedReason} autoNext=${autoPlayNextEpisodeRef.current}`);
     if (nextEpisode > maxEpisode) {
+      reportNextStatus('unavailable');
       setPlaybackNotice({ tone: 'error', text: 'No next aired episode is available yet.' });
       return;
     }
     if (normalizedReason === 'ended' && !autoPlayNextEpisodeRef.current) {
+      reportNextStatus('idle');
       console.info('[StreamNyaa Watch] Ignored ended request because autoNext=false');
       setPlaybackNotice({ tone: 'success', text: 'Episode finished. Use the next-episode button or enable Auto-play next episode in Settings.' });
       return;
@@ -2778,6 +2943,7 @@ export default function DesktopWatch() {
       console.info('[StreamNyaa Watch] Manual next requested');
       lastNextEpisodeRequestRef.current = { episode: nextEpisode, reason: normalizedReason, at: Date.now() };
     }
+    reportNextStatus('preparing');
     console.info(`[StreamNyaa Watch] Resolved next episode current=${currentEpisode} next=${nextEpisode}`);
     setPlaybackNotice({
       tone: 'loading',
@@ -2785,13 +2951,14 @@ export default function DesktopWatch() {
         ? `Auto-opening episode ${nextEpisode}...`
         : `Opening episode ${nextEpisode}...`,
     });
+    persistActivePlaybackCheckpoint();
     playbackRequestIdRef.current += 1;
     playActionLockRef.current = false;
     activeSourceIdValueRef.current = null;
     setActiveSourceId(null);
     setPlayback(null);
     playEpisodeNumber(nextEpisode);
-  }, [playEpisodeNumber]);
+  }, [persistActivePlaybackCheckpoint, playEpisodeNumber, reportNextStatus]);
 
   useEffect(() => {
     playNextEpisodeRef.current = playNextEpisode;
@@ -2802,6 +2969,20 @@ export default function DesktopWatch() {
     let unlisten: (() => void) | undefined;
     void listenDesktopPlayerNextEpisode((event) => {
       if (!mounted) return;
+      if (event.reason === 'cancel') {
+        if (event.request_id && nextRequestRef.current?.id !== event.request_id) return;
+        nextRequestRef.current = null;
+        pendingAutoPlayEpisodeRef.current = null;
+        setPendingAutoPlayEpisode(null);
+        playbackRequestIdRef.current++;
+        playActionLockRef.current = false;
+        void queryClient.cancelQueries({ queryKey: ['desktop-watch-sources'] });
+        void cancelDesktopNextEpisodeStartup().catch(() => undefined);
+        return;
+      }
+      const token = event.request_id || 'legacy';
+      if (nextRequestRef.current?.id === token) return;
+      nextRequestRef.current = { id: token, episode: selectedEpisodeNumberRef.current + 1 };
       playNextEpisodeRef.current(event.reason || 'manual');
     }).then((cleanup) => {
       if (!mounted) {
@@ -2820,7 +3001,23 @@ export default function DesktopWatch() {
     let mounted = true;
     let unlisten: (() => void) | undefined;
     void listenDesktopPlayerRecoveryRequest((event) => {
-      if (!mounted || event.action !== 'backup') return;
+      if (!mounted || (event.action !== 'backup' && event.action !== 'retry')) return;
+      if (event.action === 'retry') {
+        const request = lastRequestedSourceRef.current;
+        if (!request || request.episode !== selectedEpisodeNumberRef.current
+          || request.animeId !== String(anime?.mal_id || anime?.id || '')) return;
+        const rawPosition = Number(event.position_seconds);
+        const position = Number.isFinite(rawPosition) ? Math.max(0, rawPosition) : undefined;
+        persistActivePlaybackCheckpoint(position);
+        playbackRequestIdRef.current += 1;
+        playActionLockRef.current = false;
+        activeSourceIdValueRef.current = null;
+        setActiveSourceId(null);
+        setRecoveryExhausted(false);
+        midstreamRecoveryCountRef.current = 0;
+        void playSourceRef.current(request.source, position);
+        return;
+      }
       const episode = selectedEpisodeNumberRef.current;
       if (playableSourcesEpisodeRef.current !== episode) {
         setPlaybackNotice({ tone: 'error', text: 'Backup sources are still being verified for this episode.' });
@@ -2836,19 +3033,40 @@ export default function DesktopWatch() {
       const candidates = currentIndex >= 0
         ? [...pool.slice(currentIndex + 1), ...pool.slice(0, currentIndex)]
         : pool;
-      const backup = candidates.find((candidate) => candidate.playable !== false);
+      const currentCandidate = currentIndex >= 0 ? pool[currentIndex] : null;
+      if (currentCandidate) {
+        rememberSourceFailure(currentCandidate, 'Midstream buffer stopped advancing.', {
+          animeId: currentSource?.animeId,
+          episode,
+        });
+        setFailedSourceVersion((value) => value + 1);
+      }
+      const failedRecords = loadSourceFailureRecords();
+      const backup = candidates.find((candidate) => (
+        candidate.playable !== false
+        && (candidate.infoHash || candidate.magnet || candidate.title) !== currentId
+        && !sourceFailureFor(candidate, failedRecords)
+      ));
+      if (midstreamRecoveryCountRef.current >= 3) {
+        setRecoveryExhausted(true);
+        setPlaybackNotice({ tone: 'error', text: 'Automatic recovery tried three backup releases. Choose a recovery action instead of waiting on the stalled stream.' });
+        return;
+      }
       if (!backup) {
-        setPlaybackNotice({ tone: 'error', text: 'No other verified source is available for this episode.' });
+        setRecoveryExhausted(true);
+        setPlaybackNotice({ tone: 'error', text: 'No other healthy verified source is available for this episode.' });
         return;
       }
 
       const position = Number(event.position_seconds || 0);
+      persistActivePlaybackCheckpoint(Number.isFinite(position) ? Math.max(0, position) : undefined);
+      midstreamRecoveryCountRef.current += 1;
       playbackRequestIdRef.current += 1;
       playActionLockRef.current = false;
       activeSourceIdValueRef.current = null;
       setActiveSourceId(null);
       console.info(`[StreamNyaa Watch] Player requested backup recovery episode=${episode} position=${position.toFixed(1)}`);
-      setPlaybackNotice({ tone: 'loading', text: 'Current stream stalled. Opening the next verified source...' });
+      setPlaybackNotice({ tone: 'loading', text: `Current stream stalled. Opening backup ${midstreamRecoveryCountRef.current} of 3 at ${formatPlaybackTime(position)}...` });
       void playSourceRef.current(backup, Number.isFinite(position) ? Math.max(0, position) : 0);
     }).then((cleanup) => {
       if (!mounted) {
@@ -2861,15 +3079,16 @@ export default function DesktopWatch() {
       mounted = false;
       unlisten?.();
     };
-  }, []);
+  }, [anime?.mal_id, anime?.id, persistActivePlaybackCheckpoint]);
 
   const watchEpisodeFromCard = useCallback((episodeNumber: number) => {
     if (suppressEpisodeClickRef.current) return;
-    playEpisodeNumber(episodeNumber);
-  }, [playEpisodeNumber]);
+    selectEpisode(episodeNumber);
+  }, [selectEpisode]);
 
   const startEpisodeRailDrag = useCallback((event: any) => {
     if (event.button !== 0) return;
+    if (isEpisodeInteractiveTarget(event.target)) return;
     const rail = episodesRailRef.current;
     if (!rail || rail.scrollWidth <= rail.clientWidth) return;
     episodeDragRef.current = {
@@ -2894,13 +3113,13 @@ export default function DesktopWatch() {
     if (!rail || !drag.dragging || drag.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - drag.startX;
     const deltaY = event.clientY - drag.startY;
-    if (!drag.moved && Math.hypot(deltaX, deltaY) <= EPISODE_RAIL_DRAG_THRESHOLD) return;
+    if (!drag.moved && !isIntentionalHorizontalDrag(deltaX, deltaY, EPISODE_RAIL_DRAG_THRESHOLD)) return;
     if (!drag.moved) {
       drag.moved = true;
       suppressEpisodeClickRef.current = true;
     }
     event.preventDefault();
-    rail.scrollLeft = drag.scrollLeft - deltaX;
+    rail.scrollLeft = clampNumber(drag.scrollLeft - deltaX, 0, Math.max(0, rail.scrollWidth - rail.clientWidth));
   }, []);
 
   const stopEpisodeRailDrag = useCallback((event: any) => {
@@ -2958,21 +3177,24 @@ export default function DesktopWatch() {
     if (pendingAutoPlayEpisode === null) return;
     if (pendingAutoPlayEpisode !== selectedEpisode) return;
     if (activeSourceId || playActionLockRef.current) return;
-    if (sourcesBusy) return;
     if (playableSourcesEpisodeRef.current !== selectedEpisode) return;
     if (playableSources[0]) {
+      reportNextStatus('opening');
       const bestSource = playableSources[0];
       setPendingAutoPlayEpisode(null);
-      console.info(`[StreamNyaa Watch] Starting pending next episode source=${bestSource.title || bestSource.infoHash || bestSource.magnet}`);
+      console.info('[StreamNyaa Watch] Starting the prepared next episode source.');
       void playSource(bestSource);
       return;
     }
+    if (sourcesBusy) return;
+    reportNextStatus('failed');
     setPendingAutoPlayEpisode(null);
-    setPlaybackNotice({ tone: 'error', text: 'No verified same-episode source was found. Switch to Balanced to inspect likely matches, or open the manual source search.' });
+    setPlaybackNotice({ tone: 'error', text: 'This episode could not start automatically. Switch to Balanced or review playback options.' });
   }, [activeSourceId, pendingAutoPlayEpisode, playSource, playableSources, selectedEpisode, sourcesBusy]);
 
   const stopPlayback = useCallback(async () => {
     try {
+      persistActivePlaybackCheckpoint();
       setPlaybackNotice({ tone: 'loading', text: 'Stopping the active stream and cleaning temporary files...' });
       const result = await stopDesktopPlayback();
       setPlayback(null);
@@ -2981,38 +3203,30 @@ export default function DesktopWatch() {
     } catch (error) {
       setPlaybackNotice({ tone: 'error', text: errorMessage(error, 'Playback could not be stopped.') });
     }
-  }, []);
+  }, [persistActivePlaybackCheckpoint]);
 
   if (!id) return <div className="py-24 text-center text-white">Select an anime to continue.</div>;
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#06070A] text-white">
+    <div className="sn-watch-page relative min-h-screen overflow-x-hidden text-white">
       <Seo title={`${anime.title} Watch | StreamNyaa Desktop`} description="Desktop watch source screen." canonicalPath={`/watch/${id}`} robots="noindex, nofollow" />
-      <SafeImage candidates={imageCandidatesFor(anime, true)} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-[0.11] blur-2xl" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_68%_14%,rgba(14,165,233,0.12),transparent_28%),radial-gradient(circle_at_64%_38%,rgba(244,63,94,0.14),transparent_36%),linear-gradient(90deg,#050507_0%,rgba(5,5,8,0.97)_29%,rgba(6,7,10,0.90)_100%)]" />
-
-      <div className="sn-page relative grid min-h-screen grid-cols-[360px_1fr] gap-7 py-6">
-        <aside className="sn-glass-panel rounded-[24px] p-5">
-          <Link to="/" className="sn-icon-action mb-6 h-11 w-11 rounded-full">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
+      <div className="sn-watch-layout sn-page relative grid min-h-screen gap-7 py-6">
+        <aside className="sn-glass-panel rounded-xl p-5">
+          <button type="button" onClick={() => { if (Number(window.history.state?.idx) > 0) navigate(-1); else navigate('/search', { replace: true }); }} className="sn-ghost-action mb-4 min-h-11 gap-2 px-2" aria-label="Back to browsing"><ArrowLeft className="h-4 w-4" />Back</button>
           <div className="relative">
-            <div className="pointer-events-none absolute -inset-4 overflow-hidden rounded-[2rem] opacity-30 blur-2xl">
-              <SafeImage candidates={imageCandidatesFor(anime)} alt="" className="h-full w-full object-cover" fallbackClassName="h-full w-full" />
-            </div>
-            <div className="sn-poster-card relative rounded-[22px] shadow-2xl shadow-black/50">
+            <div className="sn-poster-card relative rounded-xl shadow-none">
               <SafeImage candidates={imageCandidatesFor(anime)} alt={anime.title} className="aspect-[2/3] w-full object-cover" />
             </div>
           </div>
           <>
             {selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? (
-              <p className="mt-7 text-[11px] font-black uppercase tracking-[0.22em] text-primary">{selectedInstallment.label}</p>
+              <p className="mt-7 text-[11px] font-semibold normal-case tracking-normal text-primary">{selectedInstallment.label}</p>
             ) : null}
-            <h1 className={`${selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? 'mt-2' : 'mt-7'} break-words text-[31px] font-black leading-[1.05] tracking-[-0.04em] text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)]`}>{anime.title}</h1>
+            <h1 className={`${selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? 'mt-2' : 'mt-7'} break-words text-[31px] font-semibold leading-[1.05] tracking-[-0.04em] text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)]`}>{anime.title}</h1>
             {metadataLoading && !leftPanelInfo.primaryMeta.length && !leftPanelInfo.secondaryMeta.length && !leftPanelInfo.detailMeta.length ? (
-              <div className="mt-3 h-4 w-36 animate-pulse rounded bg-white/8" />
+              <DesktopLoadingProgress className="mt-4" variant="inline" label="Loading anime details" percent={detailsQuery.data ? 82 : 44} detail="Identity is available; episode metadata is refreshing." />
             ) : null}
-            <div className="mt-3 space-y-1.5 text-sm font-bold text-white/64">
+            <div className="mt-3 space-y-1.5 text-sm font-semibold text-white/64">
               {leftPanelInfo.primaryMeta.length ? (
                 <p>{leftPanelInfo.primaryMeta.join(' - ')}</p>
               ) : null}
@@ -3036,10 +3250,10 @@ export default function DesktopWatch() {
             {leftPanelInfo.genres.length ? (
               <div className="mt-4 flex flex-wrap gap-2">
                 {leftPanelInfo.genres.map((genre: any) => (
-                  <span key={genre.name} className="rounded-full bg-white/[0.07] px-3 py-1.5 text-xs font-bold text-white/82 shadow-sm shadow-black/20">{genre.name}</span>
+                  <span key={genre.name} className="rounded-full bg-white/[0.07] px-3 py-1.5 text-xs font-semibold text-white/82 shadow-sm shadow-black/20">{genre.name}</span>
                 ))}
                 {leftPanelInfo.extraGenreCount > 0 ? (
-                  <span className="rounded-full bg-white/[0.045] px-3 py-1.5 text-xs font-bold text-white/46">+{leftPanelInfo.extraGenreCount} more</span>
+                  <span className="rounded-full bg-white/[0.045] px-3 py-1.5 text-xs font-semibold text-white/46">+{leftPanelInfo.extraGenreCount} more</span>
                 ) : null}
               </div>
             ) : null}
@@ -3052,7 +3266,7 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => setSynopsisExpanded((value) => !value)}
-                    className="mt-3 text-xs font-black uppercase tracking-[0.16em] text-primary transition-colors hover:text-primary/80"
+                    className="mt-3 text-xs font-semibold normal-case tracking-normal text-primary transition-colors hover:text-primary/80"
                   >
                     {synopsisExpanded ? 'Show less' : 'Read more'}
                   </button>
@@ -3060,20 +3274,20 @@ export default function DesktopWatch() {
               </div>
             ) : null}
             {leftPanelInfo.trailerUrl ? (
-              <div className="sn-glass-card mt-5 overflow-hidden rounded-[18px]">
+              <div className="sn-glass-card mt-5 overflow-hidden rounded-xl">
                 <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] px-3.5 py-2.5">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-primary/30 bg-primary/16 text-primary">
                       <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
                     </span>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-black uppercase tracking-[0.20em] text-primary">Trailer</p>
-                      <p className="mt-0.5 line-clamp-1 text-xs font-bold text-white/48">{anime.title}</p>
+                      <p className="text-[10px] font-semibold normal-case tracking-normal text-primary">Trailer</p>
+                      <p className="mt-0.5 line-clamp-1 text-xs font-semibold text-white/48">{anime.title}</p>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {leftPanelInfo.trailerYear ? (
-                      <span className="rounded-full border border-white/[0.10] bg-black/30 px-2 py-1 text-[10px] font-black text-white/56">
+                      <span className="rounded-full border border-white/[0.10] bg-black/30 px-2 py-1 text-[10px] font-semibold text-white/56">
                         {leftPanelInfo.trailerYear}
                       </span>
                     ) : null}
@@ -3081,7 +3295,7 @@ export default function DesktopWatch() {
                       <button
                         type="button"
                         onClick={() => setTrailerOpen(false)}
-                        className="rounded-full border border-white/[0.10] bg-white/[0.045] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white/58 transition-colors hover:border-white/18 hover:text-white"
+                        className="rounded-full border border-white/[0.10] bg-white/[0.045] px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/58 transition-colors hover:border-white/18 hover:text-white"
                       >
                         Close
                       </button>
@@ -3111,13 +3325,13 @@ export default function DesktopWatch() {
                   >
                     <SafeImage candidates={trailerPreviewImages} alt={`${anime.title} trailer`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.035]" />
                     <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.76),rgba(0,0,0,0.22)_62%),radial-gradient(circle_at_50%_50%,rgba(244,63,94,0.22),transparent_36%)]" />
-                    <span className="absolute left-1/2 top-1/2 grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/16 bg-black/48 text-white shadow-lg shadow-black/30 transition-all group-hover:border-primary/45 group-hover:bg-primary group-hover:shadow-primary/24">
+                    <span className="absolute left-1/2 top-1/2 grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/16 bg-black/48 text-white shadow-none shadow-black/30 transition-all group-hover:border-primary/45 group-hover:bg-primary group-hover:shadow-primary/24">
                       <Play className="ml-0.5 h-4 w-4 fill-current" />
                     </span>
                     <span className="absolute bottom-2.5 left-3 right-3 flex items-end justify-between gap-3">
                       <span className="min-w-0">
-                        <span className="block line-clamp-1 text-xs font-black text-white">{anime.title}</span>
-                        <span className="mt-0.5 block text-[10px] font-black uppercase tracking-[0.16em] text-white/48">
+                        <span className="block line-clamp-1 text-xs font-semibold text-white">{anime.title}</span>
+                        <span className="mt-0.5 block text-[10px] font-semibold normal-case tracking-normal text-white/48">
                           {trailerEmbedUrl ? 'Play trailer' : 'Open trailer'}
                         </span>
                       </span>
@@ -3130,17 +3344,30 @@ export default function DesktopWatch() {
         </aside>
 
         <main className="min-w-0 py-8">
+          {metadataFailed ? (
+            <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border border-amber-300/15 bg-amber-200/[0.045] px-4 py-3 text-sm text-amber-50/72" role="status">
+              <span>Anime details could not refresh. The current screen remains usable while StreamNyaa reconnects.</span>
+              <button
+                type="button"
+                onClick={() => void detailsQuery.refetch()}
+                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md bg-white/[0.07] px-3 font-semibold text-white transition-colors hover:bg-white/[0.11]"
+              >
+                <RotateCw className="h-3.5 w-3.5" />
+                Retry
+              </button>
+            </div>
+          ) : null}
           <section>
-            <div className="sn-glass-panel mb-5 overflow-hidden rounded-[28px] p-5">
+            <div className="sn-glass-panel mb-5 overflow-hidden rounded-xl p-5">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.22em] text-primary">
+                  <p className="flex items-center gap-2 text-[11px] font-semibold normal-case tracking-normal text-primary">
                     <SlidersHorizontal className="h-4 w-4" />
                     Series Timeline
                   </p>
                   <p className="mt-2 text-xs font-semibold text-white/38">
                     Chronological related entries for this anime line.
-                    <span className="ml-2 text-white/24">- {seasonItems.length} {installmentTitle.toLowerCase()}</span>
+                    <span className="ml-2 text-white/50">{installmentGraphQuery.data?.complete ? `${seasonItems.length} entries` : 'Updating related seasons…'}</span>
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
@@ -3162,7 +3389,7 @@ export default function DesktopWatch() {
                         next.set('type', mode);
                         setSearchParams(next);
                       }}
-                      className={`rounded-full px-5 py-2 text-sm font-black transition-all active:scale-[0.98] ${audioMode === mode ? 'bg-primary text-white shadow-lg shadow-primary/24' : 'text-white/62 hover:bg-white/[0.06] hover:text-white'}`}
+                      className={`rounded-full px-5 py-2 text-sm font-semibold transition-all active:scale-[0.98] ${audioMode === mode ? 'bg-primary text-white shadow-none shadow-primary/24' : 'text-white/62 hover:bg-white/[0.06] hover:text-white'}`}
                     >
                       {mode === 'dub' ? 'Dual / Dub' : 'Sub'}
                     </button>
@@ -3194,7 +3421,7 @@ export default function DesktopWatch() {
                 className="grid max-h-[274px] grid-cols-[repeat(auto-fill,minmax(278px,1fr))] gap-3 overflow-y-auto pr-1 custom-scrollbar"
               >
                 {seasonItems.map((season) => {
-                  const sharedClassName = `group relative h-[118px] overflow-hidden rounded-2xl border text-left shadow-lg transition-all duration-200 hover:-translate-y-0.5 ${
+                  const sharedClassName = `group relative h-[118px] overflow-hidden rounded-xl border text-left shadow-none transition-all duration-200 hover:-translate-y-0.5 ${
                     season.current
                       ? 'border-primary/72 bg-primary/[0.13] shadow-primary/22 ring-1 ring-primary/35'
                       : 'border-white/[0.095] bg-white/[0.035] shadow-black/20 hover:border-primary/45 hover:bg-primary/[0.065] hover:ring-1 hover:ring-primary/20'
@@ -3209,22 +3436,22 @@ export default function DesktopWatch() {
                       />
                       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,5,8,0.95),rgba(5,5,8,0.70)_49%,rgba(5,5,8,0.36)),radial-gradient(circle_at_86%_0%,rgba(244,63,94,0.22),transparent_46%)]" />
                       <div className="relative flex h-full gap-4 p-4">
-                        <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-2xl border text-sm font-black uppercase tracking-[-0.02em] ${
+                        <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-xl border text-sm font-semibold normal-case tracking-[-0.02em] ${
                           season.current
-                            ? 'border-primary/45 bg-primary text-white shadow-lg shadow-primary/32'
+                            ? 'border-primary/45 bg-primary text-white shadow-none shadow-primary/32'
                             : 'border-white/[0.13] bg-black/46 text-white/86 group-hover:border-primary/45 group-hover:text-white'
                         }`}>
                           {installmentSequenceBadge(season)}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <p className="line-clamp-1 text-lg font-black tracking-[-0.025em] text-white drop-shadow">{installmentPrimaryLabel(season)}</p>
+                            <p className="line-clamp-1 text-lg font-semibold tracking-[-0.025em] text-white drop-shadow">{installmentPrimaryLabel(season)}</p>
                             {season.current ? (
-                              <span className="rounded-full bg-primary/18 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-primary">Now</span>
+                              <span className="rounded-full bg-primary/18 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-primary">Now</span>
                             ) : null}
                           </div>
-                          <p className="mt-1 line-clamp-1 text-xs font-bold text-white/62">{season.name}</p>
-                          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/50">
+                          <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/62">{season.name}</p>
+                          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-semibold normal-case tracking-normal text-white/50">
                             {installmentMetaParts(season).map((part, index) => (
                               <Fragment key={`${season.mal_id}-${part}`}>
                                 {index > 0 ? <span className="text-white/20">-</span> : null}
@@ -3248,7 +3475,7 @@ export default function DesktopWatch() {
                     </button>
                   ) : (
                     <Link
-                      key={season.mal_id || season.name}
+                      key={season.anilist_id ? 'anilist:' + season.anilist_id : 'mal:' + season.mal_id}
                       to={desktopWatchPath(
                         {
                           mal_id: season.mal_id,
@@ -3272,10 +3499,13 @@ export default function DesktopWatch() {
               </div>
             </div>
 
-            <div className="sn-glass-card sticky top-3 z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-2xl px-3 py-3">
-              <div className="flex items-center gap-2 text-lg font-black">
+            <div className="sn-glass-card sticky top-3 z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-xl px-3 py-3">
+              <div className="flex items-center gap-2">
                 <Download className="h-4 w-4 text-primary" />
-                <span>{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'} ({airedCount || allEpisodes.length || 0})</span>
+                <span>
+                  <span className="block text-lg font-semibold">{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'}</span>
+                  <span className="mt-0.5 block text-xs font-semibold text-white/60">{airedCount == null ? (episodeQuery.isFetching ? 'Checking aired episodes' : 'Episode count unavailable') : episodeCountLabel + ' ' + airedCount} · Total {totalEpisodeCount(anime) ?? '?'}</span>
+                </span>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-3">
                 <div className="hidden items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 px-3 py-2 shadow-inner shadow-black/20 md:flex">
@@ -3289,7 +3519,7 @@ export default function DesktopWatch() {
                         submitEpisodeSearch();
                       }
                     }}
-                    className="w-48 bg-transparent text-sm font-bold text-white outline-none placeholder:text-white/36"
+                    className="w-48 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/36"
                     placeholder="Search episode number or title"
                   />
                 </div>
@@ -3300,7 +3530,7 @@ export default function DesktopWatch() {
                         key={mode}
                         type="button"
                         onClick={() => setEpisodeViewMode(mode)}
-                        className={`rounded-lg px-3 py-2 text-xs font-black uppercase tracking-[0.16em] ${
+                        className={`rounded-lg px-3 py-2 text-xs font-semibold normal-case tracking-normal ${
                           episodeViewMode === mode
                             ? 'bg-primary text-white shadow-md shadow-primary/18'
                             : 'text-white/58 hover:bg-white/[0.06] hover:text-white'
@@ -3325,7 +3555,7 @@ export default function DesktopWatch() {
                     <select
                       value={String(episodeGridStart)}
                       onChange={(event) => setEpisodeGridStart(Number(event.target.value) || 1)}
-                      className="rounded-xl border border-white/[0.12] bg-black/48 px-4 py-3 text-sm font-black text-white outline-none"
+                      className="rounded-xl border border-white/[0.12] bg-black/48 px-4 py-3 text-sm font-semibold text-white outline-none"
                     >
                       {episodeRanges.map((range) => (
                         <option key={range.start} value={range.start}>{range.label}</option>
@@ -3342,10 +3572,11 @@ export default function DesktopWatch() {
                     </button>
                   </div>
                 ) : null}
-                {longEpisodeRun ? (
-                  <div className="hidden items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 px-3 py-2 md:flex">
-                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-white/44">Jump</span>
+                {!animeNotYetAired ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 px-3 py-2">
+                    <span className="text-[11px] font-semibold normal-case tracking-normal text-white/44">Jump</span>
                     <input
+                      aria-label="Episode number"
                       value={episodeJumpValue}
                       onChange={(event) => setEpisodeJumpValue(event.target.value.replace(/[^\d]/g, '').slice(0, 4))}
                       onKeyDown={(event) => {
@@ -3355,7 +3586,7 @@ export default function DesktopWatch() {
                         }
                       }}
                       inputMode="numeric"
-                      className="w-20 rounded-lg border border-white/[0.10] bg-white/[0.055] px-3 py-2 text-sm font-black text-white outline-none"
+                      className="w-20 rounded-lg border border-white/[0.10] bg-white/[0.055] px-3 py-2 text-sm font-semibold text-white outline-none"
                       placeholder="Episode"
                     />
                     <button
@@ -3371,10 +3602,25 @@ export default function DesktopWatch() {
                   type="button"
                   disabled={animeNotYetAired || Boolean(activeSourceId) || sourcesBusy}
                   onClick={() => playEpisodeNumber(selectedEpisode)}
-                  className="hidden rounded-xl bg-primary px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-white shadow-lg shadow-primary/24 transition-all hover:bg-[#ff3345] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
-                  aria-label={`Play best source for episode ${selectedEpisode}`}
+                  className="hidden rounded-xl bg-primary px-4 py-3 text-xs font-semibold normal-case tracking-normal text-white shadow-none shadow-primary/24 transition-all hover:bg-[#ff3345] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
+                  aria-label={`Play episode ${selectedEpisode}`}
                 >
-                  {animeNotYetAired ? 'Not aired yet' : Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : 'Play Best Source'}
+                  {animeNotYetAired ? 'Not aired yet' : Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : 'Play Episode'}
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleSelectedEpisodeWatched}
+                  aria-pressed={selectedEpisodeWatchState.completed}
+                  aria-label={`${selectedEpisodeWatchState.completed ? 'Mark unwatched' : 'Mark watched'} episode ${selectedEpisode}`}
+                  title={selectedEpisodeWatchState.completed ? 'Mark this episode as unwatched' : 'Mark this episode as watched'}
+                  className={`hidden min-h-11 items-center gap-2 rounded-xl px-4 text-xs font-semibold normal-case tracking-normal transition-all active:scale-[0.98] md:inline-flex ${
+                    selectedEpisodeWatchState.completed
+                      ? 'bg-emerald-400/[0.12] text-emerald-200 shadow-inner shadow-emerald-300/[0.08] hover:bg-emerald-400/[0.18]'
+                      : 'bg-white/[0.065] text-white/66 hover:bg-white/[0.11] hover:text-white'
+                  }`}
+                >
+                  <Check className="h-4 w-4" strokeWidth={2.5} />
+                  {selectedEpisodeWatchState.completed ? 'Watched' : 'Mark watched'}
                 </button>
                 <button
                   type="button"
@@ -3383,7 +3629,7 @@ export default function DesktopWatch() {
                     setAutoOpenBestSource(next);
                     saveDesktopAutoOpenBestSource(next);
                   }}
-                  className={`hidden rounded-xl border px-4 py-3 text-xs font-black uppercase tracking-[0.16em] transition-all active:scale-[0.98] md:inline-flex ${
+                  className={`hidden rounded-xl border px-4 py-3 text-xs font-semibold normal-case tracking-normal transition-all active:scale-[0.98] md:inline-flex ${
                     autoOpenBestSource
                       ? 'border-primary/45 bg-primary text-white shadow-md shadow-primary/18'
                       : 'border-white/[0.12] bg-black/38 text-white/56 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
@@ -3411,8 +3657,21 @@ export default function DesktopWatch() {
                 </div>
               </div>
             </div>
+            {episodeData?.streamnyaa?.status === 'stale' && <p role="status" className="mb-3 text-sm text-amber-200">Saved episode titles are shown. The provider could not refresh them; numbered navigation remains available. <button className="underline" onClick={() => void episodeQuery.refetch()}>Refresh titles</button></p>}
+            {episodeCatalogEstimated ? (
+              <p className="mb-3 text-sm text-white/60" role="status">
+                {episodeQuery.isFetching ? 'Loading episode metadata…' : airedCount == null ? 'Episode count and titles are unavailable. These numbered buttons are navigation only, not confirmed releases. Select a number to find matching sources.' : 'Episode titles are unavailable. Numbered episodes remain selectable.'}
+                {episodeQuery.isError ? <button className="ml-2 underline" onClick={() => void episodeQuery.refetch()}>Retry episode list</button> : null}
+              </p>
+            ) : null}
+            {Number(episodeData?.pagination?.last_visible_page) > 1 && <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+              <span>Episode metadata page {episodePage} of {episodeData?.pagination?.last_visible_page}</span>
+              <button disabled={episodePage <= 1 || episodeQuery.isFetching} className="sn-secondary-action px-3 py-2 disabled:opacity-40" onClick={() => selectEpisode(Math.max(1, (episodePage - 2) * 100 + 1))}>Previous episodes</button>
+              <button disabled={episodePage >= Number(episodeData?.pagination?.last_visible_page) || episodeQuery.isFetching} className="sn-secondary-action px-3 py-2 disabled:opacity-40" onClick={() => selectEpisode(episodePage * 100 + 1)}>Next episodes</button>
+              <button disabled={episodeQuery.isFetching} className="sn-secondary-action px-3 py-2 disabled:opacity-40" onClick={() => selectEpisode((Number(episodeData?.pagination?.last_visible_page) - 1) * 100 + 1)}>Latest episode page</button>
+            </div>}
             {episodeSearchTerm && !displayedEpisodes.length ? (
-              <div className="rounded-xl border border-white/[0.10] bg-white/[0.04] p-6 text-sm font-bold text-white/58">
+              <div className="rounded-xl border border-white/[0.10] bg-white/[0.04] p-6 text-sm font-semibold text-white/58">
                 No episodes matched that search. Try a title keyword or an episode number.
               </div>
             ) : episodeViewMode === 'grid' && longEpisodeRun ? (
@@ -3423,7 +3682,7 @@ export default function DesktopWatch() {
                     ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
                     className={`group relative rounded-xl border px-3 py-3 text-left transition-all focus-within:ring-1 focus-within:ring-primary/40 ${
                       episode.number === selectedEpisode
-                        ? 'border-primary/55 bg-primary/[0.11] shadow-lg shadow-primary/14 ring-1 ring-primary/30'
+                        ? 'border-primary/55 bg-primary/[0.11] shadow-none shadow-primary/14 ring-1 ring-primary/30'
                         : 'border-white/[0.10] bg-white/[0.035] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary/[0.045]'
                     }`}
                   >
@@ -3445,8 +3704,8 @@ export default function DesktopWatch() {
                       aria-label={`Watch episode ${episode.number}`}
                     >
                       <EpisodeWatchIndicator state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} />
-                      <p className={`text-base font-black ${episode.number === selectedEpisode ? 'text-white' : 'text-white/86'}`}>Ep {episode.number}</p>
-                      <p className="mt-1 line-clamp-2 text-[11px] font-bold leading-5 text-white/48">{episode.title}</p>
+                      <p className={`text-base font-semibold ${episode.number === selectedEpisode ? 'text-white' : 'text-white/86'}`}>Ep {episode.number}</p>
+                      <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-5 text-white/48">{hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title}</p>
                     </button>
                     <button
                       type="button"
@@ -3457,7 +3716,7 @@ export default function DesktopWatch() {
                         event.stopPropagation();
                         playEpisodeNumber(episode.number);
                       }}
-                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[11px] font-black uppercase tracking-[0.16em] text-white transition-all hover:bg-primary hover:text-white active:scale-[0.98] group-focus-within:bg-primary/90"
+                      className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg bg-white/[0.08] px-3 text-[11px] font-semibold normal-case tracking-normal text-white transition-all hover:bg-primary hover:text-white active:scale-[0.98] group-focus-within:bg-primary/90"
                       aria-label={`Play episode ${episode.number}`}
                     >
                       <Play className="h-3 w-3 fill-current" />
@@ -3469,6 +3728,8 @@ export default function DesktopWatch() {
             ) : (
               <div
                 ref={episodesRailRef}
+                style={{ scrollBehavior: 'auto', overflowAnchor: 'none', touchAction: 'pan-y' }}
+                onDragStart={event => event.preventDefault()}
                 onPointerDown={startEpisodeRailDrag}
                 onPointerMove={moveEpisodeRailDrag}
                 onPointerUp={stopEpisodeRailDrag}
@@ -3480,7 +3741,7 @@ export default function DesktopWatch() {
                   <div
                     key={episode.number}
                     ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
-                    className={`group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-xl border text-left shadow-lg shadow-black/18 transition-all focus-within:ring-1 focus-within:ring-primary/42 ${
+                    className={`group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-xl border text-left shadow-none shadow-black/18 transition-all focus-within:ring-1 focus-within:ring-primary/42 ${
                       episode.number === selectedEpisode
                         ? 'border-primary/70 bg-primary/[0.10] ring-1 ring-primary/32'
                         : 'border-white/[0.10] hover:-translate-y-0.5 hover:border-primary/42'
@@ -3504,11 +3765,11 @@ export default function DesktopWatch() {
                       className="absolute inset-0 cursor-pointer text-left outline-none focus-visible:ring-1 focus-visible:ring-primary/45"
                       aria-label={`Watch episode ${episode.number}`}
                     >
-                      <SafeImage candidates={uniqueImageCandidates([episode.image, wideImageFor(anime), posterFor(anime)])} alt={episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
+                      <SafeImage candidates={uniqueImageCandidates([...(hideEpisodeSpoilers ? [] : [episode.image]), wideImageFor(anime), posterFor(anime)])} alt={hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
                       <div className={`absolute inset-0 ${episode.number === selectedEpisode ? 'bg-[linear-gradient(0deg,rgba(48,8,16,0.90),rgba(0,0,0,0.06)_62%)]' : 'bg-[linear-gradient(0deg,rgba(0,0,0,0.80),rgba(0,0,0,0.08)_62%)]'}`} />
-                      <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-black shadow-md shadow-black/25 ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/72 text-white'}`}>{episode.number}</span>
+                      <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-semibold shadow-md shadow-black/25 ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/72 text-white'}`}>{episode.number}</span>
                       <EpisodeWatchIndicator state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} />
-                      <p className="absolute bottom-3 left-3 right-14 line-clamp-1 text-sm font-black">{episode.title}</p>
+                      <p className="absolute bottom-3 left-3 right-14 line-clamp-1 text-sm font-semibold">{hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title}</p>
                     </button>
                     <button
                       type="button"
@@ -3523,7 +3784,7 @@ export default function DesktopWatch() {
                         event.preventDefault();
                         event.stopPropagation();
                       }}
-                      className="absolute bottom-2.5 right-2.5 grid h-9 w-9 place-items-center rounded-full border border-white/[0.14] bg-black/62 text-white shadow-lg shadow-black/30 backdrop-blur transition-all hover:border-primary/55 hover:bg-primary hover:shadow-primary/24 active:scale-[0.94]"
+                      className="absolute bottom-2.5 right-2.5 grid h-9 w-9 place-items-center rounded-full border border-white/[0.14] bg-black/62 text-white shadow-none shadow-black/30 backdrop-blur transition-all hover:border-primary/55 hover:bg-primary hover:shadow-primary/24 active:scale-[0.94]"
                       aria-label={`Play episode ${episode.number}`}
                     >
                       <Play className="h-3.5 w-3.5 fill-current" />
@@ -3536,49 +3797,53 @@ export default function DesktopWatch() {
               {episodeSearchTerm
                 ? `Found ${displayedEpisodes.length} matching episode${displayedEpisodes.length === 1 ? '' : 's'}. Press Enter to open the first match quickly.`
                 : episodeViewMode === 'grid' && longEpisodeRun
-                  ? `Compact view shows episodes ${currentEpisodeRange?.start || displayedEpisodes[0]?.number || 1}-${currentEpisodeRange?.end || displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start the best source.`
+                  ? `Compact view shows episodes ${currentEpisodeRange?.start || displayedEpisodes[0]?.number || 1}-${currentEpisodeRange?.end || displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start watching.`
                   : airedCount > displayedEpisodes.length
-                    ? `Showing episodes ${displayedEpisodes[0]?.number || 1}-${displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start the best source.`
-                    : 'Click an episode to select it. Use Play or double-click to start the best source.'}
+                    ? `Showing episodes ${displayedEpisodes[0]?.number || 1}-${displayedEpisodes[displayedEpisodes.length - 1]?.number || displayedEpisodes.length} of ${airedCount}. Click an episode to select it. Use Play or double-click to start watching.`
+                    : 'Click an episode to select it. Use Play or double-click to start watching.'}
             </p>
           </section>
 
           <section ref={sourceSectionRef} className="mt-8 pb-24">
-            <div className="sn-glass-panel mb-5 rounded-[28px] p-5">
+            <div className="sn-glass-panel mb-5 rounded-xl p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Source List</p>
-                  <h2 className="mt-1 text-2xl font-black tracking-[-0.03em] text-white">{sourceSectionTitle}</h2>
+                  <p className="text-[10px] font-semibold normal-case tracking-normal text-primary">Playback</p>
+                  <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{sourceSectionTitle}</h2>
                   <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/52">{sourceSectionSubtitle}</p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-3">
                   {animeNotYetAired ? (
-                    <Link
-                      to="/calendar"
-                      className="sn-secondary-action h-12 rounded-2xl bg-white px-5 text-sm text-black shadow-lg shadow-white/10 hover:bg-white/90"
-                    >
-                      View airing schedule
-                    </Link>
+                    <>
+                      <UpcomingNotifyButton anime={anime} />
+                      <Link
+                        to="/schedule"
+                        className="sn-secondary-action h-11 rounded-lg px-4 text-sm"
+                      >
+                        View airing schedule
+                      </Link>
+                    </>
                   ) : (
                     <>
                       <button
                         type="button"
                         disabled={!playableSources[0] || Boolean(activeSourceId) || sourcesBusy}
                         onClick={() => playableSources[0] && void playSource(playableSources[0])}
-                        className="sn-primary-action h-12 rounded-2xl px-5 text-sm disabled:cursor-not-allowed disabled:opacity-45"
-                        aria-label={`Play best source for episode ${selectedEpisode}`}
+                        className="sn-primary-action h-12 rounded-xl px-5 text-sm disabled:cursor-not-allowed disabled:opacity-45"
+                        aria-label={`Play episode ${selectedEpisode}`}
                       >
                         <Play className="mr-2 h-4 w-4 fill-current" />
-                        {Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : sourcesBusy ? 'Finding...' : 'Play Best Source'}
+                        {Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : sourcesBusy ? 'Preparing...' : 'Play Episode'}
                       </button>
+                      <button type="button" disabled={!nextPlayableSource || Boolean(activeSourceId)} onClick={()=>{if(nextPlayableSource)void playSource(nextPlayableSource,0);}} className="sn-secondary-action px-3 py-2 disabled:opacity-40">Restart episode</button>
                       <button
                         type="button"
-                        onClick={() => sourceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                        className="sn-secondary-action h-12 rounded-2xl px-5 text-sm"
-                        aria-label={`View source list for episode ${selectedEpisode}`}
+                        onClick={() => { if (playbackOptionsRef.current) { playbackOptionsRef.current.open = true; playbackOptionsRef.current.scrollIntoView({ block: 'nearest' }); } }}
+                        className="sn-secondary-action h-12 rounded-xl px-5 text-sm"
+                        aria-label={`View playback options for episode ${selectedEpisode}`}
                       >
                         <SlidersHorizontal className="mr-2 h-4 w-4" />
-                        Source List
+                        Playback Options
                       </button>
                     </>
                   )}
@@ -3586,17 +3851,17 @@ export default function DesktopWatch() {
               </div>
 
               {animeNotYetAired ? (
-                <div className="mt-5 rounded-2xl bg-black/28 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.06]">
-                  <p className="text-sm font-black text-white">Episodes are not available yet.</p>
+                <div className="mt-5 rounded-xl bg-black/28 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.06]">
+                  <p className="text-sm font-semibold text-white">Episodes are not available yet.</p>
                   <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/48">
-                    This listing can be bookmarked and reviewed, but StreamNyaa will not search torrent sources until the anime has aired.
+                    This title can be saved now. Playback becomes available after the first episode airs.
                   </p>
                 </div>
               ) : (
                 <>
               <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
-                <div className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
-                  <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Match</p>
+                <div className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
+                  <p className="mb-2 px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Match</p>
                   <div className="flex rounded-xl bg-black/34 p-1">
                     {(['strict', 'balanced', 'broad'] as SourceFilterMode[]).map((mode) => (
                       <button
@@ -3604,7 +3869,7 @@ export default function DesktopWatch() {
                         type="button"
                         onClick={() => setSourceMode(mode)}
                         aria-pressed={sourceMode === mode}
-                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-black capitalize transition-all active:scale-[0.98] ${
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold capitalize transition-all active:scale-[0.98] ${
                           sourceMode === mode
                             ? 'bg-primary text-white shadow-md shadow-primary/24'
                             : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
@@ -3616,8 +3881,8 @@ export default function DesktopWatch() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
-                  <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Audio</p>
+                <div className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
+                  <p className="mb-2 px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Audio</p>
                   <div className="flex rounded-xl bg-black/34 p-1">
                     {([
                       { label: 'Sub', preference: 'sub-preferred' },
@@ -3629,7 +3894,7 @@ export default function DesktopWatch() {
                         type="button"
                         onClick={() => setSourceAudioPreference(option.preference)}
                         aria-pressed={audioPreference === option.preference}
-                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-black transition-all active:scale-[0.98] ${
+                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-all active:scale-[0.98] ${
                           audioPreference === option.preference
                             ? 'bg-primary text-white shadow-md shadow-primary/24'
                             : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
@@ -3641,8 +3906,8 @@ export default function DesktopWatch() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
-                  <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Quality</p>
+                <div className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
+                  <p className="mb-2 px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Quality</p>
                   <div className="flex flex-wrap gap-1 rounded-xl bg-black/34 p-1">
                     {sourceQualityOptions.map((quality) => {
                       const active = sourceQuality === quality;
@@ -3653,7 +3918,7 @@ export default function DesktopWatch() {
                           type="button"
                           onClick={() => setSourceQuality(quality)}
                           aria-pressed={active}
-                          className={`rounded-lg px-3 py-2 text-xs font-black transition-all active:scale-[0.98] ${
+                          className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all active:scale-[0.98] ${
                             active
                               ? 'bg-primary text-white shadow-md shadow-primary/24'
                               : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
@@ -3667,10 +3932,10 @@ export default function DesktopWatch() {
                   </div>
                 </div>
 
-                <label className="rounded-2xl border border-white/[0.08] bg-black/28 p-2">
-                  <span className="mb-2 block px-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/36">Order</span>
+                <label className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
+                  <span className="mb-2 block px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Order</span>
                   <span className="flex h-[42px] items-center rounded-xl bg-black/34 px-3">
-                    <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SourceSort)} className="w-full bg-transparent text-sm font-black text-white outline-none">
+                    <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SourceSort)} className="w-full bg-transparent text-sm font-semibold text-white outline-none">
                       <option value="best">Best Match</option>
                       <option value="seeders">Seeders</option>
                       <option value="size">Smaller Files</option>
@@ -3681,15 +3946,15 @@ export default function DesktopWatch() {
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-4 text-sm">
-                <p className="font-bold text-white/56">{sourceMatchSummary}</p>
-                <p className="text-xs font-semibold text-white/36">Best source uses the same ranking and fallback logic as before.</p>
+                <p className="font-semibold text-white/56">{sourceMatchSummary}</p>
+                <p className="text-xs font-semibold text-white/36">StreamNyaa automatically chooses the fastest compatible option.</p>
               </div>
                 </>
               )}
             </div>
 
             {playbackNotice ? (
-              <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-bold shadow-lg shadow-black/14 ${
+              <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-semibold shadow-none shadow-black/14 ${
                 playbackNotice.tone === 'error'
                   ? 'border-red-400/25 bg-red-500/10 text-red-100'
                   : playbackNotice.tone === 'success'
@@ -3697,14 +3962,40 @@ export default function DesktopWatch() {
                     : 'border-amber-300/18 bg-amber-300/[0.08] text-amber-50/86'
               }`}>
                 <span>{playbackNotice.text}</span>
-                {playbackNotice.tone === 'error' && nextPlayableSource ? (
+                {playbackNotice.tone === 'error' && recoveryExhausted ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={retryCurrentSource}
+                      className="rounded-lg bg-white/[0.08] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/[0.13]"
+                    >
+                      Retry playback
+                    </button>
+                    {nextPlayableSource ? (
+                      <button
+                        type="button"
+                        disabled={Boolean(activeSourceId) || sourcesBusy}
+                        onClick={playNextPlayableSource}
+                        className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Try another stream
+                      </button>
+                    ) : null}
+                    <Link
+                      to={sourceBrowserPath}
+                      className="rounded-lg px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+                    >
+                      Playback options
+                    </Link>
+                  </div>
+                ) : playbackNotice.tone === 'error' && nextPlayableSource ? (
                   <button
                     type="button"
                     disabled={Boolean(activeSourceId) || sourcesBusy}
                     onClick={playNextPlayableSource}
-                    className="rounded-full border border-white/12 bg-white px-4 py-2 text-xs font-black text-black transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-lg bg-white px-4 py-2 text-xs font-semibold text-black transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Try next playable source
+                    Try another stream
                   </button>
                 ) : null}
               </div>
@@ -3716,7 +4007,7 @@ export default function DesktopWatch() {
               const volumeValue = Math.max(0, Math.min(130, Number(volumeDraft ?? playbackProgress?.volume ?? 100)));
               const watchedPercent = durationSeconds > 0
                 ? Math.max(0, Math.min(100, (currentSeconds / durationSeconds) * 100))
-                : Math.max(0, Math.min(100, playbackStage.progress));
+                : Math.max(0, Math.min(100, Number(playback.source.progressPercent || 0)));
               const isPaused = playbackProgress?.paused ?? false;
               const playerBusy = Boolean(playerControlBusy);
               const artworkCandidates = uniqueImageCandidates([
@@ -3727,7 +4018,7 @@ export default function DesktopWatch() {
                 posterFor(anime),
               ]);
               return (
-                <div className="mb-5 overflow-hidden rounded-[28px] border border-white/10 bg-[#07070A] shadow-2xl shadow-black/35 ring-1 ring-white/[0.025]">
+                <div className="mb-5 overflow-hidden rounded-xl border border-white/10 bg-[#07070A] shadow-none shadow-black/35 ring-1 ring-white/[0.025]">
                   <div className="relative min-h-[320px]">
                     <SafeImage
                       candidates={artworkCandidates}
@@ -3735,27 +4026,59 @@ export default function DesktopWatch() {
                       className="absolute inset-0 h-full w-full object-cover opacity-40"
                       fallbackClassName="absolute inset-0 h-full w-full"
                     />
-                    <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(3,3,6,0.96),rgba(3,3,6,0.62)_48%,rgba(3,3,6,0.24)),linear-gradient(0deg,rgba(3,3,6,0.96),rgba(3,3,6,0.18)_54%,rgba(3,3,6,0.50)),radial-gradient(circle_at_18%_18%,rgba(244,63,94,0.22),transparent_32%)]" />
+                    <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(3,3,6,0.96),rgba(3,3,6,0.62)_48%,rgba(3,3,6,0.24)),linear-gradient(0deg,rgba(3,3,6,0.96),rgba(3,3,6,0.18)_54%,rgba(3,3,6,0.50))]" />
                     <div className="relative flex min-h-[320px] flex-col justify-between p-6">
                       <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="min-w-0">
-                          <p className="text-[10px] font-black uppercase tracking-[0.26em] text-primary">Now Playing</p>
-                          <h3 className="mt-2 line-clamp-2 max-w-3xl text-3xl font-black leading-tight tracking-[-0.035em] text-white">{playback.title}</h3>
-                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-white/58">
+                          <p className="text-[10px] font-semibold normal-case tracking-normal text-primary">Now Playing</p>
+                          <h3 className="mt-2 line-clamp-2 max-w-3xl text-3xl font-semibold leading-tight tracking-[-0.035em] text-white">{playback.title}</h3>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold normal-case tracking-normal text-white/58">
                             <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">{playbackStage.headline}</span>
-                            <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">Peers {playbackProgress?.peers ?? '...'}</span>
+                            <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">{Number(playbackProgress?.peers || 0) > 0 ? 'Connected' : 'Connecting'}</span>
                             <span className="rounded-full border border-white/12 bg-white/[0.075] px-3 py-1">{playbackProgress?.state || playbackStage.status}</span>
                           </div>
                         </div>
-                        <div className="rounded-2xl border border-white/10 bg-black/36 px-4 py-3 text-right backdrop-blur-xl">
-                          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/38">Session</p>
-                          <p className="mt-1 text-lg font-black text-white">{Math.round(watchedPercent)}%</p>
+                        <div className="rounded-xl border border-white/10 bg-black/36 px-4 py-3 text-right backdrop-blur-xl">
+                          <p className="text-[10px] font-semibold normal-case tracking-normal text-white/38">Session</p>
+                          <p className="mt-1 text-lg font-semibold text-white">{Math.round(watchedPercent)}%</p>
                         </div>
                       </div>
 
                       <div>
+                        {playbackProgress?.buffering ? (
+                          <div className="mb-4 rounded-xl border border-primary/20 bg-black/55 px-4 py-3 backdrop-blur-sm" role="status" aria-live="polite">
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <Loader2 className={`h-4 w-4 shrink-0 text-primary ${playbackProgress.buffer_advancing ? 'animate-spin' : ''}`} />
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-white">
+                                    {playbackProgress.buffer_percent == null
+                                      ? 'Connecting to the stream'
+                                      : `Buffering ${Math.round(playbackProgress.buffer_percent)}%`}
+                                  </p>
+                                  <p className="mt-0.5 truncate text-xs text-white/55">
+                                    {playbackProgress.buffer_advancing
+                                      ? `${Math.round(playbackProgress.buffered_seconds || 0)}s ready ahead`
+                                      : playbackProgress.stall_seconds
+                                        ? `Buffer has not advanced for ${playbackProgress.stall_seconds}s · recovery ${playbackProgress.recovery_stage || 'pending'}`
+                                        : 'Waiting for playable data'}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="shrink-0 text-sm font-semibold tabular-nums text-primary">
+                                {playbackProgress.buffer_percent == null ? '—' : `${Math.round(playbackProgress.buffer_percent)}%`}
+                              </span>
+                            </div>
+                            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                              <span
+                                className={`block h-full rounded-full bg-primary transition-[width] duration-300 ${playbackProgress.buffer_percent == null ? 'w-1/4 animate-pulse' : ''}`}
+                                style={playbackProgress.buffer_percent == null ? undefined : { width: `${Math.max(2, Math.min(100, playbackProgress.buffer_percent))}%` }}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
                         <div className="mb-4">
-                          <div className="mb-2 flex items-center justify-between text-xs font-bold text-white/58">
+                          <div className="mb-2 flex items-center justify-between text-xs font-semibold text-white/58">
                             <span>{durationSeconds > 0 ? formatPlaybackTime(currentSeconds) : '--:--'}</span>
                             <span>{durationSeconds > 0 ? formatPlaybackTime(durationSeconds) : playbackStage.status}</span>
                           </div>
@@ -3774,7 +4097,7 @@ export default function DesktopWatch() {
                           />
                         </div>
 
-                        <div className="flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/10 bg-black/46 p-3 shadow-xl shadow-black/30 backdrop-blur-xl">
+                        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/46 p-3 shadow-none shadow-black/30 backdrop-blur-xl">
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
@@ -3789,7 +4112,7 @@ export default function DesktopWatch() {
                               type="button"
                               disabled={playerBusy}
                               onClick={() => void runPlayerControl(isPaused ? 'play' : 'toggle_pause')}
-                              className="grid h-16 w-16 place-items-center rounded-full bg-white text-black shadow-xl shadow-white/10 transition-transform hover:scale-[1.04] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="grid h-16 w-16 place-items-center rounded-full bg-white text-black shadow-none shadow-white/10 transition-transform hover:scale-[1.04] disabled:cursor-not-allowed disabled:opacity-60"
                               aria-label={isPaused ? 'Play' : 'Pause'}
                             >
                               {playerControlBusy === 'toggle_pause' || playerControlBusy === 'play' ? (
@@ -3826,7 +4149,7 @@ export default function DesktopWatch() {
                               style={{ '--range-fill': `${Math.max(0, Math.min(100, (volumeValue / 130) * 100))}%` } as React.CSSProperties}
                               className="desktop-player-range h-1.5 w-28 cursor-pointer disabled:cursor-not-allowed"
                             />
-                            <span className="min-w-9 text-right text-xs font-black text-white/58">{Math.round(volumeValue)}%</span>
+                            <span className="min-w-9 text-right text-xs font-semibold text-white/58">{Math.round(volumeValue)}%</span>
                           </div>
 
                           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -3834,7 +4157,7 @@ export default function DesktopWatch() {
                               type="button"
                               disabled={playerBusy}
                               onClick={() => void runPlayerControl('subtitle')}
-                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-black uppercase tracking-[0.14em] text-white/72 transition-colors hover:border-white/20 hover:bg-white/[0.10] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-semibold normal-case tracking-normal text-white/72 transition-colors hover:border-white/20 hover:bg-white/[0.10] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Subs
                             </button>
@@ -3842,7 +4165,7 @@ export default function DesktopWatch() {
                               type="button"
                               disabled={playerBusy}
                               onClick={() => void runPlayerControl('audio')}
-                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-black uppercase tracking-[0.14em] text-white/72 transition-colors hover:border-white/20 hover:bg-white/[0.10] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-semibold normal-case tracking-normal text-white/72 transition-colors hover:border-white/20 hover:bg-white/[0.10] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               Audio
                             </button>
@@ -3850,7 +4173,7 @@ export default function DesktopWatch() {
                               defaultValue="1"
                               disabled={playerBusy}
                               onChange={(event) => void runPlayerControl('speed', Number(event.currentTarget.value))}
-                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-black uppercase tracking-[0.14em] text-white outline-none transition-colors hover:border-white/20 hover:bg-white/[0.10] disabled:cursor-not-allowed disabled:opacity-50"
+                              className="h-11 rounded-full border border-white/10 bg-white/[0.055] px-4 text-xs font-semibold normal-case tracking-normal text-white outline-none transition-colors hover:border-white/20 hover:bg-white/[0.10] disabled:cursor-not-allowed disabled:opacity-50"
                               aria-label="Playback speed"
                             >
                               <option value="0.75">0.75x</option>
@@ -3870,7 +4193,7 @@ export default function DesktopWatch() {
                             <button
                               type="button"
                               onClick={() => void stopPlayback()}
-                              className="h-11 rounded-full border border-white/12 bg-black/35 px-4 text-xs font-black uppercase tracking-[0.14em] text-white/78 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+                              className="h-11 rounded-full border border-white/12 bg-black/35 px-4 text-xs font-semibold normal-case tracking-normal text-white/78 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
                             >
                               Stop
                             </button>
@@ -3883,7 +4206,7 @@ export default function DesktopWatch() {
                             return (
                               <span
                                 key={label}
-                                className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${
+                                className={`rounded-full border px-3 py-1 text-[10px] font-semibold normal-case tracking-normal ${
                                   activeStep
                                     ? 'border-primary/30 bg-primary/14 text-primary'
                                     : 'border-white/10 bg-white/[0.04] text-white/34'
@@ -3893,7 +4216,7 @@ export default function DesktopWatch() {
                               </span>
                             );
                           })}
-                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-white/42">
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/42">
                             {playbackProgress?.downloaded_bytes ? `${Math.round(playbackProgress.downloaded_bytes / 1024 / 1024)} MB cached` : 'Cache pending'}
                           </span>
                         </div>
@@ -3904,20 +4227,17 @@ export default function DesktopWatch() {
               );
             })() : null}
 
-            {animeNotYetAired ? null : sourcesBusy ? (
+            <details key={`${id}:${selectedEpisode}`} open ref={playbackOptionsRef} className="sn-playback-options">
+              <summary className="flex min-h-14 cursor-pointer items-center justify-between gap-4 px-5 py-3 font-semibold">
+                <span>Change playback option</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} available${sourceSearchInProgress ? ' · finding more' : ''}` : 'View options'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
+              </summary>
+              <div className="p-4">
+            {sourceSearchInProgress && !sourcesBusy && <p role="status" className="mb-3 text-sm text-white/60">Matching sources are ready to play. Additional options are still being checked.</p>}
+            {animeNotYetAired ? null : sourceSearchInProgress && !sortedSources.length ? (
               <div className="grid gap-3">
-                <div className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.065))] p-4 shadow-lg shadow-black/20">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Finding best source</p>
-                      <p className="mt-1 text-sm font-black text-white">Searching sources for Episode {selectedEpisode}...</p>
-                      <p className="mt-1 text-xs font-bold text-white/50">Checking episode match, seed health, audio preference, and release quality.</p>
-                    </div>
-                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                  </div>
-                </div>
+                <DesktopLoadingProgress label={`Preparing Episode ${selectedEpisode}`} percent={sourceSearchProgress} detail="Checking video quality, audio preference, and playback health." />
                 {Array.from({ length: 3 }).map((_, index) => (
-                  <div key={index} className="desktop-skeleton-shimmer h-[76px] rounded-2xl border border-white/[0.06]" />
+                  <div key={index} className="desktop-skeleton-shimmer h-[76px] rounded-xl border border-white/[0.06]" />
                 ))}
               </div>
             ) : sortedSources.length ? (
@@ -3939,62 +4259,59 @@ export default function DesktopWatch() {
                   const quality = sourceQualityLabel(sourceQualityBucket(source.title));
                   const codec = /\b(hevc|h\.?265|x265)\b/i.test(source.title) ? 'HEVC' : /\b(avc|h\.?264|x264)\b/i.test(source.title) ? 'H.264' : 'Video';
                   const audioLabel = isDualAudioSource(source.title) ? 'Dual Audio' : isDubOnlySource(source.title) ? 'Dub' : 'Sub';
-                  const failure = sourceFailureFor(source, failedSourceRecords);
                   const previousTier = sortedSources[index - 1]?.matchTier;
                   return (
                     <Fragment key={sourceId}>
                     {index === 0 || source.matchTier !== previousTier ? (
                       <div className={`${index === 0 ? '' : 'mt-2'} flex items-center justify-between border-t border-white/[0.08] pt-4`}>
                         <div>
-                          <p className="text-[11px] font-black uppercase tracking-[0.22em] text-white/58">{sourceTierLabel(source.matchTier)}</p>
-                          <p className="mt-1 text-xs font-bold text-white/38">{sourceTierDescription(source.matchTier)}</p>
+                          <p className="text-[11px] font-semibold normal-case tracking-normal text-white/58">{sourceTierLabel(source.matchTier)}</p>
+                          <p className="mt-1 text-xs font-semibold text-white/38">{sourceTierDescription(source.matchTier)}</p>
                         </div>
-                        <p className="text-xs font-bold text-white/42">
+                        <p className="text-xs font-semibold text-white/42">
                           {source.matchTier === 'exact' ? visibleTierCounts.exact : source.matchTier === 'likely' ? visibleTierCounts.likely : visibleTierCounts.broad} source
                           {(source.matchTier === 'exact' ? visibleTierCounts.exact : source.matchTier === 'likely' ? visibleTierCounts.likely : visibleTierCounts.broad) === 1 ? '' : 's'}
                         </p>
                       </div>
                     ) : null}
                     <div
-                      className={`relative overflow-hidden rounded-2xl border bg-[#101116]/82 p-4 shadow-lg shadow-black/20 transition-all hover:-translate-y-0.5 hover:border-primary/24 hover:bg-[#171923]/82 ${
+                      className={`relative overflow-hidden rounded-xl border bg-[#101116]/82 p-4 shadow-none shadow-black/20 transition-all hover:-translate-y-0.5 hover:border-primary/24 hover:bg-[#171923]/82 ${
                         index === 0 && source.matchTier === 'exact' ? 'border-primary/42 bg-[linear-gradient(135deg,rgba(244,63,94,0.10),rgba(255,255,255,0.040)_52%,rgba(255,255,255,0.030))] shadow-primary/8' : 'border-white/[0.085]'
                       }`}
                     >
-                      {index === 0 && source.matchTier === 'exact' ? <div className="absolute inset-y-4 left-0 w-1 rounded-r-full bg-primary shadow-lg shadow-primary/40" /> : null}
+                      {index === 0 && source.matchTier === 'exact' ? <div className="absolute inset-y-4 left-0 w-1 rounded-r-full bg-primary shadow-none shadow-primary/40" /> : null}
                       <div className="flex items-center gap-4">
-                        <span className="grid h-[58px] min-w-[70px] shrink-0 place-items-center rounded-xl border border-white/[0.10] bg-white/[0.065] px-3 text-xs font-black text-white shadow-inner shadow-black/20">{quality}</span>
+                        <span className="grid h-[58px] min-w-[70px] shrink-0 place-items-center rounded-xl border border-white/[0.10] bg-white/[0.065] px-3 text-xs font-semibold text-white shadow-inner shadow-black/20">{quality}</span>
                         <div className="min-w-0 flex-1">
-                          {index === 0 && source.matchTier === 'exact' ? <p className="mb-1 text-[10px] font-black uppercase tracking-[0.22em] text-primary">Recommended source</p> : null}
-                          <p className="line-clamp-1 text-sm font-black text-white">{source.title}</p>
+                          {index === 0 && source.matchTier === 'exact' ? <p className="mb-1 text-[10px] font-semibold normal-case tracking-normal text-primary">Recommended source</p> : null}
+                          <p className="line-clamp-1 text-sm font-semibold text-white">{source.title}</p>
                           <p className="mt-1 text-xs font-semibold text-white/52">
                             {quality} <span className="text-white/24">-</span> {codec} <span className="text-white/24">-</span> {audioLabel} <span className="text-white/24">-</span> {source.size}
                           </p>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-white/45">
-                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${source.playable ? sourceConfidenceClassName(confidence.band) : playableStatusClassName(source.playableStatus)}`}>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/45">
+                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal ${source.playable ? sourceConfidenceClassName(confidence.band) : playableStatusClassName(source.playableStatus)}`}>
                               {source.playable ? confidence.label : source.playableLabel}
                             </span>
-                            {failure ? (
-                              <span
-                                title={failure.message}
-                                className="rounded-full border border-red-400/20 bg-red-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-red-200"
-                              >
-                                Recently failed
-                              </span>
-                            ) : null}
                             <span className="text-emerald-400">{sourceHealth(source.rawSeeders)}</span>
                             <span>{source.seeders} seeders</span>
                             {visibleReasons.map((reason) => (
-                              <span key={`${sourceId}-${reason}`} className="rounded-full border border-white/8 bg-white/[0.045] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-white/54">
+                              <span key={`${sourceId}-${reason}`} className="rounded-full border border-white/8 bg-white/[0.045] px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/54">
                                 {reason}
                               </span>
                             ))}
                           </div>
                         </div>
-                        <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex shrink-0 flex-wrap items-center gap-2">
+                          <button type="button" disabled={!source.magnet} className="sn-secondary-action h-10 px-3 text-xs" title="Download all files in this release, including all episodes in a batch" onClick={() => {
+                            void enqueueDownload(source.title, source.magnet).then(() => setPlaybackNotice({ tone: 'success', text: 'Release queued in the download manager.' }), issue => setPlaybackNotice({ tone: 'error', text: String(issue instanceof Error ? issue.message : issue) }));
+                          }}><Download className="h-4 w-4" />Download release</button>
+                          <button type="button" disabled={!source.magnet} className="sn-secondary-action h-10 px-3 text-xs" title="Resolve the release file list before choosing episodes to download" onClick={() => {
+                            void enqueueDownloadSelection(source.title, source.magnet).then(() => setPlaybackNotice({ tone: 'success', text: 'Download manager opened. Choose episode files once metadata resolves.' }), issue => setPlaybackNotice({ tone: 'error', text: String(issue instanceof Error ? issue.message : issue) }));
+                          }}><Download className="h-4 w-4" />Choose files</button>
                           <button
                             type="button"
                             onClick={() => toggleSourceDetails(sourceId)}
-                            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-black text-white/62 transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]"
+                            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-white/62 transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]"
                           >
                             Details
                             <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
@@ -4002,7 +4319,7 @@ export default function DesktopWatch() {
                           <button type="button" onClick={() => navigator.clipboard?.writeText(source.magnet || torrentUrlFor(source))} className="grid h-10 w-10 place-items-center rounded-lg border border-white/[0.10] bg-white/[0.05] text-white/62 transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]" aria-label="Copy source link">
                             <Copy className="h-4 w-4" />
                           </button>
-                          <button type="button" disabled={Boolean(active) || !source.playable} onClick={() => void playSource(source)} className="inline-flex h-10 min-w-[86px] items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-black uppercase tracking-[0.14em] text-white shadow-lg shadow-primary/24 transition-all hover:bg-[#ff3345] hover:shadow-primary/34 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60">
+                          <button type="button" disabled={Boolean(active) || !source.playable} onClick={() => void playSource(source)} className="inline-flex h-10 min-w-[86px] items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold normal-case tracking-normal text-white shadow-none shadow-primary/24 transition-all hover:bg-[#ff3345] hover:shadow-primary/34 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60">
                             {active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}
                             {active ? 'Opening' : source.playable ? 'Play' : 'Blocked'}
                           </button>
@@ -4014,7 +4331,7 @@ export default function DesktopWatch() {
                             {[...reasons, `Confidence ${score}`, `Rank ${Math.round(sourceScore(source, audioPreference, audioMode))}`, source.category, source.pubDate ? `Updated ${new Date(source.pubDate).toLocaleDateString()}` : '', source.infoHash ? `Hash ${source.infoHash.slice(0, 10)}` : '']
                               .filter(Boolean)
                               .map((label) => (
-                                <span key={`${sourceId}-${label}`} className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-white/46">
+                                <span key={`${sourceId}-${label}`} className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/46">
                                   {label}
                                 </span>
                               ))}
@@ -4030,19 +4347,21 @@ export default function DesktopWatch() {
                 })}
               </div>
             ) : (
-              <div className="rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.05))] p-8 text-center text-white/62">
-                <p className="text-lg font-black text-white">{sourceQuality === 'auto' ? 'No playable source found' : `No ${sourceQualityLabel(sourceQuality)} source found`}</p>
+              <div className="rounded-xl border border-white/10 bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.025)_48%,rgba(244,63,94,0.05))] p-8 text-center text-white/62">
+                <p className="text-lg font-semibold text-white">{sourcesError ? 'Playback preparation was interrupted' : sourceQuality === 'auto' ? 'This episode is not playable yet' : `${sourceQualityLabel(sourceQuality)} is unavailable`}</p>
                 <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/50">
-                  {sourceQuality === 'auto'
-                    ? 'No confident title-compatible sources were found for this anime and episode. Try switching audio mode, using Broad, or opening manual source search.'
-                    : 'This episode has title-compatible sources in other qualities. Switch back to Auto or pick another quality to keep browsing.'}
+                  {sourcesError
+                    ? 'The connection was interrupted before playback could be prepared. Retry to continue.'
+                    : sourceQuality === 'auto'
+                    ? 'No compatible stream is ready for this episode. Try another audio mode, expand matching, or review playback options.'
+                    : 'This episode may be available in another quality. Switch to Auto or select a different quality.'}
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-3">
                   {sourceQuality !== 'auto' ? (
                     <button
                       type="button"
                       onClick={() => setSourceQuality('auto')}
-                      className="inline-flex h-11 items-center rounded-xl bg-white px-5 text-sm font-black text-black shadow-lg shadow-white/8 transition-colors hover:bg-white/90"
+                      className="inline-flex h-11 items-center rounded-xl bg-white px-5 text-sm font-semibold text-black shadow-none shadow-white/8 transition-colors hover:bg-white/90"
                     >
                       Show Auto
                     </button>
@@ -4050,19 +4369,21 @@ export default function DesktopWatch() {
                   <button
                     type="button"
                     onClick={() => void refetchSources()}
-                    className="inline-flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-black text-white shadow-lg shadow-primary/18 transition-colors hover:bg-primary/90"
+                    className="inline-flex h-11 items-center rounded-xl bg-primary px-5 text-sm font-semibold text-white shadow-none shadow-primary/18 transition-colors hover:bg-primary/90"
                   >
                     Retry
                   </button>
                   <Link
                     to={`/nyaa?q=${encodeURIComponent(anime.title || '')}`}
-                    className="inline-flex h-11 items-center rounded-xl border border-white/10 bg-white/[0.06] px-5 text-sm font-black text-white transition-colors hover:border-white/18 hover:bg-white/[0.09]"
+                    className="inline-flex h-11 items-center rounded-xl border border-white/10 bg-white/[0.06] px-5 text-sm font-semibold text-white transition-colors hover:border-white/18 hover:bg-white/[0.09]"
                   >
-                    Open Sources Search
+                    Playback Options
                   </Link>
                 </div>
               </div>
             )}
+              </div>
+            </details>
           </section>
         </main>
       </div>
@@ -4111,8 +4432,11 @@ function clampNumber(value: number, min: number, max: number) {
 }
 
 function playbackStageMeta(playbackProgress?: DesktopPlaybackProgress | null): PlaybackStageView {
-  const rawProgress = Number(playbackProgress?.progress || 0);
-  const message = playbackProgress?.message?.trim();
+  const rawProgress = Number(playbackProgress?.buffer_percent ?? 0);
+  const rawMessage = playbackProgress?.message?.trim();
+  const message = rawMessage && !/provider|torrent|magnet|metadata|info\s*hash|tracker|dht|peer|seed/i.test(rawMessage)
+    ? rawMessage
+    : undefined;
   switch (playbackProgress?.state) {
     case 'ready':
       return {
@@ -4132,11 +4456,11 @@ function playbackStageMeta(playbackProgress?: DesktopPlaybackProgress | null): P
       };
     case 'connecting':
       return {
-        headline: 'Connecting peers',
-        detail: message || 'Peers are responding. StreamNyaa is building the first playback buffer.',
+        headline: 'Connecting stream',
+        detail: message || 'The connection is ready. StreamNyaa is building the first playback buffer.',
         progress: rawProgress > 0 ? clampNumber(rawProgress, 28, 54) : 42,
         step: 2,
-        status: 'Peers',
+        status: 'Connecting',
       };
     case 'stopped':
       return {
@@ -4149,10 +4473,10 @@ function playbackStageMeta(playbackProgress?: DesktopPlaybackProgress | null): P
     default:
       return {
         headline: 'Preparing stream',
-        detail: message || 'Reading torrent metadata and waiting for the first peers.',
+        detail: message || 'Preparing the episode and checking playback availability.',
         progress: rawProgress > 0 ? clampNumber(rawProgress, 10, 28) : 18,
         step: 1,
-        status: 'Metadata',
+        status: 'Preparing',
       };
   }
 }

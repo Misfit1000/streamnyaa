@@ -1,3 +1,4 @@
+import DesktopBookmarkButton from './DesktopBookmarkButton';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -9,6 +10,7 @@ import { isDesktopApp } from '../lib/desktop';
 import { animeIdentity } from '../lib/animeIdentity';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 import { preloadDesktopRoute } from '../lib/desktopRoutePreload';
+import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 
 interface AnimeCardProps {
   anime: any;
@@ -53,6 +55,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   const prefetchAnime = () => {
     if (desktop) void preloadDesktopRoute(cardPath);
     if (desktop) {
+      primeDesktopWatchSnapshot(cardPath, anime);
       const [routePath, routeSearch = ''] = cardPath.split('?');
       const desktopRouteId = routePath.split('/').filter(Boolean).pop() || routeId;
       const params = new URLSearchParams(routeSearch);
@@ -91,10 +94,11 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   };
 
   return (
-    <Link
+    <div className="relative"><Link
       to={cardPath}
       onMouseEnter={prefetchAnime}
       onFocus={prefetchAnime}
+      onPointerDown={prefetchAnime}
       className="sn-card-hover group relative block w-full rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
     >
       <div className="sn-poster-card relative aspect-[2/3]">
@@ -124,7 +128,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           </div>
         )}
 
-        <div className="absolute top-2 left-2 z-30 flex gap-1 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100">
+        {!desktop && <div className="absolute top-2 left-2 z-30 flex gap-1 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100">
           <button
             onClick={handleLikeToggle}
             className="sn-icon-action h-8 min-h-0 w-8 min-w-0 rounded-lg p-0 text-white/82"
@@ -137,7 +141,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           >
             {inList ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Plus className="h-3.5 w-3.5" />}
           </button>
-        </div>
+        </div>}
 
         <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-end bg-[linear-gradient(0deg,rgba(7,8,12,0.88),rgba(7,8,12,0.20)_48%,transparent)] p-3">
           <div className="mb-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold text-white">
@@ -156,6 +160,6 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" /></svg>
         </div>
       </div>
-    </Link>
+    </Link>{desktop && <DesktopBookmarkButton anime={anime} className="absolute right-3 top-3 z-30" />}</div>
   );
 }

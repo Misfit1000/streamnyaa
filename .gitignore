@@ -2,6 +2,7 @@ node_modules/
 build/
 dist/
 coverage/
+.validation/
 target/
 desktop/src-tauri/target/
 desktop/src-tauri/bin/*

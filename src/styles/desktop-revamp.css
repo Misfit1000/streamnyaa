@@ -1,0 +1,30 @@
+/* Every visual override is opt-in. Classic removes this entire layer. */
+html[data-desktop-design="revamped"] { --desk-paper: #ffffff; }
+html[data-desktop-design="revamped"] .sn-page h1 { color: var(--desk-paper); letter-spacing: -.045em; }
+html[data-desktop-design="revamped"] .sn-hero-panel { border-radius: 4px 16px 16px 4px; border-left: 3px solid #e11d48; background: linear-gradient(105deg,#180910,#08080b 70%); box-shadow:none; }
+html[data-desktop-design="revamped"] .sn-glass-panel { background:#101014; border-color:#ffffff26; box-shadow:none; }
+html[data-desktop-design="revamped"] .sn-primary-action { background:#d30b35; border-radius:7px; }
+html[data-desktop-design="revamped"] .sn-secondary-action { border:1px solid #ffffff1c; border-radius:7px; }
+html[data-desktop-design="revamped"] .sn-page h2 { letter-spacing:-.025em; }
+html[data-desktop-design="revamped"] .sn-spotlight { border-radius:6px 18px 18px 6px; border-left:3px solid #e11d48; }
+html[data-desktop-design="revamped"] :is(button,a,input,select,summary):focus-visible { outline:2px solid #f29aad; outline-offset:3px; }
+.sn-command-dialog { width:min(680px,calc(100vw - 32px)); max-height:80vh; padding:0; border:1px solid #ffffff24; border-radius:14px; background:#151419; color:#fff; box-shadow:0 24px 90px #0009; }
+.sn-command-dialog::backdrop { background:#050508ba; }
+.sn-command-row { display:flex; align-items:center; width:100%; gap:14px; text-align:left; padding:14px 18px; border-top:1px solid #ffffff09; }
+.sn-command-row:hover,.sn-command-row:focus { background:#ffffff0b; }
+.sn-session-strip { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; padding:18px 0; border-bottom:1px solid #ffffff16; }
+.sn-settings-results a { display:block; padding:10px 14px; border-radius:6px; }
+.sn-settings-results a:hover { background:#ffffff0a; }
+@media(prefers-reduced-motion:reduce){html[data-desktop-design="revamped"] * { animation:none!important; transition:none!important; scroll-behavior:auto!important; }}
+
+.sn-bookmark-button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-width:36px; min-height:36px; padding:8px; border:1px solid #ffffff36; border-radius:9px; background:#101014ed; color:#fff; transition:background .15s,border-color .15s; }
+.sn-bookmark-button:hover { background:#292930; border-color:#ffffff80; }
+.sn-bookmark-button[aria-pressed="true"] { color:#ff4267; border-color:#f43f5e80; }
+html[data-desktop-design="revamped"] :is(.text-white\/40,.text-white\/45,.text-white\/48,.text-white\/50,.text-white\/55,.text-white\/58,.text-white\/60,.text-white\/65) { color:#c4c4ce; }
+html[data-desktop-design="revamped"] .sn-primary-action:hover { background:#f01545; }
+.sn-spotlight-frame { position:absolute; inset:0; }
+
+@media (hover:hover) and (pointer:fine) {
+ .sn-bookmark-button:not(.w-full) { opacity:0; transition:opacity .18s,background .15s; }
+ *:hover > .sn-bookmark-button,.sn-bookmark-button:focus-visible,*:focus-within > .sn-bookmark-button { opacity:1; }
+}

@@ -179,6 +179,51 @@ select:focus-visible {
     #060607;
 }
 
+/* WebView2 can corrupt clipped media layers when a backdrop-filter is composed
+   over animated images. Keep media surfaces isolated and use their opaque
+   gradients instead of sampling the window behind them. */
+.desktop-app-shell .sn-hero-panel,
+.desktop-app-shell .sn-poster-card,
+.desktop-app-shell .sn-landscape-card {
+  isolation: isolate;
+  contain: paint;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.desktop-app-shell .sn-poster-card [class*='backdrop-blur'],
+.desktop-app-shell .sn-landscape-card [class*='backdrop-blur'],
+.desktop-app-shell .sn-hero-panel [class*='backdrop-blur'] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Explore grids stay on one stable WebView2 paint layer. Animating clipped
+   poster descendants can produce diagonal blank wedges on some Windows GPUs. */
+.desktop-app-shell .sn-explore-card,
+.desktop-app-shell .sn-explore-poster,
+.desktop-app-shell .sn-explore-poster img {
+  transform: none;
+}
+
+.desktop-app-shell .sn-explore-poster {
+  contain: layout paint;
+  background: #0b0b0d;
+}
+
+/* Apply the same stable paint path to Home, Library, and related poster
+   surfaces. WebView2 can otherwise leave diagonal unpainted wedges while an
+   image or its clipped parent is transformed. Hover feedback remains in the
+   border and shadow instead of moving the media layer. */
+.desktop-app-shell .sn-poster-card img,
+.desktop-app-shell .sn-landscape-card img {
+  transform: none !important;
+}
+
+.desktop-app-shell .sn-card-hover:hover {
+  transform: none;
+}
+
 .sn-primary-action,
 .sn-secondary-action,
 .sn-ghost-action,
@@ -530,4 +575,67 @@ select:focus-visible {
 
 .hide-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Desktop streaming design tokens. Keep stable, non-transformed media layers
+   for WebView2, and reserve accent color for actions/selection/progress. */
+.desktop-app-shell {
+  --sn-bg: #080809;
+  --sn-surface: #111114;
+  --sn-surface-strong: #1b1b20;
+  --sn-border: rgba(255,255,255,.08);
+  --sn-muted: #a5a5ae;
+  --sn-radius-card: 12px;
+  --sn-radius-control: 8px;
+  background: var(--sn-bg);
+  color: #f2f2f4;
+}
+.desktop-app-shell :is(.sn-glass-panel,.sn-glass-card,.sn-empty-state,.desktop-premium-surface,.desktop-glass-panel) {
+  background: var(--sn-surface);
+  border-radius: var(--sn-radius-card);
+  border-color: var(--sn-border);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.desktop-app-shell .sn-sidebar-panel { background: #0d0d10; box-shadow: none; }
+.desktop-app-shell .sn-topbar { background: #0d0d10; box-shadow: none; backdrop-filter: none; }
+.desktop-app-shell :is(.sn-primary-action,.sn-secondary-action,.sn-ghost-action,.sn-icon-action,.sn-category-chip) {
+  border-radius: var(--sn-radius-control);
+  font-weight: 600;
+  box-shadow: none;
+  transform: none;
+}
+.desktop-app-shell .sn-primary-action { background: #b3122d; }
+.desktop-app-shell .sn-primary-action:hover { background: #cc1738; }
+.desktop-app-shell :is(.sn-secondary-action,.sn-ghost-action,.sn-icon-action,.sn-category-chip) { background: #202025; }
+.desktop-app-shell :is(.sn-secondary-action,.sn-ghost-action,.sn-icon-action,.sn-category-chip):hover { background: #2c2c33; }
+.desktop-app-shell .sn-page { padding: clamp(18px, 2vw, 32px); }
+.sn-spotlight { position: relative; min-height: 280px; overflow: hidden; isolation: isolate; border-radius: 12px; background: #131318; }
+.sn-spotlight-art { position: absolute; inset: 0 0 0 auto; width: 68%; height: 100%; object-fit: cover; object-position: center; }
+.sn-spotlight-shade { position: absolute; inset: 0; background: linear-gradient(90deg,#131318 10%,rgba(19,19,24,.94) 32%,rgba(19,19,24,.4) 65%,rgba(19,19,24,.06)); }
+.sn-spotlight-copy { position: relative; width: min(68%, 740px); padding: clamp(24px, 3vw, 40px); }
+.sn-watch-page { background: var(--sn-bg); }
+.sn-watch-feature { margin: 24px 24px 0; }
+.sn-watch-layout { grid-template-columns: minmax(220px,280px) minmax(0,1fr); }
+.sn-watch-layout > aside { align-self: start; }
+.sn-playback-options { border: 1px solid var(--sn-border); border-radius: 12px; background: #111114; }
+.sn-playback-options > summary { list-style: none; }
+.sn-playback-options[open] .sn-details-chevron { transform: rotate(180deg); }
+.sn-playback-options > summary:focus-visible { outline: 2px solid #e43b58; outline-offset: 3px; }
+@media (max-width: 1100px) {
+  .sn-watch-layout { grid-template-columns: 220px minmax(0,1fr); gap: 18px; }
+  .sn-spotlight-copy { width: 76%; }
+}
+@media (max-width: 720px) {
+  .sn-watch-layout { grid-template-columns: minmax(0,1fr); }
+  .sn-spotlight-copy { width: 100%; }
+  .sn-spotlight-shade { background: rgba(12,12,15,.8); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .desktop-app-shell *, .desktop-app-shell *::before, .desktop-app-shell *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }

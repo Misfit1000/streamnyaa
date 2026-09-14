@@ -5,6 +5,8 @@ export const DESKTOP_REMINDER_OFFSET_MINUTES = 10;
 export const DESKTOP_REMINDER_POLL_MS = 45_000;
 const DESKTOP_REMINDER_FIRE_GRACE_MS = 10 * 60 * 1000;
 const DESKTOP_REMINDERS_EVENT = 'streamnyaa.desktop.scheduleReminders.changed';
+export const DESKTOP_UPCOMING_WATCHES_KEY = 'streamnyaa.desktop.upcomingWatches.v1';
+const DESKTOP_UPCOMING_WATCHES_EVENT = 'streamnyaa.desktop.upcomingWatches.changed';
 
 export type DesktopNotificationPermission = 'granted' | 'default' | 'denied' | 'unsupported' | 'error';
 
@@ -19,6 +21,161 @@ export type DesktopScheduleReminder = {
   firedAt?: number;
   delivery: 'system';
 };
+
+export type DesktopUpcomingAnimeWatch = {
+  id: string;
+  animeId?: string;
+  anilistId?: string;
+  malId?: string;
+  title: string;
+  createdAt: number;
+  airingAt?: number;
+  episode?: number;
+};
+
+function upcomingWatchId(anime: any) {
+  const animeId = String(anime?.anilist_id || anime?.id || anime?.mal_id || anime?.title || '').trim();
+  return animeId ? `upcoming:${animeId}` : '';
+}
+
+function normalizeUpcomingWatch(value: any): DesktopUpcomingAnimeWatch | null {
+  const id = String(value?.id || '').trim();
+  const title = String(value?.title || '').trim();
+  if (!id || !title) return null;
+  const airingAt = Number(value?.airingAt || 0);
+  const episode = Number(value?.episode || 0);
+  return {
+    id,
+    animeId: String(value?.animeId || '').trim() || undefined,
+    anilistId: String(value?.anilistId || '').trim() || undefined,
+    malId: String(value?.malId || '').trim() || undefined,
+    title,
+    createdAt: Number.isFinite(Number(value?.createdAt)) ? Number(value.createdAt) : Date.now(),
+    airingAt: Number.isFinite(airingAt) && airingAt > 0 ? airingAt : undefined,
+    episode: Number.isFinite(episode) && episode > 0 ? episode : undefined,
+  };
+}
+
+export function readDesktopUpcomingAnimeWatches(): DesktopUpcomingAnimeWatch[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DESKTOP_UPCOMING_WATCHES_KEY) || '[]');
+    return Array.isArray(parsed)
+      ? parsed.map(normalizeUpcomingWatch).filter((item): item is DesktopUpcomingAnimeWatch => Boolean(item))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDesktopUpcomingAnimeWatches(watches: DesktopUpcomingAnimeWatch[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(DESKTOP_UPCOMING_WATCHES_KEY, JSON.stringify(watches));
+    window.dispatchEvent(new CustomEvent(DESKTOP_UPCOMING_WATCHES_EVENT));
+  } catch {
+    // Release watches are best-effort and must not block navigation.
+  }
+}
+
+export function subscribeDesktopUpcomingAnimeWatches(listener: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === DESKTOP_UPCOMING_WATCHES_KEY) listener();
+  };
+  window.addEventListener(DESKTOP_UPCOMING_WATCHES_EVENT, listener);
+  window.addEventListener('storage', handleStorage);
+  return () => {
+    window.removeEventListener(DESKTOP_UPCOMING_WATCHES_EVENT, listener);
+    window.removeEventListener('storage', handleStorage);
+  };
+}
+
+export function isDesktopUpcomingAnimeWatched(anime: any) {
+  const id = upcomingWatchId(anime);
+  return Boolean(id && readDesktopUpcomingAnimeWatches().some((watch) => watch.id === id));
+}
+
+export async function toggleDesktopUpcomingAnimeWatch(anime: any) {
+  const id = upcomingWatchId(anime);
+  const title = String(anime?.title_english || anime?.title || anime?.title_romaji || 'Upcoming anime').trim();
+  if (!id) return { saved: false, removed: false, permission: 'error' as DesktopNotificationPermission };
+  const current = readDesktopUpcomingAnimeWatches();
+  if (current.some((watch) => watch.id === id)) {
+    writeDesktopUpcomingAnimeWatches(current.filter((watch) => watch.id !== id));
+    writeDesktopScheduleReminders(readDesktopScheduleReminders().filter((reminder) => reminder.id !== `${id}:airing`));
+    return { saved: false, removed: true, permission: await getDesktopNotificationPermission() };
+  }
+  const permission = await requestDesktopNotificationPermission();
+  if (permission !== 'granted') return { saved: false, removed: false, permission };
+  const rawAiringAt = Number(anime?.nextAiringEpisode?.airingAt || anime?.airingAt || 0);
+  const airingAt = rawAiringAt > 1_000_000_000_000 ? rawAiringAt : rawAiringAt > 0 ? rawAiringAt * 1000 : undefined;
+  const episode = Number(anime?.nextAiringEpisode?.episode || anime?.airingEpisode || 1);
+  const next: DesktopUpcomingAnimeWatch = {
+    id,
+    animeId: String(anime?.anilist_id || anime?.id || anime?.mal_id || '').trim() || undefined,
+    anilistId: String(anime?.anilist_id || anime?.id || '').trim() || undefined,
+    malId: String(anime?.mal_id || '').trim() || undefined,
+    title,
+    createdAt: Date.now(),
+    airingAt,
+    episode: Number.isFinite(episode) && episode > 0 ? episode : 1,
+  };
+  writeDesktopUpcomingAnimeWatches([...current, next]);
+  if (airingAt) {
+    const reminders = readDesktopScheduleReminders();
+    writeDesktopScheduleReminders([
+      ...reminders.filter((reminder) => reminder.id !== `${id}:airing`),
+      {
+        id: `${id}:airing`,
+        animeId: next.animeId,
+        title,
+        episode: next.episode,
+        airingAt,
+        reminderOffsetMinutes: 0,
+        createdAt: Date.now(),
+        delivery: 'system',
+      },
+    ]);
+  }
+  return { saved: true, removed: false, permission };
+}
+
+export function resolveDesktopUpcomingAnimeWatches(scheduleItems: any[]) {
+  const current = readDesktopUpcomingAnimeWatches();
+  if (!current.length) return 0;
+  const reminders = readDesktopScheduleReminders();
+  let resolved = 0;
+  const nextWatches = current.map((watch) => {
+    if (watch.airingAt) return watch;
+    const match = scheduleItems.find((anime) => {
+      const ids = [anime?.anilist_id, anime?.id, anime?.mal_id].filter(Boolean).map(String);
+      if ([watch.animeId, watch.anilistId, watch.malId].filter(Boolean).some((id) => ids.includes(String(id)))) return true;
+      return String(anime?.title || '').trim().toLowerCase() === watch.title.toLowerCase();
+    });
+    const rawAiringAt = Number(match?.airingAt || match?.nextAiringEpisode?.airingAt || 0);
+    if (!rawAiringAt) return watch;
+    const airingAt = rawAiringAt > 1_000_000_000_000 ? rawAiringAt : rawAiringAt * 1000;
+    const episode = Number(match?.airingEpisode || match?.nextAiringEpisode?.episode || 1);
+    reminders.push({
+      id: `${watch.id}:airing`,
+      animeId: watch.animeId,
+      title: watch.title,
+      episode,
+      airingAt,
+      reminderOffsetMinutes: 0,
+      createdAt: Date.now(),
+      delivery: 'system',
+    });
+    resolved += 1;
+    return { ...watch, airingAt, episode };
+  });
+  if (resolved) {
+    writeDesktopUpcomingAnimeWatches(nextWatches);
+    writeDesktopScheduleReminders(reminders.filter((reminder, index, all) => index === all.findIndex((item) => item.id === reminder.id)));
+  }
+  return resolved;
+}
 
 function normalizeReminder(value: any): DesktopScheduleReminder | null {
   if (!value || typeof value !== 'object') return null;
@@ -136,8 +293,10 @@ export async function deliverDueDesktopReminders(now = Date.now()) {
     if (!reminderIsDue(reminder, now)) continue;
     const episodeText = reminder.episode ? `Episode ${reminder.episode}` : 'New episode';
     const shown = await sendDesktopNotification(
-      `${reminder.title} is airing soon`,
-      `${episodeText} starts in about ${reminder.reminderOffsetMinutes} minutes.`,
+      reminder.reminderOffsetMinutes > 0 ? `${reminder.title} is airing soon` : `${reminder.title} is airing now`,
+      reminder.reminderOffsetMinutes > 0
+        ? `${episodeText} starts in about ${reminder.reminderOffsetMinutes} minutes.`
+        : `${episodeText} is scheduled to begin now.`,
     );
     (shown ? delivered : failed).push(reminder.title);
     if (shown) {

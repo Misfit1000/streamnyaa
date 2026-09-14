@@ -1,7 +1,14 @@
+import {mergeCoverage,coveragePercent,type WatchedCoverage} from './desktopCoverage';
 import { animeIdentity, animeTitleKey } from './animeIdentity';
+import { clearInterruptedPlayback, markInterruptedPlayback, interruptedSourceKey } from './desktopInterruptedSession';
+import { invokeDesktopData, type DesktopRequestOptions } from './desktopRequests';
+import { readHideEpisodeSpoilers } from './desktopSpoilers';
 
 export type LocalPlaybackSource = {
+  watchedCoverage?: WatchedCoverage;
   magnet: string;
+  offlineDownloadId?: string;
+  offlineFile?: string;
   torrentUrl?: string;
   infoHash?: string;
   title: string;
@@ -13,14 +20,17 @@ export type LocalPlaybackSource = {
   image?: string;
   poster?: string;
   banner?: string;
+  bannerCandidates?: string[];
   savedAt?: number;
   progressPercent?: number;
   progressUpdatedAt?: number;
   resumeSeconds?: number;
   durationSeconds?: number;
+  completed?: boolean;
 };
 
 export type DesktopWatchProgressRecord = {
+  watchedCoverage?: WatchedCoverage;
   animeId: string | number;
   title: string;
   poster?: string;
@@ -55,11 +65,19 @@ export type DesktopPlaybackStatus = {
 };
 
 export type DesktopPlaybackProgress = {
+  watched_coverage?: WatchedCoverage;
   ok: boolean;
   torrent_id: string;
   state: string;
   message: string;
   progress?: number | null;
+  torrent_progress_percent?: number | null;
+  buffer_percent?: number | null;
+  buffered_seconds?: number | null;
+  buffering?: boolean;
+  buffer_advancing?: boolean;
+  stall_seconds?: number;
+  recovery_stage?: 'idle' | 'buffering' | 'retrying' | 'switching' | 'failed' | string;
   current_seconds?: number | null;
   duration_seconds?: number | null;
   paused?: boolean | null;
@@ -104,6 +122,7 @@ export type DesktopPlayerPreferences = {
   autoSkipIntro: boolean;
   autoSkipOutro: boolean;
   rememberSpeed: boolean;
+  seekStepSeconds: number;
   playbackSpeed: number;
   volume: number;
   muted: boolean;
@@ -126,6 +145,10 @@ export type DesktopPlayerControlStatus = {
 export type DesktopSourceApiResponse = {
   data: unknown;
   fetched_at: number;
+  cache_status?: 'memory' | 'disk' | 'network' | 'stale';
+  complete?: boolean;
+  provider?: string;
+  duration_ms?: number;
 };
 
 export type DesktopMetadataApiRequest = {
@@ -209,6 +232,7 @@ export const DEFAULT_DESKTOP_PLAYER_PREFERENCES: DesktopPlayerPreferences = {
   autoSkipIntro: false,
   autoSkipOutro: false,
   rememberSpeed: true,
+  seekStepSeconds: 10,
   playbackSpeed: 1,
   volume: 100,
   muted: false,
@@ -272,7 +296,19 @@ export function subscribeDesktopWatchProgress(listener: () => void) {
 
 export type DesktopPlayerNextEpisodeEvent = {
   reason?: 'manual' | 'ended' | string;
+  request_id?: string;
 };
+
+export async function updateDesktopNextEpisodeStatus(requestId: string, status: 'preparing' | 'opening' | 'unavailable' | 'failed' | 'idle') {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!invoke) return;
+  return invoke('control_local_player', { request: { action: 'next_episode_status', key: requestId, text: status } });
+}
+
+export async function cancelDesktopNextEpisodeStartup() {
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (invoke) await invoke('cancel_pending_next_episode');
+}
 
 export type DesktopPlayerAutoNextChangedEvent = {
   enabled?: boolean;
@@ -312,6 +348,8 @@ export type DesktopPlayerRecoveryRequestEvent = {
 
 export type DesktopOAuthCallbackEvent = {
   url?: string;
+  action?: 'login' | 'recovery' | 'confirmation';
+  next?: string;
   error?: string;
 };
 
@@ -369,7 +407,25 @@ function normalizedEpisodeNumber(value: unknown) {
   return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
 }
 
+function watchProgressMatchesSource(
+  record: Partial<DesktopWatchProgressRecord>,
+  source: Partial<LocalPlaybackSource>,
+) {
+  const sourceEpisode = normalizedEpisodeNumber(source.episode);
+  const recordEpisode = normalizedEpisodeNumber(record.episode);
+  if (!sourceEpisode || sourceEpisode !== recordEpisode) return false;
+
+  const recordId = String(record.animeId || '').trim();
+  const sourceId = String(source.animeId || '').trim();
+  if (recordId && sourceId && recordId === sourceId) return true;
+
+  const recordTitle = animeTitleKey(record.title || '');
+  const sourceTitle = animeTitleKey(source.animeTitle || source.title || '');
+  return Boolean(recordTitle && sourceTitle && recordTitle === sourceTitle);
+}
+
 function playbackProgressPercent(source: Partial<LocalPlaybackSource>) {
+  if(source.watchedCoverage)return coveragePercent(source.watchedCoverage,source.durationSeconds || 0);
   const explicitPercent = Number(source.progressPercent || 0);
   if (Number.isFinite(explicitPercent) && explicitPercent > 0) {
     return Math.max(0, Math.min(100, explicitPercent));
@@ -383,6 +439,7 @@ function playbackProgressPercent(source: Partial<LocalPlaybackSource>) {
 }
 
 function isPlaybackEntryComplete(source: Partial<LocalPlaybackSource>) {
+  if(source.watchedCoverage)return coveragePercent(source.watchedCoverage,source.durationSeconds || 0)>=COMPLETION_PERCENT_THRESHOLD;
   const percent = playbackProgressPercent(source);
   const duration = Number(source.durationSeconds || 0);
   const resume = Number(source.resumeSeconds || 0);
@@ -408,9 +465,11 @@ function watchProgressFromSource(source: Partial<LocalPlaybackSource>): DesktopW
     poster: source.poster || source.image || source.banner,
     episode: source.episode || 1,
     positionSeconds,
+    watchedCoverage:source.watchedCoverage,
     durationSeconds: durationSeconds || undefined,
     progressPercent: playbackProgressPercent(source),
     updatedAt: Number(source.progressUpdatedAt || source.savedAt || Date.now()),
+    completed: source.completed ?? isPlaybackEntryComplete(source),
   };
 }
 
@@ -543,20 +602,22 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
         ? undefined
         : Math.max(0, Math.min(100, Number(record.progressPercent || 0))),
       updatedAt: record.updatedAt || Date.now(),
+      completed: record.completed ?? isPlaybackEntryComplete({
+        progressPercent: record.progressPercent,
+        resumeSeconds: record.positionSeconds,
+        durationSeconds: record.durationSeconds,
+      }),
     };
     const key = watchProgressKey(normalized);
     const current = loadDesktopWatchProgress();
     const existing = current.find((item) => watchProgressKey(item) === key);
-    if (existing && Number(existing.updatedAt || 0) > normalized.updatedAt) {
-      return;
-    }
-    if (
-      existing
-      && Math.abs(Number(existing.positionSeconds || 0) - normalized.positionSeconds) < 5
-      && Math.abs(Number(existing.progressPercent || 0) - Number(normalized.progressPercent || 0)) < 1
-    ) {
-      return;
-    }
+    if ((existing?.watchedCoverage || normalized.watchedCoverage) && !(record.completed && record.positionSeconds===0 && record.progressPercent===100)) {
+      normalized.watchedCoverage=mergeCoverage(existing?.watchedCoverage,normalized.watchedCoverage,normalized.durationSeconds || existing?.durationSeconds || 0,existing?.watchedCoverage?0:existing?.positionSeconds || 0);
+      normalized.positionSeconds=normalized.watchedCoverage.furthest;
+      normalized.progressPercent=coveragePercent(normalized.watchedCoverage,normalized.durationSeconds || existing?.durationSeconds || 0);
+      normalized.completed=normalized.progressPercent>=92;
+      normalized.updatedAt=Math.max(normalized.updatedAt,existing?.updatedAt || 0);
+    } else if (existing && existing.updatedAt>normalized.updatedAt) return;
     const next = [
       normalized,
       ...current.filter((item) => watchProgressKey(item) !== key),
@@ -572,7 +633,11 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
 
 export function replaceDesktopWatchProgress(records: DesktopWatchProgressRecord[]) {
   try {
-    const next = records
+    const local=loadDesktopWatchProgress();
+    const next = records.map(record=>{const old=local.find(r=>watchProgressKey(r)===watchProgressKey(record));if(!old?.watchedCoverage&&!record.watchedCoverage)return record;
+      const coverage=mergeCoverage(old?.watchedCoverage,record.watchedCoverage,record.durationSeconds || old?.durationSeconds || 0,old?.watchedCoverage?0:old?.positionSeconds || 0);
+      const percent=coveragePercent(coverage,record.durationSeconds || old?.durationSeconds || 0);
+      return {...record,watchedCoverage:coverage,positionSeconds:coverage.furthest,progressPercent:percent,completed:percent>=92};})
       .filter((item): item is DesktopWatchProgressRecord => Boolean(item?.title && item?.episode))
       .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))
       .slice(0, DESKTOP_WATCH_PROGRESS_LIMIT);
@@ -585,6 +650,55 @@ export function replaceDesktopWatchProgress(records: DesktopWatchProgressRecord[
   } catch {
     // Synced progress is optional and must never block playback.
   }
+}
+
+export function findDesktopWatchProgressForSource(
+  source: Partial<LocalPlaybackSource>,
+  records = loadDesktopWatchProgress(),
+) {
+  return records
+    .filter((record) => watchProgressMatchesSource(record, source))
+    .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))[0] || null;
+}
+
+export function resolveDesktopPlaybackCheckpoint(source: Partial<LocalPlaybackSource>) {
+  const history = findLocalPlaybackHistoryItem(source);
+  const watchProgress = findDesktopWatchProgressForSource(source);
+  const candidates = [
+    source.resumeSeconds !== undefined ? {
+      positionSeconds: Math.max(0, Number(source.resumeSeconds || 0)),
+      durationSeconds: Math.max(0, Number(source.durationSeconds || 0)),
+      progressPercent: playbackProgressPercent(source),
+      updatedAt: Number(source.progressUpdatedAt || source.savedAt || 0),
+      completed: source.completed ?? isPlaybackEntryComplete(source),
+    } : null,
+    history ? {
+      positionSeconds: Math.max(0, Number(history.resumeSeconds || 0)),
+      durationSeconds: Math.max(0, Number(history.durationSeconds || 0)),
+      progressPercent: playbackProgressPercent(history),
+      updatedAt: Number(history.progressUpdatedAt || history.savedAt || 0),
+      completed: history.completed ?? isPlaybackEntryComplete(history),
+    } : null,
+    watchProgress ? {
+      positionSeconds: Math.max(0, Number(watchProgress.positionSeconds || 0)),
+      durationSeconds: Math.max(0, Number(watchProgress.durationSeconds || 0)),
+      progressPercent: playbackProgressPercent({
+        watchedCoverage:watchProgress.watchedCoverage,
+        progressPercent: watchProgress.progressPercent,
+        resumeSeconds: watchProgress.positionSeconds,
+        durationSeconds: watchProgress.durationSeconds,
+      }),
+      updatedAt: Number(watchProgress.updatedAt || 0),
+      completed: watchProgress.completed ?? isPlaybackEntryComplete({
+        watchedCoverage:watchProgress.watchedCoverage,
+        progressPercent: watchProgress.progressPercent,
+        resumeSeconds: watchProgress.positionSeconds,
+        durationSeconds: watchProgress.durationSeconds,
+      }),
+    } : null,
+  ].filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
+
+  return candidates.sort((left, right) => right.positionSeconds - left.positionSeconds || right.updatedAt - left.updatedAt)[0] || null;
 }
 
 function playbackHistoryMatchesAnime(source: Partial<LocalPlaybackSource>, anime: any) {
@@ -659,6 +773,13 @@ export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
   try {
     const normalized = { ...source, savedAt: source.savedAt || Date.now() };
     const key = playbackHistoryKey(normalized);
+    const previous=loadLocalPlaybackHistory().find(item=>playbackHistoryKey(item)===key);
+    if(previous?.watchedCoverage || normalized.watchedCoverage){
+      normalized.watchedCoverage=mergeCoverage(previous?.watchedCoverage,normalized.watchedCoverage,normalized.durationSeconds || previous?.durationSeconds || 0,previous?.watchedCoverage?0:previous?.resumeSeconds || 0);
+      normalized.resumeSeconds=normalized.watchedCoverage.furthest;
+      normalized.progressPercent=coveragePercent(normalized.watchedCoverage,normalized.durationSeconds || previous?.durationSeconds || 0);
+      normalized.completed=normalized.progressPercent>=92;
+    }
     const next = [
       normalized,
       ...loadLocalPlaybackHistory().filter((item) => playbackHistoryKey(item) !== key),
@@ -674,12 +795,16 @@ export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
 
 export async function openLocalSourceNow(source: LocalPlaybackSource, settings = loadDesktopPlaybackSettings()) {
   const existing = findLocalPlaybackHistoryItem(source);
+  const checkpoint = resolveDesktopPlaybackCheckpoint(source);
   const preparedSource: LocalPlaybackSource = {
     ...(existing || {}),
     ...source,
-    progressPercent: source.progressPercent ?? existing?.progressPercent ?? 0,
-    resumeSeconds: source.resumeSeconds ?? existing?.resumeSeconds ?? 0,
-    durationSeconds: source.durationSeconds ?? existing?.durationSeconds ?? 0,
+    watchedCoverage:existing?.watchedCoverage || source.watchedCoverage,
+    progressPercent: checkpoint?.progressPercent ?? 0,
+    progressUpdatedAt: checkpoint?.updatedAt || source.progressUpdatedAt || existing?.progressUpdatedAt,
+    resumeSeconds: checkpoint?.positionSeconds ?? 0,
+    durationSeconds: checkpoint?.durationSeconds ?? 0,
+    completed: checkpoint?.completed ?? false,
   };
   const result = await startLocalPlaybackWithSettings(preparedSource, settings);
   if (result?.ok) {
@@ -697,6 +822,7 @@ export async function openLocalSourceNow(source: LocalPlaybackSource, settings =
 export function updateLocalPlaybackHistoryProgress(
   source: Partial<LocalPlaybackSource>,
   progress: {
+    watchedCoverage?: WatchedCoverage;
     currentSeconds?: number | null;
     durationSeconds?: number | null;
     progressPercent?: number | null;
@@ -705,28 +831,12 @@ export function updateLocalPlaybackHistoryProgress(
   const existing = findLocalPlaybackHistoryItem(source);
   if (!existing) return;
 
-  const currentSeconds = Math.max(0, Number(progress.currentSeconds || 0));
-  const durationSeconds = Math.max(0, Number(progress.durationSeconds || existing.durationSeconds || 0));
-  const percent = Number.isFinite(Number(progress.progressPercent))
-    ? Math.max(0, Math.min(100, Number(progress.progressPercent || 0)))
-    : durationSeconds > 0
-      ? Math.max(0, Math.min(100, (currentSeconds / durationSeconds) * 100))
-      : Number(existing.progressPercent || 0);
-
-  const priorSeconds = Math.max(0, Number(existing.resumeSeconds || 0));
-  const priorPercent = Math.max(0, Number(existing.progressPercent || 0));
-  if (Math.abs(currentSeconds - priorSeconds) < 5 && Math.abs(percent - priorPercent) < 1) {
-    return;
-  }
-
-  saveLocalPlaybackHistoryItem({
-    ...existing,
-    ...source,
-    progressPercent: percent,
-    progressUpdatedAt: Date.now(),
-    resumeSeconds: currentSeconds,
-    durationSeconds,
-  });
+  if (!Number.isFinite(progress.currentSeconds) || Number(progress.currentSeconds)<0) return;
+  const durationSeconds=Number(progress.durationSeconds || existing.durationSeconds || 0);
+  const coverage=mergeCoverage(existing.watchedCoverage,progress.watchedCoverage,durationSeconds,existing.watchedCoverage ? 0 : existing.resumeSeconds || 0);
+  const percent=coveragePercent(coverage,durationSeconds);
+  markInterruptedPlayback(existing.animeId || existing.animeTitle,existing.episode,interruptedSourceKey({...existing,...source}),coverage.furthest,durationSeconds);
+  saveLocalPlaybackHistoryItem({...existing,...source,watchedCoverage:coverage,resumeSeconds:coverage.furthest,durationSeconds,progressPercent:percent,completed:percent>=92,progressUpdatedAt:Date.now()});
 }
 
 export function formatPlaybackTime(seconds?: number | null) {
@@ -750,6 +860,8 @@ const SAFE_DESKTOP_BACKUP_KEYS = [
   DESKTOP_WATCH_PROGRESS_KEY,
   DESKTOP_WATCHED_SERIES_KEY,
   'streamnyaa.desktop.scheduleReminders.v1',
+  'streamnyaa.desktop.schedule-update-preferences.v1',
+  'streamnyaa.desktop.upcomingWatches.v1',
 ] as const;
 
 export function exportDesktopSettingsBackup() {
@@ -848,6 +960,7 @@ function normalizeDesktopPlayerPreferences(value: DesktopPlayerPreferencesPatch 
     autoSkipIntro: asBooleanPreference(value.autoSkipIntro, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoSkipIntro),
     autoSkipOutro: asBooleanPreference(value.autoSkipOutro, DEFAULT_DESKTOP_PLAYER_PREFERENCES.autoSkipOutro),
     rememberSpeed: asBooleanPreference(value.rememberSpeed, DEFAULT_DESKTOP_PLAYER_PREFERENCES.rememberSpeed),
+    seekStepSeconds: Math.round(asNumberPreference(value.seekStepSeconds, 10, 5, 60) / 5) * 5,
     playbackSpeed: asNumberPreference(value.playbackSpeed, DEFAULT_DESKTOP_PLAYER_PREFERENCES.playbackSpeed, 0.25, 4),
     volume: asNumberPreference(value.volume, DEFAULT_DESKTOP_PLAYER_PREFERENCES.volume, 0, 130),
     muted: asBooleanPreference(value.muted, DEFAULT_DESKTOP_PLAYER_PREFERENCES.muted),
@@ -916,6 +1029,8 @@ export function saveDesktopPlayerSetting(key: string, value: unknown) {
     case 'rememberSpeed':
     case 'remember_speed':
       return saveDesktopPlayerPreferences({ rememberSpeed: asBooleanPreference(value, current.rememberSpeed) });
+    case 'seekStepSeconds':
+      return saveDesktopPlayerPreferences({ seekStepSeconds: Math.round(asNumberPreference(value, 10, 5, 60) / 5) * 5 });
     case 'playbackSpeed':
     case 'playback_speed':
       return saveDesktopPlayerPreferences({ playbackSpeed: asNumberPreference(value, current.playbackSpeed, 0.25, 4) });
@@ -1052,21 +1167,59 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
     throw new Error('Desktop streaming is only available inside the StreamNyaa desktop app.');
   }
 
-  return invoke<DesktopPlaybackStatus>('play_local_torrent', {
-    request: {
-      magnet: source.magnet,
-      torrent_url: source.torrentUrl || '',
-      info_hash: source.infoHash || '',
-      title: source.title,
-      anime_title: source.animeTitle || '',
-      episode: source.episode ? String(source.episode) : '',
-      size: source.size || '',
-      poster: source.poster || source.image || '',
-      banner: source.banner || '',
-      resume_seconds: Number(source.resumeSeconds || 0),
-      settings,
-    },
-  });
+  try {
+    if (source.offlineDownloadId && source.offlineFile) {
+      await invoke<void>('play_offline_file', { id: source.offlineDownloadId, file: source.offlineFile, checkpointSeconds: Number(source.resumeSeconds || 0), resume: Number(source.resumeSeconds || 0) > 0 && !source.completed });
+      return { ok: true, state: 'offline', message: 'Offline video opened.', title: source.animeTitle || source.title } as DesktopPlaybackStatus;
+    }
+    const result = await invoke<DesktopPlaybackStatus>('play_local_torrent', {
+      request: {
+        magnet: source.magnet,
+        torrent_url: source.torrentUrl || '',
+        info_hash: source.infoHash || '',
+        title: source.title,
+        anime_title: source.animeTitle || '',
+        episode: source.episode ? String(source.episode) : '',
+        size: source.size || '',
+        poster: source.poster || source.image || '',
+        banner: readHideEpisodeSpoilers() ? '' : source.banner || '',
+        banner_candidates: readHideEpisodeSpoilers() ? [] : Array.isArray(source.bannerCandidates) ? source.bannerCandidates : [],
+        resume_seconds: Number(source.resumeSeconds || 0),
+        settings,
+      },
+    });
+    if (!result?.ok && result?.message) {
+      return { ...result, message: describeDesktopPlaybackError(result.message) };
+    }
+    return result;
+  } catch (error) {
+    throw new Error(describeDesktopPlaybackError(error));
+  }
+}
+
+export function describeDesktopPlaybackError(error: unknown) {
+  const raw = String(
+    error instanceof Error
+      ? error.message
+      : (error as { message?: unknown })?.message || error || '',
+  ).replace(/^Playback task could not finish:\s*/i, '').trim();
+  if (!raw) return 'Playback could not start. Try another verified release.';
+  if (/no peers?|zero peers?|waiting for the first peers?|did not respond/i.test(raw)) {
+    return 'No peers responded for this release. StreamNyaa will try another verified source.';
+  }
+  if (/metadata|no matching playable|expose(?:d)? a playable|episode file/i.test(raw)) {
+    return 'Torrent metadata did not expose the requested playable episode. Try another release.';
+  }
+  if (/delivered no video data|buffer.*not advancing|stalled/i.test(raw)) {
+    return 'Peers connected, but video data stopped advancing. StreamNyaa will recover or switch sources.';
+  }
+  if (/local stream engine|torrent engine|rqbit/i.test(raw)) {
+    return `The local torrent engine could not start this release. ${raw}`;
+  }
+  if (/native player|mpv|decoder|load the stream/i.test(raw)) {
+    return `The native video player could not open this release. ${raw}`;
+  }
+  return raw;
 }
 
 export async function getDesktopRuntimeStatus(settings = loadDesktopPlaybackSettings()) {
@@ -1095,7 +1248,9 @@ export async function stopDesktopPlayback(settings = loadDesktopPlaybackSettings
     throw new Error('Stopping playback is only available inside the StreamNyaa desktop app.');
   }
 
-  return invoke<DesktopPlaybackStatus>('stop_local_playback', { settings });
+  const result = await invoke<DesktopPlaybackStatus>('stop_local_playback', { settings });
+  if (result.ok) clearInterruptedPlayback();
+  return result;
 }
 
 export async function getDesktopDiagnostics(settings = loadDesktopPlaybackSettings()) {
@@ -1112,21 +1267,21 @@ export function buildDesktopDiagnosticsReport(diagnostics: DesktopDiagnosticsSta
     return 'StreamNyaa desktop diagnostics are unavailable.';
   }
 
-  const activeSession = diagnostics.active_session
-    ? `Active session: ${diagnostics.active_session.torrent_id} (${diagnostics.active_session.session_dir}, ${diagnostics.active_session.cache_bytes} bytes${diagnostics.active_session.media_url ? `, ${diagnostics.active_session.media_url}` : ''})`
-    : 'Active session: none';
+  // Shareable reports deliberately allow-list scalar health data. Never copy
+  // raw errors, personal paths, stream URLs or account/session identifiers.
+  const safeNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  const version = /^\d+\.\d+\.\d+$/.test(diagnostics.app_version) ? diagnostics.app_version : 'unknown';
 
   return [
-    `StreamNyaa desktop v${diagnostics.app_version}`,
+    `StreamNyaa desktop v${version}`,
     `Runtime ready: ${diagnostics.runtime.ready ? 'yes' : 'no'}`,
-    `Engine path: ${diagnostics.runtime.torrent_engine_path || 'auto bundled lookup'}`,
-    `Native player path: ${diagnostics.runtime.player_path || 'auto bundled lookup'}`,
-    `Cache dir: ${diagnostics.cache.cache_dir}`,
-    `Cache usage: ${diagnostics.cache.total_bytes}/${diagnostics.cache.max_bytes}`,
-    `Cache pressure: ${diagnostics.cache.pressure}`,
-    `Logs dir: ${diagnostics.logs_dir}`,
-    activeSession,
-    diagnostics.recent_errors?.length ? `Recent error: ${diagnostics.recent_errors[0]}` : 'Recent error: none',
+    `Engine located: ${diagnostics.runtime.torrent_engine_path ? 'yes' : 'no'}`,
+    `Player located: ${diagnostics.runtime.player_path ? 'yes' : 'no'}`,
+    `Cache usage: ${safeNumber(diagnostics.cache.total_bytes)}/${safeNumber(diagnostics.cache.max_bytes)} bytes`,
+    `Active session: ${diagnostics.active_session ? 'yes' : 'no'}`,
+    `Active cache bytes: ${safeNumber(diagnostics.active_session?.cache_bytes)}`,
+    `Recorded errors: ${diagnostics.recent_errors?.length || 0}`,
+    'Privacy: paths, raw logs, account data and stream identifiers excluded.',
   ].join('\n');
 }
 
@@ -1204,6 +1359,7 @@ export async function syncDesktopPlayerPreferencesToPlayer(preferences = loadDes
   await run('autoSkipIntro', () => controlLocalPlayerPreference('autoSkipIntro', preferences.autoSkipIntro));
   await run('autoSkipOutro', () => controlLocalPlayerPreference('autoSkipOutro', preferences.autoSkipOutro));
   await run('rememberSpeed', () => controlLocalPlayerPreference('rememberSpeed', preferences.rememberSpeed));
+  await run('seekStepSeconds', () => controlLocalPlayerPreference('seekStepSeconds', preferences.seekStepSeconds));
   await run('playbackSpeed', () => controlLocalPlayerPreference('playbackSpeed', preferences.playbackSpeed));
   await run('volume', () => controlLocalPlayerPreference('volume', preferences.volume));
   await run('muted', () => controlLocalPlayerPreference('muted', preferences.muted));
@@ -1288,11 +1444,13 @@ export function desktopEpisodeWatchState(
   }
 
   const progressPercent = playbackProgressPercent({
+    watchedCoverage:match.watchedCoverage,
     progressPercent: match.progressPercent,
     resumeSeconds: match.positionSeconds,
     durationSeconds: match.durationSeconds,
   });
   const completed = isPlaybackEntryComplete({
+    watchedCoverage:match.watchedCoverage,
     progressPercent,
     resumeSeconds: match.positionSeconds,
     durationSeconds: match.durationSeconds,
@@ -1304,6 +1462,65 @@ export function desktopEpisodeWatchState(
     positionSeconds: Number(match.positionSeconds || 0),
     updatedAt: Number(match.updatedAt || 0),
   };
+}
+
+export function setDesktopEpisodeWatched(anime: any, episode: number, watched: boolean) {
+  const normalizedEpisode = normalizedEpisodeNumber(episode);
+  if (!normalizedEpisode) return;
+
+  if (watched) {
+    const title = String(
+      (typeof anime?.title === 'string' ? anime.title : '')
+      || anime?.title_english
+      || anime?.title_romaji
+      || anime?.title?.english
+      || anime?.title?.romaji
+      || anime?.title?.native
+      || '',
+    ).trim();
+    if (!title) return;
+    saveDesktopWatchProgress({
+      animeId: animeIdentity(anime) || title,
+      title,
+      poster: anime?.images?.jpg?.large_image_url
+        || anime?.images?.webp?.large_image_url
+        || anime?.cover_image
+        || anime?.coverImage?.extraLarge
+        || anime?.coverImage?.large
+        || anime?.image,
+      episode: normalizedEpisode,
+      positionSeconds: 0,
+      progressPercent: 100,
+      updatedAt: Date.now(),
+      completed: true,
+    });
+    return;
+  }
+
+  try {
+    const nextProgress = loadDesktopWatchProgress().filter((record) => !(
+      progressRecordMatchesAnime(record, anime)
+      && normalizedEpisodeNumber(record.episode) === normalizedEpisode
+    ));
+    localStorage.setItem(DESKTOP_WATCH_PROGRESS_KEY, JSON.stringify(nextProgress));
+
+    const nextHistory = loadLocalPlaybackHistory().map((source) => {
+      if (!playbackHistoryMatchesAnime(source, anime)) return source;
+      if (normalizedEpisodeNumber(source.episode) !== normalizedEpisode) return source;
+      return {
+        ...source,
+        progressPercent: 0,
+        progressUpdatedAt: Date.now(),
+        resumeSeconds: 0,
+        completed: false,
+      };
+    });
+    localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(nextHistory));
+    emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
+    emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
+  } catch {
+    // Manual watch state is convenience data and must never affect playback.
+  }
 }
 
 export function hasDesktopWatchedSeries(anime: any, records = loadDesktopWatchProgress()) {
@@ -1334,10 +1551,19 @@ export async function beginDesktopGoogleOAuth(authorizeUrl: string) {
 export async function listenDesktopOAuthCallback(listener: (event: DesktopOAuthCallbackEvent) => void) {
   if (typeof window === 'undefined') return () => {};
   const listen = window.__TAURI__?.event?.listen;
-  if (!listen) return () => {};
-  return listen<DesktopOAuthCallbackEvent>('streamnyaa-desktop-oauth-callback', (event) => {
-    listener(event.payload || {});
+  const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if (!listen || !invoke) return () => {};
+  const takePending = () => invoke<DesktopOAuthCallbackEvent | null>('take_pending_desktop_oauth_callback');
+  const unlisten = await listen<DesktopOAuthCallbackEvent>('streamnyaa-desktop-oauth-callback', (event) => {
+    void takePending().then((pending) => {
+      if (pending?.url || pending?.error) listener(pending);
+    }).catch(() => {
+      if (event.payload?.url || event.payload?.error) listener(event.payload);
+    });
   });
+  const pending = await takePending();
+  if (pending?.url || pending?.error) queueMicrotask(() => listener(pending));
+  return unlisten;
 }
 
 export async function listenDesktopPlayerRecoveryRequest(listener: (event: DesktopPlayerRecoveryRequestEvent) => void) {
@@ -1376,15 +1602,10 @@ export async function listenDesktopPlayerReady(listener: (event: DesktopPlayerRe
   });
 }
 
-export async function fetchDesktopSourceApi(url: string) {
+export async function fetchDesktopSourceApi(url: string, options: DesktopRequestOptions = {}): Promise<DesktopSourceApiResponse> {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (invoke) {
-    try {
-      return await invoke<DesktopSourceApiResponse>('fetch_desktop_source_api', { url });
-    } catch {
-      // Fall through to the browser fetch path. Some dev or installed builds can briefly
-      // miss the bridge during startup, but source search should not leave the UI blank.
-    }
+    return invokeDesktopData<DesktopSourceApiResponse>(invoke, 'fetch_desktop_source_api', { url }, { deadlineMs: 12_000, ...options });
   }
 
   const response = await fetch(url);
@@ -1394,11 +1615,11 @@ export async function fetchDesktopSourceApi(url: string) {
   return { data: await response.json(), fetched_at: Date.now() };
 }
 
-export async function fetchDesktopMetadataApi(request: DesktopMetadataApiRequest) {
+export async function fetchDesktopMetadataApi(request: DesktopMetadataApiRequest, options: DesktopRequestOptions = {}) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
     throw new Error('Desktop metadata requests are only available inside the StreamNyaa desktop app.');
   }
 
-  return invoke<DesktopSourceApiResponse>('fetch_desktop_metadata_api', { request });
+  return invokeDesktopData<DesktopSourceApiResponse>(invoke, 'fetch_desktop_metadata_api', { request }, options);
 }
