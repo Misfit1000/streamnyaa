@@ -995,7 +995,10 @@ export function loadDesktopPlayerPreferences(): DesktopPlayerPreferences {
   }
 }
 
+let playerPreferenceSyncGeneration = 0;
+
 export function saveDesktopPlayerPreferences(next: DesktopPlayerPreferencesPatch) {
+  playerPreferenceSyncGeneration++;
   const current = loadDesktopPlayerPreferences();
   const preferences = normalizeDesktopPlayerPreferences({
     ...current,
@@ -1346,8 +1349,10 @@ export async function controlLocalPlayerPreference(key: string, value: string | 
 }
 
 export async function syncDesktopPlayerPreferencesToPlayer(preferences = loadDesktopPlayerPreferences()) {
+  const generation = ++playerPreferenceSyncGeneration;
   const failed: string[] = [];
   const run = async (key: string, task: () => Promise<unknown>) => {
+    if (generation !== playerPreferenceSyncGeneration) return;
     try {
       await task();
     } catch {

@@ -1192,6 +1192,10 @@ export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: 
       throw desktopDataError('jikan', new Error('Episode metadata response was invalid.'));
     }
     const stale = res.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' || res.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale';
+    // An empty upstream response during an outage must not erase known titles.
+    const saved = isDesktopApp() && !json.data.length ? readEpisodePage(id, page) : undefined;
+    if (saved?.data.length) return { data: saved.data, pagination: saved.pagination,
+      streamnyaa: { status: 'stale', provider: 'jikan', savedAt: saved.savedAt } };
     if (!stale) saveEpisodePage(id, page, json);
     return {
       ...json,

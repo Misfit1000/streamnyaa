@@ -29,6 +29,7 @@ local script_options = {
   settings_request_file = "",
   preferences_file = "",
   stall_test_mode = false,
+  debug_input = false,
 }
 
 options.read_options(script_options)
@@ -46,7 +47,7 @@ msg.info(
     .. tostring(script_options.preferences_file or "")
 )
 
-local DEBUG_INPUT = false
+local DEBUG_INPUT = script_options.debug_input == true
 local DEBUG_PERF = false
 local DEBUG_SUBMENU_PERF = false
 local DEBUG_SCRIPT_MESSAGES = false
@@ -348,11 +349,12 @@ local unpack_args = table.unpack or unpack
 
 function safe_commandv(...)
   local args = { ... }
-  local ok, err = pcall(function() mp.commandv(unpack_args(args)) end)
-  if not ok then
-    msg.warn("StreamNyaa player command failed: " .. tostring(err))
+  local ok, result, err = pcall(mp.commandv, unpack_args(args))
+  if not ok or result == nil or result == false then
+    msg.warn("StreamNyaa player command failed: " .. tostring(err or result))
+    return false
   end
-  return ok
+  return true
 end
 
 function safe_set_property(name, value)
@@ -360,8 +362,8 @@ function safe_set_property(name, value)
 end
 
 function safe_set_property_bool(name, value)
-  local ok, err = pcall(function() mp.set_property_bool(name, value == true) end)
-  if not ok then
+  local ok, result, err = pcall(mp.set_property_bool, name, value == true)
+  if not ok or result == nil or result == false then
     msg.warn("StreamNyaa player bool property failed: " .. tostring(err))
     return safe_set_property(name, value and "yes" or "no")
   end
@@ -370,8 +372,8 @@ end
 
 function safe_set_property_number(name, value)
   local number_value = tonumber(value) or 0
-  local ok, err = pcall(function() mp.set_property_number(name, number_value) end)
-  if not ok then
+  local ok, result, err = pcall(mp.set_property_number, name, number_value)
+  if not ok or result == nil or result == false then
     msg.warn("StreamNyaa player number property failed: " .. tostring(err))
     return safe_set_property(name, tostring(number_value))
   end
@@ -2309,6 +2311,7 @@ function request_next_episode(reason)
   ui.end_request_id = string.format("next-%d-%d", math.floor(mp.get_time() * 1000), ui.end_next_request_token)
   ui.end_next_pending = next_reason == "manual" or state.autoplay
   ui.end_status = ui.end_next_pending and "preparing" or "idle"
+  ui.end_request_deadline = ui.end_next_pending and (mp.get_time() + 30) or nil
   safe_set_property("user-data/streamnyaa/next-enabled", state.autoplay and "true" or "false")
   emit_next_request(next_reason, ui.end_request_id)
 end
@@ -2317,6 +2320,7 @@ mp.register_script_message("streamnyaa-next-episode-status", function(request_id
   if tostring(request_id or "") ~= ui.end_request_id or ui.end_request_id == "" then return end
   if status ~= "preparing" and status ~= "opening" and status ~= "unavailable" and status ~= "failed" and status ~= "idle" then return end
   ui.end_status = status
+  ui.end_request_deadline = (status == "preparing" or status == "opening") and (mp.get_time() + 30) or nil
   ui.end_next_pending = status == "preparing" or status == "opening"
   if status == "unavailable" then ui.end_focus = "end_replay" end
   draw(true, "next-episode-status")
@@ -4110,6 +4114,7 @@ function activate_region(region, mouse)
   end
 
   local id = region.id
+  debug_input("activate=" .. tostring(id))
   if id == "settings-panel" then return end
   if id ~= "settings"
     and not starts_with(id, "settings:")
@@ -4419,10 +4424,13 @@ end
 function handle_mouse_down()
   note_direct_interaction()
   local region, mouse = redraw_for_input()
+  debug_input("pointer=" .. tostring(mouse and mouse.x) .. "," .. tostring(mouse and mouse.y))
   debug_input("down target=" .. tostring(region and region.id or "none"))
   ui.dragging = nil
   clear_drag_preview()
   ui.mouse_down_region = region
+  local width, height = mp.get_osd_size()
+  ui.mouse_down_layout = { width = width, height = height, menu = ui.settings_open, submenu = ui.submenu, ended = ui.end_overlay }
   if region and region.id == "seek" then
     begin_drag("seek", mouse)
     set_seek_from_mouse(mouse, false, false)
@@ -4445,8 +4453,16 @@ function handle_mouse_up()
   else
     local down_region = ui.mouse_down_region
     -- A release over a different control cancels instead of firing that control.
-    if down_region and region and down_region.id == region.id then
-      activate_region(region, mouse)
+    local layout = ui.mouse_down_layout
+    local width, height = mp.get_osd_size()
+    local same_layout = layout and layout.width == width and layout.height == height
+      and layout.menu == ui.settings_open and layout.submenu == ui.submenu and layout.ended == ui.end_overlay
+    -- A buffering repaint can temporarily remove toolbar/skip targets. Keep
+    -- the pressed control only while the pointer and interaction layer agree.
+    local retained = down_region and not region and same_layout
+      and inside(mouse, down_region.x1, down_region.y1, down_region.x2, down_region.y2)
+    if down_region and same_layout and ((region and down_region.id == region.id) or retained) then
+      activate_region(region or down_region, mouse)
     elseif not down_region and not region then
       activate_region(nil, mouse)
     end
@@ -4454,13 +4470,22 @@ function handle_mouse_up()
   ui.dragging = nil
   clear_drag_preview()
   ui.mouse_down_region = nil
+  ui.mouse_down_layout = nil
   draw(true, "mouse-up")
 end
 
 function handle_mouse_press(event)
   local ev = type(event) == "table" and event.event or "press"
   debug_input("mouse event=" .. tostring(ev) .. " overlay=" .. tostring(ui.visible) .. " menu=" .. tostring(ui.submenu) .. " drag=" .. tostring(ui.dragging or "none"))
+  if (type(event) == "table" and event.canceled) or ev == "cancel" then
+    ui.dragging = nil
+    clear_drag_preview()
+    ui.mouse_down_region = nil
+    ui.mouse_down_layout = nil
+    return
+  end
   if ev == "down" then
+    show_overlay()
     handle_mouse_down()
   elseif ev == "up" then
     handle_mouse_up()
@@ -4470,15 +4495,7 @@ function handle_mouse_press(event)
     activate_region(region, mouse)
     draw(true, "mouse-press")
   elseif ev == "double" then
-    note_direct_interaction()
-    show_overlay()
-    ui.settings_open = false
-    ui.submenu = "main"
-    ui.dragging = nil
-    clear_drag_preview()
-    ui.mouse_down_region = nil
-    safe_commandv("cycle", "fullscreen")
-    draw(true, "mouse-double")
+    handle_double_click({ event = "press" })
   end
 end
 
@@ -4773,16 +4790,34 @@ mp.observe_property("track-list", "native", function(_, value)
 end)
 
 bind("MBTN_LEFT", "streamnyaa-click", handle_mouse_press)
-function handle_double_click()
-  local region = redraw_for_input()
-  if ui.settings_open or ui.dragging or region then return end
+function handle_double_click(event)
+  local ev = type(event) == "table" and event.event or "press"
+  debug_input("double event=" .. tostring(ev))
+  if type(event) == "table" and event.canceled then
+    ui.double_click_pending = nil
+    handle_mouse_press(event)
+    return
+  end
+  if ev == "down" then
+    local region = redraw_for_input()
+    ui.double_click_pending = (region or ui.settings_open) and "control" or "video"
+    if ui.double_click_pending == "control" then handle_mouse_down() end
+    return
+  end
+  if ev ~= "up" and ev ~= "press" then return end
+  local pending = ui.double_click_pending
+  ui.double_click_pending = nil
+  if pending == "control" then handle_mouse_up(); return end
+  local region, mouse = redraw_for_input()
+  if region then
+    if ev == "press" then activate_region(region, mouse); draw(true, "double-control") end
+    return
+  end
+  if ui.settings_open or ui.dragging or (ev == "up" and pending ~= "video") then return end
   note_direct_interaction()
   show_overlay()
-  ui.settings_open = false
-  ui.submenu = "main"
-  ui.dragging = nil
-  clear_drag_preview()
   ui.mouse_down_region = nil
+  ui.mouse_down_layout = nil
   safe_commandv("cycle", "fullscreen")
   draw(true, "double-click-binding")
 end
@@ -5247,3 +5282,17 @@ mp.add_periodic_timer(0.5, function()
  coverage_sample=playing and {pos=pos,time=now,speed=speed} or nil
  mp.set_property("user-data/streamnyaa/watched-coverage",require('mp.utils').format_json(coverage))
 end)
+
+-- A missing application response must not leave Next permanently disabled.
+function check_next_request_timeout()
+  if ui.end_next_pending and ui.end_request_deadline and mp.get_time() >= ui.end_request_deadline then
+    emit_next_request("cancel", ui.end_request_id)
+    ui.end_request_id = ""
+    ui.end_request_deadline = nil
+    ui.end_next_pending = false
+    ui.end_status = "failed"
+    settings_notice("Next episode did not respond. Select Next to retry.")
+    draw(true, "next-request-timeout")
+  end
+end
+mp.add_periodic_timer(1, check_next_request_timeout)

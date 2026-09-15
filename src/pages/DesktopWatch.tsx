@@ -1,3 +1,4 @@
+import DesktopEpisodeStatus from '../components/DesktopEpisodeStatus';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { clearInterruptedPlayback } from '../lib/desktopInterruptedSession';
@@ -3657,13 +3658,11 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 </div>
               </div>
             </div>
-            {episodeData?.streamnyaa?.status === 'stale' && <p role="status" className="mb-3 text-sm text-amber-200">Saved episode titles are shown. The provider could not refresh them; numbered navigation remains available. <button className="underline" onClick={() => void episodeQuery.refetch()}>Refresh titles</button></p>}
-            {episodeCatalogEstimated ? (
-              <p className="mb-3 text-sm text-white/60" role="status">
-                {episodeQuery.isFetching ? 'Loading episode metadata…' : airedCount == null ? 'Episode count and titles are unavailable. These numbered buttons are navigation only, not confirmed releases. Select a number to find matching sources.' : 'Episode titles are unavailable. Numbered episodes remain selectable.'}
-                {episodeQuery.isError ? <button className="ml-2 underline" onClick={() => void episodeQuery.refetch()}>Retry episode list</button> : null}
-              </p>
-            ) : null}
+            <DesktopEpisodeStatus enabled={canFetchEpisodeMetadata} fetching={episodeQuery.isFetching}
+              error={episodeQuery.error} errorAt={episodeQuery.errorUpdatedAt}
+              hasTitles={pageItems.some((entry: any) => Boolean(entry.title || entry.title_english || entry.title_romanji)) || streamingEpisodeMap.size > 0}
+              hasEntries={pageItems.length > 0} stale={episodeData?.streamnyaa?.status === 'stale'} upcoming={animeNotYetAired}
+              retry={() => void episodeQuery.refetch()} />
             {Number(episodeData?.pagination?.last_visible_page) > 1 && <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
               <span>Episode metadata page {episodePage} of {episodeData?.pagination?.last_visible_page}</span>
               <button disabled={episodePage <= 1 || episodeQuery.isFetching} className="sn-secondary-action px-3 py-2 disabled:opacity-40" onClick={() => selectEpisode(Math.max(1, (episodePage - 2) * 100 + 1))}>Previous episodes</button>

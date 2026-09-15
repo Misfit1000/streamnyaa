@@ -302,7 +302,10 @@ local ok, error_message = pcall(function()
   redraw_for_input = function() return {id = "settings"}, {x = 10, y = 10} end
   local before_double = #commands
   handle_double_click()
-  check(#commands == before_double, "Double clicking a toolbar action must not toggle fullscreen")
+  for i = before_double + 1, #commands do
+    check(not (commands[i][1] == "cycle" and commands[i][2] == "fullscreen"), "Double clicking a toolbar action must not toggle fullscreen")
+  end
+  ui.settings_open = false
   redraw_for_input = function() return nil, {x = 500, y = 200} end
   handle_double_click()
   local fullscreen_requested = false
@@ -411,6 +414,68 @@ local ok, error_message = pcall(function()
     check(not (commands[i][1] == "add" and commands[i][2] == "volume"), "Scrolling settings must never change volume")
   end
   reset()
+  state.paused_for_cache = false
+  ui.visible = true
+  draw(true, "pressed-toolbar")
+  point_at("mute")
+  handle_mouse_down()
+  state.paused_for_cache = true
+  draw(true, "buffer-removes-toolbar")
+  local before_release = #commands
+  handle_mouse_up()
+  local muted = false
+  for i = before_release + 1, #commands do
+    if commands[i][1] == "cycle" and commands[i][2] == "mute" then muted = true end
+  end
+  check(muted, "Buffering repaint must not drop the pressed toolbar button")
+
+  reset()
+  state.paused_for_cache = false
+  ui.visible = true
+  draw(true, "cancel-click")
+  point_at("settings")
+  handle_mouse_press({event = "down"})
+  handle_mouse_press({event = "up", canceled = true})
+  check(not ui.settings_open and ui.mouse_down_region == nil, "Cancelled input must not activate or retain a press")
+  point_at("settings")
+  handle_mouse_down()
+  point_at("mute")
+  handle_mouse_up()
+  check(not ui.settings_open, "Release over another button must cancel the original action")
+
+  reset()
+  state.paused_for_cache = false
+  ui.visible = true
+  draw(true, "double-video")
+  properties["mouse-pos"] = {x = 100, y = 200}
+  local before_double = #commands
+  handle_double_click({event = "down"})
+  handle_double_click({event = "up"})
+  local full_cycles = 0
+  for i = before_double + 1, #commands do
+    if commands[i][1] == "cycle" and commands[i][2] == "fullscreen" then full_cycles = full_cycles + 1 end
+  end
+  check(full_cycles == 1, "Complex double-click must change fullscreen exactly once")
+  ui.settings_open = true
+  draw(true, "double-control")
+  point_at("settings:skip")
+  local old_skip = state.skip_intro
+  handle_double_click({event = "down"})
+  handle_double_click({event = "up"})
+  check(state.skip_intro ~= old_skip and ui.settings_open, "Rapid control click must activate without closing the menu")
+
+  reset()
+  request_next_episode("manual")
+  local first_request = ui.end_request_id
+  now = now + 31
+  check_next_request_timeout()
+  check(not ui.end_next_pending and ui.end_status == "failed", "Lost next response must become retryable")
+  request_next_episode("manual")
+  check(ui.end_request_id ~= first_request and ui.end_next_pending, "Next retry must get a fresh identity")
+  messages["streamnyaa-next-episode-status"](first_request, "opening")
+  check(ui.end_status == "preparing", "Late response must not take over a newer next request")
+
+  reset()
   state.autoplay = true
   check(set_sleep_timer(15), "Sleep timer must accept an offered duration")
   check(not set_sleep_timer(-1), "Invalid sleep duration must be rejected")
@@ -456,7 +521,15 @@ local ok, error_message = pcall(function()
   check(ui.settings_open, "Custom Settings must open its real menu")
   -- Drive the real coverage sampler with pause, seek, speed and buffering events.
   mp.get_property_native=function(name,default) if properties[name]~=nil then return properties[name] end return default end
-  local sample=periodic_callbacks[#periodic_callbacks]
+  local sample
+  for _, callback in ipairs(periodic_callbacks) do
+    for index = 1, 30 do
+      local name = debug.getupvalue(callback, index)
+      if not name then break end
+      if name == "coverage" then sample = callback; break end
+    end
+  end
+  check(type(sample) == "function", "Coverage timer must be registered independently of other timers")
   callbacks["file-loaded"][#callbacks["file-loaded"]]()
   properties["pause"]=false; properties["paused-for-cache"]=false; properties["seeking"]=false; properties["speed"]=1
   properties["time-pos"]=5; sample(); now=now+0.5; properties["time-pos"]=5.5; sample()
