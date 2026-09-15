@@ -23,7 +23,7 @@ This establishes a reproducible dropped-click failure; it does not establish tha
 - Native controls integration: 20 cycles pass.
 - Native stalled-stream integration: pass.
 - Native soak integration: 100 cycles pass.
-- Rust on unchanged native Rust source: 56 pass, 1 existing ignored test (previous verification in this repair session).
+- Rust final verification: 56 pass, 1 existing ignored test.
 
 Automated native integration and synthetic media are not live acceptance.
 
@@ -34,3 +34,18 @@ Automated native integration and synthetic media are not live acceptance.
 - Installed-package live verification, isolated clean install/same-version upgrade/rollback and signing acceptance remain open.
 
 Version and application identity remain 0.1.8 / xyz.streamnyaa.desktop. Current installer and release metadata must remain unchanged while these gates remain open. Candidate checksum, size, signature and resource input hashes are recorded separately after packaging; resource input hashes alone do not prove extracted installer contents.
+
+## Packaged candidate
+
+Built successfully from repair commit `246bc337b851fcdaf8f167daa81b725d7387574e`.
+
+- Extracted application ProductVersion: 0.1.8.
+- Installer size: 41,754,341 bytes.
+- Installer SHA256: `A3C2711D800D15B726BE10B91195F566B8AAFBE481C6EDAE9614851AE03C5DBB`.
+- Authenticode status: NotSigned.
+- Extracted Lua SHA256 matches source: `4B9A15926D7354873AC3D9E267AEFDDD31B23977317BDA17840AC3BCCAD82C7B`.
+- Extracted mpv.exe and rqbit.exe hashes also match build inputs. Extraction succeeded; no installation was performed.
+- Candidate: sibling StreamNyaa-desktop checkout, `desktop/releases/candidates/0.1.8-player-repair-246bc33/` (installer, manifest, checksum and this review).
+- Existing v0.1.8 release installer remains unchanged with SHA256 `A2FAD04976B81D3B188AF73EDB27744AE2AE16F703FE963881E0FFD8C046AEC8`.
+
+Candidate is not accepted for release. No installer replacement or archival of the unchanged current release was necessary.
