@@ -49,3 +49,11 @@ Built successfully from repair commit `246bc337b851fcdaf8f167daa81b725d7387574e`
 - Existing v0.1.8 release installer remains unchanged with SHA256 `A2FAD04976B81D3B188AF73EDB27744AE2AE16F703FE963881E0FFD8C046AEC8`.
 
 Candidate is not accepted for release. No installer replacement or archival of the unchanged current release was necessary.
+
+## Settings follow-up
+
+Found a remaining duplicate-dispatch path: native mpv emits `MBTN_LEFT_DBL` as `press` between the second ordinary left-button down/up. Dispatching that event immediately and dispatching the captured release toggled the setting twice. The new regression failed against 246bc33 and passes after reserving captured clicks for release.
+
+Player-state suite now passes 487 assertions. In the native diagnostic player, two real rapid clicks produced exactly two setting events, `autoSkipIntro=true` followed by `false`, with one activation per click. Single intro/outro toggles and mini-player were observed responding before this additional fix; the corrected player's playback submenu also opened by a native click. Further interactions were affected by concurrent user input and are not counted as acceptance. This is native mouse validation on synthetic media, not the complete installed playback/scaling matrix.
+
+The previous candidate's hashes above describe the previous candidate only. A rebuilt candidate is required to include this follow-up. Current released installer remains unchanged.

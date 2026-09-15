@@ -4810,10 +4810,15 @@ function handle_double_click(event)
   if pending == "control" then handle_mouse_up(); return end
   local region, mouse = redraw_for_input()
   if region then
-    if ev == "press" then activate_region(region, mouse); draw(true, "double-control") end
+    -- mpv can emit DBL/press between LEFT/down and LEFT/up. The captured
+    -- release owns that click; dispatching here would toggle twice.
+    if ev == "press" and not ui.mouse_down_layout then
+      activate_region(region, mouse)
+      draw(true, "double-control")
+    end
     return
   end
-  if ui.settings_open or ui.dragging or (ev == "up" and pending ~= "video") then return end
+  if ui.mouse_down_region or ui.settings_open or ui.dragging or (ev == "up" and pending ~= "video") then return end
   note_direct_interaction()
   show_overlay()
   ui.mouse_down_region = nil

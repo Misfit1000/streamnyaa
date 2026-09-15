@@ -464,6 +464,16 @@ local ok, error_message = pcall(function()
   handle_double_click({event = "up"})
   check(state.skip_intro ~= old_skip and ui.settings_open, "Rapid control click must activate without closing the menu")
 
+  -- Native mpv reports DBL as a press between the second LEFT down/up.
+  draw(true, "native-double-control")
+  point_at("settings:skip")
+  local before_native_double = state.skip_intro
+  handle_mouse_press({event = "down"})
+  handle_double_click({event = "press"})
+  check(state.skip_intro == before_native_double, "Double-click notification must not commit a held settings toggle")
+  handle_mouse_press({event = "up"})
+  check(state.skip_intro ~= before_native_double, "Native double-click sequence must commit the second toggle exactly once")
+
   reset()
   request_next_episode("manual")
   local first_request = ui.end_request_id
