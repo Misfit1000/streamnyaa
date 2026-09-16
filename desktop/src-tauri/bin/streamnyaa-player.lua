@@ -490,6 +490,11 @@ function add_region(id, x1, y1, x2, y2, data)
   regions[#regions + 1] = { id = id, x1 = x1, y1 = y1, x2 = x2, y2 = y2, data = data }
 end
 
+function remember_hover_region()
+  local region = hit_region()
+  ui.hover_region_id = region and tostring(region.id or "") or ""
+end
+
 function hit_region()
   local mouse = mouse_pos()
   if not mouse then return nil, nil end
@@ -1174,7 +1179,7 @@ function video_aspect_label(value)
   for _, option in ipairs(VIDEO_ASPECT_OPTIONS) do
     if option.value == value or option.property == value then return option.label end
   end
-  if value == "-1" or value == "no" or value == "" then return "Default" end
+  if value == "no" or value == "" or (tonumber(value) and tonumber(value) <= 0) then return "Default" end
   local ratio = tonumber(value)
   if ratio then
     if math.abs(ratio - (16 / 9)) < 0.02 then return "16:9" end
@@ -3232,7 +3237,15 @@ function draw_smoke_test(ass, width, height, s)
   )
 end
 
+function settings_row_capacity(height, s)
+  local max_rows = math.max(5, math.floor((height - 132 * s - 56 * s) / math.max(1, 57 * s)))
+  return math.min(13, math.max(3, max_rows - 1))
+end
+
 function panel_bounds(width, height, s, row_count)
+  -- Keep the panel anchored while navigating shorter submenus. Otherwise the
+  -- newly opened panel moves away from the pointer and a second tap closes it.
+  row_count = math.max(row_count, settings_row_capacity(height, s))
   local panel_w = 392 * s
   local row_h = 57 * s
   local header_h = 56 * s
@@ -3261,8 +3274,9 @@ end
 
 function draw_settings_row(ass, mouse, id, x1, y1, x2, y2, icon, label, value, row_type, active, s)
   local hot = inside(mouse, x1, y1, x2, y2)
+  local pressed = hot and ui.mouse_down_region and ui.mouse_down_region.id == id
   local cy = (y1 + y2) / 2
-  if hot then rounded_rect(ass, x1 + 10 * s, y1 + 5 * s, x2 - 10 * s, y2 - 5 * s, 12 * s, C.white, 236) end
+  if hot then rounded_rect(ass, x1 + 10 * s, y1 + 5 * s, x2 - 10 * s, y2 - 5 * s, 12 * s, pressed and C.accent or C.white, pressed and 160 or 236) end
   rect(ass, x1 + 24 * s, y2 - 1 * s, x2 - 24 * s, y2, C.line, 234)
   icon_row(ass, icon, x1 + 40 * s, cy, 26 * s, active and C.accent or C.secondary)
   draw_text(ass, x1 + 76 * s, cy + 6 * s, 4, font_px(s, 16, 15, 18), active and C.white or C.white, active and 0 or 28, label, false, "Segoe UI")
@@ -3575,8 +3589,7 @@ end
 function draw_main_settings(ass, width, height, mouse, s)
   s = math.min(s, width / 500, height / 600)
   local rows = fitted_options(cached_menu_rows("main", build_main_settings_rows), height, s, 57 * s, 56 * s)
-  local x1, y1, x2, _, row_h, header_h = panel_bounds(width, height, s, #rows)
-  local y2 = y1 + header_h + row_h * #rows + 10 * s
+  local x1, y1, x2, y2, row_h, header_h = panel_bounds(width, height, s, #rows)
   draw_panel_shell(ass, x1, y1, x2, y2, "Settings", s)
   add_region("settings-panel", x1, y1, x2, y2)
   for i, row in ipairs(rows) do
@@ -3586,8 +3599,7 @@ function draw_main_settings(ass, width, height, mouse, s)
 end
 
 function fitted_options(options, height, s, row_h, header_h)
-  local max_rows = math.max(5, math.floor((height - 132 * s - header_h) / math.max(1, row_h)))
-  local max_options = math.max(3, max_rows - 1)
+  local max_options = settings_row_capacity(height, s) - (ui.submenu == "main" and 0 or 1)
   if ui.option_menu_name ~= ui.submenu then
     ui.option_menu_name = ui.submenu
     ui.option_menu_scroll = 0
@@ -3622,8 +3634,7 @@ function draw_option_submenu(ass, width, height, mouse, s, title, options, prefi
   local base_row_h = 57 * s
   local base_header_h = 56 * s
   local menu_options = fitted_options(options, height, s, base_row_h, base_header_h)
-  local x1, y1, x2, _, row_h, header_h = panel_bounds(width, height, s, #menu_options + 1)
-  local y2 = y1 + header_h + row_h * (#menu_options + 1) + 10 * s
+  local x1, y1, x2, y2, row_h, header_h = panel_bounds(width, height, s, #menu_options + 1)
   draw_panel_shell(ass, x1, y1, x2, y2, title, s)
   add_region("settings-panel", x1, y1, x2, y2)
 
@@ -3640,7 +3651,10 @@ function draw_option_submenu(ass, width, height, mouse, s, title, options, prefi
     local ry2 = ry1 + row_h
     local cy = (ry1 + ry2) / 2
     local option_hot = inside(mouse, x1, ry1, x2, ry2)
-    if option_hot and not option.disabled then rounded_rect(ass, x1 + 10 * s, ry1 + 5 * s, x2 - 10 * s, ry2 - 5 * s, 12 * s, C.white, 236) end
+    local option_pressed = option_hot and ui.mouse_down_region and ui.mouse_down_region.id == prefix .. tostring(option.value)
+    if option_hot and not option.disabled then
+      rounded_rect(ass, x1 + 10 * s, ry1 + 5 * s, x2 - 10 * s, ry2 - 5 * s, 12 * s, option_pressed and C.accent or C.white, option_pressed and 160 or 236)
+    end
     rect(ass, x1 + 24 * s, ry2 - 1 * s, x2 - 24 * s, ry2, C.line, 236)
     local label_color = option.disabled and C.muted or (option.active and C.accent or C.white)
     local label_alpha = option.disabled and 36 or (option.active and 0 or 28)
@@ -3766,6 +3780,7 @@ function draw(immediate, reason)
     clear_cover_overlay()
     draw_manual_skip_buttons(ass, width, height, mouse, s, skip_intro_range, skip_outro_range, true)
     ui.regions_ready = #regions > 0
+    remember_hover_region()
     ui.region_width = width
     ui.region_height = height
     ui.render_has_run = true
@@ -3793,6 +3808,7 @@ function draw(immediate, reason)
     -- between mouse-down and mouse-up. Menus are always the top input layer.
     if ui.settings_open then draw_settings_panel(ass, width, height, mouse, s) end
     ui.regions_ready = #regions > 0
+    remember_hover_region()
     ui.region_width = width
     ui.region_height = height
     ui.render_has_run = true
@@ -3816,6 +3832,7 @@ function draw(immediate, reason)
   draw_settings_panel(ass, width, height, mouse, s)
 
   ui.regions_ready = #regions > 0
+  remember_hover_region()
   ui.region_width = width
   ui.region_height = height
   ui.render_has_run = true
@@ -4228,6 +4245,7 @@ function activate_region(region, mouse)
   elseif id == "settings:playback" then
     ui.submenu = "playback"
   elseif id == "settings:download" or id == "download" then
+    settings_notice("Opening Downloads in StreamNyaa...")
     safe_commandv("script-message", "streamnyaa-download-request")
   elseif id == "settings:seek_step" then
     ui.submenu = "seek_step"
@@ -4441,6 +4459,7 @@ function handle_mouse_down()
     begin_drag("volume", mouse)
     set_volume_from_mouse(mouse, false, false)
   end
+  draw(true, "mouse-down")
   draw(true, "mouse-down")
 end
 
@@ -4774,7 +4793,7 @@ mp.observe_property("audio-delay", "number", function(_, value)
 end)
 mp.observe_property("video-aspect-override", "string", function(_, value)
   local aspect = tostring(value or "")
-  if aspect == "" or aspect == "-1" or aspect == "no" then
+  if aspect == "" or aspect == "no" or (tonumber(aspect) and tonumber(aspect) <= 0) then
     state.video_aspect = "default"
   else
     state.video_aspect = aspect

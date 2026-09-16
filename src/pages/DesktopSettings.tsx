@@ -643,7 +643,7 @@ export default function DesktopSettings() {
             <details className="mt-5 border-t border-white/[0.07] pt-4">
               <summary className="cursor-pointer text-sm font-semibold text-white/68 hover:text-white">Technical details</summary>
               <div className="mt-3">
-                <SupportRow label="App version" value={diagnostics?.app_version || '0.1.8'} />
+                <SupportRow label="App version" value={diagnostics?.app_version || '0.1.9'} />
                 <SupportRow label="Player" value={runtime?.player_version || 'Auto'} />
                 <SupportRow label="Streaming" value={runtime?.torrent_engine_version || 'Auto'} />
                 <SupportRow label="Temp usage" value={`${formatBytes(cache?.total_bytes)} / ${formatBytes(cacheLimit)}`} />

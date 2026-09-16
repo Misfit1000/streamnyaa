@@ -496,6 +496,43 @@ local ok, error_message = pcall(function()
   end
 
   reset()
+  state.paused_for_cache = false
+  state.paused = true
+  ui.visible, ui.settings_open = true, true
+  ui.submenu = "main"
+  draw(true, "paused-menu-layout")
+  local function panel_rect()
+    for _, region in ipairs(upvalue(add_region, "regions")) do
+      if region.id == "settings-panel" then return {region.x1,region.y1,region.x2,region.y2} end
+    end
+    error("Missing settings panel")
+  end
+  observers["video-aspect-override"]("video-aspect-override", "-2.000000")
+  check(state.video_aspect == "default" and video_aspect_label() == "Default", "Native automatic aspect values must display Default")
+  local main_rect = panel_rect()
+  point_at("settings:appearance")
+  handle_mouse_move()
+  local hover_draws = ui.draw_count
+  for i = 1, 20 do
+    properties["mouse-pos"].x = properties["mouse-pos"].x + 0.1
+    handle_mouse_move()
+  end
+  check(ui.draw_count == hover_draws, "Moving within one settings row must not redraw the whole overlay repeatedly")
+  local before_press = last_ass
+  handle_mouse_down()
+  check(last_ass ~= before_press, "Mouse-down must immediately paint pressed feedback while paused")
+  handle_mouse_up()
+  local submenu_rect = panel_rect()
+  for i = 1, 4 do check(main_rect[i] == submenu_rect[i], "Opening a shorter submenu must preserve its panel bounds") end
+  check(ui.submenu == "appearance" and ui.settings_open, "Paused player must display the requested submenu immediately")
+  for _, menu in ipairs({"sleep", "seek_step", "subs", "audio", "video", "playback", "speed"}) do
+    ui.submenu = menu
+    draw(true, "stable-submenu-bounds")
+    local bounds = panel_rect()
+    check(bounds[2] == main_rect[2] and bounds[4] == main_rect[4], "Submenu must keep the same vertical anchor: " .. menu)
+  end
+
+  reset()
   request_next_episode("manual")
   local first_request = ui.end_request_id
   now = now + 31
