@@ -475,6 +475,27 @@ local ok, error_message = pcall(function()
   check(state.skip_intro ~= before_native_double, "Native double-click sequence must commit the second toggle exactly once")
 
   reset()
+  state.paused_for_cache = false
+  ui.visible = true
+  draw(true, "cc-picker")
+  point_at("subs")
+  handle_mouse_move()
+  handle_mouse_press({event = "down"})
+  handle_mouse_press({event = "up"})
+  check(ui.settings_open and ui.submenu == "subs", "CC must open subtitle choices even without embedded tracks")
+  point_at("sub:import")
+  for _, menu in ipairs({"seek_step", "sleep", "subs", "appearance", "audio", "video", "playback"}) do
+    ui.submenu = "main"
+    draw(true, "settings-mouse-navigation")
+    point_at("settings:" .. menu)
+    handle_mouse_move()
+    handle_mouse_press({event = "down"})
+    handle_mouse_move()
+    handle_mouse_press({event = "up"})
+    check(ui.settings_open and ui.submenu == menu, "Settings row must survive pointer hover: " .. menu)
+  end
+
+  reset()
   request_next_episode("manual")
   local first_request = ui.end_request_id
   now = now + 31

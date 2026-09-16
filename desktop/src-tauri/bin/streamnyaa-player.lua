@@ -3903,6 +3903,8 @@ function toggle_subtitles()
     if #subs > 0 then
       safe_set_property("sid", tostring(subs[1].id))
       safe_set_property_bool("sub-visibility", true)
+    else
+      settings_notice("No subtitle tracks. Open CC to import a subtitle file.")
     end
   else
     safe_set_property_bool("sub-visibility", not state.sub_visible)
@@ -4193,7 +4195,8 @@ function activate_region(region, mouse)
   elseif id == "volume" then
     set_volume_from_mouse(mouse, true)
   elseif id == "subs" then
-    toggle_subtitles()
+    ui.settings_open = true
+    ui.submenu = "subs"
   elseif id == "settings" then
     ui.settings_open = not ui.settings_open
     ui.submenu = "main"
@@ -4465,6 +4468,12 @@ function handle_mouse_up()
       activate_region(region or down_region, mouse)
     elseif not down_region and not region then
       activate_region(nil, mouse)
+    else
+      debug_input("cancel target=" .. tostring(down_region and down_region.id or "none")
+        .. " release=" .. tostring(region and region.id or "none")
+        .. " same_layout=" .. tostring(same_layout)
+        .. " pointer=" .. tostring(mouse and mouse.x) .. "," .. tostring(mouse and mouse.y)
+        .. " size=" .. tostring(width) .. "x" .. tostring(height))
     end
   end
   ui.dragging = nil
