@@ -33,4 +33,11 @@ describe('Offline episode progress', () => {
     data.items[0].progress!['01.mkv'].seconds=10; data.items[0].episodeLinks={}; synchronizeOfflineProgress(data);
     expect(loadDesktopWatchProgress()).toHaveLength(0);
   });
+  it('retains legacy unowned progress and rejects another account owner',()=>{
+    const legacy=queue();legacy.items[0].progress!['01.mkv'].owner=null;
+    synchronizeOfflineProgress(legacy);expect(loadDesktopWatchProgress()).toHaveLength(1);
+    localStorage.clear();const foreign=queue();foreign.items[0].progress!['01.mkv'].owner='another-account';
+    synchronizeOfflineProgress(foreign);expect(loadDesktopWatchProgress()).toHaveLength(0);
+  });
+
 });

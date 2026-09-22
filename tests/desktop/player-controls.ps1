@@ -134,6 +134,21 @@ try {
   $afterSeek=(Invoke-MpvCommand @('get_property','user-data/streamnyaa/progress-checkpoint') | ConvertFrom-Json).coverage.furthest
   if ([Math]::Abs($beforeSeek-$afterSeek) -gt 0.05) { throw 'Paused seek incorrectly advanced watched coverage.' }
 
+  $player.Refresh()
+  $beforeTransitions=$player.WorkingSet64
+  for ($episode=1; $episode -le 12; $episode++) {
+    Invoke-MpvCommand @('script-message','streamnyaa-progress-session',"transition-$episode") | Out-Null
+    Invoke-MpvCommand @('loadfile',"av://lavfi:testsrc=duration=$((610+$episode)):size=320x180:rate=24",'replace') | Out-Null
+    Invoke-MpvCommand @('set_property','pause',$false) | Out-Null
+    Wait-MpvProperty 'user-data/streamnyaa/progress-checkpoint' {param($value)
+      if(!$value){return $false}
+      $checkpoint=$value | ConvertFrom-Json
+      return $checkpoint.sessionId -eq "transition-$episode" -and $checkpoint.coverage.furthest -gt 0
+    } 'Episode transition did not record advancing media.'
+  }
+  $player.Refresh()
+  Write-Host "Native episode-transition soak passed (12 replacements; working set before=$beforeTransitions after=$($player.WorkingSet64) bytes; one owned MPV process)."
+
   Write-Host "Desktop native player-controls integration test passed ($SoakCycles soak cycles)."
 }
 finally {

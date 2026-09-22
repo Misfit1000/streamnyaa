@@ -13,9 +13,9 @@
 
 ## Verification
 - TypeScript passed.
-- Frontend: 231 tests across 53 files were exercised. The parallel full run passed 230 with one existing 5-second Explore navigation timeout; all 16 navigation tests passed on targeted rerun. Final targeted progress/offline/prefetch suite: 9 passed.
+- Frontend: 231 tests across 53 files were exercised. The parallel full run passed 230 with one existing 5-second Explore navigation timeout; all 16 navigation tests passed on targeted rerun. Final targeted progress/offline/prefetch suite: 9 passed. An additional legacy offline null-owner regression passed in a five-test offline compatibility run (232 frontend tests in total).
 - Rust: 61 passed and one existing ignored tracker test in the full run. After bounded-storage refinements, all five progress tests passed; the added log-privacy regression also passed (62 distinct passing Rust tests in total).
-- Desktop contracts passed. Lua player-state: 514 assertions. Native MPV controls: 20 cycles, stall test passed, soak: 100 cycles. Native checkpoints and paused-seek rejection are exercised against an isolated bundled MPV; EOF and outgoing/new session separation are also covered by deterministic real-script tests.
+- Desktop contracts passed. Lua player-state: 514 assertions. Native MPV controls: 20 cycles, stall test passed, soak: 100 cycles. Native checkpoints and paused-seek rejection are exercised against an isolated bundled MPV; EOF and outgoing/new session separation are also covered by deterministic real-script tests. An additional 12-file replacement soak passed in one isolated native MPV process; working set changed from 61,800,448 to 65,490,944 bytes. This short synthetic test is not proof of long-session or torrent-engine memory stability.
 - All nine Explore query builders returned AniList HTTP 200 with 25 records each on September 22. Direct request timings were 606–956 ms. The corrected New episodes probe used the builder's request/page/before signature; an initial harness invocation used the wrong arguments and was discarded. See the companion probe JSON. No application fallback was involved in these direct probes.
 - Existing source matching, request cancellation/coalescing, access-denied cooldown, cache freshness, URL restrictions, download safety and account-isolation regressions were retained in the suites.
 
