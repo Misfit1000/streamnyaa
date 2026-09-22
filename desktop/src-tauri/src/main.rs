@@ -3838,7 +3838,15 @@ fn show_player_text_with_title(ipc: &str, title: Option<&str>, text: &str) {
     let _ = send_mpv(ipc, &command);
 }
 
+static PLAYER_LOAD_LOCK: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 fn load_player_file(ipc: &str, url: &str) -> bool {
+    let mut load_guard = PLAYER_LOAD_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    *load_guard = None;
+    load_player_file_locked(ipc, url)
+}
+
+fn load_player_file_locked(ipc: &str, url: &str) -> bool {
     let command = format!(
         r#"{{"command":["loadfile",{},"replace"],"request_id":3}}"#,
         json_string(url)
@@ -3847,6 +3855,13 @@ fn load_player_file(ipc: &str, url: &str) -> bool {
 }
 
 fn maybe_replace_generic_loading_frame(ipc: &str, loading_image_path: &Path) {
+    // Check and replacement must be atomic with respect to actual stream loads.
+    // A late cover must never replace a video loaded between these IPC calls.
+    let load_guard = PLAYER_LOAD_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    // loadfile returns before path necessarily changes; fence accepted video loads too.
+    if load_guard.as_deref() == Some(ipc) {
+        return;
+    }
     let Some(current_path) = get_player_property_string(ipc, "path") else {
         log_info("Late cover loading image skipped because MPV path could not be read");
         return;
@@ -3865,7 +3880,7 @@ fn maybe_replace_generic_loading_frame(ipc: &str, loading_image_path: &Path) {
     match fs::metadata(loading_image_path) {
         Ok(metadata) if metadata.is_file() && metadata.len() > 0 => {
             let player_path = path_for_player_option(loading_image_path);
-            if load_player_file(ipc, &player_path) {
+            if load_player_file_locked(ipc, &player_path) {
                 log_info(format!(
                     "Late cover loading image replaced generic MPV placeholder: {} ({} bytes)",
                     loading_image_path.to_string_lossy(),
@@ -4483,7 +4498,16 @@ fn load_player_target(
     target: &ResolvedStreamTarget,
     resume_seconds: Option<f64>,
 ) -> bool {
-    if !load_player_file(ipc, &target.media_url) {
+    {
+        let mut load_guard = PLAYER_LOAD_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        *load_guard = Some(ipc.to_string());
+        if !load_player_file_locked(ipc, &target.media_url) {
+            return false;
+        }
+    }
+    // MPV keeps pause across loadfile (including keep-open EOF). A new episode
+    // is an explicit play request; never inherit the previous file's pause.
+    if !send_mpv_with_retry(ipc, r#"{"command":["set_property","pause",false],"request_id":34}"#, 8, 180) {
         return false;
     }
     set_player_title(ipc, title);

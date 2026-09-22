@@ -1,0 +1,89 @@
+{
+  "at": "2026-09-17T11:51:30.976Z",
+  "transport": "Direct HTTPS using query builders extracted from current source",
+  "results": [
+    {
+      "mode": "new",
+      "status": 200,
+      "count": 25,
+      "ms": 870,
+      "first": {
+        "title": "PetitCure: Precure Fairies Season 3",
+        "episode": 26,
+        "airingAt": 1789637400
+      }
+    },
+    {
+      "mode": "trending",
+      "status": 200,
+      "count": 25,
+      "ms": 723,
+      "first": {
+        "title": "Re:Zero kara Hajimeru Isekai Seikatsu 4th Season"
+      }
+    },
+    {
+      "mode": "airing",
+      "status": 200,
+      "count": 25,
+      "ms": 981,
+      "first": {
+        "title": "Re:Zero kara Hajimeru Isekai Seikatsu 4th Season"
+      }
+    },
+    {
+      "mode": "seasonal",
+      "status": 200,
+      "count": 25,
+      "ms": 645,
+      "first": {
+        "title": "Mushoku Tensei III: Isekai Ittara Honki Dasu"
+      }
+    },
+    {
+      "mode": "popular",
+      "status": 200,
+      "count": 25,
+      "ms": 993,
+      "first": {
+        "title": "Shingeki no Kyojin"
+      }
+    },
+    {
+      "mode": "top",
+      "status": 200,
+      "count": 25,
+      "ms": 1013,
+      "first": {
+        "title": "Sousou no Frieren"
+      }
+    },
+    {
+      "mode": "ranking",
+      "status": 200,
+      "count": 25,
+      "ms": 933,
+      "first": {
+        "title": "Sousou no Frieren"
+      }
+    },
+    {
+      "mode": "upcoming",
+      "status": 200,
+      "count": 25,
+      "ms": 626,
+      "first": {
+        "title": "Despera"
+      }
+    },
+    {
+      "mode": "year",
+      "status": 200,
+      "count": 25,
+      "ms": 1080,
+      "first": {
+        "title": "Re:Zero kara Hajimeru Isekai Seikatsu 4th Season"
+      }
+    }
+  ]
+}

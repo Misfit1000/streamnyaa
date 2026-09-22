@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 vi.mock('../../src/api/jikan', () => ({ fetchAniList: vi.fn(), fetchJikanPath: vi.fn(),
   mapAnilistToJikan: (media: any) => ({ anilist_id: media.id, mal_id: media.idMal, title: media.title.english, score: media.averageScore / 10, isAdult: media.isAdult }) }));
 import { fetchAniList, fetchJikanPath } from '../../src/api/jikan';
-import { animeExploreQuery, malExplorePath, fetchExplorePage, jikanAdultTitle, type ExploreRequest } from '../../src/api/desktopExplore';
+import { animeExploreQuery, recentExploreQuery, malExplorePath, fetchExplorePage, jikanAdultTitle, type ExploreRequest } from '../../src/api/desktopExplore';
 const base: ExploreRequest = { mode: 'ranking', service: 'anilist', query: '', genre: 'Any', format: 'Any', status: 'Any', sort: 'best', adult: false };
 beforeEach(() => vi.clearAllMocks());
 describe('separate desktop rankings', () => {
@@ -153,11 +153,43 @@ describe('feed continuity', () => {
     expect(result.data[0].mal_id).toBe(42);
     expect(result.hasNextPage).toBe(true);
   });
-  it('offers labeled airing series when episode listings fail', async () => {
-    vi.mocked(fetchJikanPath).mockRejectedValueOnce(new Error('timeout')).mockResolvedValueOnce(new Response(JSON.stringify({data:[{mal_id:43,title:'Airing'}],pagination:{has_next_page:true}})));
+  it('never substitutes series when episode listings fail', async () => {
+    vi.mocked(fetchJikanPath).mockRejectedValueOnce(new Error('timeout'));
+    await expect(fetchExplorePage({...base,service:'mal',mode:'new'},1)).rejects.toThrow();
+    expect(fetchJikanPath).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('active AniList query filters and episode freshness', () => {
+  it('omits absent filters from arguments, declarations, and variables', () => {
+    const result = animeExploreQuery({...base,mode:'popular'},1);
+    for (const key of ['search','genre','format','status','year','season','releasedAfter']) {
+      expect(result.query).not.toContain(`$${key}`);
+      expect(result.variables).not.toHaveProperty(key);
+    }
+    expect(result.variables.adult).toBe(false);
+    expect(result.query).toContain('isAdult:$adult');
+    expect(animeExploreQuery({...base,adult:true},1).query).not.toContain('isAdult:');
+  });
+  it('includes only a real lower bound for recent schedules', () => {
+    const plain = recentExploreQuery(base,1,1700000000);
+    expect(plain.query).not.toContain('$start');
+    expect(plain.variables).not.toHaveProperty('start');
+    const dated = recentExploreQuery({...base,releasedAfter:'2026-09-10'},2,1800000000);
+    expect(dated.query).toContain('airingAt_greater:$start');
+    expect(dated.variables.start).toBe(Date.parse('2026-09-10')/1000);
+    expect(() => recentExploreQuery({...base,releasedAfter:'bad'},1,1800000000)).toThrow();
+  });
+  it('retains original retrieval time and staleness from a cached episode response', async () => {
+    vi.mocked(fetchJikanPath).mockResolvedValueOnce(new Response(JSON.stringify({data:[{entry:{mal_id:1,title:'Example'},episodes:[{title:'Episode 7'}]}]}),{headers:{'X-StreamNyaa-Fetched-At':'1700000000000','X-StreamNyaa-Desktop-Cache':'stale'}}));
     const result=await fetchExplorePage({...base,service:'mal',mode:'new'},1);
-    expect(result.fallbackLabel).toContain('not confirmed new releases');
-    expect(result.data[0].catalogAlternative).toBe(true);
-    expect(result.hasNextPage).toBe(false);
+    expect(result).toMatchObject({fetchedAt:1700000000000,stale:true,recentFeedKind:'listed'});
+    expect(result.data[0].listedEpisode).toBe(7);
+    expect(result.data[0].catalogAlternative).toBeUndefined();
+  });
+  it('does not fall back after cancellation', async () => {
+    const controller=new AbortController();controller.abort();
+    await expect(fetchExplorePage({...base,mode:'new',allowFallback:true},1,controller.signal)).rejects.toThrow();
+    expect(fetchJikanPath).not.toHaveBeenCalled();
   });
 });

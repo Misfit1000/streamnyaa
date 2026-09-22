@@ -407,7 +407,7 @@ Assert-Match $desktopCss '(?s)\.desktop-app-shell \.sn-hero-panel.*?contain:\s*p
 Assert-Match $desktopCss '(?s)\.desktop-app-shell \.sn-poster-card.*?backdrop-filter:\s*none' 'Desktop poster cards must not use the corrupt WebView backdrop path.'
 Assert-Match $desktopCss '(?s)\.desktop-app-shell \.sn-explore-poster.*?transform:\s*none' 'Explore poster cards must avoid the WebView transform path that creates clipped cover wedges.'
 Assert-Match $desktopCss '(?s)\.desktop-app-shell \.sn-poster-card img,.*?transform:\s*none\s*!important' 'All desktop poster images must avoid the WebView transform path that creates clipped cover wedges.'
-Assert-Match $desktopExplore 'createPortal' 'Explore select menus should escape clipped filter and hero containers.'
+Assert-Match $desktopExplore '<select aria-label=\{ariaLabel\} value=\{value\} onChange=' 'Explore filters must use native select popups to avoid custom popup clipping and lost option clicks.'
 Assert-Match $desktopExplore 'desktopPosterCandidates' 'Explore cards should use the shared portrait-safe artwork resolver.'
 Assert-NotMatch $desktopArtwork 'anilist_id\s*\|\|\s*anime\?\.id\s*\|\|' 'Generic catalog ids must not be treated as AniList artwork ids.'
 Assert-NotMatch $desktopHome '\[mask-image:' 'Desktop hero art must not use the WebView mask compositor.'
@@ -454,3 +454,8 @@ Assert-Match $tauriMain '\.clamp\(1, 3\)' 'Desktop direct source fallback should
 Assert-Match $workflow 'STREAMNYAA_REQUIRE_BUNDLED_BINARIES' 'Release workflow must require bundled binaries.'
 
 Write-Host 'Desktop verification passed.'
+
+# New episode playback must clear MPV's persistent pause and fence late artwork.
+$handoffNative = Get-Content -Raw (Join-Path $repo 'desktop/src-tauri/src/main.rs')
+Assert-Match $handoffNative '(?s)fn load_player_target.*?\*load_guard = Some\(ipc.to_string\(\)\).*?load_player_file_locked.*?set_property","pause",false' 'Episode handoff must fence late artwork and explicitly start playback.'
+Assert-Match $handoffNative '(?s)fn maybe_replace_generic_loading_frame.*?load_guard.as_deref\(\) == Some\(ipc\).*?return;' 'Late artwork must not replace a pending video load.'

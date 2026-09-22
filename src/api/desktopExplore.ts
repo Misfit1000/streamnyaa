@@ -1,3 +1,4 @@
+import { validRecentSchedules } from './desktopRecentSchedule';
 import { fetchAniList, fetchJikanPath, mapAnilistToJikan } from './jikan';
 import { desktopDataError } from '../lib/desktopData';
 import { fetchRecentEpisodeListings } from './desktopRecentEpisodes';
@@ -17,7 +18,9 @@ export interface ExplorePage {
   fallback?: boolean;
   fallbackLabel?: string;
   paginationVersion?: 2;
-  recentFeedKind?: 'listed';
+  recentFeedKind?: 'listed' | 'aired';
+  stale?: boolean;
+  catalogKind?: 'saved-titles' | 'popular-alternative';
 }
 const fields = `id idMal title { romaji english native } synonyms description episodes status format
   season seasonYear coverImage { extraLarge large color } bannerImage genres averageScore popularity
@@ -100,12 +103,24 @@ export function animeExploreQuery(request: ExploreRequest, page: number) {
     releasedAfter: request.releasedAfter ? Number(request.releasedAfter.replaceAll('-', '')) : null,
     sort: [request.mode === 'upcoming' && request.sort === 'best' ? 'START_DATE' : ({ score: 'SCORE_DESC', popular: 'POPULARITY_DESC', title: 'TITLE_ROMAJI', recent: 'START_DATE_DESC', match: 'SEARCH_MATCH' } as Record<string, string>)[order] || 'TRENDING_DESC', 'ID'],
   };
-  return { query: `query($page:Int,$search:String,$genre:String,$format:MediaFormat,$status:MediaStatus,$year:Int,$season:MediaSeason,$adult:Boolean,$sort:[MediaSort],$releasedAfter:FuzzyDateInt) {
-    Page(page:$page,perPage:25) { pageInfo { hasNextPage } media(type:ANIME,search:$search,genre:$genre,format:$format,status:$status,seasonYear:$year,season:$season,isAdult:$adult,sort:$sort,startDate_greater:$releasedAfter) { ${fields} } }
-  }`, variables };
+  const filters = [
+    ['search', 'String', 'search'], ['genre', 'String', 'genre'], ['format', 'MediaFormat', 'format'],
+    ['status', 'MediaStatus', 'status'], ['year', 'Int', 'seasonYear'], ['season', 'MediaSeason', 'season'],
+    ['adult', 'Boolean', 'isAdult'], ['sort', '[MediaSort]', 'sort'], ['releasedAfter', 'FuzzyDateInt', 'startDate_greater'],
+  ].filter(([key]) => variables[key as keyof typeof variables] != null);
+  return { query: `query($page:Int,${filters.map(([key,type]) => `$${key}:${type}`).join(',')}) {
+    Page(page:$page,perPage:25) { pageInfo { hasNextPage } media(type:ANIME,${filters.map(([key,,argument]) => `${argument}:$${key}`).join(',')}) { ${fields} } }
+  }`, variables: Object.fromEntries(Object.entries(variables).filter(([,value]) => value != null)) };
+}
+export function recentExploreQuery(request: ExploreRequest, page: number, before: number) {
+  const start = request.releasedAfter ? Math.floor(Date.parse(request.releasedAfter) / 1000) : undefined;
+  if (start !== undefined && !Number.isFinite(start)) throw new Error('Invalid release date.');
+  return { query: `query($page:Int,$end:Int${start === undefined ? '' : ',$start:Int'}) { Page(page:$page,perPage:25) { pageInfo { hasNextPage }
+    airingSchedules(airingAt_lesser:$end${start === undefined ? '' : ',airingAt_greater:$start'},sort:TIME_DESC) { episode airingAt media { ${fields} } } } }`,
+    variables: { page, end: before, ...(start === undefined ? {} : { start }) } };
 }
 function savedExploreAlternative(request: ExploreRequest): ExplorePage | null {
-  if (request.mode === 'ranking') return null;
+  if (['ranking', 'new'].includes(request.mode)) return null;
   let stored: any[];
   try { const store=useStore.getState(); stored=[...(store.myList || []),...(store.likedAnimes || []),...readCachedWatchTitles(),...readCachedExploreTitles()]; } catch { return null; }
   const seen=new Set<string>();
@@ -130,7 +145,7 @@ function savedExploreAlternative(request: ExploreRequest): ExplorePage | null {
     return 0;
   }).slice(0,100).map(item => ({...item,catalogAlternative:true}));
   if (!data.length) return null;
-  return {data,page:1,hasNextPage:false,service:'mal',fetchedAt:Date.now(),fallback:true,fallbackLabel:'Saved titles from this device · live feeds are unavailable. These are browsing alternatives, not current rankings or new releases.'};
+  return {data,page:1,hasNextPage:false,service:'mal',fetchedAt:0,stale:true,catalogKind:'saved-titles',fallback:true,fallbackLabel:'Saved titles from this device · live feeds are unavailable. These are browsing alternatives, not current rankings or new releases.'};
 }
 export async function fetchExplorePage(request: ExploreRequest, page: number, signal?: AbortSignal): Promise<ExplorePage> {
   try {
@@ -151,7 +166,7 @@ export async function fetchExplorePage(request: ExploreRequest, page: number, si
       if (signal?.aborted || desktopDataError('jikan', secondaryError).code === 'cancelled') throw secondaryError;
       const saved = savedExploreAlternative(request); if (saved) return saved;
       const secondaryFailure = desktopDataError('jikan', secondaryError);
-      throw new Error(`AniList unavailable (${failure.code}). Jikan fallback unavailable (${secondaryFailure.code}). Retry after the provider cooldown or check your connection.`);
+      throw Object.assign(new Error(`AniList unavailable (${failure.code}). Jikan fallback unavailable (${secondaryFailure.code}). Retry after the provider cooldown or check your connection.`), { retryAfterMs: Math.max(failure.retryAfterMs || (failure.code === "access-denied" ? 300_000 : 30_000), secondaryFailure.retryAfterMs || 30_000) });
     }
   }
 }
@@ -162,21 +177,19 @@ async function fetchSelectedExplorePage(request: ExploreRequest, page: number, s
   if (request.service === 'mal') {
     if (request.mode === 'trending' && !request.query) {
       const result = await fetchSelectedExplorePage({ ...request, mode:'popular', sort:request.sort === 'best' ? 'popular' : request.sort }, page, signal);
-      return { ...result, fallback:true, fallbackLabel:'Popular on MyAnimeList · an alternative while live Trending is unavailable.' };
+      return { ...result, fallback:true, catalogKind: result.catalogKind || 'popular-alternative', fallbackLabel:'Popular on MyAnimeList · an alternative while live Trending is unavailable.' };
     }
     if (request.mode === 'new' && !request.query) {
       if (page !== 1) throw new Error('The recent-additions feed has one page.');
-      try {
-      if (request.genre !== 'Any' || request.format !== 'Any' || request.status !== 'Any' || request.year || request.releasedAfter || !['best','title'].includes(request.sort)) throw new Error('Use the filtered airing catalog.');
+      if (request.releasedAfter) throw new Error('Exact episode airing dates are temporarily unavailable.');
       const feed = await fetchRecentEpisodeListings(signal);
-      const data = feed.data.filter((item: any) => request.adult || !jikanAdultTitle(item));
+      const data = feed.data.filter((item: any) => (request.adult || !jikanAdultTitle(item))
+        && (request.genre === 'Any' || item.genres?.some((g:any) => (g.name || g) === request.genre))
+        && (request.format === 'Any' || String(item.type || item.format).toLowerCase() === request.format.toLowerCase())
+        && (!request.year || Number(item.year || item.seasonYear) === request.year)
+        && (request.status === 'Any' || item.status === ({Airing:'Currently Airing',Completed:'Finished Airing',Upcoming:'Not yet aired'} as Record<string,string>)[request.status]));
       if (request.sort === 'title') data.sort((a: any,b: any) => a.title.localeCompare(b.title));
-      return { data, page:1, hasNextPage:false, service:'mal', paginationVersion:2, fetchedAt:Date.now(), recentFeedKind:'listed' };
-      } catch(error) {
-        if (signal?.aborted || ['cancelled','access-denied','rate-limited'].includes(desktopDataError('jikan',error).code)) throw error;
-        const result = await fetchSelectedExplorePage({ ...request, mode:'airing', sort:request.sort === 'best' ? 'popular' : request.sort },1,signal);
-        return { ...result, data:result.data.map(item => ({...item,catalogAlternative:true})), hasNextPage:false, fallback:true, fallbackLabel:'Currently airing on MyAnimeList · fresh episode listings are unavailable; these are series, not confirmed new releases.' };
-      }
+      return { data, page:1, hasNextPage:false, service:'mal', paginationVersion:2, fetchedAt:feed.fetchedAt, stale:feed.stale, recentFeedKind:'listed' };
     }
     if (request.format === 'TV Short') throw new Error('Choose All formats or TV for MAL rankings.');
     const response = await fetchJikanPath(malExplorePath(request, page), 900, { signal });
@@ -189,22 +202,20 @@ async function fetchSelectedExplorePage(request: ExploreRequest, page: number, s
   }
   const recent = request.mode === 'new' && !request.query;
   const before = request.before ?? Math.floor(Date.now() / 1000);
-  const query = recent ? { query: `query($page:Int,$end:Int,$start:Int) { Page(page:$page,perPage:25) { pageInfo { hasNextPage }
-    airingSchedules(airingAt_lesser:$end,airingAt_greater:$start,sort:TIME_DESC) { episode airingAt media { ${fields} } } } }`,
-    variables: { page, end: before, start: request.releasedAfter ? Math.floor(Date.parse(request.releasedAfter) / 1000) : null } } : animeExploreQuery(request, page);
-  const response = await fetchAniList(query, 900, { signal });
+  const query = recent ? recentExploreQuery(request, page, before) : animeExploreQuery(request, page);
+  const response = await fetchAniList(query, recent ? 60 : 900, { signal });
   if (!response.ok) throw new Error('Anime list is temporarily unavailable.');
   const payload = await response.json();
   const result = payload?.data?.Page;
   const items = recent ? result?.airingSchedules : result?.media;
   if (payload.errors?.length || !Array.isArray(items) || typeof result?.pageInfo?.hasNextPage !== 'boolean') throw new Error('Incomplete anime list response.');
-  const data = items.map((entry: any, index: number) => {
+  const data = (recent ? validRecentSchedules(items, before) : items).map((entry: any, index: number) => {
     const media = recent ? entry.media : entry;
     if (!media?.id || !media.title) throw new Error('Invalid anime identity.');
     return { ...mapAnilistToJikan(media), rankingPosition: (page - 1) * 25 + index + 1, rankingService: 'anilist', rankingScore: media.averageScore,
-      ...(recent ? { latestEpisode: entry.episode, airingAt: entry.airingAt } : {}) };
-  }).filter((item: any) => request.adult || !item.isAdult);
-  return { data, paginationVersion: 2, page, hasNextPage: result.pageInfo.hasNextPage, service: 'anilist', fetchedAt: Date.now(), ...(recent ? { before } : {}) };
+      ...(recent ? { latestEpisode: entry.episode, airingAt: entry.airingAt, recentFeedKind: 'aired' } : {}) };
+  }).filter((item: any) => (request.adult || !item.isAdult) && (!recent || ((request.genre === 'Any' || item.genres?.some((g:any) => (g.name || g) === request.genre)) && (request.format === 'Any' || String(item.type).toLowerCase() === request.format.toLowerCase()) && (!request.year || Number(item.year) === request.year) && (request.status === 'Any' || (request.status === 'Airing' ? item.status === 'Currently Airing' : request.status === 'Completed' ? item.status === 'Finished Airing' : item.status === 'Not yet aired')))));
+  return { data, paginationVersion: 2, page, hasNextPage: result.pageInfo.hasNextPage, service: 'anilist', fetchedAt: Number(response.headers.get('X-StreamNyaa-Fetched-At')) || Date.now(), stale: response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale' || response.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale', ...(recent ? { before, recentFeedKind: 'aired' as const } : {}) };
 }
 
 export function jikanAdultTitle(item: any): boolean {

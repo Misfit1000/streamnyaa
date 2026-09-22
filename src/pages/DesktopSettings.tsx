@@ -1,3 +1,4 @@
+import { useAuth } from '../context/AuthContext';
 import DesktopHomeSettings from '../components/DesktopHomeSettings';
 import DesktopDownloadSettings from '../components/DesktopDownloadSettings';
 import { useLocation } from 'react-router-dom';
@@ -136,6 +137,7 @@ function SupportRow({ label, value }: { label: string; value: React.ReactNode })
 }
 
 export default function DesktopSettings() {
+  const { isAdmin } = useAuth();
   const location = useLocation();
   useEffect(() => { if (!location.hash) return; const id=location.hash.slice(1); const timer=window.setTimeout(()=>{const section=document.getElementById(id);section?.scrollIntoView({block:'start'});section?.setAttribute('tabindex','-1');section?.focus({preventScroll:true});},100);return ()=>window.clearTimeout(timer);},[location.hash]);
   const hideEpisodeSpoilers = useHideEpisodeSpoilers();
@@ -155,7 +157,7 @@ export default function DesktopSettings() {
     try {
       const nextRuntime = await getDesktopRuntimeStatus(activeSettings);
       if (nextRuntime) setRuntime(nextRuntime);
-      if (includeDiagnostics) {
+      if (includeDiagnostics && isAdmin) {
         const nextDiagnostics = await getDesktopDiagnostics(activeSettings);
         if (nextDiagnostics) setDiagnostics(nextDiagnostics);
       }
@@ -167,7 +169,7 @@ export default function DesktopSettings() {
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(true), 500);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => subscribeLocalPlaybackHistory(() => {
     setHistoryCount(loadLocalPlaybackHistory().length);
@@ -631,12 +633,12 @@ export default function DesktopSettings() {
                 <RefreshCw className="h-4 w-4" />
                 Check again
               </button>
-              <button onClick={copyDiagnostics} className="sn-secondary-action h-10 flex-1 px-3 text-xs">
+              {isAdmin && <button onClick={copyDiagnostics} className="sn-secondary-action h-10 flex-1 px-3 text-xs">
                 <Copy className="h-4 w-4" />
                 Copy report
-              </button>
+              </button>}
             </div>
-            <button type="button" disabled={!diagnostics} onClick={exportDiagnostics} className="sn-secondary-action mt-2 h-10 w-full px-3 text-xs disabled:opacity-50">
+            {isAdmin && <div id="diagnostics"><button type="button" disabled={!diagnostics} onClick={exportDiagnostics} className="sn-secondary-action mt-2 h-10 w-full px-3 text-xs disabled:opacity-50">
               <Download className="h-4 w-4" /> Save private-data-free report
             </button>
             <DesktopDiagnosticCheck />
@@ -659,7 +661,7 @@ export default function DesktopSettings() {
               <pre className="mt-4 max-h-[260px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/35 p-3 text-xs leading-6 text-white/58">
                 {diagnosticsSummary}
               </pre>
-          </details>
+          </details></div>}
           </section>
         </aside>
       </div>

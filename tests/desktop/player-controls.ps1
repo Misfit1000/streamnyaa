@@ -107,6 +107,14 @@ try {
     throw 'The native player exited during the repeated-control reliability soak.'
   }
 
+  # Reproduce pause inheritance when reusing MPV for a subsequent episode.
+  Invoke-MpvCommand @('set_property', 'pause', $true) | Out-Null
+  Invoke-MpvCommand @('loadfile', 'av://lavfi:testsrc=duration=601:size=320x180:rate=24', 'replace') | Out-Null
+  Wait-MpvProperty 'path' { param($value) $value -eq 'av://lavfi:testsrc=duration=601:size=320x180:rate=24' } 'Next file did not load.'
+  if ((Invoke-MpvCommand @('get_property', 'pause')) -ne $true) { throw 'Pause inheritance reproduction changed.' }
+  Invoke-MpvCommand @('set_property', 'pause', $false) | Out-Null
+  Wait-MpvProperty 'time-pos' { param($value) [double]$value -gt 0.2 } 'Next episode did not advance after explicit playback handoff.'
+
   Write-Host "Desktop native player-controls integration test passed ($SoakCycles soak cycles)."
 }
 finally {

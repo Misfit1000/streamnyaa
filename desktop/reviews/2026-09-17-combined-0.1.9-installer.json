@@ -1,0 +1,78 @@
+{
+  "version": "0.1.9",
+  "builtAt": "2026-09-17T00:19:53.6757422+05:45",
+  "sourceBaseCommit": "55729f7",
+  "includesUncommittedLatestSource": true,
+  "includesWatchDeskExplorePresetsOverhaul": true,
+  "installer": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\src-tauri\\target\\release\\bundle\\nsis\\StreamNyaa_0.1.9_x64-setup.exe",
+  "bytes": 41760672,
+  "sha256": "F5D26645B4496C8D121BB5733E15C34B68E7041F4EF6AEBA87B186527D3F6297",
+  "signature": "NotSigned",
+  "resources": [
+    {
+      "name": "mpv.exe",
+      "sha256": "1645E57569C0AF58A70C61257F3716F2EE6EB31BB170EDC51F3F25A0B8D0D99C",
+      "stagedMatches": true
+    },
+    {
+      "name": "rqbit.exe",
+      "sha256": "4D4E5F4D81A7C9432BF37F1857E34486C9B1114E258573FC5486FBB1DB18898C",
+      "stagedMatches": true
+    },
+    {
+      "name": "streamnyaa-player.lua",
+      "sha256": "BCD715D0A8AB967C9C23BD3619BE8B910323D06ECF7474C5253789EC456FFC98",
+      "stagedMatches": true
+    }
+  ],
+  "sourceFiles": [
+    {
+      "path": "src/components/DesktopWatchDesk.tsx",
+      "sha256": "224FDEBF7C21B4C74616DB2EA40BB5AB920C16E957ED1AA28FCF6ECB9916F558"
+    },
+    {
+      "path": "src/components/DesktopExplorePresetManager.tsx",
+      "sha256": "D3D1CF106B6C2108C71E92BDB6795417F890A5AC0561C45699CA17ADE625FD55"
+    },
+    {
+      "path": "src/lib/desktopExplorePresets.ts",
+      "sha256": "402BFCEE6A0D8550125F3DC16CE2AD9D064AF7D174D6A22097BDF2ED31FEB61B"
+    },
+    {
+      "path": "src/lib/desktopWatchDesk.ts",
+      "sha256": "DE75541D89C005C536DCF783528A5E40C69A5AECE7E1750468007D8A155C1D3E"
+    },
+    {
+      "path": "src/api/desktopRecentSchedule.ts",
+      "sha256": "D3D5989A1605810D11D57AAF5C02A6E84168C8365DB02677A91D1C04FC7E1539"
+    },
+    {
+      "path": "src/api/desktopExplore.ts",
+      "sha256": "120C74148646D2F754BB4A5D474E7ACEB21B478F357066137685C028452F37E4"
+    },
+    {
+      "path": "src/api/jikan.ts",
+      "sha256": "74C4BAF28E8FCBDC30D1A40E3C49E9A2C805DA2544B7927EE9195EBFC36DE7C1"
+    },
+    {
+      "path": "src/pages/DesktopHome.tsx",
+      "sha256": "FC082C200EC1DD7E7353CA6DAE6F380C648E982C8B0BCE02A9F4DE44771943A5"
+    },
+    {
+      "path": "src/pages/DesktopExplore.tsx",
+      "sha256": "905E0D29353BB074E35565B07D547F697DBF9150F2FF53C7F92DC6756D6D154A"
+    },
+    {
+      "path": "src/lib/desktopPersonalBackup.ts",
+      "sha256": "09C1F796076E5AA6FEBAEB323305D5FF6CC789FEFC105D3DD244FD79F02B7292"
+    },
+    {
+      "path": "desktop/src-tauri/bin/streamnyaa-player.lua",
+      "sha256": "BCD715D0A8AB967C9C23BD3619BE8B910323D06ECF7474C5253789EC456FFC98"
+    }
+  ],
+  "nativeAcceptance": "User testing pending",
+  "extractedInstallerResourceComparison": "Not verified",
+  "previousCandidateArchive": "archive-player-only-55729f7",
+  "buildCommand": "npm run desktop:build"
+}

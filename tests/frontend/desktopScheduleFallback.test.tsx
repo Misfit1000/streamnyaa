@@ -48,7 +48,7 @@ describe('Calendar broadcast fallback', () => {
   it('reports provider failure rather than a false empty day', async () => {
     vi.mocked(fetchJikanPath).mockRejectedValue(new Error('Broadcast provider timed out.'));
     show();
-    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Broadcast provider timed out. Retry');
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Broadcast times could not update. Please try again shortly. Retry');
     expect(screen.queryByText('No matching titles on this reference page.')).toBeNull();
   });
 });

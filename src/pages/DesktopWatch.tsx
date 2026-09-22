@@ -1,3 +1,4 @@
+import { mergeScheduleWatchEvidence } from '../lib/desktopScheduleWatch';
 import DesktopEpisodeStatus from '../components/DesktopEpisodeStatus';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
@@ -1914,8 +1915,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   );
   const usingPlaceholderDetails = Boolean((detailsQuery as { isPlaceholderData?: boolean }).isPlaceholderData);
   const resolvedAnime = usingPlaceholderDetails ? null : detailsQuery.data?.data;
-  const anime = resolvedAnime || fallbackAnime;
-  const animeNotYetAired = (!resolvedAnime && routeMarkedUpcoming) || isUpcomingAnime(anime);
+  const anime = useMemo(() => mergeScheduleWatchEvidence(resolvedAnime || fallbackAnime, fallbackAnime), [resolvedAnime, fallbackAnime]);
+  const animeNotYetAired = (!resolvedAnime && routeMarkedUpcoming && !anime?.latestEpisode) || isUpcomingAnime(anime);
   const hasFullMetadata = Boolean(resolvedAnime);
   const metadataFailed = detailsQuery.isError && !usingPlaceholderDetails;
   const metadataLoading = Boolean(id)

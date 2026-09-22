@@ -1,17 +1,18 @@
+import { useAuth } from '../context/AuthContext';
+import { watchDeskReleases } from '../lib/desktopWatchDesk';
+import { useStore } from '../store/useStore';
 import {coveragePercent} from '../lib/desktopCoverage';
 import DesktopWatchDesk from '../components/DesktopWatchDesk';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
-import DesktopHomeCustomize from '../components/DesktopHomeCustomize';
 import { useHomeLayout, type ShelfId } from '../lib/desktopHomeLayout';
 import { useDesktopDesign } from '../lib/desktopAppearance';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Info, Loader2, Play, RefreshCw, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, Pause, Play, RefreshCw, Star } from 'lucide-react';
 import Seo from '../components/Seo';
-import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { fetchPopularAnime, fetchRecentEpisodes, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
 import {
   formatPlaybackTime,
@@ -33,213 +34,6 @@ import { useSeasonalAnimeQuery } from '../lib/seasonalAnime';
 import { airedEpisodeCount, episodeAvailabilityLabel } from '../lib/animeEpisodes';
 import { readDesktopCatalog, writeDesktopCatalog } from '../lib/desktopCatalogCache';
 import { withDesktopCatalogFallback } from '../api/desktopCatalogFallback';
-
-const FALLBACK_POSTERS: Record<number, string> = {
-  52299: 'https://cdn.myanimelist.net/images/anime/1801/142390l.jpg',
-  57334: 'https://cdn.myanimelist.net/images/anime/1584/143719l.jpg',
-  54492: 'https://cdn.myanimelist.net/images/anime/1708/138033l.jpg',
-};
-
-function fallbackCover(malId?: number) {
-  return malId ? FALLBACK_POSTERS[malId] || '' : '';
-}
-
-function makeFallbackAnime({
-  id,
-  mal_id,
-  title,
-  episodes,
-  latestEpisode,
-  score,
-  year,
-  synopsis,
-  genres,
-}: {
-  id: number;
-  mal_id?: number;
-  title: string;
-  episodes?: number | null;
-  latestEpisode?: number | string | null;
-  score?: number;
-  year?: number;
-  synopsis?: string;
-  genres?: string[];
-}) {
-  const cover = fallbackCover(mal_id);
-  return {
-    id,
-    ...(mal_id ? { mal_id } : {}),
-    title,
-    title_english: title,
-    anilist_id: id,
-    synopsis: synopsis || 'Open the desktop watch flow, pick an aired episode, and search individual source links.',
-    episodes,
-    latestEpisode,
-    score,
-    year,
-    rating: 'PG-13',
-    type: 'TV',
-    genres: (genres || ['Action', 'Drama']).map((name) => ({ name })),
-    banner_image: '',
-    images: cover
-      ? { jpg: { large_image_url: cover, image_url: cover }, webp: { large_image_url: cover, image_url: cover } }
-      : undefined,
-  };
-}
-
-const FALLBACK_DESKTOP_ANIME = [
-  {
-    mal_id: 21,
-    title: 'ONE PIECE',
-    title_english: 'ONE PIECE',
-    synopsis: 'Monkey D. Luffy and his crew continue their long voyage through the Grand Line, chasing the legendary treasure and the next island on the map.',
-    episodes: 1161,
-    latestEpisode: 1161,
-    score: 8.7,
-    year: 1999,
-    rating: 'TV-14',
-    type: 'TV',
-    genres: [{ name: 'Action' }, { name: 'Adventure' }, { name: 'Fantasy' }],
-    banner_image: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/21-wf37VakJmZqs.jpg',
-    images: { jpg: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-ELSYx3yMPcKM.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-ELSYx3yMPcKM.jpg' } },
-  },
-  {
-    mal_id: 52991,
-    title: 'Frieren: Beyond Journey’s End',
-    title_english: 'Frieren: Beyond Journey’s End',
-    synopsis: 'After the hero party defeats the Demon King, Frieren begins a quieter journey through memory, time, and the people left behind.',
-    episodes: 28,
-    latestEpisode: 28,
-    score: 9.3,
-    year: 2023,
-    rating: 'PG-13',
-    type: 'TV',
-    genres: [{ name: 'Adventure' }, { name: 'Drama' }, { name: 'Fantasy' }],
-    banner_image: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/154587-ivXNJ23SM1xB.jpg',
-    images: { jpg: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx154587-qQTzQnEJJ3oB.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx154587-qQTzQnEJJ3oB.jpg' } },
-  },
-  {
-    mal_id: 51009,
-    title: 'Jujutsu Kaisen Season 2',
-    title_english: 'Jujutsu Kaisen Season 2',
-    synopsis: 'Gojo’s past and the Shibuya Incident reshape the balance of curses, sorcerers, and everything the students thought they understood.',
-    episodes: 23,
-    latestEpisode: 23,
-    score: 8.8,
-    year: 2023,
-    rating: 'TV-MA',
-    type: 'TV',
-    genres: [{ name: 'Action' }, { name: 'Supernatural' }],
-    banner_image: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/145064-esDtAY2He7sk.jpg',
-    images: { jpg: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx145064-hSNRJM03pvv1.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx145064-hSNRJM03pvv1.jpg' } },
-  },
-  {
-    mal_id: 16498,
-    title: 'Attack on Titan',
-    title_english: 'Attack on Titan',
-    synopsis: 'Humanity fights for survival behind walls as the truth about the Titans grows darker with every battle.',
-    episodes: 25,
-    latestEpisode: 25,
-    score: 8.6,
-    year: 2013,
-    rating: 'TV-MA',
-    type: 'TV',
-    genres: [{ name: 'Action' }, { name: 'Drama' }, { name: 'Suspense' }],
-    banner_image: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/16498-8jpFCOcDmneX.jpg',
-    images: { jpg: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-buvcRTBx4NSm.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-buvcRTBx4NSm.jpg' } },
-  },
-  {
-    mal_id: 38000,
-    title: 'Demon Slayer: Kimetsu no Yaiba',
-    title_english: 'Demon Slayer: Kimetsu no Yaiba',
-    synopsis: 'Tanjiro joins the Demon Slayer Corps after tragedy strikes his family and his sister is transformed.',
-    episodes: 26,
-    latestEpisode: 26,
-    score: 8.5,
-    year: 2019,
-    rating: 'R',
-    type: 'TV',
-    genres: [{ name: 'Action' }, { name: 'Supernatural' }],
-    banner_image: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/101922-33MtJGsUSxga.jpg',
-    images: { jpg: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx101922-WBsBl0ClmgYL.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx101922-WBsBl0ClmgYL.jpg' } },
-  },
-  {
-    mal_id: 5114,
-    title: 'Fullmetal Alchemist: Brotherhood',
-    title_english: 'Fullmetal Alchemist: Brotherhood',
-    synopsis: 'Two brothers search for the Philosopher’s Stone after an alchemy mistake costs them far more than they expected.',
-    episodes: 64,
-    latestEpisode: 64,
-    score: 9.1,
-    year: 2009,
-    rating: 'TV-14',
-    type: 'TV',
-    genres: [{ name: 'Action' }, { name: 'Adventure' }, { name: 'Drama' }],
-    banner_image: 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/5114-q0V5URebphSG.jpg',
-    images: { jpg: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx5114-nSWCgQlmOMtj.jpg' }, webp: { large_image_url: 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx5114-nSWCgQlmOMtj.jpg' } },
-  },
-];
-
-const FALLBACK_LATEST = [
-  ...FALLBACK_DESKTOP_ANIME.slice(0, 3),
-  makeFallbackAnime({ id: 151807, mal_id: 52299, title: 'Solo Leveling', episodes: 12, latestEpisode: 12, score: 8.3, year: 2024, genres: ['Action', 'Fantasy'] }),
-  makeFallbackAnime({ id: 171018, mal_id: 57334, title: 'DAN DA DAN', episodes: 12, latestEpisode: 12, score: 8.5, year: 2024, genres: ['Action', 'Comedy', 'Supernatural'] }),
-  makeFallbackAnime({ id: 161645, mal_id: 54492, title: 'The Apothecary Diaries', episodes: 24, latestEpisode: 24, score: 8.8, year: 2023, genres: ['Drama', 'Mystery'] }),
-];
-
-const FALLBACK_TRENDING = [
-  makeFallbackAnime({ id: 151807, mal_id: 52299, title: 'Solo Leveling', episodes: 12, latestEpisode: 12, score: 8.3, year: 2024, genres: ['Action', 'Fantasy'] }),
-  makeFallbackAnime({ id: 171018, mal_id: 57334, title: 'DAN DA DAN', episodes: 12, latestEpisode: 12, score: 8.5, year: 2024, genres: ['Action', 'Comedy'] }),
-  makeFallbackAnime({ id: 153288, mal_id: 52588, title: 'Kaiju No. 8', episodes: 12, latestEpisode: 12, score: 8.1, year: 2024, genres: ['Action', 'Sci-Fi'] }),
-  makeFallbackAnime({ id: 127230, mal_id: 44511, title: 'Chainsaw Man', episodes: 12, latestEpisode: 12, score: 8.5, year: 2022, genres: ['Action', 'Supernatural'] }),
-  makeFallbackAnime({ id: 140960, mal_id: 50265, title: 'SPY x FAMILY', episodes: 12, latestEpisode: 12, score: 8.5, year: 2022, genres: ['Action', 'Comedy'] }),
-  makeFallbackAnime({ id: 153518, mal_id: 52701, title: 'Delicious in Dungeon', episodes: 24, latestEpisode: 24, score: 8.6, year: 2024, genres: ['Adventure', 'Comedy', 'Fantasy'] }),
-];
-
-const FALLBACK_POPULAR = [
-  makeFallbackAnime({ id: 21, mal_id: 21, title: 'ONE PIECE', episodes: 1161, latestEpisode: 1161, score: 8.7, year: 1999, genres: ['Action', 'Adventure'] }),
-  makeFallbackAnime({ id: 16498, mal_id: 16498, title: 'Attack on Titan', episodes: 25, latestEpisode: 25, score: 8.6, year: 2013, genres: ['Action', 'Drama'] }),
-  makeFallbackAnime({ id: 21459, mal_id: 31964, title: 'My Hero Academia', episodes: 13, latestEpisode: 13, score: 7.8, year: 2016, genres: ['Action'] }),
-  makeFallbackAnime({ id: 11061, mal_id: 11061, title: 'Hunter x Hunter', episodes: 148, latestEpisode: 148, score: 9.0, year: 2011, genres: ['Action', 'Adventure'] }),
-  makeFallbackAnime({ id: 1735, mal_id: 1735, title: 'Naruto: Shippuden', episodes: 500, latestEpisode: 500, score: 8.3, year: 2007, genres: ['Action', 'Adventure'] }),
-  makeFallbackAnime({ id: 5114, mal_id: 5114, title: 'Fullmetal Alchemist: Brotherhood', episodes: 64, latestEpisode: 64, score: 9.1, year: 2009, genres: ['Action', 'Drama'] }),
-];
-
-const FALLBACK_TOP_AIRING = [
-  makeFallbackAnime({ id: 154587, mal_id: 52991, title: 'Frieren: Beyond Journey’s End', episodes: 28, latestEpisode: 28, score: 9.3, year: 2023, genres: ['Adventure', 'Drama', 'Fantasy'] }),
-  makeFallbackAnime({ id: 161645, mal_id: 54492, title: 'The Apothecary Diaries', episodes: 24, latestEpisode: 24, score: 8.8, year: 2023, genres: ['Drama', 'Mystery'] }),
-  makeFallbackAnime({ id: 153518, mal_id: 52701, title: 'Delicious in Dungeon', episodes: 24, latestEpisode: 24, score: 8.6, year: 2024, genres: ['Adventure', 'Fantasy'] }),
-  makeFallbackAnime({ id: 171018, mal_id: 57334, title: 'DAN DA DAN', episodes: 12, latestEpisode: 12, score: 8.5, year: 2024, genres: ['Action', 'Comedy'] }),
-  makeFallbackAnime({ id: 153288, mal_id: 52588, title: 'Kaiju No. 8', episodes: 12, latestEpisode: 12, score: 8.1, year: 2024, genres: ['Action', 'Sci-Fi'] }),
-  makeFallbackAnime({ id: 130003, mal_id: 47917, title: 'Bocchi the Rock!', episodes: 12, latestEpisode: 12, score: 8.8, year: 2022, genres: ['Comedy', 'Music'] }),
-];
-
-const FALLBACK_SEASONAL = [
-  makeFallbackAnime({ id: 189046, mal_id: 61316, title: 'Re:ZERO -Starting Life in Another World- Season 4', episodes: 19, latestEpisode: 6, score: 8.7, year: 2026, genres: ['Drama', 'Fantasy'] }),
-  makeFallbackAnime({ id: 147105, mal_id: 51553, title: 'Witch Hat Atelier', episodes: 13, latestEpisode: 7, score: 8.6, year: 2026, genres: ['Adventure', 'Fantasy'] }),
-  makeFallbackAnime({ id: 182300, mal_id: 59983, title: 'Wistoria: Wand and Sword Season 2', episodes: 12, latestEpisode: 5, score: 8.1, year: 2026, genres: ['Action', 'Fantasy'] }),
-  makeFallbackAnime({ id: 174576, title: 'SAKAMOTO DAYS', episodes: 11, latestEpisode: 11, score: 7.8, year: 2025, genres: ['Action', 'Comedy'] }),
-  makeFallbackAnime({ id: 185660, title: 'Gachiakuta', episodes: 12, latestEpisode: 1, score: 7.9, year: 2025, genres: ['Action', 'Fantasy'] }),
-  makeFallbackAnime({ id: 177709, mal_id: 58939, title: 'Tougen Anki', episodes: 12, latestEpisode: 1, score: 7.4, year: 2025, genres: ['Action', 'Supernatural'] }),
-];
-
-const FALLBACK_UPCOMING = [
-  makeFallbackAnime({ id: 180516, title: 'Chainsaw Man - The Movie: Reze Arc', episodes: null, latestEpisode: 'TBA', score: 0, year: 2025, genres: ['Action', 'Supernatural'] }),
-  makeFallbackAnime({ id: 185213, title: 'Jujutsu Kaisen: Culling Game', episodes: null, latestEpisode: 'TBA', score: 0, year: 2026, genres: ['Action', 'Supernatural'] }),
-  makeFallbackAnime({ id: 170942, title: 'One-Punch Man Season 3', episodes: null, latestEpisode: 'TBA', score: 0, year: 2025, genres: ['Action', 'Comedy'] }),
-  makeFallbackAnime({ id: 169441, title: 'Fire Force Season 3', episodes: null, latestEpisode: 'TBA', score: 0, year: 2025, genres: ['Action', 'Supernatural'] }),
-  makeFallbackAnime({ id: 166518, title: 'WIND BREAKER Season 2', episodes: null, latestEpisode: 'TBA', score: 0, year: 2025, genres: ['Action'] }),
-  makeFallbackAnime({ id: 177709, title: 'Tougen Anki', episodes: null, latestEpisode: 'TBA', score: 0, year: 2025, genres: ['Action', 'Supernatural'] }),
-];
-
-const FALLBACK_YEARLY = [
-  makeFallbackAnime({ id: 151807, mal_id: 52299, title: 'Solo Leveling', episodes: 12, latestEpisode: 12, score: 8.3, year: 2024, genres: ['Action', 'Fantasy'] }),
-  makeFallbackAnime({ id: 171018, mal_id: 57334, title: 'DAN DA DAN', episodes: 12, latestEpisode: 12, score: 8.5, year: 2024, genres: ['Action', 'Comedy'] }),
-  makeFallbackAnime({ id: 153518, mal_id: 52701, title: 'Delicious in Dungeon', episodes: 24, latestEpisode: 24, score: 8.6, year: 2024, genres: ['Adventure', 'Fantasy'] }),
-  makeFallbackAnime({ id: 153288, mal_id: 52588, title: 'Kaiju No. 8', episodes: 12, latestEpisode: 12, score: 8.1, year: 2024, genres: ['Action', 'Sci-Fi'] }),
-  makeFallbackAnime({ id: 166531, title: 'WIND BREAKER', episodes: 13, latestEpisode: 13, score: 7.8, year: 2024, genres: ['Action'] }),
-  makeFallbackAnime({ id: 169440, title: 'Girls Band Cry', episodes: 13, latestEpisode: 13, score: 8.4, year: 2024, genres: ['Drama', 'Music'] }),
-];
 
 function uniqueValues(values: Array<string | undefined | null>) {
   const seen = new Set<string>();
@@ -667,11 +461,6 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
     : source.episode ? `Episode ${source.episode}` : source.size || 'Recent source';
   const episodeLabel = source.episode ? `Episode ${source.episode}` : 'Recent source';
   const lastWatchedText = sourceUpdatedLabel(source);
-  const detailsQuery = new URLSearchParams({
-    q: source.animeTitle || source.title,
-    ...(source.animeId ? { animeId: String(source.animeId) } : {}),
-    ...(source.episode ? { ep: String(source.episode) } : {}),
-  });
   const detailsPath = source.animeId ? desktopWatchPath({mal_id:source.animeId,title:source.animeTitle || source.title}, source.episode ? {ep:String(source.episode)} : undefined) : `/search?q=${encodeURIComponent(source.animeTitle || source.title)}`;
   const resume = () => {
     void openLocalSourceNow(source).catch((error) => {
@@ -769,7 +558,8 @@ function useHomeCatalogQuery(
   queryFn: (options: { signal: AbortSignal; priority: 'foreground' | 'background' }) => Promise<any>,
   { enabled = true, staleTime = 1000 * 60 * 10 }: { enabled?: boolean; staleTime?: number } = {},
 ) {
-  const saved = readDesktopCatalog(cacheKey);
+  const cached = readDesktopCatalog(cacheKey);
+  const saved = cacheKey !== 'home:recent' || cached?.data.data.every((item:any) => !item.catalogAlternative && ['aired','listed'].includes(item.recentFeedKind)) ? cached : null;
   return useQuery({
     queryKey,
     queryFn: async ({ signal }) => {
@@ -777,8 +567,8 @@ function useHomeCatalogQuery(
       const response = await withDesktopCatalogFallback(() => queryFn({ signal, priority: secondaryPriority(cacheKey) }),
         { mode, ...(mode === 'year' ? { year: Number(cacheKey.split(':')[2]) } : {}), ...(mode === 'airing' ? { sort: 'score' } : {}) }, signal);
       if (!Array.isArray(response?.data)) throw new Error('Invalid home response.');
-      const normalized = { ...response, data: uniqueAnimeById(response?.data || []).slice(0, 18) };
-      writeDesktopCatalog(cacheKey, normalized);
+      const normalized = { ...response, fetchedAt: response.fetchedAt ?? response.streamnyaa?.fetchedAt ?? Date.now(), stale: response.stale || response.streamnyaa?.status === 'stale', data: uniqueAnimeById(response?.data || []).slice(0, 18) };
+      if (normalized.fetchedAt > 0) writeDesktopCatalog(cacheKey, normalized, normalized.fetchedAt);
       return normalized;
     },
     enabled,
@@ -786,15 +576,17 @@ function useHomeCatalogQuery(
     retryDelay: (attempt) => 250 + attempt * 500,
     staleTime,
     gcTime: 1000 * 60 * 90,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: cacheKey === 'home:recent',
     refetchOnReconnect: true,
     refetchInterval: query => query.state.error || query.state.data?.fallback ? 300_000 : false,
     initialData: saved?.data,
-    initialDataUpdatedAt: saved?.savedAt,
+    initialDataUpdatedAt: saved ? Math.min(saved.savedAt, Number(saved.data.fetchedAt) || saved.savedAt) : undefined,
   });
 }
 
 export default function DesktopHome() {
+  const { isAdmin } = useAuth();
+  const bookmarks = useStore(state => state.myList);
   const design = useDesktopDesign();
   const preferences = useHomeLayout();
   const shelfStyle = (id: ShelfId) => design === 'revamped' ? { order: preferences.layout.order.indexOf(id) + 3, display: preferences.layout.hidden.includes(id) ? 'none' : undefined } : undefined;
@@ -858,10 +650,7 @@ export default function DesktopHome() {
   const upcomingItems = upcomingData?.data || [];
   const yearlyTopItems = yearlyTopData?.data || [];
   const homeQueries = [seasonalQuery, trendingQuery, recentEpisodeQuery, popularQuery, topAiringQuery, upcomingQuery, yearlyTopQuery];
-  const homeHasSavedContent = homeQueries.some((query) => Boolean(query.data?.data?.length));
   const homeRefreshFailed = homeQueries.some((query) => query.isError);
-  const homeIsLoading = homeQueries.some((query) => query.isLoading && !query.data);
-  const homeLoadPercent = homeHasSavedContent ? (homeRefreshFailed ? 92 : 100) : (homeIsLoading ? 46 : 74);
 
   const retryHome = () => {
     homeQueries.forEach((query) => {
@@ -942,12 +731,14 @@ export default function DesktopHome() {
   return (
     <div className="desktop-home-cinema sn-page pb-9 pt-4" style={design === 'revamped' ? {display:'flex',flexDirection:'column'} : undefined}>
       <Seo title="StreamNyaa Desktop Cinema" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
-      <DesktopWatchDesk recent={history.filter(item => Number(item.progressUpdatedAt || item.savedAt || 0) > Date.now() - 7 * 86400_000).length} resumable={recentSources.filter(item => !item.completed && Number(item.progressPercent || 0) < 92).length} />
-      {(homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <details className="mb-3 text-sm text-white/60" style={{order:2}}><summary className="cursor-pointer py-2">Catalog status · some shelves use saved or fallback data</summary><p className="mt-2">Exact airing times and trending require AniList. Recent MAL additions are shown when available. MyAnimeList shelves keep their own provider identity. <button className="underline" onClick={retryHome}>Retry affected shelves</button></p></details>}
+      <DesktopWatchDesk sources={uniqueRecentSources(history)} history={history} upcoming={watchDeskReleases(bookmarks, history, [...seasonalItems, ...topAiringItems])} />
+      {isAdmin && (homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <details className="mb-3 text-sm text-white/60" style={{order:2}}><summary className="cursor-pointer py-2">Catalog status · some shelves use saved or fallback data</summary><p className="mt-2">Exact airing times and trending require AniList. Recent MAL additions are shown when available. MyAnimeList shelves keep their own provider identity. <button className="underline" onClick={retryHome}>Retry affected shelves</button></p></details>}
 
+      {!isAdmin && (homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <p className="mb-3 text-sm text-white/60" style={{order:2}}>Some shelves could not update. Previously saved results remain available. <button className="underline" onClick={retryHome}>Retry updates</button></p>}
       <section style={shelfStyle('spotlight')} className="sn-spotlight" aria-label="Featured anime" onMouseEnter={() => setHeroInteracting(true)} onMouseLeave={() => setHeroInteracting(false)} onFocusCapture={() => setHeroInteracting(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setHeroInteracting(false); }}>
         <AnimatePresence initial={false}>{hero ? <motion.div key={animeIdentity(hero)} className="sn-spotlight-frame" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:reducedMotion ? 0 : .6}}><DesktopImage candidates={heroImageCandidates(hero)} alt={hero.title} className="sn-spotlight-art" loading="eager" forceKey={animeIdentity(hero)} /></motion.div> : null}</AnimatePresence>
         <div className="sn-spotlight-shade" />
+        {heroCount > 1 && <button type="button" className="sn-spotlight-pause" onClick={() => setHeroPaused(value => !value)} aria-pressed={heroPaused} aria-label={heroPaused ? "Resume spotlight rotation" : "Pause spotlight rotation"} title={heroPaused ? "Resume rotation after leaving the banner" : "Keep spotlight paused"}>{heroPaused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}</button>}
         <div className="sn-spotlight-copy">
           <p className="text-sm text-white/65">In the spotlight</p>
           <h1 className="mt-2 line-clamp-2 text-3xl font-semibold leading-tight xl:text-4xl">{hero?.title || 'Find your next favorite'}</h1>
@@ -957,7 +748,6 @@ export default function DesktopHome() {
             {hero ? <Link to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))} className="sn-primary-action"><Play className="h-4 w-4 fill-current" />Watch now</Link>
               : <button type="button" onClick={retryHome} className="sn-secondary-action"><RefreshCw className="h-4 w-4" />{homeRefreshFailed ? 'Try again' : 'Refresh Home'}</button>}
             {heroCount > 1 ? <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setHeroPaused(value => !value)} className="sn-secondary-action px-3 py-2" aria-pressed={heroPaused}>{heroPaused ? 'Rotate' : 'Pause'}</button>
               <button type="button" onClick={() => moveHero(-1)} className="sn-icon-action h-11 w-11" aria-label="Previous seasonal pick"><ChevronLeft className="h-5 w-5" /></button>
               <button type="button" onClick={() => moveHero(1)} className="sn-icon-action h-11 w-11" aria-label="Next seasonal pick"><ChevronRight className="h-5 w-5" /></button>
             </div> : null}
@@ -975,7 +765,8 @@ export default function DesktopHome() {
       ) : null}
 
       <section style={shelfStyle('episodes')} className="mt-7 desktop-section-enter">
-        <RailHeader title="New Episodes" subtitle={recentEpisodeData?.fallbackLabel || (recentEpisodeData?.recentFeedKind === 'listed' ? 'Recently added to MyAnimeList · not exact airing times' : 'Freshly aired episodes')} to="/search?mode=new" count={latestEpisodes.length} />
+        <RailHeader title="New Episodes" subtitle={(isAdmin && recentEpisodeData?.fallbackLabel) || (recentEpisodeData?.recentFeedKind === 'listed' ? 'Recently listed episodes · listing order may differ from broadcast time' : 'Latest episode broadcasts')} to="/search?mode=new" count={latestEpisodes.length} />
+        {recentEpisodeData?.fetchedAt && <p className="mb-3 text-xs text-white/55">{recentEpisodeData.stale || recentEpisodeQuery.isError ? "Saved episode snapshot" : "Episode updates"} · Last updated {new Date(recentEpisodeData.fetchedAt).toLocaleString()}</p>}
         <MediaRail>
           {latestEpisodes.map((anime: any, index: number) => (
             <PosterAnimeCard
@@ -1005,7 +796,7 @@ export default function DesktopHome() {
       </section>
 
       <section style={shelfStyle('trending')} className="mt-7 desktop-section-enter">
-        <RailHeader title="Trending Now" subtitle={trendingData?.fallbackLabel || "Airing titles with the strongest current activity"} to="/search?mode=trending" count={trending.length} />
+        <RailHeader title="Trending Now" subtitle={(isAdmin && trendingData?.fallbackLabel) || (trendingData?.catalogKind === "saved-titles" ? "Saved titles · current trends are unavailable" : trendingData?.catalogKind === "popular-alternative" ? "Popular titles · current trends are unavailable" : "Airing titles with the strongest current activity")} to="/search?mode=trending" count={trending.length} />
         <MediaRail>
           {trending.map((anime: any, index: number) => (
             <PosterAnimeCard

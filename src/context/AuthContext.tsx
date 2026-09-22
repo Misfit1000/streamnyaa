@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AuthSession,
   AuthUser,
@@ -64,7 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [recoveryState, setRecoveryState] = useState<RecoveryState>('idle');
   const [recoveryError, setRecoveryError] = useState('');
 
+  const accountRevision = useRef(0);
   const applySession = async (nextSession: AuthSession | null, allowRefresh = true) => {
+    const revision = ++accountRevision.current;
+    setIsAdmin(false);
     setSession(nextSession);
     if (!nextSession?.access_token) {
       setUser(null);
@@ -74,19 +77,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const account = await fetchAccount(nextSession);
+      if (revision !== accountRevision.current) return;
       setUser(account.user);
       setIsAdmin(Boolean(account.isAdmin));
     } catch (accountError: any) {
+      if (revision !== accountRevision.current) return;
       if (allowRefresh && nextSession.refresh_token && accountError?.status === 401) {
         const refreshedSession = await refreshSession(nextSession);
+        if (revision !== accountRevision.current) return;
         setSession(refreshedSession);
         const account = await fetchAccount(refreshedSession);
+        if (revision !== accountRevision.current) return;
         setUser(account.user);
         setIsAdmin(Boolean(account.isAdmin));
         return;
       }
       if (isRecoverableAccountLookupError(accountError)) {
         const fallbackUser = nextSession.user || await fetchSessionUser(nextSession);
+        if (revision !== accountRevision.current) return;
         setUser(fallbackUser);
         setIsAdmin(false);
         return;
@@ -271,8 +279,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     },
     signOut: async () => {
-      await signOutSession(session);
+      const previous = session;
       await applySession(null, false);
+      await signOutSession(previous);
     },
     refreshAccount,
   }), [session, user, isAdmin, loading, error, desktopRoute, recoveryAccessToken, recoveryState, recoveryError]);

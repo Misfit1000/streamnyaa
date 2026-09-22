@@ -24,5 +24,8 @@ export async function fetchRecentEpisodeListings(signal?: AbortSignal) {
       title:existing?.title || entry.title, images:entry.images || existing?.images,
       recentFeedKind:'listed', listedEpisode:numbers.length ? Math.max(...numbers) : undefined }];
   });
-  return { data, recentFeedKind:'listed' as const, cached:Boolean(response.headers.get('X-StreamNyaa-Local-Cache')) || ['memory','disk','stale'].includes(response.headers.get('X-StreamNyaa-Desktop-Cache') || '') };
+  return { data, recentFeedKind:'listed' as const,
+    fetchedAt: Number(response.headers.get('X-StreamNyaa-Fetched-At')) || Date.now(),
+    stale: response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale' || response.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale',
+    cached:Boolean(response.headers.get('X-StreamNyaa-Local-Cache')) || ['memory','disk','stale'].includes(response.headers.get('X-StreamNyaa-Desktop-Cache') || '') };
 }

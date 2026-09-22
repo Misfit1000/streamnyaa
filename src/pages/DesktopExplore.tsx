@@ -1,12 +1,10 @@
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { createPortal } from 'react-dom';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { CalendarDays, Check, ChevronDown, Clapperboard, Grid2X2, List, Loader2, Play, RefreshCw, Search, SlidersHorizontal, Sparkles, Star, TrendingUp, Tv, X } from 'lucide-react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { CalendarDays, ChevronDown, Clapperboard, Grid2X2, List, Loader2, RefreshCw, Search, SlidersHorizontal, Sparkles, Star, TrendingUp, Tv } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Seo from '../components/Seo';
-import DesktopCatalogActions from '../components/DesktopCatalogActions';
-import { readExplorePresets, writeExplorePresets } from '../lib/desktopExplorePresets';
+import { useAuth } from '../context/AuthContext';
 import { libraryOrganizationEvent, organizationIdentity, readLibraryOrganization } from '../lib/desktopLibraryOrganization';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
@@ -47,18 +45,6 @@ const sortOptions: SelectOption[] = [
   { label: 'Title A-Z', value: 'title' },
 ];
 
-function providerFormat(value: string) {
-  if (value === 'TV Short') return 'TV_SHORT';
-  return value === 'Any' ? '' : value;
-}
-
-function providerStatus(value: string) {
-  if (value === 'Airing') return 'airing';
-  if (value === 'Completed') return 'complete';
-  if (value === 'Upcoming') return 'upcoming';
-  return '';
-}
-
 function uniqueAnime(items: any[]) {
   const seen = new Set<string>();
   return items.filter((anime) => {
@@ -98,73 +84,21 @@ function statusFor(anime: any) {
   return '';
 }
 
-function localSort(items: any[], sort: string) {
-  const next = [...items];
-  if (sort === 'title') return next.sort((a, b) => String(a?.title || '').localeCompare(String(b?.title || '')));
-  if (sort === 'score') return next.sort((a, b) => scoreFor(b) - scoreFor(a));
-  if (sort === 'recent') return next.sort((a, b) => Number(yearFor(b) || 0) - Number(yearFor(a) || 0));
-  if (sort === 'popular') return next.sort((a, b) => Number(b?.popularity || 0) - Number(a?.popularity || 0));
-  return next;
-}
-
 export function PremiumSelect({ value, options, onChange, ariaLabel }: {
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
   ariaLabel: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 0, top: 0, width: 180 });
-  const buttonRef = useRef<HTMLButtonElement>(null);
-
-  useLayoutEffect(() => {
-    if (!open || !buttonRef.current) return;
-    const update = () => {
-      const rect = buttonRef.current?.getBoundingClientRect();
-      if (rect) setPosition({ left: rect.left, top: rect.bottom + 6, width: Math.max(rect.width, 180) });
-    };
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', update, true);
-    return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', update, true);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (!buttonRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [open]);
-
-  const selected = options.find((option) => option.value === value)?.label || value;
   return (
-    <>
-      <button ref={buttonRef} type="button" aria-label={ariaLabel} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex h-10 min-w-[150px] items-center justify-between gap-3 rounded-lg bg-white/[0.055] px-3 text-sm font-semibold text-white/72 transition-colors hover:bg-white/[0.085] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
-        <span className="truncate">{selected}</span><ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && typeof document !== 'undefined' ? createPortal(
-        <div role="listbox" aria-label={ariaLabel} className="fixed z-[100] max-h-72 overflow-y-auto rounded-lg border border-white/[0.09] bg-[#151519] p-1 shadow-sm" style={position}>
-          {options.map((option) => (
-            <button key={option.value} type="button" role="option" aria-selected={option.value === value} onClick={() => { onChange(option.value); setOpen(false); }} className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors ${option.value === value ? 'bg-primary/18 text-white' : 'text-white/68 hover:bg-white/[0.06] hover:text-white'}`}>
-              {option.label}{option.value === value ? <Check className="h-4 w-4 text-primary" /> : null}
-            </button>
-          ))}
-        </div>,
-        document.body,
-      ) : null}
-    </>
+    <div className="relative min-w-[150px]">
+      <select aria-label={ariaLabel} value={value} onChange={event => onChange(event.currentTarget.value)}
+        className="h-10 w-full appearance-none cursor-pointer rounded-lg border-0 bg-[#18181c] py-0 pl-3 pr-10 text-sm font-semibold text-white/75 transition-colors hover:bg-[#222228] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        style={{ colorScheme: 'dark' }}>
+        {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/65" />
+    </div>
   );
 }
 
@@ -252,9 +186,7 @@ function ExploreSkeleton() {
 }
 
 export default function DesktopExplore() {
-  const [presets, setPresets] = useState(readExplorePresets);
-  const [presetName, setPresetName] = useState('');
-  const [presetError, setPresetError] = useState('');
+  const { isAdmin } = useAuth();
   const [organization, setOrganization] = useState(readLibraryOrganization);
   useEffect(() => {
     const refresh = () => setOrganization(readLibraryOrganization());
@@ -282,52 +214,65 @@ export default function DesktopExplore() {
   const releaseDays = ['7', '30', '90'].includes(searchParams.get('released') || '') ? searchParams.get('released')! : 'all';
   const releasedAfter = useMemo(() => releaseDays === 'all' ? undefined : new Date(Date.now() - Number(releaseDays) * 86_400_000).toISOString().slice(0, 10), [releaseDays]);
   const request = useMemo<ExploreRequest>(() => ({ mode, query, genre, format, status, sort, service, adult,
-    year: ['seasonal', 'year'].includes(mode) || (ranking && searchParams.has('year')) ? year : undefined,
+    year: ['seasonal', 'year'].includes(mode) || (searchParams.has('year')) ? year : undefined,
     season: mode === 'seasonal' ? season : undefined,
     releasedAfter,
   }), [mode, query, genre, format, status, sort, service, adult, year, season, releasedAfter, ranking, searchParams]);
-  const catalogCacheKey = exploreCatalogCacheKey({ ...request, block: ranking ? block : 1, version: 5 });
-  const snapshot = useRef({ key: '', before: 0 });
-  if (snapshot.current.key !== catalogCacheKey) {
-    const saved = readDesktopExploreCatalog(catalogCacheKey)?.data?.pages?.[0]?.before;
-    snapshot.current = { key: catalogCacheKey, before: Number.isSafeInteger(saved) && saved > 0 && saved <= Date.now() / 1000 ? saved : Math.floor(Date.now() / 1000) };
-  }
+  const catalogCacheKey = exploreCatalogCacheKey({ ...request, block: ranking ? block : 1, version: mode === 'new' ? 7 : 5 });
+  const readSavedCatalog = () => readDesktopExploreCatalog(catalogCacheKey) || (mode === 'new' ? readDesktopExploreCatalog(catalogCacheKey.replace('version:7','version:6')) : null);
+  const lastValidFeed = useRef<{key: string; page: ExplorePage} | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
-  const requestBefore = snapshot.current.before;
   const firstPage = ranking ? (block - 1) * 4 + 1 : 1;
   const catalogQuery = useInfiniteQuery({
     queryKey: ['desktop-explore-v3', catalogCacheKey],
-    initialPageParam: { page: firstPage, service: service as ExploreService },
+    initialPageParam: { page: firstPage, service: service as ExploreService, before: undefined as number | undefined },
     queryFn: async ({ signal, pageParam }) => {
-      const result = await fetchExplorePage({ ...request, service: pageParam.service, before: requestBefore,
+      const before = pageParam.page === firstPage ? Math.floor(Date.now() / 1000) : pageParam.before;
+      const result = await fetchExplorePage({ ...request, service: pageParam.service, before, releasedAfter: mode === "new" && releaseDays !== "all" ? new Date((before || Date.now()/1000)*1000 - Number(releaseDays)*86_400_000).toISOString().slice(0,10) : request.releasedAfter,
         allowFallback: pageParam.page === 1 }, pageParam.page, signal);
+      if (mode === 'new' && pageParam.page === 1 && result.data.some(item => item.catalogAlternative)) {
+        const previous = lastValidFeed.current?.key === catalogCacheKey ? lastValidFeed.current.page : readDesktopExploreCatalog(catalogCacheKey)?.data?.pages?.[0];
+        if (previous?.data?.length && previous.data.every((item:any) => !item.catalogAlternative)) return {...previous, stale:true, hasNextPage:false, fallbackLabel:'Saved episode snapshot · live updates are unavailable.'};
+      }
+      if (mode === 'new' && pageParam.page === 1 && result.data.length && result.data.every(item => !item.catalogAlternative)) lastValidFeed.current = {key:catalogCacheKey,page:result};
       return { ...result, fallback: result.fallback || (!ranking && result.service !== service) };
     },
     getNextPageParam: (last, pages) => last.paginationVersion === 2 && last.hasNextPage && (!ranking || pages.length < 4)
-      ? { page: last.page + 1, service: last.service } : undefined,
+      ? { page: last.page + 1, service: last.service, before: last.before } : undefined,
     initialData: () => {
-      const cached = readDesktopExploreCatalog(catalogCacheKey)?.data;
+      const cached = readSavedCatalog()?.data;
       if (!Array.isArray(cached?.pages) || !cached.pages.length || !Array.isArray(cached.pageParams)) return undefined;
       const savedService = cached.pages[0].service;
       if (savedService !== service && savedService !== 'mal') return undefined;
       if (!cached.pages.every((page: ExplorePage, i: number) => page.service === savedService && page.page === firstPage + i
-        && Array.isArray(page.data) && typeof page.hasNextPage === 'boolean') || cached.pages.length !== cached.pageParams.length) return undefined;
-      return { pages: cached.pages as ExplorePage[], pageParams: cached.pages.map((page: ExplorePage, index: number) => ({ page: page.page, service: index === 0 ? service as ExploreService : page.service })) };
+        && Array.isArray(page.data) && (mode !== 'new' || page.data.every((item:any) => !item.catalogAlternative && ['aired','listed'].includes(item.recentFeedKind))) && typeof page.hasNextPage === 'boolean') || cached.pages.length !== cached.pageParams.length) return undefined;
+      return { pages: cached.pages as ExplorePage[], pageParams: cached.pages.map((page: ExplorePage, index: number) => ({ page: page.page, service: index === 0 ? service as ExploreService : page.service, before: page.before })) };
     },
-    initialDataUpdatedAt: () => readDesktopExploreCatalog(catalogCacheKey)?.savedAt,
-    staleTime: state => state.state.data?.pages[0]?.paginationVersion !== 2 ? 0 : query ? 1000 * 60 * 10 : 1000 * 60 * 25,
+    initialDataUpdatedAt: () => Math.min(readSavedCatalog()?.savedAt || 0, readSavedCatalog()?.data?.pages?.[0]?.fetchedAt || 0),
+    staleTime: state => state.state.data?.pages[0]?.paginationVersion !== 2 || state.state.data?.pages[0]?.stale ? 0 : mode === 'new' ? 60_000 : query ? 1000 * 60 * 10 : 1000 * 60 * 25,
+    refetchOnWindowFocus: true,
     gcTime: 1000 * 60 * 90,
     retry: false,
     retryDelay: (attempt) => 250 + attempt * 500,
     refetchOnReconnect: true,
-    refetchInterval: query => query.state.error || query.state.data?.pages[0]?.fallback ? 300_000 : false,
+    refetchInterval: query => query.state.error || query.state.data?.pages[0]?.fallback || query.state.data?.pages[0]?.stale ? 300_000 : false,
   });
+
+  const [retryClock, setRetryClock] = useState(Date.now());
+  const retryAt = catalogQuery.errorUpdatedAt + Number((catalogQuery.error as {retryAfterMs?:number} | null)?.retryAfterMs || 0);
+  const retrySeconds = Math.max(0, Math.ceil((retryAt - retryClock)/1000));
+  useEffect(() => {
+    if (!catalogQuery.isError || retryAt <= Date.now()) return;
+    setRetryClock(Date.now());
+    const timer = setInterval(() => setRetryClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [catalogQuery.isError, retryAt]);
 
   useEffect(() => {
     if (!catalogQuery.data) return;
     const pages = catalogQuery.data.pages.slice(0, 12);
     writeDesktopExploreCatalog(catalogCacheKey, { data: pages.flatMap((page) => page.data), pages,
-      pageParams: catalogQuery.data.pageParams.slice(0, 12) });
+      pageParams: catalogQuery.data.pageParams.slice(0, 12) }, Math.min(...pages.map(page => page.fetchedAt || Date.now())));
   }, [catalogCacheKey, catalogQuery.data]);
 
   useEffect(() => {
@@ -348,7 +293,7 @@ export default function DesktopExplore() {
     return () => observer.disconnect();
   }, [ranking, genre, format, status, catalogQuery.hasNextPage, catalogQuery.isFetching, catalogQuery.isError, catalogQuery.fetchNextPage, catalogQuery.data]);
 
-  const loadedItems = useMemo(() => uniqueAnime(catalogQuery.data?.pages.flatMap((page) => page.data) || []), [catalogQuery.data]);
+  const loadedItems = useMemo(() => { const items = catalogQuery.data?.pages.flatMap(page => page.data) || []; if (mode !== 'new') return uniqueAnime(items); const seen = new Set<string>(); return items.filter(item => { const key = JSON.stringify([item.anilist_id ? 'anilist' : 'mal', item.anilist_id || item.mal_id, item.latestEpisode || item.listedEpisode]); if (seen.has(key)) return false; seen.add(key); return true; }); }, [catalogQuery.data, mode]);
   const rankPositions = useMemo(() => new Map(loadedItems.map((anime, index) => [organizationIdentity(anime), Number(anime.rankingPosition) || (block - 1) * 100 + index + 1])), [loadedItems, block]);
   const results = useMemo(() => {
     // Preserve item references so appending a page does not invalidate every
@@ -456,32 +401,22 @@ export default function DesktopExplore() {
       </section>
 
       <div className="mt-3 flex flex-wrap gap-2" aria-label="Active catalog filters">{rankingFilterKeys.filter(key=>searchParams.has(key)).map(key=><button className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/65" key={key} aria-label={`Remove ${key} filter`} onClick={()=>setParam(key,'')}>{key}: {searchParams.get(key)} ×</button>)}</div>
-      <details className="mt-3 text-sm text-white/65">
-        <summary className="w-fit cursor-pointer rounded-md px-2 py-2 focus-visible:outline focus-visible:outline-primary">Saved filters{presets.length ? ` (${presets.length})` : ''}</summary>
-        <div className="flex flex-wrap items-center gap-2 py-2">
-          {presets.map((preset) => <div key={preset.name} className="flex items-center rounded-lg bg-white/5">
-            <button type="button" className="px-3 py-2 hover:text-white" onClick={() => setSearchParams(preset.query)}>{preset.name}</button>
-            <button type="button" aria-label={`Remove saved filter ${preset.name}`} className="p-2 hover:text-white" onClick={() => { try { setPresets(writeExplorePresets(presets.filter((item) => item.name !== preset.name))); setPresetError(''); } catch { setPresetError('Saved filters could not be updated. Storage may be full.'); } }}><X className="h-4 w-4" /></button>
-          </div>)}
-          <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); const name = presetName.trim(); if (!name) return; if (presets.length >= 12 && !presets.some((item) => item.name === name)) { setPresetError('Remove a saved filter before adding another (maximum 12).'); return; } try { setPresets(writeExplorePresets([...presets.filter((item) => item.name !== name), { name, query: searchParams.toString() }])); setPresetName(''); setPresetError(''); } catch { setPresetError('Filters could not be saved. Storage may be full.'); } }}>
-            <input aria-label="Saved filter name" maxLength={40} value={presetName} onChange={(event) => setPresetName(event.target.value)} placeholder="Name these filters" className="rounded-lg bg-white/5 px-3 py-2 text-white outline-none focus:ring-1 focus:ring-primary" />
-            <button type="submit" disabled={!presetName.trim()} className="sn-secondary-action disabled:opacity-40">Save filters</button>
-          </form>
-          {presetError ? <p role="status">{presetError}</p> : null}
-        </div>
-      </details>
 
       <div className="mt-6 flex items-end justify-between gap-4">
         <div><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-semibold">{query ? `Results for “${query}”` : selectedMode.label}</h2>{catalogQuery.isFetching && catalogQuery.data ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/46"><Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />Refreshing</span> : null}</div><p className="mt-1 text-sm text-white/48">{results.length ? `${results.length} anime title${results.length === 1 ? '' : 's'}` : ranking ? (request.year ? `Year ${request.year}` : 'All years') : mode === 'seasonal' ? `${season} ${year}` : catalogQuery.isError ? 'Catalog unavailable' : 'Loading catalog…'}</p></div>
-        {catalogQuery.isError ? <button type="button" onClick={() => void catalogQuery.refetch()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-sm font-semibold text-white/72 hover:bg-white/[0.09]"><RefreshCw className="h-4 w-4" />Retry</button> : null}
+        {catalogQuery.isError ? <button type="button" disabled={retrySeconds > 0 || catalogQuery.isFetching} onClick={() => void catalogQuery.refetch()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-sm font-semibold text-white/72 hover:bg-white/[0.09]"><RefreshCw className="h-4 w-4" />{retrySeconds ? `Retry in ${retrySeconds}s` : "Retry"}</button> : null}
       </div>
 
+      {catalogQuery.data?.pages[0] && <p role="status" className="mt-3 text-xs text-white/60">{catalogQuery.isError || catalogQuery.data.pages[0].stale || Date.now()-catalogQuery.data.pages[0].fetchedAt > (mode === "new" ? 60_000 : 1500_000) ? "Saved snapshot" : isAdmin && catalogQuery.data.pages[0].fallback ? "Fallback catalog" : "Updated catalog"} {catalogQuery.data.pages[0].fetchedAt > 0 && <>· Last updated {new Date(catalogQuery.data.pages[0].fetchedAt).toLocaleString()}</>}</p>}
+      {catalogQuery.data?.pages[0]?.catalogKind === 'saved-titles' && <p className="mt-2 text-sm text-white/60">Saved titles from this device · current results are unavailable. These are browsing alternatives.</p>}
+      {catalogQuery.data?.pages[0]?.catalogKind === 'popular-alternative' && <p className="mt-2 text-sm text-white/60">Popular titles · current trending information is unavailable.</p>}
+      {mode === "new" && catalogQuery.data?.pages[0]?.recentFeedKind === "listed" && <p className="mt-2 text-sm text-white/60">Recently listed episodes · listing order may differ from broadcast time.</p>}
       {catalogQuery.isLoading && !catalogQuery.data ? <div className="mt-5"><ExploreSkeleton /></div> : null}
-      {!ranking && catalogQuery.data?.pages[0]?.fallback ? <p role="status" className="mt-4 text-sm text-white/65">{catalogQuery.data.pages[0].fallbackLabel || (catalogQuery.data.pages[0].recentFeedKind === 'listed' ? 'Recently added episode listings from MyAnimeList. Listing order is not an exact broadcast timeline; episode video IDs are not used as episode numbers.' : 'Using MyAnimeList through Jikan while AniList is unavailable. Refresh to check AniList again.')}</p> : null}
-      {catalogQuery.isError ? <div role="status" className="mt-5 rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-3"><span className="text-sm text-white/65">{catalogQuery.error.message} Filters, search and saved results remain available.</span>{!query && ['new', 'trending'].includes(mode) ? <button type="button" onClick={() => chooseMode('popular')} className="ml-3 inline-flex h-9 items-center rounded-lg bg-white/10 px-3 text-sm font-semibold text-white">Browse Popular</button> : null}<button type="button" onClick={() => void catalogQuery.refetch()} className="ml-3 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4" />Retry now</button></div> : null}
+      {isAdmin && !ranking && catalogQuery.data?.pages[0]?.fallback ? <p role="status" className="mt-4 text-sm text-white/65">{catalogQuery.data.pages[0].fallbackLabel || (catalogQuery.data.pages[0].recentFeedKind === 'listed' ? 'Recently added episode listings from MyAnimeList. Listing order is not an exact broadcast timeline; episode video IDs are not used as episode numbers.' : 'Using MyAnimeList through Jikan while AniList is unavailable. Refresh to check AniList again.')}</p> : null}
+      {catalogQuery.isError ? <div role="status" className="mt-5 rounded-lg border border-white/[0.07] bg-white/[0.025] px-4 py-3"><span className="text-sm text-white/65">{isAdmin ? catalogQuery.error.message : 'Updates are temporarily unavailable. Please try again shortly.'} Filters, search and saved results remain available.</span>{!query && ['new', 'trending'].includes(mode) ? <button type="button" onClick={() => chooseMode('popular')} className="ml-3 inline-flex h-9 items-center rounded-lg bg-white/10 px-3 text-sm font-semibold text-white">Browse Popular</button> : null}<button type="button" disabled={retrySeconds > 0 || catalogQuery.isFetching} onClick={() => void catalogQuery.refetch()} className="ml-3 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-semibold text-white"><RefreshCw className="h-4 w-4" />{retrySeconds ? `Retry in ${retrySeconds}s` : "Retry now"}</button></div> : null}
       {catalogQuery.data && !results.length ? <div className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.025] px-6 py-12 text-center"><Search className="mx-auto h-6 w-6 text-white/34" /><h3 className="mt-3 font-semibold text-white">{catalogQuery.hasNextPage || catalogQuery.isError ? 'No matches in the loaded results yet' : 'No matching anime'}</h3><p className="mt-1 text-sm text-white/48">{catalogQuery.hasNextPage ? 'Load more results or adjust your filters.' : 'Clear a filter or try another title.'}</p></div> : null}
       {ranking ? <p className="mt-3 text-sm text-white/60"><span title={`Ranking source: ${catalogQuery.data?.pages[0]?.service === "mal" ? "MyAnimeList" : "AniList"}`}>Top 100 ⓘ</span> · Positions {(block - 1) * 100 + 1}–{block * 100} · {sort === 'popular' ? 'Most popular' : sort === 'title' ? 'Title A–Z' : sort === 'recent' ? 'Newest first' : 'Highest score'}{catalogQuery.data?.pages[0]?.fetchedAt ? ` · Updated ${new Date(catalogQuery.data.pages[0].fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</p> : null}
-      {results.length ? <div className={`${gridClass} mt-5`}>{results.map((anime, index) => <div key={`${anime.anilist_id ? 'anilist' : 'mal'}:${anime?.anilist_id || anime?.mal_id}`} className="min-w-0">{ranking ? <div className="mb-2 flex justify-between text-sm font-semibold"><span>#{rankPositions.get(organizationIdentity(anime))}</span><span className="text-white/60">{anime.rankingScore === undefined ? '—' : (anime.rankingService === 'mal' ? Number(anime.rankingScore) : Number(anime.rankingScore)/10).toFixed(1)}/10</span></div> : null}<ExploreAnimeCard anime={anime} index={index} density={density} /></div>)}</div> : null}
+      {results.length ? <div className={`${gridClass} mt-5`}>{results.map((anime, index) => <div key={`${anime.anilist_id ? 'anilist' : 'mal'}:${anime?.anilist_id || anime?.mal_id}:${mode === "new" ? anime.latestEpisode || anime.listedEpisode || "listed" : "title"}`} className="min-w-0">{ranking ? <div className="mb-2 flex justify-between text-sm font-semibold"><span>#{rankPositions.get(organizationIdentity(anime))}</span><span className="text-white/60">{anime.rankingScore === undefined ? '—' : (anime.rankingService === 'mal' ? Number(anime.rankingScore) : Number(anime.rankingScore)/10).toFixed(1)}/10</span></div> : null}<ExploreAnimeCard anime={anime} index={index} density={density} /></div>)}</div> : null}
       {query && catalogQuery.isError && !results.length && <section aria-label="Saved search results" className="mt-5">
         <h3 className="text-xl font-semibold">On this device · {localMatches.length} matches</h3>
         <p className="mt-2 text-sm text-white/60">Online search is unavailable. These titles come from your Library and recent catalog cache and match the selected filters. This is not a complete online search or a ranking.</p>

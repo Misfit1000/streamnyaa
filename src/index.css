@@ -639,3 +639,10 @@ select:focus-visible {
     scroll-behavior: auto !important;
   }
 }
+
+/* Slideshow control stays separate from Watch now and the navigation arrows. */
+.sn-spotlight-pause { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:3; display:grid; place-items:center; width:48px; height:48px; border-radius:50%; border:1px solid rgb(255 255 255 / .3); color:rgb(255 255 255 / .85); background:rgb(0 0 0 / .3); backdrop-filter:blur(4px); opacity:0; transition:opacity 160ms ease, background 160ms ease; }
+.sn-spotlight:hover .sn-spotlight-pause, .sn-spotlight:focus-within .sn-spotlight-pause { opacity:1; }
+.sn-spotlight-pause:hover, .sn-spotlight-pause:focus-visible { background:rgb(0 0 0 / .55); outline:2px solid rgb(255 255 255 / .7); outline-offset:3px; }
+@media (hover:none), (pointer:coarse) { .sn-spotlight-pause { opacity:1; } }
+@media (prefers-reduced-motion:reduce) { .sn-spotlight-pause { transition:none; } }

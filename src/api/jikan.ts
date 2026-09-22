@@ -1,3 +1,4 @@
+import { recentHomeQuery, validRecentSchedules } from './desktopRecentSchedule';
 import { useStore } from '../store/useStore';
 import { enrichDesktopScheduleRevisions } from '../lib/scheduleRevisions';
 import { extractNumericId } from '../lib/slug';
@@ -43,13 +44,15 @@ const cacheKeyFor = (provider: MetadataProvider, value: unknown) => {
 };
 
 const metadataState = (response: Response) => ({
-  status: response.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' ? 'stale' : 'authoritative',
+  status: response.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' || response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale' ? 'stale' : 'authoritative',
+  fetchedAt: Number(response.headers.get('X-StreamNyaa-Fetched-At')) || Date.now(),
 });
-const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale') => new Response(JSON.stringify(value), {
+const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale', fetchedAt?: number) => new Response(JSON.stringify(value), {
   status: 200,
   headers: {
     'Content-Type': 'application/json',
     'X-StreamNyaa-Local-Cache': cacheState,
+    ...(fetchedAt ? {'X-StreamNyaa-Fetched-At': String(fetchedAt)} : {}),
   },
 });
 
@@ -287,16 +290,16 @@ const fetchWithLocalMetadataCache = async (
   request: () => Promise<Response>,
 ) => {
   const cached = readLocalMetadata(key);
-  if (cached) return jsonResponse(cached.value, 'local-hit');
+  if (cached) return jsonResponse(cached.value, 'local-hit', cached.savedAt);
   const stale = readLocalMetadata(key, true);
   const providerFailure = desktopProviderFailures.get(provider);
   const recentFailure = isDesktopApp() ? (providerFailure && providerFailure.until > Date.now()
     ? providerFailure : desktopRequestFailures.get(key)) : undefined;
   if (recentFailure && recentFailure.until > Date.now()) {
-    if (stale) return jsonResponse(stale.value, 'local-stale');
+    if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
     throw recentFailure.error;
   }
-  if (stale && providerInCooldown(provider)) return jsonResponse(stale.value, 'local-stale');
+  if (stale && providerInCooldown(provider)) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
 
   const requestKey = `${provider}:${key}`;
   // React Query retains the visible snapshot while this refresh is pending.
@@ -306,7 +309,7 @@ const fetchWithLocalMetadataCache = async (
     try {
       return (await existingRequest).clone();
     } catch (error) {
-      if (stale) return jsonResponse(stale.value, 'local-stale');
+      if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
       throw error;
     }
   }
@@ -315,11 +318,12 @@ const fetchWithLocalMetadataCache = async (
     const response = await request();
     if (!response.ok) {
       if (response.status === 429 || response.status >= 500) markProviderCooldown(provider, response);
-      if (stale) return jsonResponse(stale.value, 'local-stale');
+      if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
       return response;
     }
 
     const json = await readValidatedMetadataJson(provider, response);
+    if (response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale') return response;
     writeLocalMetadata(key, json, ttlSeconds);
     providerCooldowns.delete(provider);
     desktopProviderFailures.delete(provider);
@@ -346,7 +350,7 @@ const fetchWithLocalMetadataCache = async (
       }
     }
     if (failure.code === 'rate-limited') providerCooldowns.set(provider, Date.now() + (failure.retryAfterMs || 60_000));
-    if (stale) return jsonResponse(stale.value, 'local-stale');
+    if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
     throw failure;
   } finally {
     if (inFlightMetadataRequests.get(requestKey) === nextRequest) {
@@ -376,6 +380,7 @@ export const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 2
         headers: {
           'Content-Type': 'application/json',
           'X-StreamNyaa-Desktop-Cache': desktopResponse.cache_status || 'bridge',
+          'X-StreamNyaa-Fetched-At': String(desktopResponse.fetched_at),
         },
       });
     }
@@ -408,6 +413,7 @@ export const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: 
         headers: {
           'Content-Type': 'application/json',
           'X-StreamNyaa-Desktop-Cache': desktopResponse.cache_status || 'bridge',
+          'X-StreamNyaa-Fetched-At': String(desktopResponse.fetched_at),
         },
       });
     }
@@ -687,33 +693,14 @@ export const fetchTopAiring = async (options: DesktopRequestOptions = {}) => {
 export const fetchRecentEpisodesWithLimit = async (limit = 12, options: DesktopRequestOptions = {}) => {
   const nsfwMode = useStore.getState().nsfwMode;
   const perPage = Math.max(12, Math.min(50, Math.ceil(limit)));
-  const query = `
-    query {
-      Page(page: 1, perPage: ${perPage}) {
-        airingSchedules(airingAt_lesser: ${Math.floor(Date.now() / 1000)}, sort: TIME_DESC) {
-          episode
-          media {
-            id
-            idMal
-            title { romaji english native }
-            description
-            episodes
-            status
-            format
-            coverImage { extraLarge large color } bannerImage
-            genres
-            averageScore
-            isAdult
-          }
-        }
-      }
-    }
-  `;
+  const query = recentHomeQuery(perPage, Math.floor(Date.now() / 1000));
   const res = await fetchAniList({ query }, 300, options);
   if (!res.ok) throw new Error('Failed to fetch recent episodes');
   const data = await res.json();
   
-  let schedules = data.data.Page.airingSchedules;
+  const rows = data?.data?.Page?.airingSchedules;
+  if (data.errors?.length || !Array.isArray(rows)) throw new Error('Incomplete recent episode response.');
+  let schedules = validRecentSchedules(rows, Math.floor(Date.now()/1000));
   if (!nsfwMode) {
     schedules = schedules.filter((s: any) => !s.media.isAdult);
   }
@@ -729,7 +716,7 @@ export const fetchRecentEpisodesWithLimit = async (limit = 12, options: DesktopR
   return { streamnyaa: metadataState(res),
     data: schedules.slice(0, limit).map((schedule: any) => ({
       ...mapAnilistToJikan(schedule.media),
-      latestEpisode: schedule.episode
+      latestEpisode: schedule.episode, airingAt: schedule.airingAt, recentFeedKind: 'aired'
     }))
   };
 };

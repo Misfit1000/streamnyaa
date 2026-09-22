@@ -1,3 +1,4 @@
+import { useAuth } from '../context/AuthContext';
 import DesktopDragRail from '../components/DesktopDragRail';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useEffect, useMemo, useState } from 'react';
@@ -10,6 +11,7 @@ import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import DesktopScheduleFallback from '../components/DesktopScheduleFallback';
 import { desktopWeekQuery } from '../lib/desktopScheduleQuery';
 import { animeIdentity } from '../lib/animeIdentity';
+import { scheduleWatchPath, primeScheduleWatch } from '../lib/desktopScheduleWatch';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 import {
   desktopWatchedSeriesMatchesAnime,
@@ -260,6 +262,7 @@ function reminderOffsetLabel(reminder: ScheduleReminder) {
 }
 
 export default function DesktopSchedule() {
+  const { isAdmin } = useAuth();
   const [params] = useSearchParams();
   const [trackedOnly,setTrackedOnly] = useState(params.get('scope') === 'tracked');
   const [daySearch,setDaySearch] = useState('');
@@ -494,7 +497,7 @@ export default function DesktopSchedule() {
           <section className="broadcast-reminder-desk" aria-label="Reminders and preferences">
             <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold text-white">Your reminders</h2><p className="mt-1 text-xs text-white/65">{activeReminders.length ? `${activeReminders.length} upcoming alerts` : 'Tap a bell beside an episode to get a release reminder.'}</p></div><Bell className="h-5 w-5 shrink-0 text-primary" /></div>
             {nextReminder && <p className="mt-3 rounded-lg bg-white/5 p-3 text-sm"><span className="text-white/60">Next alert · </span>{nextReminder.title}<span className="mt-1 block text-xs text-white/65">{formatAiringTime(nextReminder.airingAt)}</span></p>}
-            <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setFavoritesOnly(value => !value)} aria-pressed={favoritesOnly} className="sn-secondary-action px-3 py-2 text-xs">{favoritesOnly ? 'Showing bookmarks' : 'Show bookmarks only'}</button><button type="button" onClick={testNotification} className="sn-secondary-action px-3 py-2 text-xs">Test an alert</button>{firedReminderCount > 0 && <button type="button" onClick={clearFiredReminders} className="sn-secondary-action px-3 py-2 text-xs">Clear delivered alerts</button>}</div>
+            <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setFavoritesOnly(value => !value)} aria-pressed={favoritesOnly} className="sn-secondary-action px-3 py-2 text-xs">{favoritesOnly ? 'Showing bookmarks' : 'Show bookmarks only'}</button>{isAdmin && <button type="button" onClick={testNotification} className="sn-secondary-action px-3 py-2 text-xs">Test an alert</button>}{firedReminderCount > 0 && <button type="button" onClick={clearFiredReminders} className="sn-secondary-action px-3 py-2 text-xs">Clear delivered alerts</button>}</div>
             <p className="mt-3 text-xs leading-5 text-white/65">{notificationStatusMessage}. Keep StreamNyaa running to receive desktop reminders.</p>
             {activeReminders.length > 0 && <details className="mt-3 border-t border-white/10 pt-3 text-sm"><summary className="cursor-pointer">Manage scheduled alerts</summary><ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">{activeReminders.map(reminder => <li key={reminder.id} className="flex items-center gap-3"><span className="min-w-0 flex-1 truncate">{reminder.title} · {formatAiringTime(reminder.airingAt)}</span><button className="sn-secondary-action px-2 py-1 text-xs" onClick={() => { const next = reminders.filter(value => value.id !== reminder.id); setReminders(next); writeScheduleReminders(next); }}>Remove</button></li>)}</ul></details>}
           </section>
@@ -560,7 +563,7 @@ export default function DesktopSchedule() {
 
       <div className="mt-4 flex flex-wrap items-center gap-3"><input aria-label="Search this broadcast day" className="sn-input min-w-0 flex-1 px-4 py-3" value={daySearch} onChange={event=>setDaySearch(event.target.value)} placeholder="Find an anime on this day…" /><button className="sn-secondary-action" aria-pressed={trackedOnly} onClick={()=>setTrackedOnly(value=>!value)}>{trackedOnly ? 'My week · tracked shows' : 'All broadcasts'}</button><button className="sn-secondary-action" onClick={()=>{setSelectedDay(0);setDaySearch('');}}>Today</button></div>
       <section id="broadcast-agenda" role="tabpanel" aria-labelledby={`broadcast-day-${selectedDay}`} className="mt-7">
-        {scheduleQuery.isError ? <DesktopScheduleFallback key={active.start} favoritesOnly={favoritesOnly} search={daySearch} matchesTracked={trackedOnly ? (anime: any) => isInMyList(animeIdentity(anime)) || watchedSeries.some(record => desktopWatchedSeriesMatchesAnime(record, anime)) : undefined} selectedWeekday={new Date(active.start * 1000).toLocaleDateString('en-US', { weekday: 'long' }) + 's'} /> : null}
+        {scheduleQuery.isError ? <DesktopScheduleFallback isAdmin={isAdmin} key={active.start} favoritesOnly={favoritesOnly} search={daySearch} matchesTracked={trackedOnly ? (anime: any) => isInMyList(animeIdentity(anime)) || watchedSeries.some(record => desktopWatchedSeriesMatchesAnime(record, anime)) : undefined} selectedWeekday={new Date(active.start * 1000).toLocaleDateString('en-US', { weekday: 'long' }) + 's'} /> : null}
         {scheduleQuery.isError && scheduleQuery.data ? (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/15 bg-amber-300/[0.06] px-4 py-3" role="status">
             <div>
@@ -620,7 +623,7 @@ export default function DesktopSchedule() {
                     return (
                       <div key={anime.scheduleId || `${anime.mal_id}-${anime.airingEpisode}`} className="broadcast-ticket">
                         <div className="broadcast-time"><strong>{time}</strong><span>{broadcastState.label}</span></div>
-                        <Link className="broadcast-title" to={desktopWatchOrBrowsePath(anime)}><img src={scheduleArtwork(anime)} alt="" loading="lazy" /><span><small>EPISODE {anime.airingEpisode || 'TBA'}</small><strong>{safeReminderTitle(anime)}</strong><span>{broadcastState.detail || `Scheduled in ${timezone}`}</span></span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
+                        <Link className="broadcast-title" to={scheduleWatchPath(anime)} onClick={() => primeScheduleWatch(anime)}><img src={scheduleArtwork(anime)} alt="" loading="lazy" /><span><small>EPISODE {anime.airingEpisode || 'TBA'}</small><strong>{safeReminderTitle(anime)}</strong><span>{broadcastState.detail || `Scheduled in ${timezone}`}</span></span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
                         <div className="broadcast-actions flex gap-2">
                           <button
                             type="button"
@@ -734,7 +737,7 @@ export default function DesktopSchedule() {
               return (
                 <Link
                   key={`watched-${anime.scheduleId || animeIdentity(anime)}`}
-                  to={desktopWatchOrBrowsePath(anime)}
+                  to={scheduleWatchPath(anime)} onClick={() => primeScheduleWatch(anime)}
                   className="group relative h-[118px] w-[280px] shrink-0 overflow-hidden rounded-xl bg-black/35 shadow-none shadow-black/20 ring-1 ring-inset ring-white/[0.08] transition duration-200 hover:-translate-y-0.5 hover:ring-primary/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
                 >
                   {artwork ? (

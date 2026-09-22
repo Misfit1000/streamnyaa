@@ -1,0 +1,15 @@
+{
+  "version": "0.1.9",
+  "sourceCommit": "55729f7",
+  "installer": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\src-tauri\\target\\release\\bundle\\nsis\\StreamNyaa_0.1.9_x64-setup.exe",
+  "bytes": 41756020,
+  "sha256": "1E869E966A6C6A33C257FA55EFA91CAADDD818FA987F4D7EA4A61FFF39269C69",
+  "signature": "NotSigned",
+  "sourcePlayerSha256": "BCD715D0A8AB967C9C23BD3619BE8B910323D06ECF7474C5253789EC456FFC98",
+  "stagedPlayerSha256": "BCD715D0A8AB967C9C23BD3619BE8B910323D06ECF7474C5253789EC456FFC98",
+  "stagedPlayerMatchesSource": true,
+  "extractedPackageComparison": "Unverified: archive utility extraction was blocked by automatic approval review",
+  "nativeAcceptance": "Pending; see desktop/reviews/2026-09-16-player-0.1.9.md",
+  "includesWatchDeskExplorePresetsOverhaul": false,
+  "existingInstallerReplaced": false
+}

@@ -1,10 +1,45 @@
-import {cleanup,fireEvent,render,screen} from '@testing-library/react';
-import {MemoryRouter} from 'react-router-dom';
-import {afterEach,it,expect} from 'vitest';
-import DesktopWatchDesk from '../../src/components/DesktopWatchDesk';
-afterEach(cleanup);
-it('keeps watch desk closed until requested and closes on outside click',()=>{
- HTMLDialogElement.prototype.showModal=function(){this.open=true;};HTMLDialogElement.prototype.close=function(){this.open=false;};
- const {container}=render(<MemoryRouter><DesktopWatchDesk recent={9} resumable={5}/></MemoryRouter>);const dialog=container.querySelector('dialog')!;
- expect(dialog.open).toBe(false);fireEvent.click(screen.getByText('Watch desk'));expect(dialog.open).toBe(true);expect(screen.getByText(/9 recent episode/)).toBeTruthy();fireEvent.click(dialog);expect(dialog.open).toBe(false);
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { afterEach, beforeEach, it, expect, vi } from 'vitest';
+import DesktopWatchDesk, { clampDesk, watchDeskDetails } from '../../src/components/DesktopWatchDesk';
+import { openLocalSourceNow } from '../../src/lib/desktop';
+vi.mock('../../src/lib/desktop', () => ({ openLocalSourceNow: vi.fn().mockResolvedValue(undefined), formatPlaybackTime: (n: number) => String(n) }));
+beforeEach(() => { vi.mocked(openLocalSourceNow).mockResolvedValue(undefined); });
+afterEach(() => { cleanup(); localStorage.clear(); });
+const source = { magnet: 'magnet:test', title: 'Example', animeTitle: 'Example', animeId: 42, episode: 3, resumeSeconds: 100, progressPercent: 20 };
+const renderDesk = () => render(<MemoryRouter><DesktopWatchDesk sources={[source] as any} history={[source] as any} upcoming={[]}/></MemoryRouter>);
+it('opens a nonmodal desk and restores focus on Escape and outside dismissal', () => {
+    renderDesk();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    const launcher = screen.getByText('Watch desk');
+    fireEvent.click(launcher);
+    expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe('false');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(launcher);
+    fireEvent.click(launcher);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('dialog')).toBeNull();
+});
+it('resumes the selected source and links details to its episode', () => { renderDesk(); fireEvent.click(screen.getByText('Watch desk')); fireEvent.click(screen.getByText('Resume')); expect(openLocalSourceNow).toHaveBeenCalledWith(source); expect(screen.getByText('Details').getAttribute('href')).toContain('ep=3'); expect(watchDeskDetails({ ...source, animeId: undefined } as any)).toBe('/search?q=Example'); });
+it('clamps small viewports and persists keyboard placement', () => { expect(clampDesk(-20, 900, 420, 500, 800, 600)).toEqual({ x: 8, y: 92 }); renderDesk(); fireEvent.click(screen.getByText('Watch desk')); fireEvent.keyDown(screen.getByRole('button', { name: /Move watch desk/ }), { key: 'ArrowLeft' }); expect(JSON.parse(localStorage.getItem('streamnyaa.desktop.watchDesk.position.v1')!).version).toBe(1); fireEvent(window, new Event('resize')); });
+
+it('drags the entire header through window events even when pointer capture fails', () => {
+    vi.stubGlobal('PointerEvent', MouseEvent);
+    renderDesk(); fireEvent.click(screen.getByText('Watch desk'));
+    const panel=screen.getByRole('dialog');
+    expect(panel.parentElement).toBe(document.body);
+    const header=panel.querySelector('header')!;
+    Object.defineProperty(header,'setPointerCapture',{value:()=>{throw new Error('capture unavailable');}});
+    const left=parseFloat(panel.style.left),top=parseFloat(panel.style.top);
+    fireEvent.pointerDown(header,{button:0,clientX:700,clientY:150});
+    fireEvent.pointerMove(window,{clientX:600,clientY:200});
+    fireEvent.pointerUp(window,{clientX:600,clientY:200});
+    expect(parseFloat(panel.style.left)).toBe(left-100);
+    expect(parseFloat(panel.style.top)).toBe(top+50);
+    const stored=JSON.parse(localStorage.getItem('streamnyaa.desktop.watchDesk.position.v1')!);
+    expect(stored).toMatchObject({x:left-100,y:top+50});
+    fireEvent.click(screen.getByText('Close'));fireEvent.click(screen.getByText('Watch desk'));
+    expect(parseFloat(screen.getByRole('dialog').style.left)).toBe(stored.x);
+    vi.unstubAllGlobals();
 });

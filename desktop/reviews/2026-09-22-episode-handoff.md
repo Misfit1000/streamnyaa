@@ -1,0 +1,9 @@
+# Calendar and next-episode handoff repair — 0.1.9
+
+Calendar links now select the scheduled episode after its airing time. Watch retains that identity-matched episode evidence even when detail or episode-title caches lag. Future, delayed, postponed, cancelled, suspended, and hiatus records do not establish aired episode evidence. The selected numbered episode can search for sources; a scheduled broadcast does not guarantee a playable source or published episode title.
+
+New native media loads explicitly clear inherited MPV pause. An isolated bundled-MPV IPC regression reproduced pause surviving replacement and verified playhead advancement after explicit resume. Late cover replacement is serialized with media loads and fenced from the moment a video load is accepted, including the interval before MPV updates its path. This prevents artwork from replacing a pending video.
+
+Verification on final source: TypeScript passed; frontend 226/226 across 51 files; Rust 56 passed, 1 pre-existing ignored tracker test; desktop contracts passed; player state 510 assertions; native controls 20 cycles; stalled-stream passed; soak 100 cycles. The new handoff test runs in isolated MPV with null video/audio output. It does not validate the user's exact network source or visible rendering.
+
+User requested to perform hands-on testing. No interactive native testing, clean-install/upgrade/rollback run, or payload extraction was performed. The intermittent screenshot case is not claimed reproduced end-to-end. Installer remains unsigned; packaged resource staging and NSIS inclusion, executable version, size, and SHA256 are verified during publication. Prior installer and metadata are archived before replacement. Existing uncommitted desktop changes are included; no user media or settings are deleted.

@@ -12,7 +12,7 @@ import { readCachedExploreTitles } from '../lib/desktopExploreCache';
 import { readCachedWatchTitles } from '../lib/desktopWatchSnapshot';
 import { useStore } from '../store/useStore';
 
-export default function DesktopScheduleFallback({ favoritesOnly, selectedWeekday, search = '', matchesTracked }: { favoritesOnly: boolean; selectedWeekday?: string; search?: string; matchesTracked?: (anime:any) => boolean }) {
+export default function DesktopScheduleFallback({ favoritesOnly, selectedWeekday, search = '', matchesTracked, isAdmin = false }: { isAdmin?: boolean; favoritesOnly: boolean; selectedWeekday?: string; search?: string; matchesTracked?: (anime:any) => boolean }) {
   const [page, setPage] = useState(1);
   const source = useRef('/schedules');
   const [chosenWeekday, setWeekday] = useState('All');
@@ -49,18 +49,18 @@ export default function DesktopScheduleFallback({ favoritesOnly, selectedWeekday
   });
   const items = query.data?.data.filter((item, index, all) => all.findIndex(other => (other.anilist_id ? `a:${other.anilist_id}` : `m:${other.mal_id}`) === (item.anilist_id ? `a:${item.anilist_id}` : `m:${item.mal_id}`)) === index).filter(item => (nsfwMode || !jikanAdultTitle(item)) && (!favoritesOnly || isInMyList(animeIdentity(item))) && (!matchesTracked || matchesTracked(item)) && String(item.title_english || item.title || '').toLowerCase().includes(search.trim().toLowerCase()) && (weekday === 'All' || item.broadcast?.day === weekday)) || [];
   items.sort((a, b) => String(a.broadcast?.timezone || '').localeCompare(String(b.broadcast?.timezone || '')) || String(a.broadcast?.time || '99:99').localeCompare(String(b.broadcast?.time || '99:99')));
-  return <section aria-label="Fallback broadcast reference" className="broadcast-reference">
-    <h2 className="text-lg font-semibold">Regular broadcast slots · MyAnimeList{weekday !== 'All' ? ` · ${weekday}` : ''}</h2>
-    <p className="mt-2 text-sm text-white/60">AniList episode times are unavailable. Use the day tabs to browse regular broadcast slots below. These are provider-local recurring slots, not confirmed episode releases or delay updates; episode reminders require verified times.</p>
+  return <section aria-label="Broadcast reference" className="broadcast-reference">
+    <h2 className="text-lg font-semibold">Regular broadcast slots{isAdmin ? " · MyAnimeList" : ""}{weekday !== 'All' ? ` · ${weekday}` : ''}</h2>
+    <p className="mt-2 text-sm text-white/60">Confirmed episode times are unavailable. Use the day tabs to browse regular broadcast slots below. These are provider-local recurring slots, not confirmed episode releases or delay updates; episode reminders require verified times.</p>
     {!selectedWeekday && <label className="mt-3 flex items-center gap-2 text-sm">Broadcast weekday
       <select aria-label="Broadcast weekday" value={weekday} onChange={event => setWeekday(event.target.value)} className="rounded bg-[#18181c] p-2">
         {['All', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays', 'Sundays'].map(day => <option key={day}>{day}</option>)}
       </select>
     </label>}
     {query.data?.cached && <p className="mt-2 text-sm text-amber-200">Showing saved broadcast references from this device. These slots have not been refreshed and may have changed.</p>}
-    {query.data?.seasonal && <p className="mt-2 text-sm text-amber-200">Using current-season broadcast slots because the schedule endpoint is unavailable.</p>}
+    {query.data?.seasonal && <p className="mt-2 text-sm text-amber-200">Using current-season broadcast slots. Exact episode times are unavailable.</p>}
     {query.isLoading && <p role="status" className="mt-3">Loading broadcast reference…</p>}
-    {query.isError && <p role="alert" className="mt-3 text-amber-200">{query.error.message} <button onClick={() => void query.refetch()} className="underline">Retry</button></p>}
+    {query.isError && <p role="alert" className="mt-3 text-amber-200">{isAdmin ? query.error.message : "Broadcast times could not update. Please try again shortly."} <button onClick={() => void query.refetch()} className="underline">Retry</button></p>}
     <ul className="broadcast-agenda-list mt-5">{items.map(item => <li key={`${item.anilist_id ? 'a' : 'm'}:${item.anilist_id || item.mal_id}`} className="broadcast-ticket">
       <div className="broadcast-time"><strong>{item.broadcast?.time || 'TBA'}</strong><span>{item.broadcast?.timezone || 'Timezone unknown'}</span></div>
       <Link className="broadcast-title" onClick={() => primeDesktopWatchSnapshot(desktopWatchOrBrowsePath(item), item)} to={desktopWatchOrBrowsePath(item)}>

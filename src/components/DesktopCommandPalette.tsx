@@ -1,3 +1,4 @@
+import { useAuth } from '../context/AuthContext';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore';
@@ -7,6 +8,7 @@ import { jikanAdultTitle } from '../api/desktopExplore';
 import { organizationIdentity } from '../lib/desktopLibraryOrganization';
 
 export default function DesktopCommandPalette({ onClose }: { onClose: () => void }) {
+  const { isAdmin } = useAuth();
   const dialog = useRef<HTMLDialogElement>(null);
   const [query, setQuery] = useState('');
   const navigate = useNavigate();
@@ -14,8 +16,8 @@ export default function DesktopCommandPalette({ onClose }: { onClose: () => void
   useEffect(() => { const element = dialog.current!; element.showModal(); return () => element.close(); }, []);
   const actions = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const routes = [ ['Home', '/'], ['Explore anime', '/search'], ['Calendar · My week', '/schedule?scope=tracked'], ['Library', '/my-list'], ['Downloads & Offline', '/my-list?tab=offline'], ['History & resume', '/dashboard'], ['Settings', '/desktop-settings'], ['Appearance · revert UI', '/desktop-settings#appearance'], ['Diagnostics', '/desktop-settings#advanced'], ['Backup & restore', '/desktop-settings#privacy'] ];
-    const result = routes.filter(([title]) => title.toLowerCase().includes(needle)).map(([title, path]) => ({ title, hint:'Navigate', run: () => navigate(path) }));
+    const routes = [ ['Home', '/'], ['Explore anime', '/search'], ['Calendar · My week', '/schedule?scope=tracked'], ['Library', '/my-list'], ['Downloads & Offline', '/my-list?tab=offline'], ['History & resume', '/dashboard'], ['Settings', '/desktop-settings'], ['Appearance · revert UI', '/desktop-settings#appearance'], ['Diagnostics', '/desktop-settings#diagnostics'], ['Backup & restore', '/desktop-settings#privacy'] ];
+    const result = routes.filter(([title]) => (title !== 'Diagnostics' || isAdmin) && title.toLowerCase().includes(needle)).map(([title, path]) => ({ title, hint:'Navigate', run: () => navigate(path) }));
     const seen = new Set<string>();
     for (const anime of [...myList, ...likedAnimes]) {
       const id = organizationIdentity(anime);
@@ -26,7 +28,7 @@ export default function DesktopCommandPalette({ onClose }: { onClose: () => void
     }
     if (needle) result.unshift({ title: `Search online for “${query.trim()}”`, hint: 'Explore', run: () => navigate(`/search?q=${encodeURIComponent(query.trim())}`) });
     return result.slice(0, 24);
-  }, [query, myList, likedAnimes, nsfwMode, navigate]);
+  }, [query, myList, likedAnimes, nsfwMode, navigate, isAdmin]);
   return <dialog ref={dialog} className="sn-command-dialog" aria-labelledby="command-heading" onCancel={onClose} onClick={event => { if (event.target === dialog.current) onClose(); }} onKeyDown={event => {
     if (!['ArrowDown','ArrowUp'].includes(event.key)) return;
     const elements = Array.from(dialog.current?.querySelectorAll<HTMLElement>('input,button[data-command]') || []);

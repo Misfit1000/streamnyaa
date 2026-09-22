@@ -393,7 +393,17 @@ export async function signOutSession(session: AuthSession | null) {
 export async function fetchAccount(session: AuthSession) {
   if (isDesktopRuntime()) {
     const user = await fetchSessionUser(session);
-    return { user, isAdmin: false };
+    // Role lookup is optional for local features, but only the server can grant it.
+    try {
+      const response = await fetch(accountApiUrl('/api/auth/me'), {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      const account = response.ok ? await response.json() : null;
+      return { user, isAdmin: account?.user?.id === user.id && account?.isAdmin === true };
+    } catch {
+      return { user, isAdmin: false };
+    }
   }
   let response: Response;
   try {

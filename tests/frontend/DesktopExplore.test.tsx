@@ -32,25 +32,18 @@ describe('desktop Explore behavior', () => {
     expect(screen.getByText('EP 24/27')).toBeTruthy();
   });
 
-  it('renders select options in a body-level popup outside clipped filter panels', () => {
-    const onChange = vi.fn();
-    const { container } = render(
-      <div data-testid="filter-panel">
-        <PremiumSelect
-          value="2026"
-          ariaLabel="Year"
-          onChange={onChange}
-          options={[{ label: '2026', value: '2026' }, { label: '2025', value: '2025' }]}
-        />
-      </div>,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Year' }));
-    const popup = screen.getByRole('listbox', { name: 'Year' });
-    expect(document.body.contains(popup)).toBe(true);
-    expect(container.contains(popup)).toBe(false);
-    fireEvent.click(screen.getByRole('option', { name: '2025' }));
-    expect(onChange).toHaveBeenCalledWith('2025');
+  it('uses a native select that commits 2025 without a dismissible portal', () => {
+    const onChange=vi.fn();
+    const view=render(<PremiumSelect value="2026" ariaLabel="Year" onChange={onChange} options={[{label:'2026',value:'2026'},{label:'2025',value:'2025'}]}/>);
+    const select=screen.getByRole('combobox',{name:'Year'});
+    expect(select.tagName).toBe('SELECT');
+    fireEvent.mouseDown(select);fireEvent.mouseUp(select);fireEvent.click(select);
+    fireEvent.change(select,{target:{value:'2025'}});
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('2025');
+    view.rerender(<PremiumSelect value="2025" ariaLabel="Year" onChange={onChange} options={[{label:'2026',value:'2026'},{label:'2025',value:'2025'}]}/>);
+    expect((select as HTMLSelectElement).value).toBe('2025');
+    expect(screen.getByRole('option',{name:'2025'}).getAttribute('value')).toBe('2025');
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 
   it('offers a real airing notification action for upcoming anime', () => {

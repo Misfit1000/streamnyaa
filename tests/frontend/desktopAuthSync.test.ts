@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  fetchAccount,
   createGoogleOAuthUrl,
   desktopAuthRedirectUrl,
   nativeRecoveryRedirectUrl,
@@ -201,4 +202,23 @@ describe('account record conflict resolution', () => {
       user: { id: 'user-1', email: 'user@example.com' },
     })).rejects.toMatchObject<AccountSyncError>({ code: 'missing-schema' });
   });
+});
+
+describe('desktop administrator lookup',()=>{
+ const session={access_token:'test-token'};
+ beforeEach(()=>{window.__STREAMNYAA_DESKTOP__=true;vi.stubGlobal('fetch',vi.fn());});
+ it.each([true,false])('uses the server role for the verified account: %s',async(isAdmin)=>{
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({id:'user',email:'user@example.test'})))
+    .mockResolvedValueOnce(new Response(JSON.stringify({user:{id:'user'},isAdmin})));
+  expect(await fetchAccount(session)).toMatchObject({user:{id:'user'},isAdmin});
+ });
+ it('keeps normal login usable but fails closed when role lookup fails',async()=>{
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({id:'user',email:'user@example.test'}))).mockRejectedValueOnce(new TypeError('offline'));
+  expect(await fetchAccount(session)).toMatchObject({user:{id:'user'},isAdmin:false});
+ });
+ it('rejects role data for a different account',async()=>{
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({id:'user',email:'user@example.test'})))
+    .mockResolvedValueOnce(new Response(JSON.stringify({user:{id:'other'},isAdmin:true})));
+  expect((await fetchAccount(session)).isAdmin).toBe(false);
+ });
 });

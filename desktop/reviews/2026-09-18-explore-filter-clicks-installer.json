@@ -1,0 +1,121 @@
+{
+  "product": "StreamNyaa Desktop",
+  "version": "0.1.9",
+  "identifier": "xyz.streamnyaa.desktop",
+  "releaseRevision": "explore-filter-clicks-20260918",
+  "builtAt": "2026-09-18T18:35:44.3203340+05:45",
+  "sourceBaseCommit": "55729f76910c0c26a5a8430ba652fd0996ae71b4",
+  "includesUncommittedLatestSource": true,
+  "installer": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\releases\\v0.1.9\\StreamNyaa_0.1.9_x64-setup.exe",
+  "bytes": 41761296,
+  "sha256": "C82940AF1B57E3DA73096AAB1B7710B8E2EFC3729E4B1E3272C62D381504DA57",
+  "signature": "NotSigned",
+  "previousReleaseArchive": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\releases\\archive\\v0.1.9-before-explore-filter-clicks-20260918-183543",
+  "resources": [
+    {
+      "name": "mpv.exe",
+      "sha256": "1645E57569C0AF58A70C61257F3716F2EE6EB31BB170EDC51F3F25A0B8D0D99C",
+      "stagedMatches": true,
+      "nsisInclusionVerified": true
+    },
+    {
+      "name": "rqbit.exe",
+      "sha256": "4D4E5F4D81A7C9432BF37F1857E34486C9B1114E258573FC5486FBB1DB18898C",
+      "stagedMatches": true,
+      "nsisInclusionVerified": true
+    },
+    {
+      "name": "streamnyaa-player.lua",
+      "sha256": "BCD715D0A8AB967C9C23BD3619BE8B910323D06ECF7474C5253789EC456FFC98",
+      "stagedMatches": true,
+      "nsisInclusionVerified": true
+    }
+  ],
+  "sourceFiles": [
+    {
+      "path": "src/api/desktopExplore.ts",
+      "sha256": "898BDAE0D3B0F4C773E4D1C2EA256A3A996A85A07CAC2EB9D01DA4F8D7CD3602"
+    },
+    {
+      "path": "src/api/desktopRecentSchedule.ts",
+      "sha256": "792C56A04E7E99797A05B7B955346BBF6FE1B930FF5F2262924563EAC7B45A78"
+    },
+    {
+      "path": "src/api/desktopRecentEpisodes.ts",
+      "sha256": "BE2456EBF57A2C9D32BB7A3CF30DEB0EE841C0B9CE3067F2C08B668E7287514F"
+    },
+    {
+      "path": "src/api/jikan.ts",
+      "sha256": "F521FCF07E1EA40A5E715246DB25E4D9F0679AC2ADB3827987420C68896F46D6"
+    },
+    {
+      "path": "src/components/DesktopWatchDesk.tsx",
+      "sha256": "A8518483BBA2C0B23AAAC7F5A0790248C5DBFEDFB7414760C3029443D6BB1588"
+    },
+    {
+      "path": "src/components/DesktopActivitySummary.tsx",
+      "sha256": "44698C643B473D46648559F029281DE3198BA1A795E7AFF0389E21DC734B035A"
+    },
+    {
+      "path": "src/components/DesktopSettingsSearch.tsx",
+      "sha256": "66AE163A3745402C68F2983F64CDF9A13B534FCD1E0D11F670070527D5F744E0"
+    },
+    {
+      "path": "src/components/DesktopCommandPalette.tsx",
+      "sha256": "80D590951ACAACB305438AB0E5E24E2B8A6B8817237C1BE1C4F1AA7115275872"
+    },
+    {
+      "path": "src/components/DesktopScheduleFallback.tsx",
+      "sha256": "53FA693D4C269DF545BD33D73BDE0EAC76890F52B7336C3470DFD50D1E2C67E4"
+    },
+    {
+      "path": "src/pages/DesktopHome.tsx",
+      "sha256": "7ED95A5CC8211D0C44F6079A087A3611BC694E9901AD248922D1968256104A10"
+    },
+    {
+      "path": "src/pages/DesktopExplore.tsx",
+      "sha256": "9BE4433CDA6A79D9101B526EC820F48CBFBBCE05CA1F43B5BD085895FC8730D5"
+    },
+    {
+      "path": "src/pages/DesktopSettings.tsx",
+      "sha256": "ADF9C9BCCF97C612A7C4C7F3A0AA3E303111FBB8CF3AEEAE951811CF608FE7E9"
+    },
+    {
+      "path": "src/pages/DesktopSchedule.tsx",
+      "sha256": "FB4725B2F44820B07BE0C8989F7F5F2EC292500134C3CE73B30C20C31AABDBF5"
+    },
+    {
+      "path": "src/lib/supabaseAuth.ts",
+      "sha256": "FB8C0A45BCFB3A8CFED89E0F2FD203E4D610F399A11BCAF9158192B6FC8C37EB"
+    },
+    {
+      "path": "src/context/AuthContext.tsx",
+      "sha256": "A181B56EC93259A4E4839405E761F9B19B9D32EAD88B11BA5A74ACDC3A1656CF"
+    },
+    {
+      "path": "src/index.css",
+      "sha256": "644989D8A35F8F7B04BCA20239FA83A3FA90E4658C357F2C23226544E39263E4"
+    }
+  ],
+  "executableVersion": "0.1.9",
+  "executableSha256": "EC34CFDCAF61FBCFB325813A247F4AA0404AE2DA09AC1B2988F80E690406D916",
+  "validation": {
+    "rust": "56 passed, 1 existing ignored local tracker test",
+    "nativeAcceptance": "User will test; no interactive UI testing in this repair",
+    "payloadExtraction": "Not performed; NSIS inclusion and staged hashes verified",
+    "nativeSuites": "Prior 2026-09-17 results retained: native source unchanged, not rerun for this frontend repair",
+    "liveHomeEpisodes": "HTTP 200, 12 episode records",
+    "stall": "passed",
+    "signing": "NotSigned",
+    "typescript": "passed",
+    "desktopContracts": "passed",
+    "liveJikanEpisodes": "HTTP 504; failure and cache behavior covered by tests",
+    "liveExplore": "All 9 modes HTTP 200, 25 records each",
+    "web": "15 passed",
+    "controls": "20 cycles passed",
+    "soak": "100 cycles passed",
+    "cleanInstallUpgradeRollback": "Not performed",
+    "frontend": "218 passed",
+    "playerState": "510 assertions passed"
+  }
+}
