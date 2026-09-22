@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import { desktopAnimeQueryKey } from './desktopRequests';
-import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
-import { searchNyaa, warmDesktopSourceCache } from '../api/nyaa';
+import { fetchAnimeDetails, fetchAnimeEpisodeWindow } from '../api/jikan';
+import { searchNyaa } from '../api/nyaa';
 import { desktopQueryClient } from './desktopQueryClient';
 
 type PageModule = { default: ComponentType };
@@ -112,8 +112,8 @@ export function preloadDesktopWatchData(pathWithSearch: string, includeSources =
     if (malId) {
       const page = Math.max(1, Math.ceil(episode / 100));
       tasks.push(desktopQueryClient.prefetchQuery({
-        queryKey: ['episodes', malId, page],
-        queryFn: ({ signal }) => fetchAnimeEpisodes(malId, page, { signal, priority: 'prefetch' }),
+        queryKey: ['episodes', malId, page, 3],
+        queryFn: ({ signal }) => fetchAnimeEpisodeWindow(malId, page, { signal, priority: 'prefetch' }),
         staleTime: 1000 * 60 * 10,
       }));
     }
@@ -133,7 +133,8 @@ export function preloadDesktopWatchData(pathWithSearch: string, includeSources =
   return preload;
 }
 
-const CORE_ROUTE_KEYS: DesktopRouteKey[] = ['watch', 'explore', 'schedule', 'sources', 'library', 'history', 'settings'];
+// Playback/source chunks are loaded on intent; do not compete with initial Home data.
+const CORE_ROUTE_KEYS: DesktopRouteKey[] = ['explore', 'schedule'];
 const MAX_CONCURRENT_WARMS = 2;
 let coreWarmStarted = false;
 let playbackWorkloadBusy = false;
@@ -171,11 +172,11 @@ export function warmCoreDesktopRoutes() {
       return;
     }
     importsStarted = true;
-    warmDesktopSourceCache();
     const queue = [...CORE_ROUTE_KEYS];
     let active = 0;
     const runNext = () => {
       if (cancelled) return;
+      if (!backgroundWarmAllowed()) { retryHandle=window.setTimeout(runNext,750); return; }
       while (active < MAX_CONCURRENT_WARMS && queue.length) {
         const key = queue.shift()!;
         active += 1;

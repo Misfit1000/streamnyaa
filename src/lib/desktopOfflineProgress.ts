@@ -1,13 +1,16 @@
+import { loadStoredSession } from './supabaseAuth';
 import {coveragePercent} from './desktopCoverage';
 import { saveDesktopWatchProgress, saveLocalPlaybackHistoryItem, findLocalPlaybackHistoryItem, loadDesktopWatchProgress } from './desktop';
 import type { DesktopDownloadQueue } from './desktopDownloads';
 
 // Only an explicit file-to-episode link may enter account/history progress.
 export function synchronizeOfflineProgress(queue: DesktopDownloadQueue) {
-  const key = 'streamnyaa.desktop.offlineProgressSync.v1';
+  const owner=loadStoredSession()?.user?.id || '';
+  const key = `streamnyaa.desktop.offlineProgressSync.v1:${owner}`;
   let applied: Record<string, number> = {};
-  try { const saved = JSON.parse(localStorage.getItem(key) || '{}'); if (saved && typeof saved === 'object' && !Array.isArray(saved)) applied = saved; } catch { /* Retry synchronization from durable native data. */ }
+  try { const saved = JSON.parse(localStorage.getItem(key) || localStorage.getItem('streamnyaa.desktop.offlineProgressSync.v1') || '{}'); if (saved && typeof saved === 'object' && !Array.isArray(saved)) applied = saved; } catch { /* Retry synchronization from durable native data. */ }
   for (const item of queue.items) for (const [file, progress] of Object.entries(item.progress || {})) {
+    if(progress.owner!==undefined && progress.owner!==owner)continue;
     const link = item.episodeLinks?.[file];
     if (!link || !link.animeId || !link.title || !Number.isSafeInteger(link.episode) || link.episode < 1
       || !Number.isFinite(progress.seconds) || progress.seconds < 0 || !Number.isFinite(progress.duration) || progress.duration <= 0

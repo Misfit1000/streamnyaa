@@ -41,7 +41,7 @@ fn natural_file_key(path: &Path) -> String {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OfflineProgress { seconds: f64, duration: f64, updated_at: u64, completed: bool, #[serde(default)] watched_coverage: Option<serde_json::Value> }
+pub struct OfflineProgress { #[serde(default)] owner: Option<String>, seconds: f64, duration: f64, updated_at: u64, completed: bool, #[serde(default)] watched_coverage: Option<serde_json::Value> }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadFile { index: usize, name: String, bytes: u64 }
@@ -334,9 +334,15 @@ pub fn play_offline_file(id: String, file: String, resume: Option<bool>, checkpo
     let player = status.player_path.ok_or("Bundled player is unavailable")?;
     let identity = item.episode_links.get(&file);
     let title = identity.map(|value| value.title.clone()).unwrap_or_else(|| item.title.clone());
-    let request = PlaybackRequest { magnet: String::new(), info_hash: Some(id.clone()), title: title.clone(), anime_title: title, episode: identity.map(|value| value.episode.to_string()).unwrap_or_default(), size: None, poster: identity.and_then(|value| value.poster.clone()), banner: None, banner_candidates: None, resume_seconds: Some(checkpoint), settings: None };
+    let request = PlaybackRequest { progress_context: None, magnet: String::new(), info_hash: Some(id.clone()), title: title.clone(), anime_title: title, episode: identity.map(|value| value.episode.to_string()).unwrap_or_default(), size: None, poster: identity.and_then(|value| value.poster.clone()), banner: None, banner_candidates: None, resume_seconds: Some(checkpoint), settings: None };
     let ipc = launch_or_reuse_player(&player, &root().join("player-meta"), &request, &file)?;
-    if !load_player_file(&ipc, &target.to_string_lossy()) { return Err("Could not open offline video. Your checkpoint is retained.".into()); }
+    let context=playback_progress::Context {
+        owner: playback_progress::current_owner(), anime_id: identity.map(|v|v.anime_id.to_string()).unwrap_or_default(),
+        title:request.anime_title.clone(),episode:request.episode.clone(),source_key:format!("offline:{}:{}",id,file),poster:request.poster.clone(),
+        offline_id:Some(id.clone()),offline_file:Some(file.clone()),baseline:Default::default()
+    };
+    playback_progress::begin(&ipc,context);
+    if !load_player_target(&ipc,&request.anime_title,&ResolvedStreamTarget {media_url:target.to_string_lossy().to_string(),subtitle_urls:vec![],selected_file_indices:vec![],selected_file_name:file.clone()},None) { return Err("Could not open offline video. Your checkpoint is retained.".into()); }
     if let Ok(mut session) = OFFLINE_SESSION.lock() { *session = Some((id.clone(), file.clone(), target.clone())); }
     thread::spawn(move || {
         let mut loaded = false;
@@ -349,25 +355,7 @@ pub fn play_offline_file(id: String, file: String, resume: Option<bool>, checkpo
         if !loaded { return; }
         let duration = get_player_property_f64(&ipc, "duration").unwrap_or(0.0);
         if checkpoint > 0.0 && checkpoint < duration { seek_player_resume(&ipc, checkpoint); }
-        loop {
-            thread::sleep(Duration::from_secs(5));
-            if APP_EXITING.load(Ordering::SeqCst) || OFFLINE_GENERATION.load(Ordering::SeqCst) != generation || get_player_property_string(&ipc, "path").and_then(|path| PathBuf::from(path).canonicalize().ok()).as_ref() != Some(&target) { break; }
-            let Some(seconds) = get_player_property_f64(&ipc, "time-pos").filter(|v| v.is_finite() && *v >= 0.0) else { break; };
-            let duration = get_player_property_f64(&ipc, "duration").filter(|v| v.is_finite() && *v > 0.0).unwrap_or(duration);
-            let incoming=get_player_property_string(&ipc,"user-data/streamnyaa/watched-coverage").and_then(|raw|serde_json::from_str::<serde_json::Value>(&raw).ok());
-            let previous=get_download_queue().ok().and_then(|q|q.items.into_iter().find(|i|i.id==id)).and_then(|i|i.progress.get(&file).cloned());
-            let mut ranges:Vec<[f64;2]>=Vec::new();
-            for value in [previous.as_ref().and_then(|p|p.watched_coverage.as_ref()),incoming.as_ref()].into_iter().flatten(){
-                if let Some(items)=value.get("intervals").and_then(|v|v.as_array()){for r in items{if let (Some(a),Some(b))=(r.get(0).and_then(|v|v.as_f64()),r.get(1).and_then(|v|v.as_f64())){if a>=0.0&&b>a&&a<duration{ranges.push([a,b.min(duration)]);}}}}
-            }
-            ranges.sort_by(|a,b|a[0].total_cmp(&b[0]));
-            let mut merged:Vec<[f64;2]>=Vec::new();
-            for r in ranges{if let Some(last)=merged.last_mut(){if r[0]<=last[1]+0.05{last[1]=last[1].max(r[1]);continue;}}merged.push(r);}
-            let watched:f64=merged.iter().map(|r|r[1]-r[0]).sum();
-            let furthest=merged.iter().map(|r|r[1]).fold(previous.as_ref().map(|p|p.seconds).unwrap_or(0.0),f64::max).min(duration);
-            let progress = OfflineProgress { seconds:furthest, duration, updated_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(), completed: duration>0.0&&watched/duration>=0.92, watched_coverage:Some(serde_json::json!({"version":2,"intervals":merged,"furthest":furthest,"lastPosition":seconds})) };
-            let _ = change(|queue| { if let Some(item) = queue.items.iter_mut().find(|item| item.id == id) { item.progress.insert(file.clone(), progress); } Ok(()) });
-        }
+
     });
     Ok(())
 }
@@ -553,4 +541,9 @@ mod tests {
         assert!(bytes.iter().enumerate().all(|(i, byte)| *byte == (i % 251) as u8));
         assert_eq!(load().unwrap().items[0].state, "completed");
     }
+}
+
+pub fn save_native_progress(id:&str,file:&str,record:&playback_progress::Record) {
+    let progress=OfflineProgress {owner:Some(record.context.owner.clone()),seconds:record.coverage.furthest,duration:record.coverage.duration,updated_at:record.updated_at/1000,completed:record.completed,watched_coverage:serde_json::to_value(&record.coverage).ok()};
+    let _=change(|queue|{if let Some(item)=queue.items.iter_mut().find(|i|i.id==id){item.progress.insert(file.into(),progress);}Ok(())});
 }

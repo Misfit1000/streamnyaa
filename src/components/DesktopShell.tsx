@@ -1,3 +1,4 @@
+import DesktopProgressBridge from './DesktopProgressBridge';
 import DesktopDownloadManager from './DesktopDownloadManager';
 import { DesktopCatalogStatus } from './DesktopActivitySummary';
 import { memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
@@ -381,6 +382,7 @@ export default function DesktopShell() {
   if (isWatch) {
     return (
       <div className="desktop-app-shell custom-scrollbar h-screen overflow-y-auto overflow-x-hidden text-white">
+        <DesktopProgressBridge />
         <DesktopSessionRecovery />
         <Suspense fallback={<DesktopOutletFallback />}>
           <Outlet />
@@ -498,6 +500,7 @@ export default function DesktopShell() {
             onFocusCapture={(event: FocusEvent<HTMLElement>) => preloadLinkedRouteNow(event.target)}
           >
             <div className="desktop-route-transition">
+              <DesktopProgressBridge />
               <DesktopSessionRecovery />
               <Suspense fallback={<DesktopOutletFallback />}>
                 <Outlet />

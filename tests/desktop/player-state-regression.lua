@@ -616,6 +616,19 @@ local ok, error_message = pcall(function()
   properties["paused-for-cache"]=false; properties["speed"]=2; sample(); now=now+0.5; properties["time-pos"]=1401; sample()
   check(coverage().furthest==1401,"Coverage follows actual playback speed")
 
+  messages["streamnyaa-progress-session"]("episode-a")
+  properties["duration"]=10; properties["speed"]=1; properties["time-pos"]=0; sample()
+  for i=1,19 do now=now+0.5;properties["time-pos"]=i*0.5;sample() end
+  local function checkpoint() return require("mp.utils").parse_json(properties["user-data/streamnyaa/progress-checkpoint"]) end
+  check(checkpoint().sessionId=="episode-a", "Native events carry episode session identity")
+  check(checkpoint().coverage.furthest>=9.0, "Native checkpoints advance without frontend polling")
+  callbacks["end-file"][#callbacks["end-file"]]({reason="eof"})
+  check(checkpoint().state=="eof", "EOF flush precedes coverage reset")
+  messages["streamnyaa-progress-session"]("episode-b")
+  properties["time-pos"]=0;sample();now=now+0.5;properties["time-pos"]=0.5;sample()
+  messages["streamnyaa-progress-flush"]()
+  check(checkpoint().sessionId=="episode-b" and checkpoint().coverage.furthest==0.5,"New episode cannot inherit outgoing coverage")
+
 end)
 
 if ok then

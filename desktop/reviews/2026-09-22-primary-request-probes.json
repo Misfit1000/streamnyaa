@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-22T12:54:55.075Z",
+  "transport": "Direct HTTPS using current query builders; not a native UI timing comparison",
+  "results": [
+    {
+      "mode": "trending",
+      "status": 200,
+      "ms": 956,
+      "count": 25
+    },
+    {
+      "mode": "airing",
+      "status": 200,
+      "ms": 923,
+      "count": 25
+    },
+    {
+      "mode": "seasonal",
+      "status": 200,
+      "ms": 836,
+      "count": 25
+    },
+    {
+      "mode": "popular",
+      "status": 200,
+      "ms": 953,
+      "count": 25
+    },
+    {
+      "mode": "top",
+      "status": 200,
+      "ms": 914,
+      "count": 25
+    },
+    {
+      "mode": "ranking",
+      "status": 200,
+      "ms": 822,
+      "count": 25
+    },
+    {
+      "mode": "upcoming",
+      "status": 200,
+      "ms": 606,
+      "count": 25
+    },
+    {
+      "mode": "year",
+      "status": 200,
+      "ms": 676,
+      "count": 25
+    },
+    {
+      "mode": "new",
+      "status": 200,
+      "ms": 782,
+      "count": 25
+    }
+  ]
+}

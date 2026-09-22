@@ -29,6 +29,7 @@ import {
   formatPlaybackTime,
   controlLocalPlayer,
   getLocalPlaybackProgress,
+  flushDesktopPlaybackCheckpoint,
   listenDesktopPlayerNextEpisode,
   updateDesktopNextEpisodeStatus,
   cancelDesktopNextEpisodeStartup,
@@ -50,7 +51,6 @@ import {
   syncDesktopPlayerPreferencesToPlayer,
   stopDesktopPlayback,
   subscribeDesktopAutoOpenBestSource,
-  updateLocalPlaybackHistoryProgress,
   watchTypeForAudioPreference,
   type DesktopAudioPreference,
   type DesktopPlayerControlAction,
@@ -2552,6 +2552,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     pendingAutoPlayEpisodeRef.current = pendingAutoPlayEpisode;
   }, [pendingAutoPlayEpisode]);
 
+  const pendingSourceSuccess = useRef<{source: RankedNyaaItem; startedAt: number; torrentId: string} | null>(null);
   const { data: playbackProgress } = useQuery<DesktopPlaybackProgress>({
     queryKey: ['desktop-playback-progress', playback?.torrentId],
     queryFn: () => getLocalPlaybackProgress(playback!.torrentId),
@@ -2565,6 +2566,13 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     },
     retry: 1,
   });
+  useEffect(() => {
+    const pending=pendingSourceSuccess.current;
+    if(!pending || pending.torrentId!==playback?.torrentId || !playbackProgress?.watched_coverage?.intervals?.some(([a,b])=>b>a)) return;
+    rememberSourceSuccess(pending.source,performance.now()-pending.startedAt);
+    pendingSourceSuccess.current=null;
+    setFailedSourceVersion(value=>value+1);
+  },[playback?.torrentId,playbackProgress]);
   const playbackStage = useMemo(() => playbackStageMeta(playbackProgress), [playbackProgress]);
   const playbackSteps = ['Prepare', 'Connect', 'Buffer', 'Play'];
 
@@ -2606,17 +2614,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     playbackProgressValueRef.current = playbackProgress;
   }, [playbackProgress]);
 
-  const persistActivePlaybackCheckpoint = useCallback((positionOverride?: number) => {
-    const activePlayback = playbackValueRef.current;
-    const progress = playbackProgressValueRef.current;
-    if (!activePlayback || !progress?.ok || progress.state === 'stopped') return;
-
-    const measuredPosition = Number.isFinite(positionOverride) ? positionOverride : progress.current_seconds;
-    if (typeof measuredPosition !== 'number' || !Number.isFinite(measuredPosition) || measuredPosition < 0) return;
-    const positionSeconds = measuredPosition;
-    const durationSeconds = Math.max(0, Number(progress.duration_seconds || activePlayback.source.durationSeconds || 0));
-    if (positionSeconds <= 0 && durationSeconds <= 0) return;
-    updateLocalPlaybackHistoryProgress(activePlayback.source, {currentSeconds:positionSeconds,durationSeconds,watchedCoverage:progress.watched_coverage});
+  const persistActivePlaybackCheckpoint = useCallback((_positionOverride?: number) => {
+    void flushDesktopPlaybackCheckpoint();
   }, []);
 
   useEffect(() => () => {
@@ -2632,18 +2631,6 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     }
   }, [playback, playbackProgress]);
 
-  useEffect(() => {
-    if (!playback || !playbackProgress?.ok || playbackProgress.state === 'stopped') return;
-    if (!playbackProgress.current_seconds && !playbackProgress.duration_seconds) return;
-    persistActivePlaybackCheckpoint();
-  }, [
-    playback,
-    playbackProgress?.current_seconds,
-    playbackProgress?.duration_seconds,
-    playbackProgress?.ok,
-    playbackProgress?.state,
-    persistActivePlaybackCheckpoint,
-  ]);
 
   useEffect(() => {
     selectedSeasonRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
@@ -2780,8 +2767,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
           const candidateStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
           const { result, playbackSource } = await openOneSource(candidate, resumeOverride);
           if (playbackRequestIdRef.current !== requestId) return;
-          const candidateStartupMs = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - candidateStartedAt;
-          rememberSourceSuccess(candidate, candidateStartupMs);
+          pendingSourceSuccess.current={source:candidate,startedAt:candidateStartedAt,torrentId:result.torrent_id!};
           setRecoveryExhausted(false);
           setFailedSourceVersion((value) => value + 1);
           setPlayback({ torrentId: result.torrent_id!, title: result.title || candidate.title, source: playbackSource });

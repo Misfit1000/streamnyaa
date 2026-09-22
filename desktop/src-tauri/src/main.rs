@@ -4,6 +4,7 @@ mod data_requests;
 mod player_download;
 mod player_shortcuts;
 mod download_queue;
+mod playback_progress;
 
 use image::imageops::FilterType;
 use serde::{Deserialize, Serialize};
@@ -325,6 +326,8 @@ struct DesktopSettings {
 
 #[derive(Clone, Deserialize)]
 struct PlaybackRequest {
+    #[serde(default)]
+    progress_context: Option<playback_progress::Context>,
     magnet: String,
     info_hash: Option<String>,
     title: String,
@@ -1009,6 +1012,19 @@ fn rotate_logs(log_file: &Path) {
     let _ = fs::rename(log_file, first_archive);
 }
 
+fn sanitized_log_message(message:&str)->String {
+    let lower=message.to_ascii_lowercase();
+    let sensitive=["https://","http://","magnet:","file://","bearer ","access_token", "refresh_token", "authorization", "/users/", "/home/", "/tmp/"];
+    let marker=sensitive.iter().filter_map(|needle|lower.find(needle)).min();
+    let drive=message.as_bytes().windows(3).position(|b|b[0].is_ascii_alphabetic()&&b[1]==b':'&&(b[2]==b'\\'||b[2]==b'/'));
+    let boundary=marker.into_iter().chain(drive).min();
+    let safe=boundary.map(|index|format!("{}[private details omitted]",&message[..index])).unwrap_or_else(||message.to_string());
+    safe.split_whitespace().map(|part|{
+        let trimmed=part.trim_matches(|c:char|!c.is_ascii_hexdigit());
+        if matches!(trimmed.len(),40|64)&&trimmed.chars().all(|c|c.is_ascii_hexdigit()){ "[identifier omitted]" }else{part}
+    }).collect::<Vec<_>>().join(" ")
+}
+
 fn append_log_line(level: &str, message: &str) {
     static LOG_WRITE: Mutex<()> = Mutex::new(());
     let Ok(_write_guard) = LOG_WRITE.lock() else {
@@ -1028,7 +1044,7 @@ fn append_log_line(level: &str, message: &str) {
             "[{}] [{}] {}",
             unix_timestamp(),
             level,
-            message.trim()
+            sanitized_log_message(message)
         );
     }
 }
@@ -3461,24 +3477,24 @@ fn send_mpv_with_retry(ipc: &str, command: &str, attempts: usize, delay_ms: u64)
 fn send_mpv_request(ipc: &str, command: &str) -> Option<serde_json::Value> {
     #[cfg(windows)]
     {
-        use std::io::{BufRead, BufReader};
-        let mut stream = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(ipc)
-            .ok()?;
+        use std::os::windows::io::AsRawHandle;
+        let mut stream = std::fs::OpenOptions::new().read(true).write(true).open(ipc).ok()?;
         stream.write_all(command.as_bytes()).ok()?;
         stream.write_all(b"\n").ok()?;
-        let mut reader = BufReader::new(stream);
-        let mut line = String::new();
-        for _ in 0..6 {
-            line.clear();
-            if reader.read_line(&mut line).ok()? == 0 {
-                break;
-            }
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line.trim()) {
-                if json.get("request_id").is_some() || json.get("data").is_some() {
-                    return Some(json);
+        let deadline=Instant::now()+Duration::from_millis(1500);
+        let expected=serde_json::from_str::<serde_json::Value>(command).ok()?.get("request_id").cloned();
+        let mut bytes=Vec::new();
+        while Instant::now()<deadline && bytes.len()<1_000_000 {
+            let mut available=0u32;
+            let ok=unsafe {windows_sys::Win32::System::Pipes::PeekNamedPipe(stream.as_raw_handle(),std::ptr::null_mut(),0,std::ptr::null_mut(),&mut available,std::ptr::null_mut())};
+            if ok==0{return None;}
+            if available==0 {thread::sleep(Duration::from_millis(5));continue;}
+            let mut chunk=vec![0;available.min(65536) as usize];
+            let read=stream.read(&mut chunk).ok()?;if read==0{return None;}bytes.extend_from_slice(&chunk[..read]);
+            while let Some(end)=bytes.iter().position(|b|*b==b'\n') {
+                let line:Vec<_>=bytes.drain(..=end).collect();
+                if let Ok(json)=serde_json::from_slice::<serde_json::Value>(&line) {
+                    if expected.as_ref()==json.get("request_id") {return Some(json);}
                 }
             }
         }
@@ -3489,6 +3505,8 @@ fn send_mpv_request(ipc: &str, command: &str) -> Option<serde_json::Value> {
         use std::io::{BufRead, BufReader};
         use std::os::unix::net::UnixStream;
         let mut stream = UnixStream::connect(ipc).ok()?;
+        let _=stream.set_read_timeout(Some(Duration::from_millis(1500)));
+        let _=stream.set_write_timeout(Some(Duration::from_millis(1500)));
         stream.write_all(command.as_bytes()).ok()?;
         stream.write_all(b"\n").ok()?;
         let mut reader = BufReader::new(stream);
@@ -3841,6 +3859,7 @@ fn show_player_text_with_title(ipc: &str, title: Option<&str>, text: &str) {
 static PLAYER_LOAD_LOCK: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 fn load_player_file(ipc: &str, url: &str) -> bool {
+    playback_progress::flush(ipc);
     let mut load_guard = PLAYER_LOAD_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     *load_guard = None;
     load_player_file_locked(ipc, url)
@@ -4202,12 +4221,14 @@ fn handle_player_client_message(ipc: &str, value: serde_json::Value) {
         return;
     };
     let message = args.first().and_then(|item| item.as_str());
+    if message == Some("streamnyaa-progress-checkpoint") {
+        if let Some(raw)=args.get(1).and_then(|v|v.as_str()){playback_progress::accept(ipc,raw);}
+        return;
+    }
     if let Some(message) = message {
         if message.starts_with("streamnyaa-") {
             log_info(format!(
-                "MPV Lua client-message received: {} args={}",
-                message,
-                serde_json::to_string(args).unwrap_or_else(|_| "[]".to_string())
+                "MPV Lua client-message received: {}", message
             ));
         }
     }
@@ -4525,6 +4546,7 @@ fn load_player_target(
 }
 
 fn stop_player_stream_only(ipc: &str) {
+    playback_progress::flush(ipc);
     let _ = send_mpv(ipc, r#"{"command":["stop"],"request_id":33}"#);
 }
 
@@ -4807,6 +4829,7 @@ fn relaunch_player_and_load_target(
 ) -> Result<String, String> {
     close_player_if_needed();
     let ipc = launch_or_reuse_player(player_path, cache_dir, request, title)?;
+    if let Some(context)=request.progress_context.clone(){playback_progress::begin(&ipc,context);}
     show_player_text_with_title(&ipc, Some(title), "Retrying the player handoff...");
     if !load_player_target(&ipc, title, target, request.resume_seconds) {
         close_player_if_needed();
@@ -4818,6 +4841,7 @@ fn relaunch_player_and_load_target(
 fn close_player_if_needed() {
     if let Ok(mut guard) = manager().lock() {
         if let Some(ipc) = guard.player_ipc.as_deref() {
+            playback_progress::flush(ipc);
             let _ = send_mpv(ipc, r#"{"command":["stop"],"request_id":4}"#);
             let _ = send_mpv(ipc, r#"{"command":["quit"],"request_id":5}"#);
         }
@@ -5695,6 +5719,7 @@ fn start_stream(
             Some(&title),
             "Opening the stream in the current player...",
         );
+        if let Some(context)=request.progress_context.clone(){playback_progress::begin(&player_ipc,context);}
         if !load_player_target(&player_ipc, &title, &target, request.resume_seconds) {
             let _ = relaunch_player_and_load_target(
                 player_path,
@@ -6477,6 +6502,9 @@ fn main() {
             control_local_player,
             import_subtitle_for_current_player,
             get_local_playback_progress,
+            playback_progress::get_playback_checkpoints,
+            playback_progress::flush_playback_checkpoint,
+            playback_progress::set_playback_progress_owner,
             play_local_torrent,
             stop_local_playback
         ])
@@ -6487,6 +6515,15 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normal_logs_omit_private_media_and_personal_paths() {
+        for message in ["Failed https://host/path?token=secret", "Read C:\\Users\\Private\\video.mkv", "Authorization: Bearer secret", "Open magnet:?xt=urn:btih:secret"] {
+            let result=sanitized_log_message(message);
+            assert!(!result.contains("secret") && !result.contains("Private"));
+        }
+        assert_eq!(sanitized_log_message("FIRST_FRAME_CONFIRMED duration_ms=123"),"FIRST_FRAME_CONFIRMED duration_ms=123");
+    }
 
     #[test]
     fn desktop_google_oauth_accepts_only_the_streamnyaa_callback() {
@@ -6825,6 +6862,7 @@ mod tests {
     fn playback_source_uses_valid_magnet() {
         let hash = "0123456789abcdef0123456789abcdef01234567";
         let request = PlaybackRequest {
+            progress_context: None,
             magnet: format!("magnet:?xt=urn:btih:{}", hash),
             info_hash: None,
             title: "Source".to_string(),
@@ -6994,6 +7032,7 @@ mod tests {
     #[test]
     fn playback_source_rebuilds_valid_magnet_from_info_hash() {
         let request = PlaybackRequest {
+            progress_context: None,
             magnet: "magnet:?xt=urn:btih:".to_string(),
             info_hash: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
             title: "Example Source".to_string(),
@@ -7015,6 +7054,7 @@ mod tests {
 
     fn playback_request_for_episode(episode: &str) -> PlaybackRequest {
         PlaybackRequest {
+            progress_context: None,
             magnet: "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567".to_string(),
             info_hash: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
             title: "Example Anime S01E05 1080p".to_string(),
@@ -7121,6 +7161,7 @@ mod tests {
     #[test]
     fn playback_source_rejects_missing_hash_and_url() {
         let request = PlaybackRequest {
+            progress_context: None,
             magnet: "magnet:?xt=urn:btih:".to_string(),
             info_hash: Some(String::new()),
             title: "Example Source".to_string(),

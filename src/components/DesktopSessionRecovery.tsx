@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Play, X } from 'lucide-react';
 import { clearInterruptedPlayback, readInterruptedPlayback, interruptedSourceKey } from '../lib/desktopInterruptedSession';
 import { loadLocalPlaybackHistory, openLocalSourceNow, resolveDesktopPlaybackCheckpoint, formatPlaybackTime } from '../lib/desktop';
 
 // Capture once at application startup, never from a currently running stream
 // when the user navigates between pages.
-const launchMarker = readInterruptedPlayback();
+let launchMarker = readInterruptedPlayback();
 let dismissedForLaunch = false;
 export default function DesktopSessionRecovery() {
   const [dismissed, setDismissed] = useState(dismissedForLaunch);
+  const [, refresh] = useState(0);
+  useEffect(()=>{const restored=()=>{launchMarker=readInterruptedPlayback();refresh(v=>v+1);};window.addEventListener('streamnyaa:native-progress-restored',restored);return()=>window.removeEventListener('streamnyaa:native-progress-restored',restored);},[]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const source = launchMarker && loadLocalPlaybackHistory().find(item =>
@@ -17,7 +19,7 @@ export default function DesktopSessionRecovery() {
   const checkpoint = launchMarker?.positionSeconds !== undefined ? {
     positionSeconds: launchMarker.positionSeconds,
     durationSeconds: launchMarker.durationSeconds || 0,
-    completed: !!launchMarker.durationSeconds && launchMarker.positionSeconds / launchMarker.durationSeconds >= 0.95,
+    completed: source ? resolveDesktopPlaybackCheckpoint(source)?.completed === true : false,
   } : source ? resolveDesktopPlaybackCheckpoint(source) : null;
   if (dismissed || !source || checkpoint?.completed || !checkpoint || checkpoint.positionSeconds <= 0) return null;
   const dismiss = () => { dismissedForLaunch = true; setDismissed(true); if (launchMarker) clearInterruptedPlayback(launchMarker); };

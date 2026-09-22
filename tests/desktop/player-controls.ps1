@@ -115,6 +115,25 @@ try {
   Invoke-MpvCommand @('set_property', 'pause', $false) | Out-Null
   Wait-MpvProperty 'time-pos' { param($value) [double]$value -gt 0.2 } 'Next episode did not advance after explicit playback handoff.'
 
+  Invoke-MpvCommand @('script-message', 'streamnyaa-progress-session', 'native-regression') | Out-Null
+  Start-Sleep -Milliseconds 1600
+  Invoke-MpvCommand @('script-message', 'streamnyaa-progress-flush') | Out-Null
+  Wait-MpvProperty 'user-data/streamnyaa/progress-checkpoint' { param($value)
+    if (!$value) { return $false }
+    $checkpoint=$value | ConvertFrom-Json
+    return $checkpoint.sessionId -eq 'native-regression' -and $checkpoint.coverage.intervals.Count -gt 0
+  } 'Native checkpoint did not capture advancing playback.'
+  Invoke-MpvCommand @('set_property', 'pause', $true) | Out-Null
+  Invoke-MpvCommand @('script-message', 'streamnyaa-progress-flush') | Out-Null
+  Start-Sleep -Milliseconds 100
+  $beforeSeek=(Invoke-MpvCommand @('get_property','user-data/streamnyaa/progress-checkpoint') | ConvertFrom-Json).coverage.furthest
+  Invoke-MpvCommand @('seek', 80, 'absolute+exact') | Out-Null
+  Start-Sleep -Milliseconds 600
+  Invoke-MpvCommand @('script-message', 'streamnyaa-progress-flush') | Out-Null
+  Start-Sleep -Milliseconds 100
+  $afterSeek=(Invoke-MpvCommand @('get_property','user-data/streamnyaa/progress-checkpoint') | ConvertFrom-Json).coverage.furthest
+  if ([Math]::Abs($beforeSeek-$afterSeek) -gt 0.05) { throw 'Paused seek incorrectly advanced watched coverage.' }
+
   Write-Host "Desktop native player-controls integration test passed ($SoakCycles soak cycles)."
 }
 finally {

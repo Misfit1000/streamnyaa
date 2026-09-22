@@ -1,0 +1,25 @@
+# Desktop reliability and progress delivery — 0.1.9
+
+## Implemented
+- Native MPV progress events replace Watch-page ownership. Streaming and offline playback use the same interval merge and 92% unique-coverage completion rule. Seek, pause, buffering and rewatches do not manufacture coverage.
+- Versioned, identity-scoped native checkpoints are persisted every five seconds of advancing playback, at completion, and on final events/transitions. Sequence and session checks reject stale or duplicated events. Writes sync to disk and keep a previous valid backup; corrupt primary records recover from backup. Storage is bounded at 1,000 source/episode records and 16 MB per snapshot.
+- The shell consumes events independently of the active route. Replay is scoped by account and deduplicated across remounts/restarts; offline queue updates carry owner identity. Existing legacy offline import markers are retained. Crash recovery uses durable progress and actual completion, not a guessed completion from playhead position. Resume still requires an explicit user action.
+- Outgoing playback is flushed before media replacement and forced player closure. Recent Calendar identity, explicit next-episode unpause and late-artwork fencing are retained. Same-source recovery retains accumulated native coverage.
+- Source-success scoring waits for actual playback advancement. Existing four-source attempt limit, identity checks, local-failure exclusions and native 12-second startup / 8-second recovery stages are retained rather than duplicated in a replacement state machine.
+- MPV property reads now have a 1.5-second response deadline instead of an unbounded pipe read; replies are matched to request ID. This prevents a silent player from holding a single native read indefinitely.
+- Episode prefetch uses the same versioned episode-window query key as Watch. A regression verifies one fetch serves both prefetch and navigation.
+- Idle route warming reduced from seven screens to Explore and Calendar. Watch (117,641 bytes of direct JavaScript in the preceding build), sources and settings are deferred to user intent. Unrequested source-cache network warming was removed; warm scheduling pauses when playback takes priority. This measures avoided eager work, not an end-user startup-time speedup.
+- Raw player-message arguments are no longer logged. Normal desktop logs redact URL/token/path details and long hexadecimal identifiers. Existing loopback service restrictions, safe cache ownership/deletion, no image-name process termination, public API host validation, administrator fail-closed checks, CSP and sanitized exports remain intact.
+
+## Verification
+- TypeScript passed.
+- Frontend: 231 tests across 53 files were exercised. The parallel full run passed 230 with one existing 5-second Explore navigation timeout; all 16 navigation tests passed on targeted rerun. Final targeted progress/offline/prefetch suite: 9 passed.
+- Rust: 61 passed and one existing ignored tracker test in the full run. After bounded-storage refinements, all five progress tests passed; the added log-privacy regression also passed (62 distinct passing Rust tests in total).
+- Desktop contracts passed. Lua player-state: 514 assertions. Native MPV controls: 20 cycles, stall test passed, soak: 100 cycles. Native checkpoints and paused-seek rejection are exercised against an isolated bundled MPV; EOF and outgoing/new session separation are also covered by deterministic real-script tests.
+- All nine Explore query builders returned AniList HTTP 200 with 25 records each on September 22. Direct request timings were 606–956 ms. The corrected New episodes probe used the builder's request/page/before signature; an initial harness invocation used the wrong arguments and was discarded. See the companion probe JSON. No application fallback was involved in these direct probes.
+- Existing source matching, request cancellation/coalescing, access-denied cooldown, cache freshness, URL restrictions, download safety and account-isolation regressions were retained in the suites.
+
+## Acceptance limitations
+No native visual acceptance, real-torrent 10–20-episode soak, cold/warm UI latency benchmark, full-process memory/file-handle profiling, live account-sync round trip, clean-machine installation or upgrade/rollback exercise is claimed. The user retains hands-on native testing. Synthetic/null-output tests do not prove real media availability or visible first-frame rendering. External provider/source availability cannot be guaranteed on every first attempt.
+
+This is a focused implementation and code/test audit, not a claim that every potential issue across all app features has been eliminated. No broad state-machine rewrite, new hosted services, UI redesign, or new download-manager project was introduced. The installer is unsigned unless its manifest explicitly states otherwise. Packaging verifies final resource hashes, NSIS inclusion, version, checksum and size; extracted-payload verification is not performed. Prior installer and metadata are archived before replacement.

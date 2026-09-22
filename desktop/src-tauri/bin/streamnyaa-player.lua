@@ -5285,17 +5285,27 @@ mp.add_timeout(0.35, function()
 end)
 draw(true, "init")
 
--- Actual playback coverage: seeking never fills the skipped interval.
-local coverage = {version=2, intervals={}, furthest=0, lastPosition=0}
+-- Native checkpoints are emitted independently of the frontend route and visibility.
+local coverage = {version=2, intervals={}, furthest=0, lastPosition=0, duration=0}
 local coverage_sample = nil
-mp.register_event("file-loaded", function() coverage={version=2,intervals={},furthest=0,lastPosition=0}; coverage_sample=nil end)
-mp.register_event("seek", function() coverage_sample=nil end)
-mp.add_periodic_timer(0.5, function()
+local progress_session, progress_sequence, progress_sent = "", 0, 0
+local progress_complete = false
+local function publish_progress(reason)
+ if progress_session == "" or coverage.duration <= 0 then return end
+ progress_sequence = progress_sequence + 1
+ local snapshot = {sessionId=progress_session,sequence=progress_sequence,coverage=coverage,state=reason}
+ local raw = utils.format_json(snapshot)
+ mp.set_property("user-data/streamnyaa/progress-checkpoint",raw)
+ mp.commandv("script-message","streamnyaa-progress-checkpoint",raw)
+ progress_sent=mp.get_time()
+end
+local function sample_coverage()
  local pos=mp.get_property_number("time-pos")
  local now=mp.get_time()
  local speed=mp.get_property_number("speed",1)
  local playing=not mp.get_property_native("pause",true) and not mp.get_property_native("paused-for-cache",false) and not mp.get_property_native("seeking",false)
- if not pos or pos<0 then coverage_sample=nil; return end
+ if is_placeholder_media() or not pos or pos<0 then coverage_sample=nil; return end
+ coverage.duration=mp.get_property_number("duration",coverage.duration)
  coverage.lastPosition=pos
  if playing and coverage_sample then
   local delta=pos-coverage_sample.pos
@@ -5313,8 +5323,29 @@ mp.add_periodic_timer(0.5, function()
   end
  end
  coverage_sample=playing and {pos=pos,time=now,speed=speed} or nil
- mp.set_property("user-data/streamnyaa/watched-coverage",require('mp.utils').format_json(coverage))
+ mp.set_property("user-data/streamnyaa/watched-coverage",utils.format_json(coverage))
+ local watched=0
+ for _,range in ipairs(coverage.intervals) do watched=watched+range[2]-range[1] end
+ local completed=coverage.duration>0 and watched/coverage.duration>=0.92
+ if (playing and now-progress_sent>=1) or (completed and not progress_complete) then
+  publish_progress(playing and "playing" or "paused")
+ end
+ progress_complete=completed
+end
+mp.register_script_message("streamnyaa-progress-flush",function() sample_coverage();publish_progress(mp.get_property_native("eof-reached",false) and "eof" or "paused") end)
+mp.register_script_message("streamnyaa-progress-session",function(id)
+ sample_coverage();publish_progress("closed")
+ progress_session=id;progress_sequence=0;progress_sent=0;progress_complete=false
+ coverage={version=2,intervals={},furthest=0,lastPosition=0,duration=0};coverage_sample=nil
 end)
+mp.register_event("file-loaded",function()
+ coverage={version=2,intervals={},furthest=0,lastPosition=0,duration=0};coverage_sample=nil;progress_complete=false
+ mp.set_property("user-data/streamnyaa/watched-coverage",utils.format_json(coverage))
+end)
+mp.register_event("seek",function() coverage_sample=nil end)
+mp.register_event("end-file",function(event) sample_coverage();publish_progress(event and event.reason=="eof" and "eof" or "closed");coverage_sample=nil end)
+mp.register_event("shutdown",function() sample_coverage();publish_progress("closed") end)
+mp.add_periodic_timer(0.5,sample_coverage)
 
 -- A missing application response must not leave Next permanently disabled.
 function check_next_request_timeout()

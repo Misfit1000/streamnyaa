@@ -1,3 +1,4 @@
+import { loadStoredSession } from './supabaseAuth';
 import {mergeCoverage,coveragePercent,type WatchedCoverage} from './desktopCoverage';
 import { animeIdentity, animeTitleKey } from './animeIdentity';
 import { clearInterruptedPlayback, markInterruptedPlayback, interruptedSourceKey } from './desktopInterruptedSession';
@@ -1177,6 +1178,12 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
     }
     const result = await invoke<DesktopPlaybackStatus>('play_local_torrent', {
       request: {
+        progress_context: {
+          owner: loadStoredSession()?.user?.id || '', animeId: String(source.animeId || source.animeTitle || ''),
+          title: source.animeTitle || source.title, episode: String(source.episode || ''),
+          sourceKey: source.infoHash || source.title, poster: source.poster || source.image || null,
+          baseline: source.watchedCoverage || { intervals: [], furthest: source.resumeSeconds || 0, lastPosition: source.resumeSeconds || 0, duration: source.durationSeconds || 0 },
+        },
         magnet: source.magnet,
         torrent_url: source.torrentUrl || '',
         info_hash: source.infoHash || '',
@@ -1627,4 +1634,10 @@ export async function fetchDesktopMetadataApi(request: DesktopMetadataApiRequest
   }
 
   return invokeDesktopData<DesktopSourceApiResponse>(invoke, 'fetch_desktop_metadata_api', { request }, options);
+}
+
+/** Optional transition flush; recording itself runs natively even without React. */
+export async function flushDesktopPlaybackCheckpoint() {
+  const invoke=window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
+  if(invoke) await invoke('flush_playback_checkpoint').catch(()=>undefined);
 }
