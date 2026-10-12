@@ -8,6 +8,7 @@ export type DesktopScheduleCacheEntry = {
   data: {
     data: any[];
     pagination?: Record<string, unknown>;
+    [field: string]: unknown;
   };
 };
 

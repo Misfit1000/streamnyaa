@@ -35,6 +35,7 @@ $mainDesktop = Get-Content -Raw (Join-Path $repo 'src\main.desktop.tsx')
 $animeCard = Get-Content -Raw (Join-Path $repo 'src\components\AnimeCard.tsx')
 $jikanApi = Get-Content -Raw (Join-Path $repo 'src\api\jikan.ts')
 $desktopHome = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopHome.tsx')
+$desktopHomeBatch = Get-Content -Raw (Join-Path $repo 'src\api\desktopHomeBatch.ts')
 $desktopExplore = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopExplore.tsx')
 $desktopLibrary = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopLibrary.tsx')
 $desktopSources = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopSources.tsx')
@@ -59,6 +60,10 @@ $desktopArtwork = Get-Content -Raw (Join-Path $repo 'src\lib\desktopArtwork.ts')
 $loginPage = Get-Content -Raw (Join-Path $repo 'src\pages\Login.tsx')
 $supabaseAuth = Get-Content -Raw (Join-Path $repo 'src\lib\supabaseAuth.ts')
 $nyaaApi = Get-Content -Raw (Join-Path $repo 'src\api\nyaa.ts')
+$sourceDiscovery = Get-Content -Raw (Join-Path $repo 'src\lib\desktopSourceDiscovery.ts')
+$sourceIdentity = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\src\source_identity.rs')
+$sourceIdentityBridge = Get-Content -Raw (Join-Path $repo 'src\lib\desktopSourceIdentity.ts')
+$nativeReminders = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\src\reminder_scheduler.rs')
 $metadataApi = Get-Content -Raw (Join-Path $repo 'src\api\jikan.ts')
 $streamSourcesApi = Get-Content -Raw (Join-Path $repo 'api\stream-sources.ts')
 $tauriMain = (Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\src\main.rs')) + (Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\src\data_requests.rs'))
@@ -73,10 +78,10 @@ $cargoManifest = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\Cargo.toml
 $releasePreparer = Get-Content -Raw (Join-Path $repo 'scripts\prepare-desktop-release.ps1')
 
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
-Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.9"' 'Desktop release configuration should target version 0.1.9.'
-Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.9"' 'Rust package version should match the desktop release version.'
-Assert-Match $releasePreparer "releaseRevision\s*=\s*'desktop-loading-reliability-12'" 'The 0.1.7 release manifest must identify the current coordinated loading reliability pass.'
-Assert-Match $releasePreparer 'auth-recovery-live-validation\.json' 'The 0.1.3 artifact must remain gated on live password-recovery validation.'
+Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.10"' 'Desktop release configuration should target version 0.1.10.'
+Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.10"' 'Rust package version should match the desktop release version.'
+Assert-Match $releasePreparer "releaseRevision\s*=\s*'playback-home-reliability'" 'The release manifest must identify the current playback and Home revision.'
+Assert-Match $releasePreparer 'Previous installer checksum mismatch' 'The previous installer must be verified before being retained for rollback.'
 Assert-Match $releasePreparer '2MB' 'The installer must reject growth beyond the two MiB budget.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
 if ($desktopBridge -match 'VITE_STREAMNYAA_APP_TARGET') {
@@ -103,8 +108,9 @@ Assert-Match $desktopShell 'warmCoreDesktopRoutes' 'Desktop shell should warm co
 Assert-Match $desktopShell 'preloadDesktopRoute' 'Desktop navigation should preload routes on user intent.'
 Assert-Match $desktopShell 'readDesktopScheduleReminders' 'Desktop reminder checks should sleep when no reminders are pending.'
 Assert-NotMatch $desktopShell 'setInterval\(\(\) => void checkReminders' 'Desktop reminders must not poll forever when no reminders exist.'
-Assert-Match $desktopHome 'secondaryRailsReady' 'Desktop home should defer non-critical rails until after first paint.'
-Assert-Match $desktopHome 'requestIdleCallback' 'Desktop home should warm secondary rail data during idle time.'
+Assert-Match $desktopHome 'shelfEnabled' 'Desktop home should admit only visible, enabled shelves.'
+Assert-Match $desktopHome 'IntersectionObserver' 'Desktop home should defer offscreen rail requests until they approach the viewport.'
+Assert-Match $desktopHomeBatch 'uniqueKeys\.map' 'Compatible visible Home shelves should share an aliased primary request.'
 Assert-NotMatch $desktopShell 'key=\{location\.pathname\}' 'Desktop routes must not force a full remount on every navigation.'
 Assert-Match $desktopRoutePreload 'MAX_CONCURRENT_WARMS\s*=\s*2' 'Desktop route warming must stay limited to two concurrent imports.'
 Assert-Match $desktopRoutePreload 'requestIdleCallback' 'Desktop route warming should wait for an idle browser window.'
@@ -171,17 +177,25 @@ Assert-Match $watchPage 'rejected:title-mismatch' 'Desktop watch page should rej
 Assert-Match $watchPage 'isSafeSourceQueryTitle' 'Desktop watch page should avoid unsafe one-word source queries from multi-word anime titles.'
 Assert-Match $watchPage 'matchTier\s*=\s*''exact''' 'Desktop watch page should keep exact same-episode sources separate from loose matches.'
 Assert-Match $watchPage "useState<SourceFilterMode>\('balanced'\)" 'Desktop watch page should default to Balanced sources so usable non-exact sources are visible.'
-Assert-Match $watchPage 'Wide match' 'Desktop watch page should allow wider seeded source candidates instead of hiding every non-exact torrent.'
+Assert-Match $watchPage 'Advanced / uncertain matches' 'Desktop Watch should explain uncertain source identity in a separate manual group.'
 Assert-Match $watchPage 'FAILED_SOURCE_MEMORY_KEY' 'Desktop watch page should remember recently failed sources.'
 Assert-Match $watchPage 'rememberSourceFailure' 'Desktop watch page should record failed source handoffs.'
 Assert-Match $watchPage 'Try another stream' 'Desktop watch page should expose a same-episode recovery action.'
-Assert-Match $watchPage "source\.matchTier === 'broad'" 'Desktop playback retry should allow broad backups when broad is the selected playable pool.'
+Assert-Match $watchPage 'manualOnly' 'Uncertain installment matches must be excluded from automatic playback and recovery.'
 Assert-Match $watchPage 'isFetching:\s*sourcesFetching' 'Desktop watch page should track source refetching during episode switches.'
-Assert-Match $watchPage 'SOURCE_SEARCH_BUDGET_MS\s*=\s*12_000' 'Desktop source discovery must have a fast bounded total search budget.'
+Assert-Match $watchPage 'SOURCE_SEARCH_BUDGET_MS\s*=\s*30_000' 'Desktop source discovery must have a bounded resumable thirty-second search budget.'
 Assert-Match $watchPage 'SOURCE_RETRY_LIMIT\s*=\s*4' 'Desktop playback should try the selected source plus no more than three automatic backups.'
 Assert-Match $watchPage 'publishPartial' 'Desktop source discovery should publish compatible results before broad fallback finishes.'
 Assert-Match $watchPage 'signal, deadlineMs' 'Desktop source discovery must propagate cancellation and remaining deadline to native work.'
-Assert-Match $watchPage 'query-timeout' 'Desktop source discovery should report and recover from a slow provider query.'
+Assert-Match $sourceDiscovery 'pending\.push\(lane\.job\)' 'Interrupted source queries must remain available for a later Find more sources pass.'
+Assert-Match $watchPage 'findMoreSources' 'Desktop source discovery should let users continue unfinished searches.'
+Assert-Match $sourceDiscovery 'requestLimit\s*\?\?\s*12' 'A source discovery pass must cap upstream requests.'
+Assert-Match $watchPage 'validateDesktopSourceCandidates' 'Watch must use the shared native installment classifier bridge.'
+Assert-Match $sourceIdentityBridge 'classify_desktop_sources' 'The source identity bridge must invoke the native installment classifier.'
+Assert-Match $sourceIdentity 'pub fn classify' 'Native source identity checks must be shared with availability alerts.'
+Assert-Match $nativeReminders 'source_identity::exact_candidate' 'Background availability alerts must validate the exact installment and episode.'
+Assert-Match $tauriMain 'reminder_scheduler::start' 'Native Calendar alerts must start with the desktop runtime.'
+Assert-Match $tauriMain 'reminder_scheduler::shutdown' 'Explicit Quit must stop the native Calendar worker.'
 Assert-Match $watchPage 'sourcesBusy\s*=\s*sourceSearchInProgress\s*&&\s*!playableSources\.some' 'Playback may proceed during background search only when a playable source exists.'
 Assert-Match $watchPage 'playableSourcesEpisodeRef\.current\s*!==\s*selectedEpisode' 'Desktop autoplay should reject stale sources from the previous episode.'
 Assert-Match $watchPage 'activeSourceId\s*\|\|\s*playActionLockRef\.current\) return' 'Desktop autoplay should wait for active player handoff before opening the next source.'
@@ -206,8 +220,8 @@ if ($desktopHome -match 'bx145064-YspYpO4wXHNP') {
 if ($desktopHome -match 'return live\.length \? live : FALLBACK_DESKTOP_ANIME') {
   throw 'Desktop home must not fill live rows with repeated fallback anime.'
 }
-Assert-Match $desktopHome 'fetchAnimeSeason' 'Desktop home should load the current anime season instead of repeating generic airing data.'
-Assert-Match $desktopHome 'searchAnime\(' 'Desktop home should use a dedicated trending feed instead of reusing seasonal rows.'
+Assert-Match $desktopHomeBatch 'seasonYear:.*season\.year' 'Desktop home should load the current anime season instead of repeating generic airing data.'
+Assert-Match $desktopHomeBatch 'TRENDING_DESC' 'Desktop home should use a dedicated trending feed instead of reusing seasonal rows.'
 Assert-Match $desktopHome 'Details' 'Desktop Continue Watching cards should expose a details action.'
 Assert-Match $desktopHome 'sourceUpdatedLabel' 'Desktop Continue Watching cards should show last watched context.'
 Assert-Match $desktopExplore "season: mode === 'seasonal' \? season : undefined" 'Desktop Explore should send its selected season through the paginated catalog request.'

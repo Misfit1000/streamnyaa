@@ -1,6 +1,6 @@
 import DesktopProgressBridge from './DesktopProgressBridge';
 import DesktopDownloadManager from './DesktopDownloadManager';
-import { DesktopCatalogStatus } from './DesktopActivitySummary';
+import DesktopActivityCenter from './DesktopActivityCenter';
 import { memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { Bookmark, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
@@ -26,6 +26,8 @@ import {
   readDesktopScheduleReminders,
   resolveDesktopUpcomingAnimeWatches,
   subscribeDesktopScheduleReminders,
+  startDesktopReminderBridge,
+  reconcileDesktopReminderSchedule,
 } from '../lib/desktopReminders';
 import { preloadDesktopRoute, preloadDesktopWatchData, warmCoreDesktopRoutes } from '../lib/desktopRoutePreload';
 import { loadDesktopScheduleUpdatePreferences } from '../lib/scheduleRevisions';
@@ -189,6 +191,7 @@ export default function DesktopShell() {
   const hoverPreloadTimer = useRef<number | undefined>(undefined);
   const hoverSourcePreloadTimer = useRef<number | undefined>(undefined);
   const hoverPreloadHref = useRef('');
+  const hoverIntentAbort = useRef<AbortController | null>(null);
   const contentRef = useRef<HTMLElement>(null);
   useEffect(() => {
     setTopSearchValue(location.pathname === '/search' ? new URLSearchParams(location.search).get('q') || '' : '');
@@ -245,7 +248,10 @@ export default function DesktopShell() {
       if (cancelled || (!preferences.personal && !preferences.global)) return;
       lastRefreshAt = Date.now();
       const schedule = await desktopQueryClient.fetchQuery(desktopWeekQuery('background')).catch(() => null);
-      if (schedule?.data) resolveDesktopUpcomingAnimeWatches(schedule.data);
+      if (schedule?.data) {
+        resolveDesktopUpcomingAnimeWatches(schedule.data);
+        await reconcileDesktopReminderSchedule(schedule.data).catch(() => undefined);
+      }
     };
     const refreshWhenStale = () => {
       if (Date.now() - lastRefreshAt >= 1000 * 60 * 20) void refreshScheduleUpdates();
@@ -262,6 +268,7 @@ export default function DesktopShell() {
   // Only intentional hover/focus/pointer-down prefetches; no competing visible-card scan.
 
   useEffect(() => () => {
+    hoverIntentAbort.current?.abort();
     if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);
     if (hoverSourcePreloadTimer.current !== undefined) window.clearTimeout(hoverSourcePreloadTimer.current);
   }, []);
@@ -269,6 +276,9 @@ export default function DesktopShell() {
   const scheduleLinkedRoutePreload = (target: EventTarget | null) => {
     const url = internalLinkedRoute(target);
     if (!url || hoverPreloadHref.current === url.href) return;
+    hoverIntentAbort.current?.abort();
+    const intent = new AbortController();
+    hoverIntentAbort.current = intent;
     hoverPreloadHref.current = url.href;
     if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);
     if (hoverSourcePreloadTimer.current !== undefined) window.clearTimeout(hoverSourcePreloadTimer.current);
@@ -276,20 +286,21 @@ export default function DesktopShell() {
       hoverPreloadTimer.current = undefined;
       void preloadDesktopRoute(url.pathname);
       if (/^\/(?:watch|anime)\//.test(url.pathname)) {
-        void preloadDesktopWatchData(`${url.pathname}${url.search}`, false);
+        void preloadDesktopWatchData(`${url.pathname}${url.search}`, false, intent.signal);
       }
     }, HOVER_PRELOAD_DELAY_MS);
     if (/^\/(?:watch|anime)\//.test(url.pathname)) {
       hoverSourcePreloadTimer.current = window.setTimeout(() => {
         hoverSourcePreloadTimer.current = undefined;
         if (hoverPreloadHref.current === url.href) {
-          void preloadDesktopWatchData(`${url.pathname}${url.search}`, true);
+          void preloadDesktopWatchData(`${url.pathname}${url.search}`, true, intent.signal);
         }
       }, HOVER_SOURCE_PRELOAD_DELAY_MS);
     }
   };
 
   const preloadLinkedRouteNow = (target: EventTarget | null, includeWatchSources = false) => {
+    hoverIntentAbort.current?.abort();
     if (hoverPreloadTimer.current !== undefined) {
       window.clearTimeout(hoverPreloadTimer.current);
       hoverPreloadTimer.current = undefined;
@@ -331,6 +342,13 @@ export default function DesktopShell() {
       cancelled = true;
       cleanups.forEach((cleanup) => cleanup());
     };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    void startDesktopReminderBridge().then(value => { if (disposed) value(); else cleanup = value; }).catch(() => undefined);
+    return () => { disposed = true; cleanup?.(); };
   }, []);
 
   useEffect(() => {
@@ -475,7 +493,7 @@ export default function DesktopShell() {
             </form>
             <div className="ml-auto flex items-center gap-3">
               <button className="sn-icon-action h-10 px-2 text-xs" title="Commands (Ctrl K)" onClick={() => setCommandsOpen(true)}>⌘ K</button>
-              <DesktopCatalogStatus />
+              <DesktopActivityCenter />
               <DesktopNotificationCenter />
               <Link
                 to={user ? '/profile' : '/login?next=/profile'}
@@ -496,6 +514,15 @@ export default function DesktopShell() {
             ref={contentRef}
             className="custom-scrollbar h-[calc(100vh-70px)] overflow-y-auto"
             onPointerOverCapture={(event: PointerEvent<HTMLElement>) => scheduleLinkedRoutePreload(event.target)}
+            onPointerOutCapture={(event: PointerEvent<HTMLElement>) => {
+              const previous = internalLinkedRoute(event.target);
+              const next = internalLinkedRoute(event.relatedTarget);
+              if (previous?.href === next?.href) return;
+              hoverIntentAbort.current?.abort();
+              if (hoverPreloadTimer.current !== undefined) window.clearTimeout(hoverPreloadTimer.current);
+              if (hoverSourcePreloadTimer.current !== undefined) window.clearTimeout(hoverSourcePreloadTimer.current);
+              hoverPreloadHref.current = '';
+            }}
             onPointerDownCapture={(event: PointerEvent<HTMLElement>) => preloadLinkedRouteNow(event.target, true)}
             onFocusCapture={(event: FocusEvent<HTMLElement>) => preloadLinkedRouteNow(event.target)}
           >

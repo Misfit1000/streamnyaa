@@ -1,0 +1,127 @@
+{
+  "startedAt": "2026-10-12T09:09:35.938Z",
+  "completedAt": "2026-10-12T09:09:42.845Z",
+  "transport": "Normal direct public HTTPS POST using final source query builders; no native UI acceptance implied.",
+  "minimumRequestStartSpacingMs": 2100,
+  "fallbackUsed": false,
+  "sourceSha256": {
+    "src/api/desktopHomeBatch.ts": "2c3bd2026cdaa0e837a33ee16cfa13628c6108652940528a16b756a410971b58",
+    "src/api/desktopExplore.ts": "1baee39206db05672c634486eb07305da0230be207fb4818f1fabc975f3fe65f",
+    "src/api/desktopRecentSchedule.ts": "88b085d56301f92fdde402d09043dd67364b70891429eb2088138c3212ab389a"
+  },
+  "passed": true,
+  "results": [
+    {
+      "name": "home:visible-shelf-aliases:1",
+      "shelves": [
+        "home:seasonal",
+        "home:trending"
+      ],
+      "startedAt": "2026-10-12T09:09:35.938Z",
+      "querySha256": "f4cfa0a4217c63921534344fbea0662ca340b5add7c9c73667f7a203581054bb",
+      "status": 200,
+      "durationMs": 1184,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "29"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "s0",
+          "count": 18,
+          "validShape": true
+        },
+        {
+          "alias": "s1",
+          "count": 18,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "home:visible-shelf-aliases:2",
+      "shelves": [
+        "home:top-airing",
+        "home:popular"
+      ],
+      "startedAt": "2026-10-12T09:09:38.046Z",
+      "querySha256": "affcf384176fe9b33932056608ec31b623f88634a63c1a37edb6bf28f35f0d8e",
+      "status": 200,
+      "durationMs": 2007,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "28"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "s0",
+          "count": 18,
+          "validShape": true
+        },
+        {
+          "alias": "s1",
+          "count": 18,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "home:visible-shelf-aliases:3",
+      "shelves": [
+        "home:upcoming",
+        "home:year:2025"
+      ],
+      "startedAt": "2026-10-12T09:09:40.159Z",
+      "querySha256": "148ea670e000b513588e65fc834e02dd47694da35a949ee5488a7fb12d224337",
+      "status": 200,
+      "durationMs": 1315,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "27"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "s0",
+          "count": 18,
+          "validShape": true
+        },
+        {
+          "alias": "s1",
+          "count": 18,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "home:visible-shelf-aliases:4",
+      "shelves": [
+        "home:recent"
+      ],
+      "startedAt": "2026-10-12T09:09:42.262Z",
+      "querySha256": "173f47e40c5efeaac1bf8ec734cd1ae9d80718a70594420e0363ab8ed0b7c32d",
+      "status": 200,
+      "durationMs": 583,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "26"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "s0",
+          "count": 18,
+          "validShape": true,
+          "confirmedEpisodeRecords": 18,
+          "before": 1791796140
+        }
+      ],
+      "passed": true
+    }
+  ]
+}

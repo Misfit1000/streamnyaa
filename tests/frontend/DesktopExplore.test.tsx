@@ -61,6 +61,6 @@ describe('desktop Explore behavior', () => {
         />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('button', { name: 'Notify me when this anime airs' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Notify me when this anime airs and is available to watch' })).toBeTruthy();
   });
 });

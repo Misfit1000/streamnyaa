@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Info, Pause, Play, RefreshCw, Star } from 'lucide-react';
 import Seo from '../components/Seo';
-import { fetchPopularAnime, fetchRecentEpisodes, fetchTopAiring, fetchTopAnimeByYear, fetchUpcomingAnime, searchAnime } from '../api/jikan';
+import { fetchHomeShelf } from '../api/desktopHomeBatch';
 import {
   formatPlaybackTime,
   latestUnwatchedEpisodeForAnime,
@@ -30,10 +30,14 @@ import {
 import { animeIdentity, animeTitleKey } from '../lib/animeIdentity';
 import { desktopUpcomingPath, desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
-import { useSeasonalAnimeQuery } from '../lib/seasonalAnime';
+import { useCurrentAnimeSeasonInfo } from '../lib/seasonalAnime';
 import { airedEpisodeCount, episodeAvailabilityLabel } from '../lib/animeEpisodes';
 import { readDesktopCatalog, writeDesktopCatalog } from '../lib/desktopCatalogCache';
 import { withDesktopCatalogFallback } from '../api/desktopCatalogFallback';
+import { getCurrentAnimeSeason } from '../lib/currentSeason';
+import { chooseReadyEpisode, useDesktopHomeReadiness } from '../lib/desktopHomeReadiness';
+import { jikanAdultTitle } from '../api/desktopExplore';
+import { desktopOriginStaleTime } from '../lib/desktopOriginFreshness';
 
 function uniqueValues(values: Array<string | undefined | null>) {
   const seen = new Set<string>();
@@ -283,6 +287,7 @@ function watchEpisodeFor(
   history: LocalPlaybackSource[],
   fallbackEpisode = 1,
 ) {
+  if (Number(anime?.homeReadyEpisode) > 0) return Number(anime.homeReadyEpisode);
   const preferredEpisode = preferredEpisodeFor(anime, fallbackEpisode);
   const maxEpisode = Number(anime?.latestEpisode || anime?.episodes || preferredEpisode || 1);
   return latestUnwatchedEpisodeForAnime(anime, history, preferredEpisode, maxEpisode);
@@ -435,6 +440,7 @@ const PosterAnimeCard = memo(function PosterAnimeCard({
 
         <div className="absolute inset-x-0 bottom-0 p-3.5">
           <p className="line-clamp-2 text-[14px] font-semibold leading-tight tracking-[-0.02em] text-white drop-shadow">{anime.title}</p>
+          {anime.homeAvailabilityLabel && <p className="mt-1 text-[10px] text-white/65">{anime.homeAvailabilityLabel}</p>}
           <p className="mt-1 line-clamp-1 text-[12px] font-semibold text-white/58">{animeGenre(anime)}{year ? ` - ${year}` : ''}</p>
           <div className="mt-2 flex items-center justify-between gap-3">
             <span className="rounded-full bg-white/[0.09] px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-white/68 backdrop-blur">{type}</span>
@@ -550,7 +556,7 @@ function buildRailItems(liveItems: any[], count: number, softBlocked: Set<string
   return result.slice(0, count);
 }
 
-function secondaryPriority(key: string): 'foreground' | 'background' { return /popular|upcoming|year/.test(key) ? 'background' : 'foreground'; }
+function secondaryPriority(_key: string): 'foreground' { return 'foreground'; }
 
 function useHomeCatalogQuery(
   cacheKey: string,
@@ -558,30 +564,33 @@ function useHomeCatalogQuery(
   queryFn: (options: { signal: AbortSignal; priority: 'foreground' | 'background' }) => Promise<any>,
   { enabled = true, staleTime = 1000 * 60 * 10 }: { enabled?: boolean; staleTime?: number } = {},
 ) {
-  const cached = readDesktopCatalog(cacheKey);
+  const adult = useStore(state => state.nsfwMode);
+  const scopedCacheKey = `${cacheKey}:${adult ? 'all' : 'safe'}`;
+  const cached = readDesktopCatalog(scopedCacheKey) || readDesktopCatalog(cacheKey);
   const saved = cacheKey !== 'home:recent' || cached?.data.data.every((item:any) => !item.catalogAlternative && ['aired','listed'].includes(item.recentFeedKind)) ? cached : null;
-  return useQuery({
-    queryKey,
+  const query = useQuery({
+    queryKey: [...queryKey, adult],
     queryFn: async ({ signal }) => {
       const mode = cacheKey.startsWith('home:year:') ? 'year' : ({ 'home:top-airing': 'airing', 'home:recent': 'new' } as Record<string, string>)[cacheKey] || cacheKey.split(':')[1];
       const response = await withDesktopCatalogFallback(() => queryFn({ signal, priority: secondaryPriority(cacheKey) }),
-        { mode, ...(mode === 'year' ? { year: Number(cacheKey.split(':')[2]) } : {}), ...(mode === 'airing' ? { sort: 'score' } : {}) }, signal);
+        { mode, ...(mode === 'year' ? { year: Number(cacheKey.split(':')[2]) } : {}), ...(mode === 'airing' ? { sort: 'score' } : {}), ...(mode === 'seasonal' ? { season: getCurrentAnimeSeason().season, year: getCurrentAnimeSeason().year } : {}) }, signal);
       if (!Array.isArray(response?.data)) throw new Error('Invalid home response.');
-      const normalized = { ...response, fetchedAt: response.fetchedAt ?? response.streamnyaa?.fetchedAt ?? Date.now(), stale: response.stale || response.streamnyaa?.status === 'stale', data: uniqueAnimeById(response?.data || []).slice(0, 18) };
-      if (normalized.fetchedAt > 0) writeDesktopCatalog(cacheKey, normalized, normalized.fetchedAt);
+      const normalized = { ...response, fetchedAt: response.fetchedAt ?? response.streamnyaa?.fetchedAt ?? Date.now(), stale: response.stale || response.streamnyaa?.status === 'stale', data: uniqueAnimeById(response?.data || []).filter(item => adult || !jikanAdultTitle(item)).slice(0, 18) };
+      if (normalized.fetchedAt > 0) writeDesktopCatalog(scopedCacheKey, normalized, normalized.fetchedAt);
       return normalized;
     },
     enabled,
     retry: false,
     retryDelay: (attempt) => 250 + attempt * 500,
-    staleTime,
+    staleTime: query => desktopOriginStaleTime(staleTime, query.state),
     gcTime: 1000 * 60 * 90,
     refetchOnWindowFocus: cacheKey === 'home:recent',
     refetchOnReconnect: true,
-    refetchInterval: query => query.state.error || query.state.data?.fallback ? 300_000 : false,
-    initialData: saved?.data,
+    refetchInterval: false, // Provider recovery is coordinated once for the app.
+    initialData: saved ? { ...saved.data, data: saved.data.data.filter(item => adult || !jikanAdultTitle(item)) } : undefined,
     initialDataUpdatedAt: saved ? Math.min(saved.savedAt, Number(saved.data.fetchedAt) || saved.savedAt) : undefined,
   });
+  return { ...query, enabled };
 }
 
 export default function DesktopHome() {
@@ -589,72 +598,89 @@ export default function DesktopHome() {
   const bookmarks = useStore(state => state.myList);
   const design = useDesktopDesign();
   const preferences = useHomeLayout();
-  const shelfStyle = (id: ShelfId) => design === 'revamped' ? { order: preferences.layout.order.indexOf(id) + 3, display: preferences.layout.hidden.includes(id) ? 'none' : undefined } : undefined;
+  const shelfStyle = (id: ShelfId, pending = false) => ({ minHeight: pending ? 330 : undefined, ...(design === 'revamped' ? { order: preferences.layout.order.indexOf(id) + 3, display: preferences.layout.hidden.includes(id) ? 'none' : undefined } : {}) });
   const [history, setHistory] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
-  const recentSources = useMemo(() => uniqueRecentSources(history).slice(0, 6), [history]);
   const [heroIndex, setHeroIndex] = useState(0);
   const [heroPaused, setHeroPaused] = useState(false);
   const [heroInteracting, setHeroInteracting] = useState(false);
   const reducedMotion = useReducedMotion();
-  const [secondaryRailsReady, setSecondaryRailsReady] = useState(false);
-
+  const homeRoot = useRef<HTMLDivElement>(null);
+  const [visibleShelves, setVisibleShelves] = useState<Set<ShelfId>>(() => new Set(['spotlight']));
+  const [activeShelves, setActiveShelves] = useState<Set<ShelfId>>(() => new Set(['spotlight']));
+  const allowed = (id: ShelfId) => design !== 'revamped' || !preferences.layout.hidden.includes(id);
+  const shelfEnabled = (id: ShelfId) => allowed(id) && visibleShelves.has(id);
   useEffect(() => {
-    let cancelled = false;
-    const idleApi = window as unknown as {
-      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-    const reveal = () => {
-      if (!cancelled) setSecondaryRailsReady(true);
-    };
-    if (idleApi.requestIdleCallback) {
-      const handle = idleApi.requestIdleCallback(reveal, { timeout: 900 });
-      return () => {
-        cancelled = true;
-        idleApi.cancelIdleCallback?.(handle);
-      };
+    const nodes = homeRoot.current?.querySelectorAll<HTMLElement>('[data-home-shelf]');
+    if (!nodes) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisibleShelves(new Set(Array.from(nodes).map(node => node.dataset.homeShelf as ShelfId)));
+      setActiveShelves(new Set(Array.from(nodes).map(node => node.dataset.homeShelf as ShelfId)));
+      return;
     }
-    const handle = window.setTimeout(reveal, 350);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, []);
+    const observer = new IntersectionObserver(entries => {
+      setActiveShelves(current => { const next = new Set(current); entries.forEach(entry => { const id = (entry.target as HTMLElement).dataset.homeShelf as ShelfId; if (entry.isIntersecting) next.add(id); else next.delete(id); }); return next; });
+      const visible = entries.filter(entry => entry.isIntersecting).map(entry => (entry.target as HTMLElement).dataset.homeShelf as ShelfId);
+      if (visible.length) setVisibleShelves(current => new Set([...current, ...visible]));
+    }, { rootMargin: '300px' });
+    nodes.forEach(node => observer.observe(node));
+    return () => observer.disconnect();
+  }, [design, preferences.layout.hidden.join('|'), preferences.layout.order.join('|')]);
 
-  // useSeasonalAnimeQuery wraps fetchAnimeSeason so Home always follows the current season/year key.
-  const seasonalQuery = useSeasonalAnimeQuery({
-    limit: 18,
-    queryKeyPrefix: 'desktop-seasonal',
-    staleTime: 1000 * 60 * 10,
-  });
-  const { currentSeason, data: seasonalData } = seasonalQuery;
-  const trendingQuery = useHomeCatalogQuery('home:trending', ['desktop-trending-airing'], (options) => searchAnime('', 1, '', '', '', '', 'airing', options));
-  const recentEpisodeQuery = useHomeCatalogQuery('home:recent', ['desktop-recent-episodes'], fetchRecentEpisodes, { staleTime: 1000 * 60 * 2 });
-  const popularQuery = useHomeCatalogQuery('home:popular', ['desktop-popular'], fetchPopularAnime, { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 15 });
-  const topAiringQuery = useHomeCatalogQuery('home:top-airing', ['desktop-top-airing'], fetchTopAiring);
-  const upcomingQuery = useHomeCatalogQuery('home:upcoming', ['desktop-upcoming'], fetchUpcomingAnime, { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 30 });
+  const currentSeason = useCurrentAnimeSeasonInfo();
+  const seasonalQuery = useHomeCatalogQuery(`home:seasonal:${currentSeason.key}`, ['desktop-home-seasonal', currentSeason.key], options => fetchHomeShelf('home:seasonal', options), { enabled: shelfEnabled('spotlight') || shelfEnabled('season') });
+  const seasonalData = seasonalQuery.data;
+  const trendingQuery = useHomeCatalogQuery('home:trending', ['desktop-trending-airing'], options => fetchHomeShelf('home:trending', options), { enabled: shelfEnabled('trending') });
+  const recentEpisodeQuery = useHomeCatalogQuery('home:recent', ['desktop-recent-episodes'], options => fetchHomeShelf('home:recent', options), { enabled: shelfEnabled('episodes'), staleTime: 60_000 });
+  const popularQuery = useHomeCatalogQuery('home:popular', ['desktop-popular'], options => fetchHomeShelf('home:popular', options), { enabled: shelfEnabled('popular'), staleTime: 1000 * 60 * 15 });
+  const topAiringQuery = useHomeCatalogQuery('home:top-airing', ['desktop-top-airing'], options => fetchHomeShelf('home:top-airing', options), { enabled: shelfEnabled('airing') });
+  const upcomingQuery = useHomeCatalogQuery('home:upcoming', ['desktop-upcoming'], options => fetchHomeShelf('home:upcoming', options), { enabled: shelfEnabled('upcoming'), staleTime: 1000 * 60 * 30 });
   const topYear = new Date().getFullYear() - 1;
-  const yearlyTopQuery = useHomeCatalogQuery(`home:year:${topYear}`, ['desktop-top-year', topYear], (options) => fetchTopAnimeByYear(topYear, 1, options), { enabled: secondaryRailsReady, staleTime: 1000 * 60 * 60 });
+  const yearlyTopQuery = useHomeCatalogQuery(`home:year:${topYear}`, ['desktop-top-year', topYear], options => fetchHomeShelf(`home:year:${topYear}`, options), { enabled: shelfEnabled('yearly'), staleTime: 1000 * 60 * 60 });
   const trendingData = trendingQuery.data;
   const recentEpisodeData = recentEpisodeQuery.data;
   const popularData = popularQuery.data;
   const topAiringData = topAiringQuery.data;
   const upcomingData = upcomingQuery.data;
   const yearlyTopData = yearlyTopQuery.data;
-  const seasonalItems = seasonalData?.data || [];
-  const trendingItems = trendingData?.data || [];
-  const recentEpisodeItems = recentEpisodeData?.data || [];
-  const popularItems = popularData?.data || [];
-  const topAiringItems = topAiringData?.data || [];
-  const upcomingItems = upcomingData?.data || [];
-  const yearlyTopItems = yearlyTopData?.data || [];
+  const historyAnime = (source: LocalPlaybackSource) => {
+    const known = [seasonalData, trendingData, recentEpisodeData, popularData, topAiringData, yearlyTopData]
+      .flatMap(data => data?.data || []).find(anime => String(anime.mal_id) === String(source.animeId) || `anilist:${anime.anilist_id}` === String(source.animeId));
+    return known || { mal_id: /^\d+$/.test(String(source.animeId)) ? Number(source.animeId) : undefined,
+      anilist_id: String(source.animeId).startsWith('anilist:') ? Number(String(source.animeId).slice(8)) : undefined, title: source.animeTitle || source.title };
+  };
+  const readinessCandidates = useMemo(() => [
+    ...(activeShelves.has('spotlight') || activeShelves.has('season') ? (seasonalData?.data || []).slice(0, 8) : []),
+    ...uniqueRecentSources(history).slice(0, 6).map(source => ({ ...historyAnime(source), homeRequiredEpisode: Number(source.episode) || 1 })),
+    ...(activeShelves.has('episodes') ? (recentEpisodeData?.data || []).slice(0, 8).map(anime => ({ ...anime, homeRequiredEpisode: Number(anime.listedEpisode || anime.latestEpisode || 1) })) : []),
+    ...(activeShelves.has('trending') ? (trendingData?.data || []).slice(0, 8) : []),
+    ...(activeShelves.has('popular') ? (popularData?.data || []).slice(0, 8) : []),
+    ...(activeShelves.has('airing') ? (topAiringData?.data || []).slice(0, 8) : []),
+    ...(activeShelves.has('yearly') ? (yearlyTopData?.data || []).slice(0, 8) : []),
+  ], [activeShelves, history, seasonalData, recentEpisodeData, trendingData, popularData, topAiringData, yearlyTopData]);
+  const availability = useDesktopHomeReadiness(readinessCandidates, audioPreference);
+  const readyItems = (items: any[], recent = false) => items.flatMap(anime => {
+    const episodes = availability.episodesFor(anime);
+    const requested = recent ? Number(anime.listedEpisode || anime.latestEpisode || 1) : watchEpisodeFor(anime, history);
+    const episode = recent ? episodes.includes(requested) ? requested : undefined : chooseReadyEpisode(episodes, requested);
+    return availability.showUnavailable || episode ? [{ ...anime, homeReadyEpisode: episode,
+      homeAvailabilityLabel: availability.showUnavailable ? episode ? `Episode ${episode} source found` : isUpcomingAnime(anime) ? 'Upcoming' : 'Availability not confirmed' : undefined }] : [];
+  });
+  const recentSources = uniqueRecentSources(history).filter(source => availability.showUnavailable ||
+    availability.episodesFor(historyAnime(source)).includes(Number(source.episode) || 1)).slice(0, 6);
+  const seasonalItems = readyItems(seasonalData?.data || []);
+  const trendingItems = readyItems(trendingData?.data || []);
+  const recentEpisodeItems = readyItems(recentEpisodeData?.data || [], true);
+  const popularItems = readyItems(popularData?.data || []);
+  const topAiringItems = readyItems(topAiringData?.data || []);
+  const upcomingItems = availability.showUnavailable ? upcomingData?.data || [] : [];
+  const yearlyTopItems = readyItems(yearlyTopData?.data || []);
   const homeQueries = [seasonalQuery, trendingQuery, recentEpisodeQuery, popularQuery, topAiringQuery, upcomingQuery, yearlyTopQuery];
   const homeRefreshFailed = homeQueries.some((query) => query.isError);
 
   const retryHome = () => {
     homeQueries.forEach((query) => {
-      if (query.isError || query.data?.fallback || (!query.data && !query.isFetching)) void query.refetch();
+      if (query.enabled && (query.isError || query.data?.fallback || (!query.data && !query.isFetching))) void query.refetch();
     });
   };
 
@@ -729,13 +755,15 @@ export default function DesktopHome() {
   };
 
   return (
-    <div className="desktop-home-cinema sn-page pb-9 pt-4" style={design === 'revamped' ? {display:'flex',flexDirection:'column'} : undefined}>
+    <div ref={homeRoot} className="desktop-home-cinema sn-page pb-9 pt-4" style={design === 'revamped' ? {display:'flex',flexDirection:'column'} : undefined}>
       <Seo title="StreamNyaa Desktop Cinema" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
       <DesktopWatchDesk sources={uniqueRecentSources(history)} history={history} upcoming={watchDeskReleases(bookmarks, history, [...seasonalItems, ...topAiringItems])} />
+      <label className="mb-3 flex items-center gap-2 self-end text-xs text-white/60" style={{order:2}}><input type="checkbox" checked={availability.showUnavailable} onChange={event => availability.setShowUnavailable(event.target.checked)} />Show unavailable titles</label>
+      {!availability.showUnavailable && <p role="status" className="mb-3 text-xs text-white/55" style={{order:2}}>{availability.checking ? 'Checking ready-to-watch titles…' : 'Home shows titles with matching episode sources or verified offline files.'} {!seasonalItems.length && !popularItems.length && !recentEpisodeItems.length && <Link to="/search" className="text-primary underline">Browse all anime</Link>}</p>}
       {isAdmin && (homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <details className="mb-3 text-sm text-white/60" style={{order:2}}><summary className="cursor-pointer py-2">Catalog status · some shelves use saved or fallback data</summary><p className="mt-2">Exact airing times and trending require AniList. Recent MAL additions are shown when available. MyAnimeList shelves keep their own provider identity. <button className="underline" onClick={retryHome}>Retry affected shelves</button></p></details>}
 
       {!isAdmin && (homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <p className="mb-3 text-sm text-white/60" style={{order:2}}>Some shelves could not update. Previously saved results remain available. <button className="underline" onClick={retryHome}>Retry updates</button></p>}
-      <section style={shelfStyle('spotlight')} className="sn-spotlight" aria-label="Featured anime" onMouseEnter={() => setHeroInteracting(true)} onMouseLeave={() => setHeroInteracting(false)} onFocusCapture={() => setHeroInteracting(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setHeroInteracting(false); }}>
+      <section data-home-shelf="spotlight" style={shelfStyle('spotlight')} className="sn-spotlight" aria-label="Featured anime" onMouseEnter={() => setHeroInteracting(true)} onMouseLeave={() => setHeroInteracting(false)} onFocusCapture={() => setHeroInteracting(true)} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setHeroInteracting(false); }}>
         <AnimatePresence initial={false}>{hero ? <motion.div key={animeIdentity(hero)} className="sn-spotlight-frame" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} transition={{duration:reducedMotion ? 0 : .6}}><DesktopImage candidates={heroImageCandidates(hero)} alt={hero.title} className="sn-spotlight-art" loading="eager" forceKey={animeIdentity(hero)} /></motion.div> : null}</AnimatePresence>
         <div className="sn-spotlight-shade" />
         {heroCount > 1 && <button type="button" className="sn-spotlight-pause" onClick={() => setHeroPaused(value => !value)} aria-pressed={heroPaused} aria-label={heroPaused ? "Resume spotlight rotation" : "Pause spotlight rotation"} title={heroPaused ? "Resume rotation after leaving the banner" : "Keep spotlight paused"}>{heroPaused ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}</button>}
@@ -756,7 +784,7 @@ export default function DesktopHome() {
       </section>
 
       {recentSources.length ? (
-        <section style={shelfStyle('continue')} className="mt-7 desktop-section-enter">
+        <section data-home-shelf="continue" style={shelfStyle('continue')} className="mt-7 desktop-section-enter">
           <RailHeader title="Continue Watching" subtitle="Your next episode is waiting" to="/dashboard" count={recentSources.length} />
           <MediaRail>
             {recentSources.map((source) => <SourceCard key={source.magnet} source={source} />)}
@@ -764,7 +792,7 @@ export default function DesktopHome() {
         </section>
       ) : null}
 
-      <section style={shelfStyle('episodes')} className="mt-7 desktop-section-enter">
+      <section data-home-shelf="episodes" style={shelfStyle('episodes', !recentEpisodeQuery.isFetched)} className="mt-7 desktop-section-enter">
         <RailHeader title="New Episodes" subtitle={(isAdmin && recentEpisodeData?.fallbackLabel) || (recentEpisodeData?.recentFeedKind === 'listed' ? 'Recently listed episodes · listing order may differ from broadcast time' : 'Latest episode broadcasts')} to="/search?mode=new" count={latestEpisodes.length} />
         {recentEpisodeData?.fetchedAt && <p className="mb-3 text-xs text-white/55">{recentEpisodeData.stale || recentEpisodeQuery.isError ? "Saved episode snapshot" : "Episode updates"} · Last updated {new Date(recentEpisodeData.fetchedAt).toLocaleString()}</p>}
         <MediaRail>
@@ -782,7 +810,7 @@ export default function DesktopHome() {
         </MediaRail>
       </section>
 
-      <section style={shelfStyle('season')} className="mt-7 desktop-section-enter">
+      <section data-home-shelf="season" style={shelfStyle('season', !seasonalQuery.isFetched)} className="mt-7 desktop-section-enter">
         <RailHeader title="This Season" subtitle={`${currentSeason.label} picks`} to="/search?mode=seasonal" count={seasonalPicks.length} />
         <MediaRail>
           {seasonalPicks.map((anime: any, index: number) => (
@@ -795,7 +823,7 @@ export default function DesktopHome() {
         </MediaRail>
       </section>
 
-      <section style={shelfStyle('trending')} className="mt-7 desktop-section-enter">
+      <section data-home-shelf="trending" style={shelfStyle('trending', !trendingQuery.isFetched)} className="mt-7 desktop-section-enter">
         <RailHeader title="Trending Now" subtitle={(isAdmin && trendingData?.fallbackLabel) || (trendingData?.catalogKind === "saved-titles" ? "Saved titles · current trends are unavailable" : trendingData?.catalogKind === "popular-alternative" ? "Popular titles · current trends are unavailable" : "Airing titles with the strongest current activity")} to="/search?mode=trending" count={trending.length} />
         <MediaRail>
           {trending.map((anime: any, index: number) => (
@@ -810,7 +838,7 @@ export default function DesktopHome() {
         </MediaRail>
       </section>
 
-      <section style={shelfStyle('airing')} className="mt-7 desktop-section-enter">
+      <section data-home-shelf="airing" style={shelfStyle('airing', !topAiringQuery.isFetched)} className="mt-7 desktop-section-enter">
         <RailHeader title="Top Airing Anime" subtitle="Highest rated shows still in rotation" to="/search?mode=airing" count={topAiring.length} />
         <MediaRail>
           {topAiring.map((anime: any, index: number) => (
@@ -823,8 +851,8 @@ export default function DesktopHome() {
         </MediaRail>
       </section>
 
-      {upcoming.length ? (
-        <section style={shelfStyle('upcoming')} className="mt-7 desktop-section-enter">
+      {upcoming.length || !upcomingQuery.isFetched ? (
+        <section data-home-shelf="upcoming" style={shelfStyle('upcoming', !upcomingQuery.isFetched)} className="mt-7 desktop-section-enter">
           <RailHeader title="Upcoming Anime" subtitle="Not aired yet; watch links stay disabled until release" to="/search?mode=upcoming" count={upcoming.length} />
           <MediaRail>
             {upcoming.map((anime: any, index: number) => (
@@ -834,7 +862,7 @@ export default function DesktopHome() {
         </section>
       ) : null}
 
-      <section style={shelfStyle('popular')} className="mt-7 desktop-section-enter">
+      <section data-home-shelf="popular" style={shelfStyle('popular', !popularQuery.isFetched)} className="mt-7 desktop-section-enter">
         <RailHeader title="Popular Picks" subtitle="Reliable discovery staples" to="/search?mode=popular" count={popular.length} />
         <MediaRail>
           {popular.map((anime: any, index: number) => (
@@ -848,7 +876,7 @@ export default function DesktopHome() {
         </MediaRail>
       </section>
 
-      <section style={shelfStyle('yearly')} className="mt-7 desktop-section-enter">
+      <section data-home-shelf="yearly" style={shelfStyle('yearly', !yearlyTopQuery.isFetched)} className="mt-7 desktop-section-enter">
         <RailHeader title={`Top Anime From ${topYear}`} subtitle="High score titles from the selected year" to={`/search?mode=year&year=${topYear}&order=score`} count={yearlyTop.length} />
         <MediaRail>
           {yearlyTop.map((anime: any, index: number) => (

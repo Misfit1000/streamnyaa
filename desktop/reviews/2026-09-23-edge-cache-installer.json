@@ -1,0 +1,390 @@
+﻿{
+    "product":  "StreamNyaa Desktop",
+    "version":  "0.1.9",
+    "identifier":  "xyz.streamnyaa.desktop",
+    "releaseRevision":  "edge-cache-20260923",
+    "builtAt":  "2026-09-23T19:29:07.4321291+05:45",
+    "sourceBaseCommit":  "e27ac425ae7afe36677ebb316f3c0b28c16be5c3",
+    "sourceTree":  "129878416c5c49bbec51141a0285cfe18a849f40",
+    "includesUncommittedLatestSource":  true,
+    "installer":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\releases\\v0.1.9\\StreamNyaa_0.1.9_x64-setup.exe",
+    "bytes":  41782725,
+    "sha256":  "72B0E02C24DA4C3998A1A93AE3C0C03763CAC662ACE861AC8CEEDF1BDCF15E0B",
+    "signature":  "NotSigned",
+    "previousReleaseArchive":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\releases\\archive\\v0.1.9-before-edge-cache-20260923-192907",
+    "resources":  [
+                      {
+                          "name":  "mpv.exe",
+                          "sha256":  "1645E57569C0AF58A70C61257F3716F2EE6EB31BB170EDC51F3F25A0B8D0D99C",
+                          "stagedMatches":  true,
+                          "nsisInclusionVerified":  true
+                      },
+                      {
+                          "name":  "rqbit.exe",
+                          "sha256":  "4D4E5F4D81A7C9432BF37F1857E34486C9B1114E258573FC5486FBB1DB18898C",
+                          "stagedMatches":  true,
+                          "nsisInclusionVerified":  true
+                      },
+                      {
+                          "name":  "streamnyaa-player.lua",
+                          "sha256":  "EED22007816D03ED7AE886D6219D8AA19273BA64FE328A64C2135BE0B922A28B",
+                          "stagedMatches":  true,
+                          "nsisInclusionVerified":  true
+                      }
+                  ],
+    "sourceFiles":  [
+                        {
+                            "sha256":  "A58A5D46E653E3E4F993266E4E04081FB60A075498AB8BEC80537240A974149A",
+                            "path":  "desktop/src-tauri/src/main.rs"
+                        },
+                        {
+                            "sha256":  "C2444611BE6B54DBDFD25A03F1C53C8301200A9BF5CA0E1F6DD573D7DCF21D0F",
+                            "path":  "desktop/src-tauri/src/playback_progress.rs"
+                        },
+                        {
+                            "sha256":  "F4EFA029796A0D583A9123965CDFA281EE166FC28D137ADF4F80204CAEB04813",
+                            "path":  "desktop/src-tauri/src/download_queue.rs"
+                        },
+                        {
+                            "sha256":  "5B9764EA8DA83182EBB1FE4F60096696C7A5327DC3FF81923AC5D4D41528B844",
+                            "path":  "src/components/DesktopProgressBridge.tsx"
+                        },
+                        {
+                            "sha256":  "654E34730C3F9DC94B63DACA3B05101A20FED696213F2B86A99136DE01B7CEAB",
+                            "path":  "src/lib/desktopNativeProgress.ts"
+                        },
+                        {
+                            "sha256":  "0F65FD740CF509D4BC32958663AAF1987D6BBF4C90C796689F276E190CB85802",
+                            "path":  "src/lib/desktopRoutePreload.ts"
+                        },
+                        {
+                            "sha256":  "6FBCE8072B8B36B54B6D69D56799F9D57994DA21D51AA206E8CDEF70C2E9709C",
+                            "path":  "src/lib/desktopScheduleWatch.ts"
+                        },
+                        {
+                            "sha256":  "88BBABE5BA72D047E579661DF78938FCF030B771988F457DCB0E1808055D1040",
+                            "path":  "src/pages/DesktopWatch.tsx"
+                        },
+                        {
+                            "sha256":  "898BDAE0D3B0F4C773E4D1C2EA256A3A996A85A07CAC2EB9D01DA4F8D7CD3602",
+                            "path":  "src/api/desktopExplore.ts"
+                        },
+                        {
+                            "sha256":  "792C56A04E7E99797A05B7B955346BBF6FE1B930FF5F2262924563EAC7B45A78",
+                            "path":  "src/api/desktopRecentSchedule.ts"
+                        },
+                        {
+                            "sha256":  "BE2456EBF57A2C9D32BB7A3CF30DEB0EE841C0B9CE3067F2C08B668E7287514F",
+                            "path":  "src/api/desktopRecentEpisodes.ts"
+                        },
+                        {
+                            "sha256":  "F521FCF07E1EA40A5E715246DB25E4D9F0679AC2ADB3827987420C68896F46D6",
+                            "path":  "src/api/jikan.ts"
+                        },
+                        {
+                            "sha256":  "A8518483BBA2C0B23AAAC7F5A0790248C5DBFEDFB7414760C3029443D6BB1588",
+                            "path":  "src/components/DesktopWatchDesk.tsx"
+                        },
+                        {
+                            "sha256":  "44698C643B473D46648559F029281DE3198BA1A795E7AFF0389E21DC734B035A",
+                            "path":  "src/components/DesktopActivitySummary.tsx"
+                        },
+                        {
+                            "sha256":  "66AE163A3745402C68F2983F64CDF9A13B534FCD1E0D11F670070527D5F744E0",
+                            "path":  "src/components/DesktopSettingsSearch.tsx"
+                        },
+                        {
+                            "sha256":  "80D590951ACAACB305438AB0E5E24E2B8A6B8817237C1BE1C4F1AA7115275872",
+                            "path":  "src/components/DesktopCommandPalette.tsx"
+                        },
+                        {
+                            "sha256":  "53FA693D4C269DF545BD33D73BDE0EAC76890F52B7336C3470DFD50D1E2C67E4",
+                            "path":  "src/components/DesktopScheduleFallback.tsx"
+                        },
+                        {
+                            "sha256":  "7ED95A5CC8211D0C44F6079A087A3611BC694E9901AD248922D1968256104A10",
+                            "path":  "src/pages/DesktopHome.tsx"
+                        },
+                        {
+                            "sha256":  "5FFB3DCDAF70D11DD17FC05014BD1F7672A26EDDEFDB88C1AFC21D20C06456A9",
+                            "path":  "src/pages/DesktopExplore.tsx"
+                        },
+                        {
+                            "sha256":  "ADF9C9BCCF97C612A7C4C7F3A0AA3E303111FBB8CF3AEEAE951811CF608FE7E9",
+                            "path":  "src/pages/DesktopSettings.tsx"
+                        },
+                        {
+                            "sha256":  "E0A32552C24CB74C4D0894ED4E9FE95E94F8980D7681845BB86A42878A1B0240",
+                            "path":  "src/pages/DesktopSchedule.tsx"
+                        },
+                        {
+                            "sha256":  "228DD054D413BA80CB416AE14A24843A10C5DBB2BF8719BEAE37B755EE19AA54",
+                            "path":  "src/lib/activity.ts"
+                        },
+                        {
+                            "sha256":  "579C25ECED22C69EEF4A8BDEAB153143878E5D328629C9C4879997EC5D8D6073",
+                            "path":  "src/lib/supabaseAuth.ts"
+                        },
+                        {
+                            "sha256":  "A181B56EC93259A4E4839405E761F9B19B9D32EAD88B11BA5A74ACDC3A1656CF",
+                            "path":  "src/context/AuthContext.tsx"
+                        },
+                        {
+                            "sha256":  "644989D8A35F8F7B04BCA20239FA83A3FA90E4658C357F2C23226544E39263E4",
+                            "path":  "src/index.css"
+                        }
+                    ],
+    "frontendAssets":  [
+                           {
+                               "sha256":  "3BA225078D6A3BBD77B1B107CC917C0A2BFFC048B2DB6DB234838967337F25A2",
+                               "name":  "desktop-asset-desktop-logo-CFJ6O47Q.png"
+                           },
+                           {
+                               "sha256":  "7E2CE358F4223241BFAEE13EF6961E213141682FB593D58D1394D4C1D8994AAA",
+                               "name":  "desktop-chunk-chunk-2TSK3M5I.js"
+                           },
+                           {
+                               "sha256":  "7996EA8C9AF673AAEAFAE473291BFABC588345147D31B4AF08946193576037FF",
+                               "name":  "desktop-chunk-chunk-3A76RH6L.js"
+                           },
+                           {
+                               "sha256":  "B4EADEA157DCD0975255C08B594DA5FF791FC5B405438FF6271427889A54C6B3",
+                               "name":  "desktop-chunk-chunk-3BRRJN5K.js"
+                           },
+                           {
+                               "sha256":  "BF0B7187B3004FF85F617B2A2F6A214877D577A037D7F658C7F015DD80768242",
+                               "name":  "desktop-chunk-chunk-4IPCX5CG.js"
+                           },
+                           {
+                               "sha256":  "EC61E6D16DA70D10A220B3B6E41C73220B46DA750FB955E345687A465531C857",
+                               "name":  "desktop-chunk-chunk-4LJY5ZCX.js"
+                           },
+                           {
+                               "sha256":  "DB774B2470D4ABD98CAA98021A75589BE470F36502FDD788D10B4ED8A1B1B831",
+                               "name":  "desktop-chunk-chunk-4LMC7PTA.js"
+                           },
+                           {
+                               "sha256":  "9F65C35CD1E69DDDF4B286ABA88E5C7EA03787B86A3BF4C1639B87D8A00A2ECD",
+                               "name":  "desktop-chunk-chunk-6S6SD2CP.js"
+                           },
+                           {
+                               "sha256":  "8376D364DDCA369C652CE59B45BFAF0CFA986F1AFFA3A9275CBE3DAEF170E0E6",
+                               "name":  "desktop-chunk-chunk-7CBV7N7C.js"
+                           },
+                           {
+                               "sha256":  "9AF25B354D81E176FEFCC13FCF060024C045BBBAE86E6271E4254BDF875CB64C",
+                               "name":  "desktop-chunk-chunk-7DK56Y3X.js"
+                           },
+                           {
+                               "sha256":  "564ECA95BAA54358FD2F97E7A39F0E3285B69241FEC817DD9255684FFC4146CA",
+                               "name":  "desktop-chunk-chunk-7X6KMUQD.js"
+                           },
+                           {
+                               "sha256":  "ADAA92C69A9464DFD053804213766CF11995876C82B4B4803021015C7BE3F13D",
+                               "name":  "desktop-chunk-chunk-B2U6U5CC.js"
+                           },
+                           {
+                               "sha256":  "3205662D3C8BCA57608ADA789BCEB1D366EDD06A08F79BAA20704E0B0ABABE16",
+                               "name":  "desktop-chunk-chunk-DBHQRQTJ.js"
+                           },
+                           {
+                               "sha256":  "CBC897EF630046BD883607EF30A59F529DA623F942454CC85AD50FF30812514F",
+                               "name":  "desktop-chunk-chunk-EBLYOGSJ.js"
+                           },
+                           {
+                               "sha256":  "734C1D7EFB5267ADC8E51C312043B0709C91D6DCF6B69F0BD93B4AB692322784",
+                               "name":  "desktop-chunk-chunk-EFU7W4IH.js"
+                           },
+                           {
+                               "sha256":  "1FD0148AAD42C93B8BD20D80304DD0F7E022C814C6913389AA86CAD2A1824925",
+                               "name":  "desktop-chunk-chunk-EG3FAGK5.js"
+                           },
+                           {
+                               "sha256":  "ABC861AC4D9DDE4EE0AA1AFBE36C038A651DC67B4256E468B3A49BA8CB87B877",
+                               "name":  "desktop-chunk-chunk-FEDMX3OI.js"
+                           },
+                           {
+                               "sha256":  "24FEA6114EDBD73C6FEFF00580A7CF3043EEC28D5547A545CC25A7E0885C71DB",
+                               "name":  "desktop-chunk-chunk-GSWTEXDJ.js"
+                           },
+                           {
+                               "sha256":  "36C7080AB5100568498405ECF20423BDDB40824893BB992585E743181309751B",
+                               "name":  "desktop-chunk-chunk-GXPV2KPM.js"
+                           },
+                           {
+                               "sha256":  "C30BC6F482992504DBEE10DDFFA20D29EE7F8D0924EAB51868238402BE3165EF",
+                               "name":  "desktop-chunk-chunk-INHGEI63.js"
+                           },
+                           {
+                               "sha256":  "E351E14A638F83B582B80468C95D92333A8629943DD5DCFAEC72A5764592150D",
+                               "name":  "desktop-chunk-chunk-IXXHJI4O.js"
+                           },
+                           {
+                               "sha256":  "8CC4B4FAD7313A4CADADE3E7F229D4C6EABCE00BCBDBC0D5A45A94297C0B05E3",
+                               "name":  "desktop-chunk-chunk-JZ737IZV.js"
+                           },
+                           {
+                               "sha256":  "7FB43D36268A2997A7D68EFA262A636D5229027898C8D7F41BA75BF550E7F0E8",
+                               "name":  "desktop-chunk-chunk-LGAIUTDP.js"
+                           },
+                           {
+                               "sha256":  "1E2A688A7A9ABABD7C0CC62BE956552C4E826AB1DB02A81FE45DDE7F00E2E11F",
+                               "name":  "desktop-chunk-chunk-LQLCCDXD.js"
+                           },
+                           {
+                               "sha256":  "3B9374C6AB9E12613F469DCD2313ED9A4883D3179F17D2114FE17AB09A5A79E8",
+                               "name":  "desktop-chunk-chunk-MB35GUVS.js"
+                           },
+                           {
+                               "sha256":  "015269C6DFA8E1BED85F3E19ECAE656CB6FB7DFFA4BB204C94209E3B94B83913",
+                               "name":  "desktop-chunk-chunk-PTPG6H24.js"
+                           },
+                           {
+                               "sha256":  "571EF402B9E497F342B2BE95851AFD21212B8AB6B7078F8A5B9FD2CE02E34964",
+                               "name":  "desktop-chunk-chunk-QCAE2EVK.js"
+                           },
+                           {
+                               "sha256":  "DA43B9764C64AAD6C392F5F8C96A8E9888398C320AB581B2BAAAEC2CC0950F99",
+                               "name":  "desktop-chunk-chunk-QLEHWM42.js"
+                           },
+                           {
+                               "sha256":  "A4A6DAEE8DE21E8991B2ABFAA0E97D96DDC8DA3E3F61E85A4DC637B0B9B3DAF6",
+                               "name":  "desktop-chunk-chunk-SVKCR5GE.js"
+                           },
+                           {
+                               "sha256":  "76110F144D22738BB5C77B1CD0B11E511EAC7B82F4C973EB41596966AC1E0A36",
+                               "name":  "desktop-chunk-chunk-UUT5OA3L.js"
+                           },
+                           {
+                               "sha256":  "7741CFBD293DFACAC70BA512FD9CF4D3583874F611A38A6AEF4F59C8758F7804",
+                               "name":  "desktop-chunk-chunk-WJ4XBNMF.js"
+                           },
+                           {
+                               "sha256":  "DB6BF11969BF857DDAA324BBB120D73C4E12C8203A9859DFAD4458F47F31CB82",
+                               "name":  "desktop-chunk-chunk-YB7AII5U.js"
+                           },
+                           {
+                               "sha256":  "8CE0743951F5DA64BE23168FA09B4963C196FF1E2C39598B3EEC6BF9387D769A",
+                               "name":  "desktop-chunk-chunk-YSIX7AKK.js"
+                           },
+                           {
+                               "sha256":  "01FD34EE40CBBDD3AC65626B965FD59FD54C3BBC545D02FCD5E871A501661D63",
+                               "name":  "desktop-chunk-chunk-ZH5HEKBG.js"
+                           },
+                           {
+                               "sha256":  "8B32450B092542EAE9D8B80A164639285464F712B9180E4EE8B595BAF3AE1D07",
+                               "name":  "desktop-chunk-DesktopAnimeCompare-IS3MZNP2.js"
+                           },
+                           {
+                               "sha256":  "1A67B9AE9C741A923B13D4B17030D3119E35D7D1CC0BCFB2D236C68AAFBF4761",
+                               "name":  "desktop-chunk-DesktopAnimeDownloads-ZLZJOHHJ.js"
+                           },
+                           {
+                               "sha256":  "725BA02B93C0E270E615C5C26ED673C1FD405A124BD22E0438B4CA6AC02E6B15",
+                               "name":  "desktop-chunk-DesktopAnimeLanding-GWNUS6CE.css"
+                           },
+                           {
+                               "sha256":  "CA1F16B923A4F6DE380A7E38498DF1F84736305DF7937A4F30DD9B03C05998CC",
+                               "name":  "desktop-chunk-DesktopAnimeLanding-Y3IV6JIL.js"
+                           },
+                           {
+                               "sha256":  "725BA02B93C0E270E615C5C26ED673C1FD405A124BD22E0438B4CA6AC02E6B15",
+                               "name":  "desktop-chunk-DesktopExplore-LRLYYDFF.css"
+                           },
+                           {
+                               "sha256":  "D4F9D81170B4F19F0EBBFD59E6BE4D626EEBB05A116883BF6A66D7515B6D7BC5",
+                               "name":  "desktop-chunk-DesktopExplore-PBZEGANO.js"
+                           },
+                           {
+                               "sha256":  "D0610DE4A90DD888B39510118C76F98DA3E032FB9E5B2A89E0A79B151B11931D",
+                               "name":  "desktop-chunk-DesktopHistory-OQKKYFFQ.js"
+                           },
+                           {
+                               "sha256":  "C6AA218F7B02887D0F65CB7FE528CAB057E705C1CA98935D05EE0FB00DF989D7",
+                               "name":  "desktop-chunk-DesktopHome-OPPMZ6YK.css"
+                           },
+                           {
+                               "sha256":  "E6C665220A413ED6C1ADC4990FFC01206B8964ED1EF7BC804764438FC5FA918A",
+                               "name":  "desktop-chunk-DesktopHome-XBMAXWVZ.js"
+                           },
+                           {
+                               "sha256":  "725BA02B93C0E270E615C5C26ED673C1FD405A124BD22E0438B4CA6AC02E6B15",
+                               "name":  "desktop-chunk-DesktopLibrary-PJA4OFZF.css"
+                           },
+                           {
+                               "sha256":  "CF4973EF0C050E70C40C3A951C37E70CE15A203A845A732895BBE90BA430CC63",
+                               "name":  "desktop-chunk-DesktopLibrary-Z3WMUBJ5.js"
+                           },
+                           {
+                               "sha256":  "00C38B7A4B414E30BF07CA83B5D5639BE28AF3C75EB7F57F49F8B03EE1A83430",
+                               "name":  "desktop-chunk-DesktopProfile-YT2YOICH.js"
+                           },
+                           {
+                               "sha256":  "93987AE49674D6F6815099B6D4902848CA34EB0F2C8C87324B815514A988DDEC",
+                               "name":  "desktop-chunk-DesktopSchedule-DSHWOA4Y.js"
+                           },
+                           {
+                               "sha256":  "71C0004A9B92A96C72E731F52BE3F33E0017A47075F308AC6EF592ED419A3370",
+                               "name":  "desktop-chunk-DesktopSchedule-M4L35E3S.css"
+                           },
+                           {
+                               "sha256":  "067FD786E02F25AA16E437549A4FB4BDD23BC7965AB1CFDEA443FDDBD3BB540F",
+                               "name":  "desktop-chunk-DesktopSettings-IPHTIUVF.js"
+                           },
+                           {
+                               "sha256":  "C6AA218F7B02887D0F65CB7FE528CAB057E705C1CA98935D05EE0FB00DF989D7",
+                               "name":  "desktop-chunk-DesktopSettings-NFR6P4DU.css"
+                           },
+                           {
+                               "sha256":  "0AB8E89709FA817655B56024121C9365CBFB06DE12C205299C534DC8192D9FFB",
+                               "name":  "desktop-chunk-DesktopSources-VQPACV3Q.js"
+                           },
+                           {
+                               "sha256":  "2792EAF4183B0CC051167BA45CE704238BB30566D3973F5DAF6A74C9FFEB9C6C",
+                               "name":  "desktop-chunk-DesktopWatch-C4FKXCRF.js"
+                           },
+                           {
+                               "sha256":  "725BA02B93C0E270E615C5C26ED673C1FD405A124BD22E0438B4CA6AC02E6B15",
+                               "name":  "desktop-chunk-DesktopWatch-GKMVKZYT.css"
+                           },
+                           {
+                               "sha256":  "F40E2BDC123052BE04646A89A745BC3819CB0D5103E65BC8012D56E37E0473DC",
+                               "name":  "desktop-chunk-Login-Q67GGSNQ.js"
+                           },
+                           {
+                               "sha256":  "86F37243F852544A29B717ABBC88D699F37DB839271CABB10783EB1FFA80E91F",
+                               "name":  "desktop-chunk-MangaDetails-G4HDFKBX.js"
+                           },
+                           {
+                               "sha256":  "62BF46BCF21C81238B6EEA2BE81647B81A5BFB881FBCEC8843DECCD58E718103",
+                               "name":  "desktop-entry-UB7TBV5Q.js"
+                           },
+                           {
+                               "sha256":  "69A0B02550989D688610F05598398B0C3C1F121D67C30AFE9DE36F1375B166F5",
+                               "name":  "desktop-style.css"
+                           }
+                       ],
+    "executableVersion":  "0.1.9",
+    "executableSha256":  "684A5F437CC5882E6836503E4F41D9FC4C958DB2719CB16BB8694ECFBA98AE63",
+    "validation":  {
+                       "payloadExtraction":  "Not performed; NSIS inclusion and staged hashes verified",
+                       "inheritedNativeChecks":  "Results below are from the preceding reliability build; native sources unchanged",
+                       "typescript":  "passed",
+                       "web":  "16 passed on final source",
+                       "controls":  "20 cycles and 12 native file replacements passed",
+                       "nativeAcceptance":  "User will test; not performed",
+                       "apiDeployment":  "Unverified: live OPTIONS response lacks new preflight-cache header; batch endpoint update still required",
+                       "stall":  "passed",
+                       "realTorrentSoak":  "Not performed",
+                       "signing":  "NotSigned",
+                       "desktopContracts":  "passed",
+                       "cleanInstallUpgradeRollback":  "Not performed",
+                       "rust":  "61 passed, 1 existing ignored; 5 progress retests and new privacy regression passed",
+                       "liveExplore":  "9 modes HTTP 200, 25 records each; direct query-builder probes",
+                       "liveHome":  "HTTP 200, 12 episode records, direct query-builder probe",
+                       "playerState":  "514 assertions passed",
+                       "frontend":  "247 passed on final source",
+                       "coldWarmUiBenchmark":  "Not performed",
+                       "soak":  "100 cycles passed"
+                   }
+}

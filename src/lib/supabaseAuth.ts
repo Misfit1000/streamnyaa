@@ -28,6 +28,18 @@ export interface AuthConfig {
 }
 
 let cachedConfig: AuthConfig | null = null;
+let configExpiresAt = 0;
+let configRequest: Promise<AuthConfig> | null = null;
+const CONFIG_CACHE_KEY = 'streamnyaa.auth.publicConfig.v1';
+const CONFIG_TTL = 60 * 60 * 1000;
+
+function validPublicConfig(value: any): value is AuthConfig {
+  try {
+    const url = new URL(value?.supabaseUrl);
+    return url.protocol === 'https:' && !url.username && !url.password
+      && typeof value.publishableKey === 'string' && value.publishableKey.length > 0;
+  } catch { return false; }
+}
 
 type RuntimeEnv = Partial<Record<string, string>>;
 
@@ -76,24 +88,39 @@ function normalizeAuthNetworkError(error: unknown) {
 }
 
 export async function getAuthConfig() {
-  if (cachedConfig) return cachedConfig;
-
   const directConfig = envAuthConfig();
-  if (directConfig) {
-    cachedConfig = directConfig;
-    return cachedConfig;
-  }
+  if (directConfig) return directConfig;
+  if (cachedConfig && Date.now() < configExpiresAt) return cachedConfig;
+  if (configRequest) return configRequest;
+  try {
+    const saved = JSON.parse(localStorage.getItem(CONFIG_CACHE_KEY) || 'null');
+    if (saved && saved.expiresAt > Date.now() && saved.expiresAt <= Date.now() + CONFIG_TTL && validPublicConfig(saved.config)) {
+      cachedConfig = saved.config;
+      configExpiresAt = saved.expiresAt;
+      return cachedConfig;
+    }
+  } catch { /* Storage may be unavailable. */ }
+  configRequest = refreshAuthConfig().finally(() => { configRequest = null; });
+  return configRequest;
+}
 
+async function refreshAuthConfig(): Promise<AuthConfig> {
   try {
     const response = await accountApiFetch('/api/auth/config');
     if (!response.ok) throw new Error('Login is not configured yet.');
     const data = await response.json();
     const supabaseUrl = cleanSupabaseUrl(data?.supabaseUrl);
     const publishableKey = String(data?.publishableKey || '').trim();
-    if (!supabaseUrl || !publishableKey) throw new Error('Login is not configured yet.');
+    if (!validPublicConfig({ supabaseUrl, publishableKey })) throw new Error('Login is not configured yet.');
     cachedConfig = { supabaseUrl, publishableKey };
+    configExpiresAt = Date.now() + CONFIG_TTL;
+    try {
+      localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify({ config: cachedConfig, expiresAt: configExpiresAt }));
+    } catch { /* A full device cache must not prevent sign-in. */ }
   } catch {
     cachedConfig = hostedFallbackConfig();
+    // Retry temporary configuration failures later instead of pinning fallback forever.
+    configExpiresAt = Date.now() + 60_000;
   }
 
   return cachedConfig!;

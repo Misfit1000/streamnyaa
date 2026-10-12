@@ -103,6 +103,19 @@ export function mergeDownloadHistory(...lists: DownloadHistoryEntry[][]) {
 
 export async function fetchAccountDownloadHistory(session?: AuthSession | null, limit = 20) {
   if (!session?.access_token) return [];
+  const boundedLimit = Math.min(50, Math.max(1, Math.floor(limit) || 20));
+  const key = `${session.access_token}:${boundedLimit}`;
+  const pending = historyReads.get(key);
+  if (pending) return pending;
+  const request = readRemoteHistory(session, boundedLimit).finally(() => historyReads.delete(key));
+  historyReads.set(key, request);
+  return request;
+}
+
+const historyReads = new Map<string, Promise<DownloadHistoryEntry[]>>();
+const historyUploads = new Map<string, Promise<void>>();
+
+async function readRemoteHistory(session: AuthSession, limit: number) {
 
   const response = await accountApiFetch(`/api/download-history?limit=${encodeURIComponent(String(limit))}`, {
     headers: { Authorization: `Bearer ${session.access_token}` },
@@ -123,36 +136,39 @@ export async function saveDownloadHistory(entry: Omit<DownloadHistoryEntry, 'id'
   const existing = readList<DownloadHistoryEntry>(DOWNLOAD_HISTORY_KEY).filter((item) => item.magnet !== nextItem.magnet || item.action !== nextItem.action);
   writeList(DOWNLOAD_HISTORY_KEY, [nextItem, ...existing].slice(0, 30));
 
-  if (!session?.access_token) return;
-  try {
-    await accountApiFetch('/api/download-history', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(nextItem),
-    });
-  } catch {
-    // Keep the local entry even if the optional remote table is not configured yet.
-  }
+  await syncLocalDownloadHistoryToAccount(session);
 }
 
 export async function syncLocalDownloadHistoryToAccount(session?: AuthSession | null) {
   if (!session?.access_token) return;
-  const localHistory = getDownloadHistory(30);
-  for (const entry of localHistory) {
-    try {
-      await accountApiFetch('/api/download-history', {
+  const owner = session.user?.id;
+  const key = owner || session.access_token;
+  const pending = historyUploads.get(key);
+  if (pending) return pending;
+  const upload = uploadHistory(session, owner).catch(() => {
+    // Failed entries remain pending locally for the next sync opportunity.
+  }).finally(() => historyUploads.delete(key));
+  historyUploads.set(key, upload);
+  return upload;
+}
+
+async function uploadHistory(session: AuthSession, owner?: string) {
+  const markerKey = owner ? `streamnyaa.downloadHistory.synced.v1:${owner}` : null;
+  const acknowledged = new Set(markerKey ? readList<string>(markerKey) : []);
+  for (;;) {
+    const entries = getDownloadHistory(30).filter(entry => !acknowledged.has(JSON.stringify(entry)));
+    if (!entries.length) return;
+    const response = await accountApiFetch('/api/download-history', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(entry),
-      });
-    } catch {
-      // Download/source history sync is best-effort. Keep local history intact.
-    }
+        body: JSON.stringify({ entries }),
+    });
+    if (!response.ok || (await response.json())?.ok !== true) return;
+    entries.forEach(entry => acknowledged.add(JSON.stringify(entry)));
+    if (markerKey) writeList(markerKey, getDownloadHistory(30).map(entry => JSON.stringify(entry)).filter(entry => acknowledged.has(entry)));
+    // Include actions saved while this batch was in flight without concurrent writes.
   }
 }

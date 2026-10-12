@@ -9,12 +9,14 @@ use tokio::sync::watch;
 #[derive(Clone, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct DataError {
-    code: String,
-    provider: String,
-    message: String,
-    retryable: bool,
-    status_code: Option<u16>,
-    retry_after_ms: Option<u64>,
+    pub(crate) code: String,
+    pub(crate) provider: String,
+    pub(crate) message: String,
+    pub(crate) retryable: bool,
+    pub(crate) status_code: Option<u16>,
+    pub(crate) retry_after_ms: Option<u64>,
+    pub(crate) retry_at: Option<u128>,
+    pub(crate) origin: &'static str,
 }
 impl DataError {
     fn new(provider: &str, code: &str) -> Self {
@@ -24,8 +26,13 @@ impl DataError {
             "rate-limited" => {
                 "Updates are temporarily delayed. StreamNyaa will retry automatically."
             }
+            "queued" => {
+                "Waiting for the next catalog request slot. StreamNyaa will continue automatically."
+            }
             "invalid" => "The response could not be verified.",
-            "access-denied" => "Catalog access was declined. Your internet connection may still be working.",
+            "access-denied" => {
+                "Catalog access was declined. Your internet connection may still be working."
+            }
             _ => "The connection was interrupted. StreamNyaa will reconnect.",
         };
         Self {
@@ -35,17 +42,19 @@ impl DataError {
             retryable: !matches!(code, "cancelled" | "invalid" | "access-denied"),
             status_code: None,
             retry_after_ms: None,
+            retry_at: None,
+            origin: "transport",
         }
     }
 }
 #[derive(Clone, Serialize, Debug)]
 pub struct DataResponse {
-    data: serde_json::Value,
-    fetched_at: u128,
-    cache_status: &'static str,
-    complete: bool,
-    provider: String,
-    duration_ms: u128,
+    pub(crate) data: serde_json::Value,
+    pub(crate) fetched_at: u128,
+    pub(crate) cache_status: &'static str,
+    pub(crate) complete: bool,
+    pub(crate) provider: String,
+    pub(crate) duration_ms: u128,
 }
 #[derive(Clone)]
 pub enum Job {
@@ -135,6 +144,36 @@ struct Lane {
     last: Option<Instant>,
     blocked_until: Option<Instant>,
     denied_until: Option<Instant>,
+    observed_limit: Option<usize>,
+    remaining: Option<usize>,
+    reset_at: Option<Instant>,
+    probe_required: bool,
+}
+
+fn minute_limit(provider: &str, lane: &Lane) -> usize {
+    let maximum = if provider == "anilist" { 30 } else { 60 };
+    lane.observed_limit.unwrap_or(maximum).clamp(1, maximum)
+}
+
+fn request_gap(provider: &str, lane: &Lane) -> Duration {
+    let gap = match provider {
+        "anilist" => 2100,
+        "jikan" => 1000,
+        "nyaa" => 600,
+        _ => 350,
+    };
+    Duration::from_millis(if matches!(provider, "anilist" | "jikan") {
+        gap.max(60_000 / minute_limit(provider, lane) as u64 + 1)
+    } else {
+        gap
+    })
+}
+
+fn with_wait(mut error: DataError, until: Instant) -> DataError {
+    let wait = until.saturating_duration_since(Instant::now()).as_millis() as u64;
+    error.retry_after_ms = Some(wait);
+    error.retry_at = Some(now_millis() + wait as u128);
+    error
 }
 fn lanes() -> &'static Mutex<HashMap<String, Lane>> {
     static VALUE: OnceLock<Mutex<HashMap<String, Lane>>> = OnceLock::new();
@@ -157,7 +196,15 @@ impl Drop for Ticket {
         }
     }
 }
+#[cfg(test)]
 async fn slot(provider: &str, priority: Arc<AtomicU8>) -> Result<Ticket, DataError> {
+    slot_until(provider, priority, Instant::now() + Duration::from_secs(60)).await
+}
+async fn slot_until(
+    provider: &str,
+    priority: Arc<AtomicU8>,
+    admission_deadline: Instant,
+) -> Result<Ticket, DataError> {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let mut ticket = Ticket {
@@ -182,7 +229,8 @@ async fn slot(provider: &str, priority: Arc<AtomicU8>) -> Result<Ticket, DataErr
             if lane.denied_until.is_some_and(|until| until > now) {
                 let mut error = DataError::new(provider, "access-denied");
                 error.status_code = Some(403);
-                return Err(error);
+                error.origin = "provider";
+                return Err(with_wait(error, lane.denied_until.unwrap()));
             }
             while lane
                 .starts
@@ -193,43 +241,57 @@ async fn slot(provider: &str, priority: Arc<AtomicU8>) -> Result<Ticket, DataErr
             }
             if let Some(until) = lane.blocked_until.filter(|v| *v > now) {
                 let mut error = DataError::new(provider, "rate-limited");
-                error.retry_after_ms = Some(until.duration_since(now).as_millis() as u64);
-                return Err(error);
+                error.origin = "provider";
+                return Err(with_wait(error, until));
+            }
+            if lane.reset_at.is_some_and(|at| at <= now) {
+                lane.remaining = None;
+                lane.reset_at = None;
             }
             let first = lane
                 .pending
                 .iter()
                 .min_by_key(|(id, p)| (p.load(Ordering::Relaxed), **id))
                 .map(|(id, _)| *id);
-            let gap = match provider {
-                "anilist" => 350,
-                "jikan" => 1000,
-                "nyaa" => 600,
-                _ => 350,
-            };
-            let minute_limit = if provider == "anilist" { 30 } else { 60 };
-            // A locally exhausted budget is not a broken connection. Return the
-            // remaining wait so subscribers recover after the window resets.
-            if lane.starts.len() >= minute_limit {
-                let mut error = DataError::new(provider, "rate-limited");
-                error.retry_after_ms = lane.starts.front().map(|first| {
-                    Duration::from_secs(60)
-                        .saturating_sub(now.duration_since(*first))
-                        .as_millis() as u64 + 1
-                });
-                return Err(error);
+            let limit = minute_limit(provider, lane);
+            let gap = request_gap(provider, lane);
+            if now >= admission_deadline {
+                let mut error = DataError::new(provider, "queued");
+                error.origin = "local-admission";
+                let next = lane
+                    .starts
+                    .front()
+                    .map(|at| *at + Duration::from_secs(60))
+                    .unwrap_or(now + gap)
+                    .max(now + gap);
+                return Err(with_wait(error, next));
             }
+            // Leave a small amount of capacity for an episode/details request.
+            let background = lane
+                .pending
+                .get(&id)
+                .is_some_and(|p| p.load(Ordering::Relaxed) > 0);
+            let reserve = if provider == "anilist" {
+                4.min(limit.saturating_sub(1))
+            } else {
+                0
+            };
+            let available = lane
+                .remaining
+                .unwrap_or(limit.saturating_sub(lane.starts.len()));
             if first == Some(id)
                 && lane.active < 2
-                && lane.starts.len() < minute_limit
-                && lane
-                    .last
-                    .is_none_or(|last| now.duration_since(last) >= Duration::from_millis(gap))
+                && (!lane.probe_required || lane.active == 0)
+                && lane.starts.len() < limit
+                && available > 0
+                && (!background || available > reserve)
+                && lane.last.is_none_or(|last| now.duration_since(last) >= gap)
             {
                 lane.pending.remove(&id);
                 lane.active += 1;
                 lane.last = Some(now);
                 lane.starts.push_back(now);
+                lane.remaining = lane.remaining.map(|remaining| remaining.saturating_sub(1));
                 ticket.active = true;
                 return Ok(ticket);
             }
@@ -299,11 +361,24 @@ async fn fetch_bytes(
     bearer: Option<&str>,
     priority: Arc<AtomicU8>,
 ) -> Result<Vec<u8>, DataError> {
+    fetch_bytes_with_attempts(provider, url, body, bearer, priority, 2).await
+}
+
+async fn fetch_bytes_with_attempts(
+    provider: &str,
+    url: &str,
+    body: Option<&serde_json::Value>,
+    bearer: Option<&str>,
+    priority: Arc<AtomicU8>,
+    max_attempts: u8,
+) -> Result<Vec<u8>, DataError> {
     if !allowed_url(url) {
         return Err(DataError::new(provider, "invalid"));
     }
-    for attempt in 0..2 {
-        let permit = slot(provider, priority.clone()).await?;
+    let admission_deadline = Instant::now() + Duration::from_secs(60);
+    let max_attempts = max_attempts.clamp(1, 2);
+    for attempt in 0..max_attempts {
+        let permit = slot_until(provider, priority.clone(), admission_deadline).await?;
         let mut request = if let Some(body) = body {
             client().post(url).json(body)
         } else {
@@ -316,36 +391,77 @@ async fn fetch_bytes(
         match result {
             Ok(mut response) => {
                 let status = response.status();
+                if provider == "anilist" {
+                    if let Ok(mut all) = lanes().lock() {
+                        let lane = all.entry(provider.into()).or_default();
+                        lane.observed_limit = response
+                            .headers()
+                            .get("X-RateLimit-Limit")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|v| v.parse::<usize>().ok())
+                            .filter(|v| *v > 0)
+                            .or(lane.observed_limit);
+                        if let Some(remaining) = response
+                            .headers()
+                            .get("X-RateLimit-Remaining")
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|v| v.parse::<usize>().ok())
+                        {
+                            lane.remaining = Some(
+                                lane.remaining
+                                    .map_or(remaining, |known| known.min(remaining)),
+                            );
+                            lane.reset_at = response
+                                .headers()
+                                .get("X-RateLimit-Reset")
+                                .and_then(|v| v.to_str().ok())
+                                .and_then(|v| v.parse::<u64>().ok())
+                                .map(|at| {
+                                    Instant::now()
+                                        + Duration::from_secs(
+                                            at.saturating_sub(unix_timestamp()).min(86_400),
+                                        )
+                                })
+                                .or(lane.reset_at)
+                                .or_else(|| {
+                                    lane.starts.front().map(|at| *at + Duration::from_secs(60))
+                                });
+                        }
+                    }
+                }
                 if status.as_u16() == 403 {
                     if let Ok(mut all) = lanes().lock() {
-                        all.entry(provider.into()).or_default().denied_until =
-                            Some(Instant::now() + Duration::from_secs(300));
+                        let lane = all.entry(provider.into()).or_default();
+                        lane.denied_until = Some(Instant::now() + Duration::from_secs(300));
+                        lane.probe_required = true;
                     }
                     let mut error = DataError::new(provider, "access-denied");
                     error.status_code = Some(403);
-                    return Err(error);
+                    error.origin = "provider";
+                    return Err(with_wait(error, Instant::now() + Duration::from_secs(300)));
                 }
                 if status.as_u16() == 429 {
                     let wait = retry_delay(response.headers()).as_secs();
                     if let Ok(mut all) = lanes().lock() {
-                        all.entry(provider.into()).or_default().blocked_until =
-                            Some(Instant::now() + Duration::from_secs(wait));
+                        let lane = all.entry(provider.into()).or_default();
+                        lane.blocked_until = Some(Instant::now() + Duration::from_secs(wait));
+                        lane.probe_required = true;
                     }
                     let mut error = DataError::new(provider, "rate-limited");
                     error.status_code = Some(429);
-                    error.retry_after_ms = Some(wait * 1000);
-                    return Err(error);
+                    error.origin = "provider";
+                    return Err(with_wait(error, Instant::now() + Duration::from_secs(wait)));
                 }
                 if status.is_success() {
-                    if response
-                        .headers()
-                        .get("X-RateLimit-Remaining")
-                        .and_then(|v| v.to_str().ok())
-                        == Some("0")
-                    {
-                        if let Ok(mut all) = lanes().lock() {
-                            all.entry(provider.into()).or_default().blocked_until =
-                                Some(Instant::now() + retry_delay(response.headers()));
+                    if let Ok(mut all) = lanes().lock() {
+                        let lane = all.entry(provider.into()).or_default();
+                        let now = Instant::now();
+                        // A response from an older in-flight request must not
+                        // release the recovery gate established by another 429.
+                        if lane.blocked_until.is_none_or(|at| at <= now)
+                            && lane.denied_until.is_none_or(|at| at <= now)
+                        {
+                            lane.probe_required = false;
                         }
                     }
                     if response.content_length().unwrap_or(0) > MAX_REMOTE_RESPONSE_BYTES {
@@ -364,7 +480,7 @@ async fn fetch_bytes(
                     }
                     return Ok(bytes);
                 }
-                if !status.is_server_error() || attempt == 1 {
+                if !status.is_server_error() || attempt + 1 == max_attempts {
                     let mut error = DataError::new(
                         provider,
                         if status.is_redirection() {
@@ -374,6 +490,7 @@ async fn fetch_bytes(
                         },
                     );
                     error.status_code = Some(status.as_u16());
+                    error.origin = "provider";
                     error.retryable = status.is_server_error();
                     return Err(error);
                 }
@@ -381,10 +498,14 @@ async fn fetch_bytes(
             Err(error) => {
                 log_info(format!(
                     "Data transport provider={} attempt={} timeout={} connect={} body={} decode={}",
-                    provider, attempt + 1, error.is_timeout(), error.is_connect(),
-                    error.is_body(), error.is_decode()
+                    provider,
+                    attempt + 1,
+                    error.is_timeout(),
+                    error.is_connect(),
+                    error.is_body(),
+                    error.is_decode()
                 ));
-                if attempt == 1 {
+                if attempt + 1 == max_attempts {
                     return Err(DataError::new(
                         provider,
                         if error.is_timeout() {
@@ -485,6 +606,19 @@ async fn metadata(
     }
     Ok(value)
 }
+fn source_transport_policy(url: &str) -> (u8, bool) {
+    if matches!(
+        query_param(url, "scope").as_deref(),
+        Some("episode" | "title")
+    ) {
+        // Discovery owns retries/continuations and its twelve-request budget.
+        // One typed lane must not hide additional attempts or relay fan-out.
+        (1, false)
+    } else {
+        (2, true)
+    }
+}
+
 async fn sources(
     url: &str,
     priority: Arc<AtomicU8>,
@@ -492,6 +626,7 @@ async fn sources(
 ) -> Result<(serde_json::Value, bool), DataError> {
     let url =
         validated_desktop_source_api_url(url).map_err(|_| DataError::new("nyaa", "invalid"))?;
+    let (max_attempts, allow_relay) = source_transport_policy(&url);
     let query = query_param(&url, "q").unwrap_or_default();
     let category = query_param(&url, "c").unwrap_or_else(|| "1_2".into());
     let filter = query_param(&url, "f").unwrap_or_else(|| "0".into());
@@ -503,8 +638,15 @@ async fn sources(
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(1)
         .clamp(1, 3);
+    let episode = if query_param(&url, "scope").as_deref() == Some("title") {
+        None
+    } else {
+        query_param(&url, "episode")
+            .and_then(|v| v.parse::<u64>().ok())
+            .or_else(|| parse_episode_from_query(&query))
+    };
     let variants = if query_param(&url, "deep").as_deref() == Some("1") {
-        nyaa_query_variants(&query, parse_episode_from_query(&query))
+        nyaa_query_variants(&query, episode)
     } else {
         vec![query]
     };
@@ -528,7 +670,14 @@ async fn sources(
                 let rss = nyaa_rss_url(&variant, category, &filter, p);
                 let bytes = tokio::time::timeout(
                     remaining.min(Duration::from_secs(4)),
-                    fetch_bytes("nyaa", &rss, None, None, priority.clone()),
+                    fetch_bytes_with_attempts(
+                        "nyaa",
+                        &rss,
+                        None,
+                        None,
+                        priority.clone(),
+                        max_attempts,
+                    ),
                 )
                 .await
                 .unwrap_or_else(|_| Err(DataError::new("nyaa", "timeout")));
@@ -542,7 +691,9 @@ async fn sources(
                                 break 'queries;
                             }
                         };
-                        items.extend(parse_nyaa_rss_items(&xml, &variant, category, p, 1));
+                        items.extend(parse_nyaa_rss_items_with_intent(
+                            &xml, &variant, category, p, 1, episode,
+                        ));
                     }
                     Err(error) => {
                         complete = false;
@@ -555,9 +706,12 @@ async fn sources(
     }
     if items.is_empty() {
         if let Some(error) = failed {
+            if !allow_relay {
+                return Err(error);
+            }
             if matches!(
                 error.code.as_str(),
-                "rate-limited" | "invalid" | "cancelled"
+                "rate-limited" | "queued" | "invalid" | "cancelled"
             ) {
                 return Err(error);
             }
@@ -574,7 +728,9 @@ async fn sources(
                 if !value.is_array() {
                     return Err(DataError::new("nyaa", "invalid"));
                 }
-                return Ok((value, true));
+                // Older deployments may ignore typed scope/episode parameters. A relay response
+                // can preserve browsing, but cannot establish complete negative availability.
+                return Ok((value, query_param(&url, "scope").is_none()));
             }
             return Err(error);
         }
@@ -587,6 +743,14 @@ async fn sources(
         complete,
     ))
 }
+fn source_cache_ttl(url: &str) -> u128 {
+    match query_param(url, "scope").as_deref() {
+        Some("episode") => 60_000,
+        Some("title") => 300_000,
+        _ => SOURCE_API_CACHE_TTL_MS,
+    }
+}
+
 async fn run(job: Job, priority: Arc<AtomicU8>, timeout: Duration) -> Outcome {
     let started = Instant::now();
     let provider = job.provider().to_string();
@@ -596,7 +760,7 @@ async fn run(job: Job, priority: Arc<AtomicU8>, timeout: Duration) -> Outcome {
     };
     let ttl = match &job {
         Job::Metadata(r) => r.ttl_seconds.unwrap_or(900).clamp(30, 86400) as u128 * 1000,
-        _ => SOURCE_API_CACHE_TTL_MS,
+        Job::Source(url) => source_cache_ttl(url),
     };
     let cache = if provider == "nyaa" {
         source_cache()
@@ -682,7 +846,7 @@ pub async fn execute(
     if key.len() > 65_536 {
         return Err(DataError::new(&provider, "invalid"));
     }
-    let max = if provider == "nyaa" { 12_000 } else { 10_000 };
+    let max = if provider == "nyaa" { 30_000 } else { 79_500 };
     let duration = Duration::from_millis(deadline_ms.unwrap_or(max).clamp(100, max));
     let (cancel_tx, mut cancel_rx) = watch::channel(false);
     let mut result_rx;
@@ -760,9 +924,16 @@ mod tests {
     #[tokio::test]
     async fn denied_endpoint_is_not_retried_by_other_consumers() {
         let provider = "test-denied";
-        lanes().lock().unwrap().entry(provider.into()).or_default().denied_until =
-            Some(Instant::now() + Duration::from_secs(300));
-        let error = slot(provider, Arc::new(AtomicU8::new(0))).await.err().unwrap();
+        lanes()
+            .lock()
+            .unwrap()
+            .entry(provider.into())
+            .or_default()
+            .denied_until = Some(Instant::now() + Duration::from_secs(300));
+        let error = slot(provider, Arc::new(AtomicU8::new(0)))
+            .await
+            .err()
+            .unwrap();
         assert_eq!(error.code, "access-denied");
         assert_eq!(error.status_code, Some(403));
         assert!(!error.retryable);
@@ -773,20 +944,118 @@ mod tests {
         assert!(lane.starts.is_empty());
     }
     #[tokio::test]
-    async fn exhausted_local_budget_reports_retry_after_without_waiting() {
+    async fn exhausted_local_budget_is_admission_wait_not_provider_rate_limit() {
         let provider = "test-budget";
-        lanes().lock().unwrap().entry(provider.into()).or_default().starts =
-            std::iter::repeat(Instant::now()).take(60).collect();
+        lanes()
+            .lock()
+            .unwrap()
+            .entry(provider.into())
+            .or_default()
+            .starts = std::iter::repeat(Instant::now()).take(60).collect();
         let result = tokio::time::timeout(
             Duration::from_millis(100),
-            slot(provider, Arc::new(AtomicU8::new(0))),
-        ).await.expect("budget exhaustion must not wait for the HTTP deadline");
+            slot_until(provider, Arc::new(AtomicU8::new(0)), Instant::now()),
+        )
+        .await
+        .expect("budget exhaustion must not wait for the HTTP deadline");
         let error = result.err().expect("budget should be exhausted");
-        assert_eq!(error.code, "rate-limited");
+        assert_eq!(error.code, "queued");
+        assert_eq!(error.origin, "local-admission");
+        assert_eq!(error.status_code, None);
+        assert!(error.retry_at.is_some());
         assert!(error.retry_after_ms.unwrap() > 59_000);
         let mut all = lanes().lock().unwrap();
         assert!(all.get(provider).unwrap().pending.is_empty());
         all.remove(provider);
+    }
+    #[test]
+    fn paces_anilist_without_bursting_and_adapts_only_downward() {
+        let mut lane = Lane::default();
+        assert_eq!(minute_limit("anilist", &lane), 30);
+        assert_eq!(request_gap("anilist", &lane), Duration::from_millis(2100));
+        lane.observed_limit = Some(90);
+        assert_eq!(minute_limit("anilist", &lane), 30);
+        lane.observed_limit = Some(10);
+        assert_eq!(request_gap("anilist", &lane), Duration::from_millis(6001));
+    }
+    #[test]
+    fn source_cache_lifetime_respects_explicit_discovery_scope() {
+        assert_eq!(
+            source_cache_ttl("https://example.test/api/nyaa?q=Series&scope=episode&episode=2"),
+            60_000
+        );
+        assert_eq!(
+            source_cache_ttl("https://example.test/api/nyaa?q=Series&scope=title"),
+            300_000
+        );
+        assert_eq!(
+            source_cache_ttl("https://example.test/api/nyaa?q=Series+02"),
+            SOURCE_API_CACHE_TTL_MS
+        );
+    }
+    #[test]
+    fn typed_discovery_lanes_have_one_attempt_and_no_hidden_relay_budget() {
+        assert_eq!(
+            source_transport_policy(
+                "https://example.test/api/nyaa?q=Series&scope=episode&episode=2"
+            ),
+            (1, false)
+        );
+        assert_eq!(
+            source_transport_policy("https://example.test/api/nyaa?q=Series&scope=title"),
+            (1, false)
+        );
+        assert_eq!(
+            source_transport_policy("https://example.test/api/nyaa?q=Series+02"),
+            (2, true)
+        );
+    }
+    #[tokio::test]
+    async fn queued_request_waits_for_local_budget_and_then_runs() {
+        let provider = "test-window-recovery";
+        let window_start = Instant::now() - Duration::from_millis(59_950);
+        lanes()
+            .lock()
+            .unwrap()
+            .entry(provider.into())
+            .or_default()
+            .starts = std::iter::repeat(window_start).take(60).collect();
+        let ticket = tokio::time::timeout(
+            Duration::from_millis(250),
+            slot(provider, Arc::new(AtomicU8::new(0))),
+        )
+        .await
+        .expect("local budget should release at its original reset")
+        .unwrap();
+        assert!(ticket.active);
+        drop(ticket);
+        lanes().lock().unwrap().remove(provider);
+    }
+    #[tokio::test]
+    async fn recovery_admits_only_one_probe_until_it_finishes() {
+        let provider = "test-single-probe";
+        lanes()
+            .lock()
+            .unwrap()
+            .entry(provider.into())
+            .or_default()
+            .probe_required = true;
+        let first = slot(provider, Arc::new(AtomicU8::new(0))).await.unwrap();
+        lanes().lock().unwrap().get_mut(provider).unwrap().last =
+            Some(Instant::now() - Duration::from_secs(1));
+        let second = tokio::time::timeout(
+            Duration::from_millis(50),
+            slot(provider, Arc::new(AtomicU8::new(0))),
+        )
+        .await;
+        assert!(
+            second.is_err(),
+            "a second recovery probe must wait for the first"
+        );
+        drop(first);
+        let next = slot(provider, Arc::new(AtomicU8::new(0))).await.unwrap();
+        drop(next);
+        lanes().lock().unwrap().remove(provider);
     }
     #[test]
     fn restricts_transport_destinations() {

@@ -1,4 +1,8 @@
 /** Canonical schedule validation shared by Home and Explore. */
+export function recentFeedBound(nowMs = Date.now()) {
+    return Math.floor(nowMs / 60_000) * 60;
+}
+
 export function validRecentSchedules(items: unknown[], before: number) {
     const seen = new Set<string>();
     return items.filter((entry: any) => {

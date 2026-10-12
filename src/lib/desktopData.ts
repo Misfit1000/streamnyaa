@@ -1,4 +1,4 @@
-export type DesktopDataStatus = 'fresh' | 'stale' | 'empty' | 'offline' | 'timeout' | 'rate-limited' | 'access-denied' | 'invalid' | 'cancelled' | 'error';
+export type DesktopDataStatus = 'fresh' | 'stale' | 'empty' | 'offline' | 'timeout' | 'queued' | 'rate-limited' | 'access-denied' | 'invalid' | 'cancelled' | 'error';
 
 export type DesktopDataCacheState = 'memory' | 'disk' | 'network' | 'none';
 
@@ -11,6 +11,8 @@ export type DesktopDataErrorDetails = {
   retryable: boolean;
   statusCode?: number;
   retryAfterMs?: number;
+  retryAt?: number;
+  origin?: 'provider' | 'local-admission' | 'transport';
 };
 
 export type DesktopDataResult<T> = {
@@ -32,6 +34,8 @@ export class DesktopDataError extends Error {
   readonly retryable: boolean;
   readonly statusCode?: number;
   readonly retryAfterMs?: number;
+  readonly retryAt?: number;
+  readonly origin?: DesktopDataErrorDetails['origin'];
 
   constructor(details: DesktopDataErrorDetails) {
     super(details.message);
@@ -41,6 +45,8 @@ export class DesktopDataError extends Error {
     this.retryable = details.retryable;
     this.statusCode = details.statusCode;
     this.retryAfterMs = details.retryAfterMs;
+    this.retryAt = details.retryAt;
+    this.origin = details.origin;
   }
 }
 
@@ -48,7 +54,7 @@ export function desktopDataError(provider: string, error: unknown, statusCode?: 
   if (error instanceof DesktopDataError) return error;
   if (error && typeof error === 'object' && 'code' in error && 'message' in error) {
     const native = error as DesktopDataErrorDetails;
-    if (['offline', 'timeout', 'rate-limited', 'access-denied', 'invalid', 'cancelled', 'error'].includes(native.code)) {
+    if (['offline', 'timeout', 'queued', 'rate-limited', 'access-denied', 'invalid', 'cancelled', 'error'].includes(native.code)) {
       return new DesktopDataError({ ...native, provider: native.provider || provider });
     }
   }
@@ -73,6 +79,12 @@ export function desktopDataError(provider: string, error: unknown, statusCode?: 
     retryable: !['invalid', 'cancelled', 'access-denied'].includes(code),
     statusCode,
   });
+}
+
+/** Local admission is queued work, never evidence that a catalog provider failed. */
+export function isDesktopAdmissionWait(error: unknown) {
+  return Boolean(error && typeof error === 'object' && ('origin' in error && error.origin === 'local-admission'
+    || 'code' in error && error.code === 'queued'));
 }
 
 export type EpisodeCatalogSource = 'authoritative' | 'estimated';

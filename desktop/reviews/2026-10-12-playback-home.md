@@ -1,0 +1,36 @@
+# StreamNyaa Desktop 0.1.10 — playback and Home reliability
+
+This revision preserves application identity `xyz.streamnyaa.desktop` and existing settings, bookmarks, account identities, downloads, watch intervals and notification history. It includes the earlier uncommitted catalog, source identity, Calendar alert and request-reduction repairs. Installed interactive testing is assigned to the user; no installed app was controlled during this pass.
+
+## Implemented
+
+- Home now requires current native-classified exact episode evidence or an existing offline media file verified by the native bridge. Legacy metadata positives, expired evidence, upcoming and unchecked titles do not qualify. Ordinary cards prefer a ready resume episode, then the lowest ready episode. New Episodes and Continue Watching require their actual advertised/resume episode. Show unavailable titles restores browsing and labels unconfirmed availability. Explore retains its separate conservative negative-evidence policy.
+- Availability records retain the existing storage/backup schema and add source hash/title, episode, classifier version, identity signature and known AniList/MAL IDs. Positive evidence expires after 20 minutes; complete negatives after 15 minutes. Identity changes require reclassification rather than trusting bare provider numbers.
+- One Home worker checks at most eight candidates per visible catalog shelf, serially, with a global 16-request/30-second pass. Cursors survive passes, candidates rotate, interrupted work remains resumable, foreground work cancels background admission, and additional passes wait 60 seconds. Checks never enqueue or start torrents.
+- Strict, Balanced and Broad share one source selection pipeline. Strict keeps safe exact matches at confidence 72 or higher; Balanced widens to 42; Broad exposes uncertain/low-health matches for manual review. Identity conflicts remain excluded. Audio and quality selection feed the same displayed rows, counts, recommendation and automatic-playback inputs. Uncertain and recently failed sources cannot autoplay.
+- The readiness probe uses rqbit 8.1.1-supported open-ended ranges, bounded reads and existing cancellation/deadline bounds. Bundled rqbit is unchanged; CI pins that version. Valid nonzero responses were checked byte-for-byte.
+- Seek dragging only updates the visual preview. Release commits exactly one precise seek. Seek/source generations reject older metrics, and new seeks or deliberate pauses invalidate recovery deadlines. Selected-media buffer/position advancement extends recovery within the existing 60-second hard bound; torrent-wide downloaded byte changes no longer constitute buffer progress.
+- Player telemetry travels over the existing persistent event connection as a sequenced source/seek snapshot. Frontend progress requests coalesce; native progress polls do not hold the playback-operation lock through network/IPC work or perform twelve separate property reads. Missing telemetry is unknown, rather than evidence of source failure.
+- MPV uses 150/50 MiB forward/backward cache, falling back to 64/32 MiB for low/unknown memory. Seekable caching remains enabled. Read-ahead is 45 seconds, rising to 60 after underrun. Resume waits start at one second, rise to two after repeated underruns, and restore after two stable minutes. Displayed resume thresholds reflect the actual cache-pause setting. Download ownership and user bandwidth limits are unchanged.
+- Trailers use a centered, correctly sized dialog with explicit fullscreen permission/control, `fs=1`, same-iframe expansion, Escape/Close/route cleanup, and full-window fallback after rejection.
+- Activity and Bell have separate open/dismissal/focus state. Activity shows transfers/status with administrator-only catalog diagnostics. Bell shows notifications/reminders and owns unread state; opening Activity does not mark alerts read.
+
+## Verification
+
+- TypeScript passed; all 344 frontend tests across 64 files passed.
+- Rust: 87 passed, one existing local-download integration test ignored by the default suite. No compiler warnings.
+- Desktop contracts passed. Native player-state: 525 behavioral assertions passed, including preview-only dragging, single exact release seek, generation rejection and progress-aware recovery.
+- Native controls, 12 episode replacements, stall integration and 100-cycle soak passed. Affected web/API compatibility: 16 passed.
+- Local real-media integration used the bundled MPV and rqbit, a private localhost tracker, existing verified media and a partially downloaded copy, with a simultaneous second torrent sharing a 64 KiB/s cap. No public media, installed application data or user torrents were used.
+- Ten cached forward/backward seeks: advancing-frame p95 **86 ms**; rapid replacement targets ended at the latest requested target. FFmpeg decoded-frame PTS and MPV advancing position were checked together.
+- Three partial-file seeks: total advancing-frame p95 **5,743 ms**, including acquisition under the shared cap. At the first sampled report of the target's MPV seekable buffer, advancing frames were already observable (reported 0 ms at the polling boundary). This sampled result is **not** an independent sub-millisecond acquisition-to-frame measurement or an endurance claim. Larger uncached/live-torrent acceptance remains open.
+- Actual engine responses for offsets 0, 16,384 and 633,927 returned HTTP 206 with correct Content-Range and 1,024 verified bytes. Real MPV Range traces include midpoint and backward offsets. See [structured playback evidence](artifacts/2026-10-12-playback-streaming.json).
+- Regression runners were rerun only when a code change or failed fixture required it. The stall fixture now establishes a frozen baseline explicitly; actual buffer progress must not be mistaken for a stall.
+
+## Delivery and unresolved acceptance
+
+The installer is built as **0.1.10** in the usual `StreamNyaa-desktop/desktop/releases/v0.1.10` tree. The existing 0.1.9 installer, manifest and checksum remain the verified rollback. The adjacent installer manifest records final source/resource hashes, executable version, size, checksum and signature status. Resource verification compares staged files and exact NSIS inclusions; independent extraction is not claimed.
+
+Code signing material is unavailable; an unsigned installer must be reported as such. Installed UI/native mouse/fullscreen/WebView acceptance at 100–200% scaling, real notification permissions/delivery, isolated clean installation/same-version upgrade/rollback, live account sync and public-torrent endurance remain unverified. The separate Vercel batch-history/preflight deployment remains unverified: local API regressions pass, but no deployment of this revision was performed. External provider outages and torrent throughput are not guaranteed by these changes.
+
+Implementation follows [rqbit's range implementation](https://raw.githubusercontent.com/ikatson/rqbit/v8.1.1/crates/librqbit/src/http_api/handlers/streaming.rs), [MPV cache documentation](https://mpv.io/manual/stable/) and [YouTube embed requirements](https://developers.google.com/youtube/player_parameters).

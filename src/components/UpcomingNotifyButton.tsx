@@ -3,6 +3,7 @@ import { BellPlus, BellRing, Loader2 } from 'lucide-react';
 import {
   isDesktopUpcomingAnimeWatched,
   subscribeDesktopUpcomingAnimeWatches,
+  subscribeDesktopReleaseSubscriptions,
   toggleDesktopUpcomingAnimeWatch,
 } from '../lib/desktopReminders';
 
@@ -11,9 +12,12 @@ export default function UpcomingNotifyButton({ anime, compact = false, fullWidth
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
 
-  useEffect(() => subscribeDesktopUpcomingAnimeWatches(() => {
-    setSaved(isDesktopUpcomingAnimeWatched(anime));
-  }), [anime]);
+  useEffect(() => {
+    const update = () => setSaved(isDesktopUpcomingAnimeWatched(anime));
+    const release = subscribeDesktopReleaseSubscriptions(update);
+    const upcoming = subscribeDesktopUpcomingAnimeWatches(update);
+    return () => { release(); upcoming(); };
+  }, [anime]);
 
   const toggle = async () => {
     if (pending) return;
@@ -37,7 +41,7 @@ export default function UpcomingNotifyButton({ anime, compact = false, fullWidth
         onClick={(event) => { event.preventDefault(); event.stopPropagation(); void toggle(); }}
         className={`${compact ? 'h-9 px-3 text-xs' : 'h-11 px-4 text-sm'} ${fullWidth ? 'w-full' : ''} inline-flex items-center justify-center gap-2 rounded-lg border font-semibold transition-colors ${saved ? 'border-primary/35 bg-primary/16 text-primary' : 'border-white/[0.1] bg-black/65 text-white/78 hover:bg-white/[0.09] hover:text-white'}`}
         aria-pressed={saved}
-        aria-label={saved ? 'Cancel airing notification' : 'Notify me when this anime airs'}
+        aria-label={saved ? 'Cancel release notifications' : 'Notify me when this anime airs and is available to watch'}
       >
         {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <BellRing className="h-4 w-4" /> : <BellPlus className="h-4 w-4" />}
         {saved ? 'Notification set' : 'Notify me'}

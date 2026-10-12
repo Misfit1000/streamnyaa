@@ -57,7 +57,7 @@ describe('desktop upcoming anime reminders', () => {
       delivery: 'system',
     }]));
 
-    const result = await toggleDesktopUpcomingAnimeWatch({ id: 154587, title: 'Frieren' });
+    const result = await toggleDesktopUpcomingAnimeWatch({ anilist_id: 154587, title: 'Frieren' });
 
     expect(result.removed).toBe(true);
     expect(readDesktopUpcomingAnimeWatches()).toEqual([]);

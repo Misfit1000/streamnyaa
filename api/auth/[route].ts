@@ -12,6 +12,7 @@ function setCors(res: any, methods = 'GET,OPTIONS') {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', methods);
   res.setHeader('Access-Control-Allow-Headers', 'Authorization,Content-Type');
+  res.setHeader('Access-Control-Max-Age', '600');
 }
 
 function authConfig(req: any, res: any) {
@@ -23,7 +24,7 @@ function authConfig(req: any, res: any) {
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '';
   if (!supabaseUrl || !publishableKey) return res.status(500).json({ error: 'Authentication is not configured' });
 
-  res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300, stale-while-revalidate=3600');
   return res.status(200).json({ supabaseUrl, publishableKey });
 }
 

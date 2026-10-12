@@ -28,7 +28,7 @@ jobs:
         run: |
           winget install --id shinchiro.mpv -e --accept-package-agreements --accept-source-agreements
           cargo install tauri-cli --locked
-          cargo install rqbit --locked
+          cargo install rqbit --version 8.1.1 --locked
 
       - name: Install npm dependencies
         run: npm ci

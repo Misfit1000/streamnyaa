@@ -1,5 +1,9 @@
 import { fetchDesktopSourceApi, isDesktopApp } from '../lib/desktop';
 import { desktopDataError } from '../lib/desktopData';
+import { parseSourceEpisode } from '../lib/desktopSourceIdentity';
+
+export type SourceSearchIntent = { scope: 'episode' | 'title'; episode?: number };
+export type SourceSearchResult = NyaaItem[] & { complete?: boolean; stale?: boolean; fetchedAt?: number; retryAt?: number };
 
 export interface NyaaItem {
   title: string;
@@ -26,6 +30,8 @@ export interface NyaaItem {
   sourceQueryCount?: number;
   sourceFetchedAt?: number;
   sourceCacheStatus?: string;
+  nativeEvidence?: 'exact' | 'uncertain' | 'conflict';
+  nativeIdentitySignature?: string;
 }
 
 type SearchCacheEntry = {
@@ -157,19 +163,23 @@ export async function searchNyaa(
   category: string = '1_2',
   filter: string = '0',
   page: string = '1',
-options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal; deadlineMs?: number; priority?: 'foreground' | 'prefetch' | 'background' } = {}
-): Promise<NyaaItem[]> {
+options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal; deadlineMs?: number; priority?: 'foreground' | 'prefetch' | 'background'; intent?: SourceSearchIntent; maxAgeMs?: number } = {}
+): Promise<SourceSearchResult> {
   if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
   const desktopRuntime = isDesktopApp();
   if (desktopRuntime) loadPersistentSourceCache();
   const normalizedQuery = query.replace(/\s+/g, ' ').trim();
-  const requestOptions = { deep: options.deep, pages: options.pages, wide: options.wide };
+  const inferredEpisode = parseSourceEpisode(normalizedQuery);
+  const intent = options.intent || (desktopRuntime ? inferredEpisode ? { scope: 'episode' as const, episode: inferredEpisode } : { scope: 'title' as const } : undefined);
+  const requestOptions = { deep: options.deep, pages: options.pages, wide: options.wide, intent };
   const cacheKey = JSON.stringify({ query: normalizedQuery.toLowerCase(), category, filter, page, options: requestOptions });
   const cached = inMemorySearchCache.get(cacheKey);
-  if (cached && Date.now() - cached.savedAt < SEARCH_CACHE_TTL) {
-    return cached.items;
+  if (cached && Date.now() - cached.savedAt < (options.maxAgeMs ?? (desktopRuntime ? intent?.scope === 'episode' ? 60_000 : 300_000 : SEARCH_CACHE_TTL))) {
+    return Object.assign([...cached.items], { complete: true, stale: false, fetchedAt: cached.savedAt });
   }
   const staleCached = desktopRuntime && cached && Date.now() - cached.savedAt < SEARCH_CACHE_MAX_STALE ? cached.items : null;
+  const staleResult = (error?: unknown) => Object.assign([...(staleCached || [])], { complete: false, stale: true, fetchedAt: cached?.savedAt,
+    retryAt: error && typeof error === 'object' && 'retryAt' in error && typeof error.retryAt === 'number' ? error.retryAt : undefined });
 
   if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
   const existingRequest = desktopRuntime ? undefined : inFlightSearches.get(cacheKey);
@@ -182,9 +192,11 @@ options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal;
     if (category) url.searchParams.append('c', category);
     if (filter) url.searchParams.append('f', filter);
     if (page) url.searchParams.append('p', page);
-    if (normalizedQuery && options.deep !== false) url.searchParams.append('deep', '1');
+    if (normalizedQuery) url.searchParams.append('deep', options.deep === false ? '0' : '1');
     if (normalizedQuery) url.searchParams.append('pages', String(options.pages || 3));
     if (normalizedQuery && options.wide) url.searchParams.append('wide', '1');
+    if (intent) url.searchParams.append('scope', intent.scope);
+    if (intent?.scope === 'episode' && intent.episode) url.searchParams.append('episode', String(intent.episode));
 
     let data: unknown;
     let sourceCacheStatus = '';
@@ -201,7 +213,7 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
         sourceCacheStatus = String(desktopResponse.cache_status || 'NETWORK').toUpperCase();
       } catch (error) {
         if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
-        if (staleCached) return Object.assign([...staleCached], { complete: false });
+        if (staleCached) return staleResult(error);
         throw desktopDataError('nyaa', error);
       }
     } else {
@@ -209,6 +221,7 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
       if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
 
       sourceCacheStatus = response.headers.get('X-Source-Cache') || '';
+      complete = response.headers.get('X-Source-Complete') !== 'false';
       sourceQueryCount = Number(response.headers.get('X-Source-Query-Count') || 1);
       const fetchedAtHeader = response.headers.get('X-Source-Fetched-At');
       sourceFetchedAt = fetchedAtHeader ? Number(fetchedAtHeader) : Date.now();
@@ -216,7 +229,7 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
     }
 
     if (!Array.isArray(data)) {
-      if (staleCached) return staleCached;
+      if (staleCached) return staleResult();
       if (desktop) throw desktopDataError('nyaa', new Error('Source provider returned an invalid response.'));
       console.error('Source search returned an invalid response shape.');
       return [];
@@ -261,21 +274,21 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
     }
 
     if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
-    // Never erase a verified source set because a refresh returns an empty lane.
-    if (!results.length && staleCached?.length) return staleCached;
-    if (complete) inMemorySearchCache.set(cacheKey, { items: results, savedAt: Date.now() });
+    const deduped = dedupeNyaaItems(results);
+    // A completed empty response is authoritative for this exact query; failures retain stale data.
+    if (complete) inMemorySearchCache.set(cacheKey, { items: deduped, savedAt: sourceFetchedAt });
     while (inMemorySearchCache.size > SEARCH_CACHE_MAX_ENTRIES) {
       const oldestKey = inMemorySearchCache.keys().next().value;
       if (!oldestKey) break;
       inMemorySearchCache.delete(oldestKey);
     }
     if (desktop) schedulePersistSourceCache();
-    return Object.assign(results, { complete });
+    return Object.assign(deduped, { complete, stale: sourceCacheStatus === 'STALE', fetchedAt: sourceFetchedAt });
   })();
 
   const handledRequest = request.catch((error) => {
     if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
-    if (staleCached) return staleCached;
+    if (staleCached) return staleResult(error);
     if (!desktopRuntime) {
       console.error('Source search failed:', String((error as Error)?.message || 'unknown error').slice(0, 160));
       return [];

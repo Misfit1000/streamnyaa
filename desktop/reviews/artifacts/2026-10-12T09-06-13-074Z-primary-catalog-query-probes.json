@@ -1,0 +1,103 @@
+{
+  "startedAt": "2026-10-12T09:06:13.074Z",
+  "completedAt": "2026-10-12T09:06:34.172Z",
+  "transport": "Normal direct public HTTPS POST using final source query builders; no native UI acceptance implied.",
+  "minimumRequestStartSpacingMs": 2100,
+  "fallbackUsed": false,
+  "sourceSha256": {
+    "src/api/desktopHomeBatch.ts": "f82b76e4a047453ab4d1d1413036e105440f81ef5a6f44feccb9f02f282cd6b4",
+    "src/api/desktopExplore.ts": "1baee39206db05672c634486eb07305da0230be207fb4818f1fabc975f3fe65f",
+    "src/api/desktopRecentSchedule.ts": "88b085d56301f92fdde402d09043dd67364b70891429eb2088138c3212ab389a"
+  },
+  "passed": false,
+  "results": [
+    {
+      "name": "explore:new",
+      "startedAt": "2026-10-12T09:06:13.087Z",
+      "querySha256": "2d8af6b37bb9c9e798e463fced9680a0b17233a2ff0a07d19641f48843cb0582",
+      "durationMs": 68,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "explore:trending",
+      "startedAt": "2026-10-12T09:06:15.202Z",
+      "querySha256": "0ada383d9f496aad0cb580032ecdcb7d979db2ba0aaf218fb3970dd8cbe8b954",
+      "durationMs": 8,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "explore:airing",
+      "startedAt": "2026-10-12T09:06:17.303Z",
+      "querySha256": "f4ac1ee188e7663088a7ef80db3881da8ec55c6e5c191ffe325c558cabc4194a",
+      "durationMs": 3,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "explore:seasonal",
+      "startedAt": "2026-10-12T09:06:19.413Z",
+      "querySha256": "43f0c6b6183641f85e7cc59caf2d67f998d8dd98095a88fda6bed5f0a3f127f2",
+      "durationMs": 3,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "explore:popular",
+      "startedAt": "2026-10-12T09:06:21.514Z",
+      "querySha256": "508601c843f4ffb8090480aa12abeb86c0bc17ce954622f782de34760a1be5f2",
+      "durationMs": 3,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "explore:top",
+      "startedAt": "2026-10-12T09:06:23.627Z",
+      "querySha256": "b4328f7c3aa48b967598f2ca089d3eebfa0180ee076e58befbcd4f7ddeae37c4",
+      "durationMs": 4,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "explore:ranking",
+      "startedAt": "2026-10-12T09:06:25.728Z",
+      "querySha256": "b4328f7c3aa48b967598f2ca089d3eebfa0180ee076e58befbcd4f7ddeae37c4",
+      "durationMs": 3,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "explore:upcoming",
+      "startedAt": "2026-10-12T09:06:27.829Z",
+      "querySha256": "593fcd8c824e1a4126694cf5cfc16e3293e731223baa6acb825c45403790ac52",
+      "durationMs": 2,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "explore:year",
+      "startedAt": "2026-10-12T09:06:29.942Z",
+      "querySha256": "51ba375b2deb412ee471d07bd436d38bd1d32963dfda4ce02300e7499df3ecc1",
+      "durationMs": 3,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "home:visible-shelf-aliases",
+      "startedAt": "2026-10-12T09:06:32.056Z",
+      "querySha256": "0f07f4d2236dab63147ed1feb9e9c7238c865c34d2879784679cadbab0218a3d",
+      "durationMs": 3,
+      "errorKind": "TypeError",
+      "passed": false
+    },
+    {
+      "name": "explore:active-date-format-genre-filters",
+      "startedAt": "2026-10-12T09:06:34.169Z",
+      "querySha256": "afcf818f3a677f0a8f55835dd1deaeda0b6b34e2c230973b32872d4fd15df359",
+      "durationMs": 3,
+      "errorKind": "TypeError",
+      "passed": false
+    }
+  ]
+}

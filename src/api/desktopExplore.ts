@@ -1,6 +1,6 @@
-import { validRecentSchedules } from './desktopRecentSchedule';
+import { recentFeedBound, validRecentSchedules } from './desktopRecentSchedule';
 import { fetchAniList, fetchJikanPath, mapAnilistToJikan } from './jikan';
-import { desktopDataError } from '../lib/desktopData';
+import { desktopDataError, DesktopDataError, isDesktopAdmissionWait } from '../lib/desktopData';
 import { fetchRecentEpisodeListings } from './desktopRecentEpisodes';
 import { readCachedExploreTitles } from '../lib/desktopExploreCache';
 import { readCachedWatchTitles } from '../lib/desktopWatchSnapshot';
@@ -21,6 +21,7 @@ export interface ExplorePage {
   recentFeedKind?: 'listed' | 'aired';
   stale?: boolean;
   catalogKind?: 'saved-titles' | 'popular-alternative';
+  retryAt?: number;
 }
 const fields = `id idMal title { romaji english native } synonyms description episodes status format
   season seasonYear coverImage { extraLarge large color } bannerImage genres averageScore popularity
@@ -152,7 +153,7 @@ export async function fetchExplorePage(request: ExploreRequest, page: number, si
     return await fetchSelectedExplorePage(request, page, signal);
   } catch (error) {
     const failure = desktopDataError(request.service, error);
-    if (signal?.aborted || failure.code === 'cancelled') throw error;
+    if (signal?.aborted || failure.code === 'cancelled' || isDesktopAdmissionWait(failure)) throw error;
     if (request.service === 'mal' && page === 1 && request.mode !== 'ranking') {
       const saved = savedExploreAlternative(request); if (saved) return saved;
     }
@@ -161,12 +162,15 @@ export async function fetchExplorePage(request: ExploreRequest, page: number, si
       ) throw error;
     try {
       const result = await fetchSelectedExplorePage({ ...request, service: 'mal' }, page, signal);
-      return { ...result, fallback: true };
+      return { ...result, fallback: true, retryAt: failure.retryAt };
     } catch (secondaryError) {
-      if (signal?.aborted || desktopDataError('jikan', secondaryError).code === 'cancelled') throw secondaryError;
+      if (signal?.aborted || isDesktopAdmissionWait(secondaryError) || desktopDataError('jikan', secondaryError).code === 'cancelled') throw secondaryError;
       const saved = savedExploreAlternative(request); if (saved) return saved;
       const secondaryFailure = desktopDataError('jikan', secondaryError);
-      throw Object.assign(new Error(`AniList unavailable (${failure.code}). Jikan fallback unavailable (${secondaryFailure.code}). Retry after the provider cooldown or check your connection.`), { retryAfterMs: Math.max(failure.retryAfterMs || (failure.code === "access-denied" ? 300_000 : 30_000), secondaryFailure.retryAfterMs || 30_000) });
+      const retryAt = Math.max(failure.retryAt ?? Date.now() + (failure.retryAfterMs || (failure.code === 'access-denied' ? 300_000 : 30_000)),
+        secondaryFailure.retryAt ?? Date.now() + (secondaryFailure.retryAfterMs || 30_000));
+      throw new DesktopDataError({code:failure.code, provider:'anilist', origin:failure.origin, retryable:true, retryAt, retryAfterMs:Math.max(0,retryAt-Date.now()),
+        message:`AniList unavailable (${failure.code}). Jikan fallback unavailable (${secondaryFailure.code}). Retry after the provider cooldown or check your connection.`});
     }
   }
 }
@@ -198,10 +202,12 @@ async function fetchSelectedExplorePage(request: ExploreRequest, page: number, s
     if (!Array.isArray(payload.data) || typeof payload.pagination?.has_next_page !== 'boolean') throw new Error('Incomplete MAL rankings response.');
     const visible = payload.data.map((item: any, index: number) => ({ ...item, rankingPosition: (page - 1) * 25 + index + 1 })).filter((item: any) => request.adult || !jikanAdultTitle(item));
     return { data: visible.map((item: any) => ({ ...item, rankingService: 'mal', rankingScore: item.score })),
-      paginationVersion: 2, page, hasNextPage: payload.pagination.has_next_page, service: 'mal', fetchedAt: Date.now() };
+      paginationVersion: 2, page, hasNextPage: payload.pagination.has_next_page, service: 'mal',
+      fetchedAt: Number(response.headers.get('X-StreamNyaa-Fetched-At')) || Date.now(),
+      stale: response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale' || response.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' };
   }
   const recent = request.mode === 'new' && !request.query;
-  const before = request.before ?? Math.floor(Date.now() / 1000);
+  const before = request.before ?? recentFeedBound();
   const query = recent ? recentExploreQuery(request, page, before) : animeExploreQuery(request, page);
   const response = await fetchAniList(query, recent ? 60 : 900, { signal });
   if (!response.ok) throw new Error('Anime list is temporarily unavailable.');

@@ -19,6 +19,7 @@ export function stableRequestKey(value: unknown): string {
 
 /** Cancellation belongs to a subscriber, not to the first component that starts a shared request. */
 export function invokeDesktopData<T>(invoke: Invoke, command: string, args: Record<string, unknown>, options: DesktopRequestOptions = {}): Promise<T> {
+  if ((!options.priority || options.priority === 'foreground') && typeof window !== 'undefined') window.dispatchEvent(new Event('streamnyaa:foreground-work'));
   if (options.signal?.aborted) return Promise.reject(desktopDataError('desktop', new DOMException('Cancelled', 'AbortError')));
   const key = stableRequestKey({ command, ...args });
   let flight = flights.get(key);
@@ -31,7 +32,7 @@ export function invokeDesktopData<T>(invoke: Invoke, command: string, args: Reco
       if (owned.consumers === 0) throw new DOMException('Cancelled', 'AbortError');
       owned.started = true;
       return invoke<T>(command, {
-        ...args, requestId: id, priority: options.priority || 'foreground', deadlineMs: options.deadlineMs,
+        ...args, requestId: id, priority: options.priority || 'foreground', deadlineMs: options.deadlineMs ?? (command === 'fetch_desktop_metadata_api' ? 80_000 : undefined),
       });
     }).finally(() => {
       owned.done = true;
@@ -58,7 +59,7 @@ export function invokeDesktopData<T>(invoke: Invoke, command: string, args: Reco
     };
     const abort = () => finish(new DOMException('Cancelled', 'AbortError'));
     // The native deadline is authoritative; this also bounds an unavailable/crashed bridge.
-    const timer = setTimeout(() => finish(new Error('Data request timed out.')), (options.deadlineMs || 10_000) + 500);
+    const timer = setTimeout(() => finish(new Error('Data request timed out.')), (options.deadlineMs || (command === 'fetch_desktop_metadata_api' ? 80_000 : 10_000)) + 500);
     options.signal?.addEventListener('abort', abort, { once: true });
     owned.promise.then((value) => finish(undefined, value as T), (error) => finish(error));
   });

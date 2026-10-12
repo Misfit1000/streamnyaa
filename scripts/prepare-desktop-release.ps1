@@ -1,113 +1,57 @@
+param([string]$ReleaseTree)
 $ErrorActionPreference = 'Stop'
-
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$bundleDir = Join-Path $repoRoot 'desktop\src-tauri\target\release\bundle\nsis'
-$manifestSource = Join-Path $repoRoot 'desktop\src-tauri\tauri.conf.json'
-
-if (-not (Test-Path $bundleDir)) {
-  throw "Installer bundle folder not found: $bundleDir"
+if (!$ReleaseTree) {
+  $usualDesktop = Join-Path (Split-Path $repoRoot -Parent) 'StreamNyaa-desktop\desktop'
+  if (Test-Path -LiteralPath $usualDesktop) { $ReleaseTree = Join-Path $usualDesktop 'releases' }
+  else { $ReleaseTree = Join-Path $repoRoot 'desktop\releases' }
 }
-
-$installer = Get-ChildItem $bundleDir -Filter '*-setup.exe' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $installer) {
-  throw "No NSIS setup executable found in $bundleDir"
+$config = Get-Content -Raw (Join-Path $repoRoot 'desktop/src-tauri/tauri.conf.json') | ConvertFrom-Json
+$version = [string]$config.version
+if ($config.identifier -ne 'xyz.streamnyaa.desktop' -or !$version) { throw 'Unexpected desktop identity/version.' }
+$target = Join-Path $repoRoot 'desktop/src-tauri/target/release'
+$installer = Get-Item -LiteralPath (Join-Path $target "bundle/nsis/StreamNyaa_${version}_x64-setup.exe")
+$exe = Get-Item -LiteralPath (Join-Path $target 'streamnyaa_desktop.exe')
+if ($exe.VersionInfo.ProductVersion -notlike "$version*") { throw 'Executable version mismatch.' }
+$nsi = Get-Content -Raw (Join-Path $target 'nsis/x64/installer.nsi')
+if (!$nsi.Contains("!define VERSION `"$version`"")) { throw 'NSIS version mismatch.' }
+if ($installer.Length -lt 30MB -or $installer.Length -gt 50MB) { throw 'Unexpected installer size.' }
+$checksPath = Join-Path $repoRoot '.validation/0.1.10-results.json'
+$checks = Get-Content -Raw $checksPath | ConvertFrom-Json
+if (!$checks.automatedPassed) { throw 'Final checks have not passed.' }
+$inputs = Get-Content -Raw (Join-Path $repoRoot '.validation/0.1.10-build-inputs.json') | ConvertFrom-Json
+foreach ($inputFile in $inputs) { if ((Get-FileHash -LiteralPath $inputFile.path -Algorithm SHA256).Hash -ne $inputFile.sha256) { throw "Validated source changed: $($inputFile.path)" } }
+$resources = foreach ($resource in Get-ChildItem -LiteralPath (Join-Path $repoRoot 'desktop/src-tauri/bin') -File) {
+  $hash = (Get-FileHash -LiteralPath $resource.FullName -Algorithm SHA256).Hash
+  $stage = Join-Path $target "bin/$($resource.Name)"
+  if ($hash -ne (Get-FileHash -LiteralPath $stage -Algorithm SHA256).Hash -or !$nsi.Contains($resource.FullName)) { throw "Resource mismatch: $($resource.Name)" }
+  [ordered]@{ name=$resource.Name; bytes=$resource.Length; sha256=$hash; stagedMatches=$true; nsisInclusionVerified=$true }
 }
-
-$tauriConfig = Get-Content -Raw $manifestSource | ConvertFrom-Json
-$version = [string]$tauriConfig.version
-if (-not $version) {
-  throw 'Could not read desktop version from tauri.conf.json'
+$rollback = Join-Path $ReleaseTree 'v0.1.9/StreamNyaa_0.1.9_x64-setup.exe'
+$rollbackHash = (Get-FileHash -LiteralPath $rollback -Algorithm SHA256).Hash
+if ($installer.Length -gt ((Get-Item -LiteralPath $rollback).Length + 2MB)) { throw 'Installer exceeded the two MiB growth budget over the rollback release.' }
+$rollbackManifest = Get-Content -Raw (Join-Path $ReleaseTree 'v0.1.9/release-manifest.json') | ConvertFrom-Json
+if ($rollbackHash -ne $rollbackManifest.sha256) { throw 'Previous installer checksum mismatch.' }
+$release = Join-Path $ReleaseTree "v$version"
+New-Item -ItemType Directory -Path $release -Force | Out-Null
+$destination = Join-Path $release $installer.Name
+$hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash
+if (Test-Path -LiteralPath $destination) {
+  $archive = Join-Path $ReleaseTree ('archive/v'+$version+'-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
+  New-Item -ItemType Directory -Path $archive -Force | Out-Null
+  foreach ($name in @($installer.Name,'release-manifest.json','SHA256SUMS.txt','validation-notes.md')) { $old=Join-Path $release $name; if (Test-Path -LiteralPath $old) { Copy-Item -LiteralPath $old -Destination (Join-Path $archive $name) } }
 }
-
-$releaseRoot = Join-Path $repoRoot ("desktop\releases\v{0}" -f $version)
-New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
-
-if ($version -eq '0.1.3') {
-  $validationMarker = Join-Path $releaseRoot 'auth-recovery-live-validation.json'
-  if (-not (Test-Path $validationMarker)) {
-    throw 'The 0.1.3 recovery installer cannot be replaced before live desktop validation.'
-  }
-  $validation = Get-Content -Raw $validationMarker | ConvertFrom-Json
-  if (-not $validation.validated -or [string]$validation.releaseRevision -ne 'auth-recovery-hotfix-2') {
-    throw 'The live validation marker does not authorize auth-recovery-hotfix-2 packaging.'
-  }
-}
-
-$rollbackInstaller = Get-ChildItem (Join-Path $repoRoot 'desktop\releases\v0.1.4') -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($rollbackInstaller -and $installer.Length -gt ($rollbackInstaller.Length + 2MB)) {
-  throw ("Installer size grew by more than 2 MiB over 0.1.4 ({0} -> {1} bytes)." -f $rollbackInstaller.Length, $installer.Length)
-}
-
-$copiedInstaller = Join-Path $releaseRoot $installer.Name
-Copy-Item -LiteralPath $installer.FullName -Destination $copiedInstaller -Force
-
-$sha256 = [Security.Cryptography.SHA256]::Create()
-$installerStream = [IO.File]::OpenRead($copiedInstaller)
-try {
-  $hash = ([BitConverter]::ToString($sha256.ComputeHash($installerStream))).Replace('-', '')
-}
-finally {
-  $installerStream.Dispose()
-  $sha256.Dispose()
-}
-$sizeBytes = (Get-Item $copiedInstaller).Length
+Copy-Item -LiteralPath $installer.FullName -Destination $destination -Force
+if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $hash) { throw 'Release copy mismatch.' }
 $manifest = [ordered]@{
-  product = 'StreamNyaa Desktop'
-  version = $version
-  releaseRevision = 'desktop-loading-reliability-12'
-  generatedAt = (Get-Date).ToString('o')
-  installer = @{
-    fileName = [IO.Path]::GetFileName($copiedInstaller)
-    path = $copiedInstaller
-    sizeBytes = $sizeBytes
-    sha256 = $hash
-  }
-  notes = @(
-    'Adds adaptive click-ahead route, episode, artwork, and playback preparation without downloading video early.',
-    'Rebuilds Explore with persistent controls, saved results, and uninterrupted background refresh.',
-    'Shows verified aired and total episode counts, and hides unaired episodes from Watch selection.',
-    'Moves catalog, playback-option, and query snapshot persistence away from interaction frames.',
-    'Adds a resolution-aware launch sequence and complete neutral landscape artwork with real anime titles and native loading stages.',
-    'Shows live playable-buffer percentage and seconds, including while stalled and recovering.',
-    'Adds bounded recovery for streams that never expose a playable timeline: current-stream reload, automatic alternate playback, then manual actions.',
-    'Adds credential-free schedule revision tracking that labels changed AniList episode slots as rescheduled without guessing cancellations.',
-    'Adds a compact notification center for confirmed delays and cancellations, personal/global feed controls, and categorized desktop settings navigation.',
-    'Makes Explore resilient through saved catalogs and hedged refreshes, activates global search, adds upcoming-airing notifications, and surfaces player keybinds in simplified settings.',
-    'Closes the pre-playback freeze gap, renders live buffer percentage inside the native player, and upgrades loading art to a cinematic full-bleed composition.',
-    'Keeps the exact saved schedule visible during connection failures and distinguishes verified empty days from refresh errors.',
-    'Refines the native player with compact live buffering feedback, raised skip controls, and a cleaner next-episode panel.',
-    'Uses genuine landscape artwork for player startup, removes poster-card composition, and applies a smooth neutral readability gradient.',
-    'Sharpens startup artwork, enlarges and repositions the responsive anime title, and adds restrained live loading motion.',
-    'Keeps cancelled, timed-out, failed, and genuinely empty requests distinct across Home, Watch, Sources, Explore, and collection pages.',
-    'Restores verified Home catalogs instantly, rejects malformed metadata before caching, and reconnects active screens automatically.',
-    'Hardens native URL/path validation, bounds remote response sizes, redacts diagnostics, and narrows desktop callback routes.',
-    'Uses only verified high-resolution landscape artwork for player startup and rejects blurry portrait substitutions.',
-    'Keeps loading artwork visible until the first decoded frame, removes the purple handoff gap, and adds a balanced center play/pause control with refined vector icons.',
-    'Restores valid ultrawide artwork, uses the supported scaled bitmap API, and replaces buffering cards with a minimal circle and measured percentage.',
-    'Keeps recovery deadlines alive through reload/idle events, bounds continuous buffering, and stops animation when automatic recovery is exhausted.',
-    'Coordinates and cancels shared desktop data requests with bounded deadlines, provider rate limits, and automatic active-screen recovery.',
-    'Preserves verified partial results so slow or interrupted metadata and source refreshes never erase usable content.',
-    'Traverses the complete verified series timeline across bounded resumable batches without collapsing distinct installments.',
-    'Removes player control backplates, scales controls to the viewport, and replaces the end card with a compact centered status-driven prompt.',
-    'Applies patched dependency overrides and ships with a zero-vulnerability npm audit.',
-    'Resumes and verifies cached torrent media instead of rejecting existing files during source replay or recovery.',
-    'Prevents stale player cleanup from stopping a newer torrent session and tracks the native engine by process ownership.',
-    'Reads rqbit 8 telemetry correctly so playable-buffer bytes, live peers, and transfer speed no longer remain at zero.',
-    'Never opens a zero-data stream after a timer; bounded recovery now fails over before the player can buffer indefinitely.',
-    'Keeps local engine errors out of release-health history and shows each source-health badge only once.',
-    'Run the manual desktop release checklist before publishing this installer.',
-    'Code-sign the installer before distribution.',
-    'Keep the previous stable installer for rollback.'
-  )
+  product='StreamNyaa Desktop'; version=$version; identifier=$config.identifier; releaseRevision='playback-home-reliability'; builtAt=(Get-Date).ToString('o'); sourceCommit=(git -C $repoRoot rev-parse HEAD);
+  installer=$destination; bytes=$installer.Length; sha256=$hash; signature=(Get-AuthenticodeSignature -LiteralPath $destination).Status.ToString();
+  rollback=@{installer=$rollback;sha256=$rollbackHash}; resources=$resources; sourceFiles=$inputs;
+  executableVersion=$exe.VersionInfo.ProductVersion; executableSha256=(Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash;
+  validation=$checks; payloadVerification='Staged resource hashes and exact NSIS inclusions; independent installer extraction not performed'
 }
-
-$manifestPath = Join-Path $releaseRoot 'release-manifest.json'
-$manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $manifestPath -Encoding UTF8
-
-$checksumPath = Join-Path $releaseRoot 'SHA256SUMS.txt'
-"{0}  {1}" -f $hash, [IO.Path]::GetFileName($copiedInstaller) | Set-Content -Path $checksumPath -Encoding ASCII
-
-Write-Host "Prepared desktop release artifacts:"
-Write-Host "  Installer : $copiedInstaller"
-Write-Host "  Manifest  : $manifestPath"
-Write-Host "  Checksums : $checksumPath"
+$manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $release 'release-manifest.json') -Encoding UTF8
+"$hash  $($installer.Name)" | Set-Content -LiteralPath (Join-Path $release 'SHA256SUMS.txt') -Encoding ASCII
+$manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $repoRoot 'desktop/reviews/2026-10-12-playback-home-installer.json') -Encoding UTF8
+Copy-Item -LiteralPath (Join-Path $repoRoot 'desktop/reviews/2026-10-12-playback-home.md') -Destination (Join-Path $release 'validation-notes.md') -Force
+$manifest | Select-Object installer,bytes,sha256,signature,sourceCommit | ConvertTo-Json

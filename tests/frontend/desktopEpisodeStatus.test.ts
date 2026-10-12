@@ -15,6 +15,10 @@ describe('episode metadata feedback', () => {
     const error = {code:'rate-limited',provider:'jikan',message:'Wait',retryable:true,retryAfterMs:60_000};
     expect(episodeMetadataStatus({...base,error,hasTitles:true})).toMatchObject({waitingSeconds:60,message:expect.stringContaining('Available titles')});
   });
+  it('counts down an absolute provider deadline rather than restarting it', () => {
+    const error={code:'rate-limited',provider:'jikan',message:'Wait',retryable:true,retryAfterMs:60_000,retryAt:70_000};
+    expect(episodeMetadataStatus({...base,error,errorAt:60_000,now:65_000}).waitingSeconds).toBe(5);
+  });
   it('does not offer a request without a canonical identity', () => {
     expect(episodeMetadataStatus({...base,enabled:false})).toMatchObject({canRetry:false,message:expect.stringContaining('verified MyAnimeList identity')});
   });

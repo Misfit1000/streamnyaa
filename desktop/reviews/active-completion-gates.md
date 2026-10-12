@@ -1,6 +1,10 @@
+October 12, 2026 current target: **0.1.10**. [Playback and Home reliability](2026-10-12-playback-home.md) supersedes the older implementation status below. Home uses positive episode/offline evidence; Explore retains complete-negative suppression. Automated evidence and native fixture timings are recorded separately from the user's installed UI testing. Signing, installed interactions/notifications, isolated install/upgrade/rollback, live account sync, public-torrent endurance and the Vercel batch-history deployment remain explicit open gates.
+
 # Active desktop completion gates (0.1.8 update)
 
 This is a tracking record, not release acceptance. The full user objective remains active.
+
+October 12, 2026 audit: the current target is **0.1.9**. See [catalog, source matching, and release-alert evidence](2026-10-12-catalog-sources-alerts.md) and its installer manifest for this revision. The older 0.1.8 entries below are historical; implemented download, recovery, progress, bookmark, and player features are present in current source. Installed visual/interaction acceptance, real Windows notifications, account round trips, isolated installation/upgrade/rollback, signing, and the separate Vercel deployment remain explicit open gates. A successful automated suite or installer build does not close those gates.
 
 September 9–10 update: see [completion candidate evidence](2026-09-09-completion-candidate.md) for implemented catalog fallback, durable downloads, recovery, spoiler/card/diagnostic work, final regression results and precise remaining engineering/live gates. The previous installer is archived and retained. An internal candidate build does not satisfy release acceptance.
 

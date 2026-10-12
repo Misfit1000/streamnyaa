@@ -1,9 +1,9 @@
-import { recentHomeQuery, validRecentSchedules } from './desktopRecentSchedule';
+import { recentFeedBound, recentHomeQuery, validRecentSchedules } from './desktopRecentSchedule';
 import { useStore } from '../store/useStore';
 import { enrichDesktopScheduleRevisions } from '../lib/scheduleRevisions';
 import { extractNumericId } from '../lib/slug';
 import { fetchDesktopMetadataApi, isDesktopApp } from '../lib/desktop';
-import { desktopDataError } from '../lib/desktopData';
+import { desktopDataError, DesktopDataError, isDesktopAdmissionWait } from '../lib/desktopData';
 import { readEpisodePage, saveEpisodePage } from '../lib/desktopEpisodeCache';
 import type { DesktopRequestOptions } from '../lib/desktopRequests';
 
@@ -28,6 +28,7 @@ const providerCooldowns = new Map<MetadataProvider, number>();
 const desktopProviderFailures = new Map<MetadataProvider, { until: number; error: ReturnType<typeof desktopDataError> }>();
 const desktopRequestFailures = new Map<string, { until: number; error: ReturnType<typeof desktopDataError> }>();
 const pendingMetadataWrites = new Map<string, MetadataCacheEntry>();
+const providerRecoveryFlights = new Map<MetadataProvider, Promise<unknown>>();
 let metadataPersistTimer: number | undefined;
 
 const hashCacheKey = (input: string) => {
@@ -46,13 +47,15 @@ const cacheKeyFor = (provider: MetadataProvider, value: unknown) => {
 const metadataState = (response: Response) => ({
   status: response.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' || response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale' ? 'stale' : 'authoritative',
   fetchedAt: Number(response.headers.get('X-StreamNyaa-Fetched-At')) || Date.now(),
+  retryAt: Number(response.headers.get('X-StreamNyaa-Retry-At')) || undefined,
 });
-const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale', fetchedAt?: number) => new Response(JSON.stringify(value), {
+const jsonResponse = (value: unknown, cacheState: 'local-hit' | 'local-stale', fetchedAt?: number, retryAt?: number) => new Response(JSON.stringify(value), {
   status: 200,
   headers: {
     'Content-Type': 'application/json',
     'X-StreamNyaa-Local-Cache': cacheState,
     ...(fetchedAt ? {'X-StreamNyaa-Fetched-At': String(fetchedAt)} : {}),
+    ...(retryAt ? {'X-StreamNyaa-Retry-At': String(retryAt)} : {}),
   },
 });
 
@@ -252,12 +255,12 @@ if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', flushPendingMetadataWrites);
 }
 
-const writeLocalMetadata = (key: string, value: unknown, ttlSeconds: number) => {
+const writeLocalMetadata = (key: string, value: unknown, ttlSeconds: number, fetchedAt = Date.now()) => {
   const boundedTtlSeconds = Math.max(60, Math.min(60 * 60 * 24 * 30, Math.floor(ttlSeconds || 0)));
   const entry: MetadataCacheEntry = {
     value,
-    expiresAt: Date.now() + boundedTtlSeconds * 1000,
-    savedAt: Date.now(),
+    expiresAt: fetchedAt + boundedTtlSeconds * 1000,
+    savedAt: fetchedAt,
   };
   memoryMetadataCache.set(key, entry);
 
@@ -296,10 +299,22 @@ const fetchWithLocalMetadataCache = async (
   const recentFailure = isDesktopApp() ? (providerFailure && providerFailure.until > Date.now()
     ? providerFailure : desktopRequestFailures.get(key)) : undefined;
   if (recentFailure && recentFailure.until > Date.now()) {
-    if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
+    if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt, recentFailure.until);
     throw recentFailure.error;
   }
   if (stale && providerInCooldown(provider)) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
+
+  // Only one expired-cooldown request probes the provider; other consumers wait
+  // for its result rather than issuing a simultaneous recovery burst.
+  const recovery = providerRecoveryFlights.get(provider);
+  if (isDesktopApp() && providerFailure && recovery) {
+    await recovery.catch(() => undefined);
+    const failed = desktopProviderFailures.get(provider);
+    if (failed && failed.until > Date.now()) {
+      if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt, failed.until);
+      throw failed.error;
+    }
+  }
 
   const requestKey = `${provider}:${key}`;
   // React Query retains the visible snapshot while this refresh is pending.
@@ -324,35 +339,44 @@ const fetchWithLocalMetadataCache = async (
 
     const json = await readValidatedMetadataJson(provider, response);
     if (response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale') return response;
-    writeLocalMetadata(key, json, ttlSeconds);
+    const fetchedAt = Number(response.headers.get('X-StreamNyaa-Fetched-At')) || Date.now();
+    writeLocalMetadata(key, json, ttlSeconds, Math.min(Date.now(), fetchedAt));
     providerCooldowns.delete(provider);
     desktopProviderFailures.delete(provider);
     desktopRequestFailures.delete(key);
     return response;
   })();
 
+  const ownsRecovery = isDesktopApp() && Boolean(providerFailure) && !providerRecoveryFlights.has(provider);
+  if (ownsRecovery) providerRecoveryFlights.set(provider, nextRequest);
+
   if (!isDesktopApp()) inFlightMetadataRequests.set(requestKey, nextRequest);
 
   try {
     return (await nextRequest).clone();
   } catch (error) {
-    const failure = desktopDataError(provider, error);
+    let failure = desktopDataError(provider, error);
     if (failure.code === 'cancelled') throw failure;
-    if (isDesktopApp() && failure.code !== 'invalid') {
+    if (isDesktopApp() && failure.code !== 'invalid' && !isDesktopAdmissionWait(failure)) {
       const wait = failure.code === 'access-denied' ? 300_000 : failure.code === 'rate-limited'
         ? Math.max(1000, Math.min(86_400_000, failure.retryAfterMs || 60_000)) : 30_000;
+      const until = failure.retryAt ?? Date.now() + wait;
+      failure = new DesktopDataError({ code:failure.code, provider:failure.provider, message:failure.message,
+        retryable:failure.retryable, statusCode:failure.statusCode, origin:failure.origin,
+        retryAt:until, retryAfterMs:Math.max(0, until-Date.now()) });
       if (failure.code === 'access-denied' || failure.code === 'rate-limited') {
-        desktopProviderFailures.set(provider, { until: Date.now() + wait, error: failure });
+        desktopProviderFailures.set(provider, { until, error: failure });
       } else {
         // A failed search must not disable working schedules, details and shelves.
-        desktopRequestFailures.set(key, { until: Date.now() + wait, error: failure });
+        desktopRequestFailures.set(key, { until, error: failure });
         if (desktopRequestFailures.size > 500) desktopRequestFailures.delete(desktopRequestFailures.keys().next().value!);
       }
     }
-    if (failure.code === 'rate-limited') providerCooldowns.set(provider, Date.now() + (failure.retryAfterMs || 60_000));
-    if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
+    if (failure.code === 'rate-limited') providerCooldowns.set(provider, failure.retryAt ?? Date.now() + (failure.retryAfterMs || 60_000));
+    if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt, failure.retryAt);
     throw failure;
   } finally {
+    if (ownsRecovery && providerRecoveryFlights.get(provider) === nextRequest) providerRecoveryFlights.delete(provider);
     if (inFlightMetadataRequests.get(requestKey) === nextRequest) {
       inFlightMetadataRequests.delete(requestKey);
     }
@@ -693,7 +717,7 @@ export const fetchTopAiring = async (options: DesktopRequestOptions = {}) => {
 export const fetchRecentEpisodesWithLimit = async (limit = 12, options: DesktopRequestOptions = {}) => {
   const nsfwMode = useStore.getState().nsfwMode;
   const perPage = Math.max(12, Math.min(50, Math.ceil(limit)));
-  const query = recentHomeQuery(perPage, Math.floor(Date.now() / 1000));
+  const query = recentHomeQuery(perPage, recentFeedBound());
   const res = await fetchAniList({ query }, 300, options);
   if (!res.ok) throw new Error('Failed to fetch recent episodes');
   const data = await res.json();
@@ -979,7 +1003,7 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
   try {
     if (preferredAniListId) await loadSingle(ANIME_DETAIL_QUERY_BY_ANILIST, { id: preferredAniListId });
     else if (preferredMalId) await loadSingle(ANIME_DETAIL_QUERY_BY_MAL, { id: preferredMalId });
-  } catch (error) { failures.push(error); }
+  } catch (error) { if (isDesktopAdmissionWait(error)) throw error; failures.push(error); }
   if (options.signal?.aborted) throw desktopDataError('anilist', new DOMException('Cancelled', 'AbortError'));
   // Resolve legacy routes only if the explicit identity could not be loaded.
   if (!candidates.length && titleHint && !preferredAniListId && !toPositiveInt(options.malId)) {
@@ -987,7 +1011,7 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
       const response = await fetchAniList({ query: ANIME_DETAIL_SEARCH_QUERY, variables: { search: titleHint } }, 21600, options);
       const payload = await response.json();
       (payload?.data?.Page?.media || []).filter((candidate: any) => titleMatchScore(titleHint, candidate) >= 60).forEach(pushCandidate);
-    } catch (error) { failures.push(error); }
+    } catch (error) { if (isDesktopAdmissionWait(error)) throw error; failures.push(error); }
   }
 
   const media = [...candidates].sort(
@@ -1023,7 +1047,7 @@ const jikanRes = await fetchJikanPath(detailPath, 21600, options);
       } catch (error) {
         if (error instanceof Error && error.message.includes('NSFW')) throw error;
         const failure = desktopDataError('jikan', error);
-        if (options.signal?.aborted || ['cancelled', 'access-denied', 'rate-limited'].includes(failure.code)) throw error;
+        if (options.signal?.aborted || ['cancelled', 'queued', 'access-denied', 'rate-limited'].includes(failure.code)) throw error;
       }
       }
     }
@@ -1168,7 +1192,9 @@ export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: 
       const failure = desktopDataError('jikan', error);
       // Both are documented forms of page one. Try the explicit form once for
       // an upstream timeout/server failure, never after denial or throttling.
-      if (page !== 1 || options.signal?.aborted || !(['timeout'].includes(failure.code) || (failure.statusCode || 0) >= 500)) throw error;
+      // Desktop transport already performs its bounded network retry. Retrying
+      // the same page under another URL doubles requests and can outlast admission.
+      if (isDesktopApp() || page !== 1 || options.signal?.aborted || !(['timeout'].includes(failure.code) || (failure.statusCode || 0) >= 500)) throw error;
       res = await fetchJikanPath(`/anime/${id}/episodes?page=1`, 600, options);
     }
     if (!res.ok) throw desktopDataError('jikan', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
@@ -1183,40 +1209,54 @@ export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: 
     const saved = isDesktopApp() && !json.data.length ? readEpisodePage(id, page) : undefined;
     if (saved?.data.length) return { data: saved.data, pagination: saved.pagination,
       streamnyaa: { status: 'stale', provider: 'jikan', savedAt: saved.savedAt } };
-    if (!stale) saveEpisodePage(id, page, json);
+    const fetchedAt = Number(res.headers.get('X-StreamNyaa-Fetched-At')) || Date.now();
+    if (!stale) saveEpisodePage(id, page, json, fetchedAt);
     return {
       ...json,
       streamnyaa: {
         status: stale ? 'stale' : 'authoritative',
         provider: 'jikan',
+        fetchedAt,
+        retryAt: Number(res.headers.get('X-StreamNyaa-Retry-At')) || undefined,
         cached: Boolean(res.headers.get('X-StreamNyaa-Local-Cache')) || ['memory','disk','stale'].includes(res.headers.get('X-StreamNyaa-Desktop-Cache') || ''),
       },
     };
   } catch (error) {
-    if (options.signal?.aborted || desktopDataError('jikan', error).code === 'cancelled') throw error;
+    const failure = desktopDataError('jikan', error);
+    if (options.signal?.aborted || failure.code === 'cancelled') throw error;
     const saved = isDesktopApp() ? readEpisodePage(id, page) : undefined;
-    if (saved) return { data: saved.data, pagination: saved.pagination, streamnyaa: { status: 'stale', provider: 'jikan', savedAt: saved.savedAt } };
+    if (saved) return { data: saved.data, pagination: saved.pagination, streamnyaa: { status: 'stale', provider: 'jikan', savedAt: saved.savedAt, fetchedAt:saved.savedAt, retryAt:failure.retryAt } };
     if (isDesktopApp()) throw error;
     console.error('Failed to fetch episodes from Jikan', error);
     return { data: [], pagination: { last_visible_page: 1 } };
   }
 };
 
-/** Resolve the final page separately; one partial page cannot establish the latest episode. */
+/** Requested episodes are usable without waiting for an optional latest-page request. */
 export async function fetchAnimeEpisodeWindow(id: string, page = 1, options: DesktopRequestOptions = {}) {
   const current = await fetchAnimeEpisodes(id, page, options);
   const last = Number(current.pagination?.last_visible_page || 1);
   if (!Number.isSafeInteger(last) || last < 1 || last > 1000) throw new Error('Invalid episode pagination.');
-  if (last === page || last === 1) return { ...current, latestPageResolved: true };
-  try {
-    const tail = await fetchAnimeEpisodes(id, last, options);
-    const merged = new Map<number, any>();
-    for (const episode of [...current.data, ...tail.data]) merged.set(Number(episode.mal_id), episode);
-    return { ...current, data: [...merged.values()], latestPageResolved: true };
-  } catch (error) {
-    if (options.signal?.aborted || desktopDataError('jikan', error).code === 'cancelled') throw error;
-    return { ...current, latestPageResolved: false };
-  }
+  if (last === page || last === 1) return { ...current, latestPageResolved: current.streamnyaa?.status !== 'stale', complete: current.streamnyaa?.status !== 'stale', latestPage: last };
+  const savedTail = readEpisodePage(id, last);
+  const merged = new Map<number, any>();
+  for (const episode of [...current.data, ...(savedTail?.data || [])]) merged.set(Number(episode.mal_id), episode);
+  // Saved tails inform navigation, but cannot establish fresh latest-airing data.
+  return { ...current, data: [...merged.values()], latestPageResolved: false, complete: false, latestPage: last };
+}
+
+/** Independent query for the final page; callers keep the requested-page result visible. */
+export async function fetchAnimeEpisodeTail(id: string, page: number, options: DesktopRequestOptions = {}) {
+  const result = await fetchAnimeEpisodes(id, page, { ...options, priority: options.priority || 'background' });
+  return { ...result, latestPage: page, latestPageResolved: result.streamnyaa?.status !== 'stale', complete: result.streamnyaa?.status !== 'stale' };
+}
+
+export function mergeAnimeEpisodeTail<T extends { data: any[]; streamnyaa?: { status?: string; fetchedAt?: number; savedAt?: number } }>(current: T, tail: T) {
+  const merged = new Map<number, any>();
+  for (const episode of [...current.data, ...tail.data]) merged.set(Number(episode.mal_id), episode);
+  return { ...current, data: [...merged.values()], latestPageResolved: tail.streamnyaa?.status !== 'stale', complete: current.streamnyaa?.status !== 'stale' && tail.streamnyaa?.status !== 'stale',
+    streamnyaa: { ...current.streamnyaa, status: current.streamnyaa?.status === 'stale' || tail.streamnyaa?.status === 'stale' ? 'stale' : 'authoritative',
+      fetchedAt: Math.min(current.streamnyaa?.fetchedAt || current.streamnyaa?.savedAt || Date.now(), tail.streamnyaa?.fetchedAt || tail.streamnyaa?.savedAt || Date.now()) } };
 }
 
 export const fetchJikanExploreCatalog = async (options: {
@@ -1562,14 +1602,26 @@ const res = await fetchAniList({ query, variables: { page, start: startDate, end
   };
 };
 
-export const fetchCompleteSchedule = async (startDate: number, endDate: number, maxPages = 10, options: DesktopRequestOptions = {}) => {
+export type CompleteScheduleResult = {
+  data: any[]; complete: boolean; retryAfterMs?: number; retryAt?: number;
+  partialReason?: 'background-budget' | 'foreground-loading';
+  streamnyaa: { status: string; fetchedAt: number; retryAt?: number };
+  pagination: { has_next_page: boolean; last_visible_page: number };
+};
+
+export const fetchCompleteSchedule = async (startDate: number, endDate: number, maxPages = 10,
+  options: DesktopRequestOptions = {}, onProgress?: (value: CompleteScheduleResult) => void): Promise<CompleteScheduleResult> => {
   const items: any[] = [], seen = new Set<string>();
   let page = 1, hasNextPage = true, stale = false;
   let retryAfterMs: number | undefined;
+  let retryAt: number | undefined;
+  let fetchedAt = Date.now();
   while (hasNextPage && page <= maxPages) {
     try {
       const response = await fetchSchedule(page, startDate, endDate, options);
       stale ||= response.streamnyaa.status === 'stale';
+      fetchedAt = Math.min(fetchedAt, response.streamnyaa.fetchedAt);
+      retryAt = Math.max(retryAt || 0, response.streamnyaa.retryAt || 0) || undefined;
       response.data.forEach((anime: any) => {
         const key = `${anime?.anilist_id || anime?.mal_id || anime?.id}:${anime?.airingEpisode}:${anime?.airingAt}`;
         if (seen.has(key)) return;
@@ -1577,13 +1629,17 @@ export const fetchCompleteSchedule = async (startDate: number, endDate: number, 
       });
       hasNextPage = Boolean(response.pagination?.has_next_page);
       page += 1;
+      onProgress?.({ data: [...items], complete: !hasNextPage, retryAt,
+        streamnyaa: { status: stale ? 'stale' : 'authoritative', fetchedAt, retryAt },
+        pagination: { has_next_page: hasNextPage, last_visible_page: page - 1 } });
     } catch (error) {
       if (options.signal?.aborted || !items.length) throw error;
       retryAfterMs = (error as { retryAfterMs?: number })?.retryAfterMs;
+      retryAt = (error as { retryAt?: number })?.retryAt;
       break;
     }
   }
-  return { data: items, complete: !hasNextPage, retryAfterMs,
-    streamnyaa: { status: stale ? 'stale' : 'authoritative' },
+  return { data: items, complete: !hasNextPage, retryAfterMs, retryAt,
+    streamnyaa: { status: stale ? 'stale' : 'authoritative', fetchedAt, retryAt },
     pagination: { has_next_page: hasNextPage, last_visible_page: page - 1 } };
 };

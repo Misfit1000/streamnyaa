@@ -1,7 +1,7 @@
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
-import { dedupeNyaaItems, searchNyaa } from '../api/nyaa';
+import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, Link as LinkIcon, Play } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { animePath } from '../lib/slug';
@@ -13,6 +13,8 @@ import { useAuth } from '../context/AuthContext';
 import { saveDownloadHistory } from '../lib/activity';
 import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQualityScore } from '../lib/sourceQuality';
 import { isDesktopApp, openLocalSourceNow } from '../lib/desktop';
+import { buildSourceIdentity, sourceIdentitySignature, parseSourceEpisode, validateDesktopSourceCandidates } from '../lib/desktopSourceIdentity';
+import { runSourceSearchPass, sourceSearchPlan, type SourceDiscovery } from '../lib/desktopSourceDiscovery';
 
 type AudioFilter = 'sub' | 'dub';
 
@@ -63,6 +65,7 @@ function canSearchDownloads(anime: any) {
 }
 
 export default function AnimeDownloads() {
+  const queryClient = useQueryClient();
   const { session, user } = useAuth();
   const desktop = isDesktopApp();
   const { id } = useParams<{ id: string }>();
@@ -97,93 +100,46 @@ export default function AnimeDownloads() {
 
   const currentEpisodePageItems = episodeData?.data || [];
   const airedEpisodeCount = knownAiredEpisodeCount(anime, currentEpisodePageItems);
-  const resolvedEpisodeNumber = selectedEpisodeNumber || (airedEpisodeCount > 0 ? airedEpisodeCount : null);
+  const resolvedEpisodeNumber = selectedEpisodeNumber && selectedEpisodeNumber > 0 ? selectedEpisodeNumber : null;
+  const sourceIdentity = useMemo(() => buildSourceIdentity(anime), [anime]);
+  const sourceSignature = sourceIdentitySignature(sourceIdentity);
+  const sourceQueryKey = useMemo(() => ['desktop-download-sources', sourceSignature, resolvedEpisodeNumber] as const, [sourceSignature, resolvedEpisodeNumber]);
 
-  const { data: torrents, isLoading: torrentsLoading } = useQuery({
-    queryKey: ['nyaa-download', anime?.title, resolvedEpisodeNumber, downloadFilter, typeParam, audioFilter, showAllSources],
-    queryFn: async () => {
-      const romaji = anime?.title_romaji;
-      const english = anime?.title_english;
-      const native = anime?.title;
-
-      const epStr = resolvedEpisodeNumber ? String(resolvedEpisodeNumber).padStart(2, '0') : '';
-      const isDub = audioFilter === 'dub';
-      const effectiveDownloadFilter = downloadFilter;
-
-      const cleanTitle = (t: string) => {
-        if (!t) return '';
-        return t.replace(/[^a-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-      };
-
-      const performSearch = async (t: string, ep: string) => {
-        if (!t) return [];
-        let query = `${cleanTitle(t)}`;
-        if (ep) query += ` ${ep}`;
-        if (effectiveDownloadFilter && effectiveDownloadFilter !== 'RAW') query += ` ${effectiveDownloadFilter}`;
-        if (isDub) query += ' dub';
-        return await searchNyaa(query, effectiveDownloadFilter === 'RAW' ? '1_4' : '1_2', '0', '1', { pages: showAllSources ? 2 : 1, wide: showAllSources });
-      };
-
-      const trySearches = async (epNumStr: string) => {
-        const titles = [romaji, english, native].filter((title, index, list): title is string => Boolean(title) && list.indexOf(title) === index);
-        if (showAllSources) {
-          const searches = await Promise.all(titles.map((title) => performSearch(title, epNumStr)));
-          return dedupeNyaaItems(searches.flat());
-        }
-
-        for (const title of titles) {
-          const items = await performSearch(title, epNumStr);
-          if (items.length > 0) return items;
-        }
-        return [];
-      };
-
-      const prefersDub = (title = '') => /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title);
-      const removeBatchResults = (items: Awaited<ReturnType<typeof searchNyaa>>) => (
-        items.filter((item) => !isBatchSource(item.title))
-      );
-      const applyAudioFilter = (items: Awaited<ReturnType<typeof searchNyaa>>) => {
-        const episodeOnly = removeBatchResults(items);
-        const filtered = isDub
-          ? episodeOnly.filter((item) => prefersDub(item.title))
-          : episodeOnly.filter((item) => !prefersDub(item.title));
-        return filtered.length ? filtered : episodeOnly;
-      };
-
-      let results = await trySearches(epStr);
-
-      // Fallback without padding if still 0
-      if (results.length === 0 && epParam && epStr !== epParam) {
-        results = await trySearches(epParam);
-      }
-
-      // Secondary fallback without episode number at all (useful for movies or single OVAs)
-      if (results.length === 0 && epParam === '1') {
-        results = await trySearches("");
-      }
-
-      return applyAudioFilter(results);
+  const sourceQuery = useQuery({
+    queryKey: sourceQueryKey,
+    queryFn: async ({ signal }) => {
+      const saved = queryClient.getQueryData<SourceDiscovery<NyaaItem>>(sourceQueryKey);
+      const previous = saved?.pending?.length ? saved : undefined;
+      return runSourceSearchPass<NyaaItem>({
+        jobs: previous?.pending || sourceSearchPlan(sourceIdentity, resolvedEpisodeNumber || undefined),
+        initial: previous?.items, initialState: previous, signal, requestLimit: 12, budgetMs: 30_000,
+        merge: dedupeNyaaItems, publish: value => queryClient.setQueryData(sourceQueryKey, value),
+        fetch: async (job, deadlineMs) => {
+          const raw = await searchNyaa(job.query, job.category, '0', String(job.page), {
+            deep: false, pages: 1, wide: false, signal, deadlineMs,
+            intent: resolvedEpisodeNumber ? { scope: 'episode', episode: resolvedEpisodeNumber } : { scope: 'title' },
+          });
+          const items = await validateDesktopSourceCandidates(raw, sourceIdentity, resolvedEpisodeNumber);
+          return { items, complete: raw.complete, stale: raw.stale, fetchedAt: raw.fetchedAt, emptyPage: raw.length === 0, retryAt: raw.retryAt };
+        },
+      });
     },
-    enabled: !!anime?.title && downloadSearchAvailable,
+    enabled: Boolean(anime?.title && sourceIdentity.animeId && downloadSearchAvailable),
+    staleTime: resolvedEpisodeNumber ? 60_000 : 300_000, retry: false, refetchOnWindowFocus: false,
   });
-
-  const sortedTorrents = useMemo(() => [...(torrents || [])].filter((torrent) => !isBatchSource(torrent.title)).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
-    if (sortBy === 'best') {
-        if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
-        const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
-        const trustedA = trustedGroups.some(g => a.title.includes(g)) ? 1 : 0;
-        const trustedB = trustedGroups.some(g => b.title.includes(g)) ? 1 : 0;
-        if (trustedA !== trustedB) return trustedB - trustedA;
-        if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
-        return b.rawSize - a.rawSize;
-    } else if (sortBy === 'seeders') {
-        if (b.rawSeeders !== a.rawSeeders) return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
+  const torrents = sourceQuery.data?.items || [];
+  const torrentsLoading = sourceQuery.isLoading && !sourceQuery.data;
+  const sortedTorrents = useMemo(() => {
+    const prefersDub = (title = '') => /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(title);
+    return torrents.filter(torrent => torrent.nativeEvidence === 'exact' && !isBatchSource(torrent.title))
+      .filter(torrent => !downloadFilter || (downloadFilter === 'RAW' ? torrent.categoryId === '1_4' : torrent.title.toLowerCase().includes(downloadFilter.toLowerCase())))
+      .filter(torrent => audioFilter === 'dub' ? prefersDub(torrent.title) : !prefersDub(torrent.title))
+      .filter(torrent => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
+        if (sortBy === 'best') return Number(b.sourceScore || 0) - Number(a.sourceScore || 0) || b.rawSeeders - a.rawSeeders || b.rawSize - a.rawSize;
+        if (sortBy === 'seeders') return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
         return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
-    } else {
-        if (b.rawSize !== a.rawSize) return sortDirection === 'asc' ? a.rawSize - b.rawSize : b.rawSize - a.rawSize;
-        return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
-    }
-  }), [sortBy, sortDirection, sourceFilter, torrents]);
+      });
+  }, [sortBy, sortDirection, sourceFilter, torrents, downloadFilter, audioFilter]);
   const topSource = sortedTorrents[0];
   const visibleTorrents = useMemo(() => showAllSources ? sortedTorrents : sortedTorrents.slice(0, 5), [showAllSources, sortedTorrents]);
   const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
@@ -273,7 +229,7 @@ export default function AnimeDownloads() {
       magnet: torrent.magnet,
       animeTitle: anime.title,
       animeId: anime.mal_id || anime.id,
-      episode: resolvedEpisodeNumber,
+      episode: resolvedEpisodeNumber || parseSourceEpisode(torrent.title),
       action,
       size: torrent.size,
       seeders: torrent.seeders,
@@ -288,7 +244,7 @@ export default function AnimeDownloads() {
       title: torrent.title,
       animeTitle: anime.title,
       animeId: anime.mal_id || anime.id,
-      episode: resolvedEpisodeNumber,
+      episode: resolvedEpisodeNumber || parseSourceEpisode(torrent.title),
       size: torrent.size,
       seeders: torrent.seeders,
       image: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url,
@@ -325,7 +281,7 @@ export default function AnimeDownloads() {
               Download Options
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Last updated {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+              {sourceQuery.data?.fetchedAt ? `Sources checked ${new Date(sourceQuery.data.fetchedAt).toLocaleString()}${sourceQuery.data.stale ? ' · saved results' : ''}` : 'Source lookup pending'}
             </p>
             <p className="mt-1 inline-flex rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">
               {releaseTrackerText(anime, selectedEpisodeNumber)}
@@ -510,6 +466,10 @@ export default function AnimeDownloads() {
         </div>
       </div>
 
+      {sourceQuery.data?.complete === false && <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground" role="status">
+        <span>{sourceQuery.data.stale ? 'Saved source results are retained while the provider recovers.' : 'More aliases and pages remain to be checked.'}</span>
+        <button type="button" disabled={sourceQuery.isFetching} onClick={() => void sourceQuery.refetch()} className="sn-secondary-action px-4 py-2">{sourceQuery.isFetching ? 'Checking sources…' : 'Find more sources'}</button>
+      </div>}
       {torrentsLoading ? (
         <DesktopLoadingProgress
           variant="screen"
@@ -520,9 +480,11 @@ export default function AnimeDownloads() {
       ) : sortedTorrents.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-8 md:p-12 rounded-3xl text-center flex flex-col items-center">
           <HardDrive className="w-16 h-16 text-muted-foreground mb-4" />
-          <p className="text-xl font-bold text-foreground mb-2">No Sources Found</p>
+          <p className="text-xl font-bold text-foreground mb-2">{sourceQuery.data?.complete === false || sourceQuery.isError ? 'Source lookup is incomplete' : 'No matching sources in this view'}</p>
           <p className="max-w-2xl text-muted-foreground">
-            No source results were found for "{anime.title}" with the selected filters. Try a different filter or search.
+            {sourceQuery.data?.complete === false || sourceQuery.isError
+              ? 'The lookup could not finish. Your filters are preserved; continue checking sources when the provider is ready.'
+              : `No verified source results were found for "${anime.title}" with the selected filters. Try a different filter or search.`}
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             {(anime.title_english || anime.title_romaji) ? (

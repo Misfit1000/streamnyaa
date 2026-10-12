@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { parseSourceEpisode } from '../src/lib/desktopSourceIdentity';
 
 type SourceItem = {
   title: string;
@@ -118,18 +119,18 @@ function parseEpisodeIntent(query: string) {
 
   if (episodeIndex === -1) return { episodeNumber: null, titleQuery: query };
   const titleQuery = parts.filter((_, index) => index !== episodeIndex).join(" ");
-  return { episodeNumber, titleQuery };
+  return { episodeNumber: parseSourceEpisode(query), titleQuery };
 }
 
-function buildIntent(query: string): SearchIntent {
+function buildIntent(query: string, scope?: string, episodeNumber?: number): SearchIntent {
   const cleanQuery = normalizeText(query);
   const episode = parseEpisodeIntent(cleanQuery);
-  const titleQuery = normalizeText(episode.titleQuery);
+  const titleQuery = scope === 'title' ? cleanQuery : normalizeText(episode.titleQuery);
   return {
     rawQuery: query,
     titleQuery,
     titleTokens: meaningfulTokens(titleQuery || cleanQuery),
-    episodeNumber: episode.episodeNumber,
+    episodeNumber: scope === 'title' ? null : episodeNumber || episode.episodeNumber,
     batchSearch: /\b(batch|complete|season pack|collection)\b/i.test(query),
     dubSearch: /\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(query),
   };
@@ -182,6 +183,7 @@ function nyaaSearchUrl(query: string, category: string, filter: string, page: nu
 
 async function fetchSourceResults(url: URL, context: { query: string; category: string; page: number }): Promise<SourceItem[]> {
   const response = await fetch(url.toString(), {
+    signal: AbortSignal.timeout(8000),
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
     }
@@ -229,15 +231,7 @@ function matchingTitleRatio(title: string, tokens: string[]): number {
 }
 
 function extractLikelyEpisode(title: string): number | null {
-  const sxe = title.match(/\bs\d{1,2}e(\d{1,3})\b/i);
-  if (sxe) return Number(sxe[1]);
-  const explicit = title.match(/\b(?:ep|episode)\.?\s*(\d{1,3})\b/i);
-  if (explicit) return Number(explicit[1]);
-  const delimited = title.match(/(?:^|[\s._\-[({])(\d{1,4})(?:v\d+)?(?:[\s._\]))}-]|$)(?!\s*(?:bit|kb|mb|gb|p))/i);
-  if (!delimited) return null;
-  const num = Number(delimited[1]);
-  if ([480, 720, 1080, 2160].includes(num) || (num >= 1900 && num <= 2099) || num <= 0 || num >= 3000) return null;
-  return num;
+  return parseSourceEpisode(title);
 }
 
 function matchesEpisode(title: string, episodeNumber: number): boolean {
@@ -331,24 +325,26 @@ function dedupeAndRank(items: SourceItem[], intent: SearchIntent, sourceQueryCou
   });
 }
 
-async function fetchInChunks(urls: { url: URL; query: string; category: string; page: number }[]): Promise<SourceItem[]> {
+async function fetchInChunks(urls: { url: URL; query: string; category: string; page: number }[]) {
   const results: SourceItem[] = [];
+  let complete = true;
   for (let index = 0; index < urls.length; index += FETCH_CONCURRENCY) {
     const chunk = urls.slice(index, index + FETCH_CONCURRENCY);
     const settled = await Promise.allSettled(chunk.map((entry) => fetchSourceResults(entry.url, entry)));
     for (const result of settled) {
       if (result.status === "fulfilled") results.push(...result.value);
+      else complete = false;
     }
   }
-  return results;
+  return { items: results, complete };
 }
 
-async function fetchEnhancedResults(options: { query: string; category: string; filter: string; page: number; pages: number; deep: boolean; wide: boolean }) {
-  const intent = buildIntent(options.query);
+async function fetchEnhancedResults(options: { query: string; category: string; filter: string; page: number; pages: number; deep: boolean; wide: boolean; scope?: string; episode?: number }) {
+  const intent = buildIntent(options.query, options.scope, options.episode);
   const queries = options.deep ? buildQueryVariants(options.query, intent) : [options.query];
   const categories = options.deep ? buildCategoryList(options.category, options.wide) : [options.category || "1_2"];
   const pageList = options.deep
-    ? Array.from({ length: Math.max(1, Math.min(options.pages, MAX_DEEP_PAGES)) }, (_, index) => index + 1)
+    ? Array.from({ length: Math.max(1, Math.min(options.pages, MAX_DEEP_PAGES)) }, (_, index) => Math.max(1, options.page || 1) + index)
     : [Math.max(1, options.page || 1)];
 
   const urls: { url: URL; query: string; category: string; page: number }[] = [];
@@ -361,15 +357,15 @@ async function fetchEnhancedResults(options: { query: string; category: string; 
   }
 
   const items = await fetchInChunks(urls);
-  return dedupeAndRank(items, intent, urls.length);
+  return { data: dedupeAndRank(items.items, intent, urls.length), complete: items.complete };
 }
 
-function refreshCachedSource(cacheKey: string, loader: () => Promise<SourceItem[]>, cached: SourceCacheEntry) {
+function refreshCachedSource(cacheKey: string, loader: () => Promise<{ data: SourceItem[]; complete: boolean }>, cached: SourceCacheEntry) {
   if (cached.refreshPromise) return;
   cached.refreshPromise = loader()
-    .then((data) => {
-      sourceCache.set(cacheKey, { data, fetchedAt: Date.now() });
-      return data;
+    .then((result) => {
+      if (result.complete) sourceCache.set(cacheKey, { data: result.data, fetchedAt: Date.now() });
+      return result.complete ? result.data : cached.data;
     })
     .catch(() => cached.data)
     .finally(() => {
@@ -387,8 +383,12 @@ export default async function handler(req: any, res: any) {
     const pages = Math.max(1, Math.min(Number(firstValue(req.query.pages) || 3) || 3, MAX_DEEP_PAGES));
     const deep = q ? firstValue(req.query.deep) !== "0" : false;
     const wide = firstValue(req.query.wide) === "1";
-    const loader = () => fetchEnhancedResults({ query: q, category: c, filter: f, page: Number(p) || 1, pages, deep, wide });
-    const cacheKey = JSON.stringify({ q, c, f, p, pages, deep, wide, version: 3 });
+    const scope = firstValue(req.query.scope);
+    const requestedEpisode = Number(firstValue(req.query.episode));
+    if ((scope && !['title', 'episode'].includes(scope)) || (firstValue(req.query.episode) && (!Number.isInteger(requestedEpisode) || requestedEpisode < 1 || requestedEpisode > 9999))) return res.status(400).json({ error: 'Invalid source intent.' });
+    const episode = requestedEpisode || undefined;
+    const loader = () => fetchEnhancedResults({ query: q, category: c, filter: f, page: Number(p) || 1, pages, deep, wide, scope, episode });
+    const cacheKey = JSON.stringify({ q, c, f, p, pages, deep, wide, scope, episode, version: 4 });
     const cached = sourceCache.get(cacheKey);
     const age = cached ? Date.now() - cached.fetchedAt : Number.POSITIVE_INFINITY;
     res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=480");
@@ -408,9 +408,12 @@ export default async function handler(req: any, res: any) {
       return res.json(cached.data);
     }
 
-    const formattedItems = await loader();
+    const result = await loader();
+    const formattedItems = result.data;
     const fetchedAt = Date.now();
-    sourceCache.set(cacheKey, { data: formattedItems, fetchedAt });
+    if (result.complete) sourceCache.set(cacheKey, { data: formattedItems, fetchedAt });
+    else res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Source-Complete', String(result.complete));
     res.setHeader("X-Source-Cache", "MISS");
     res.setHeader("X-Source-Fetched-At", String(fetchedAt));
     res.setHeader("X-Source-Query-Count", String(formattedItems[0]?.sourceQueryCount || 1));

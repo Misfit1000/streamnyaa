@@ -1,0 +1,255 @@
+{
+  "fixtureBytes": 1267854,
+  "frames": "FFmpeg showinfo decoded PTS plus MPV playback position",
+  "range": [
+    {
+      "offset": 0,
+      "status": 206,
+      "contentRange": "bytes 0-1267853/1267854",
+      "verifiedBytes": 1024
+    },
+    {
+      "offset": 16384,
+      "status": 206,
+      "contentRange": "bytes 16384-1267853/1267854",
+      "verifiedBytes": 1024
+    },
+    {
+      "offset": 633927,
+      "status": 206,
+      "contentRange": "bytes 633927-1267853/1267854",
+      "verifiedBytes": 1024
+    }
+  ],
+  "cached": [
+    {
+      "target": 10,
+      "advancingFrameMs": 31,
+      "targetBufferAvailableMs": 2,
+      "frameAfterTargetBufferMs": 29,
+      "firstTargetResponseByteMs": null
+    },
+    {
+      "target": 3,
+      "advancingFrameMs": 86,
+      "targetBufferAvailableMs": 40,
+      "frameAfterTargetBufferMs": 45,
+      "firstTargetResponseByteMs": null
+    },
+    {
+      "target": 15,
+      "advancingFrameMs": 41,
+      "targetBufferAvailableMs": 1,
+      "frameAfterTargetBufferMs": 40,
+      "firstTargetResponseByteMs": null
+    },
+    {
+      "target": 6,
+      "advancingFrameMs": 41,
+      "targetBufferAvailableMs": 1,
+      "frameAfterTargetBufferMs": 41,
+      "firstTargetResponseByteMs": null
+    },
+    {
+      "target": 12,
+      "advancingFrameMs": 42,
+      "targetBufferAvailableMs": 1,
+      "frameAfterTargetBufferMs": 41,
+      "firstTargetResponseByteMs": null
+    },
+    {
+      "target": 2,
+      "advancingFrameMs": 41,
+      "targetBufferAvailableMs": 1,
+      "frameAfterTargetBufferMs": 40,
+      "firstTargetResponseByteMs": null
+    },
+    {
+      "target": 16,
+      "advancingFrameMs": 41,
+      "targetBufferAvailableMs": 1,
+      "frameAfterTargetBufferMs": 40,
+      "firstTargetResponseByteMs": null
+    },
+    {
+      "target": 8,
+      "advancingFrameMs": 42,
+      "targetBufferAvailableMs": 1,
+      "frameAfterTargetBufferMs": 41,
+      "firstTargetResponseByteMs": null
+    },
+    {
+      "target": 14,
+      "advancingFrameMs": 41,
+      "targetBufferAvailableMs": 1,
+      "frameAfterTargetBufferMs": 40,
+      "firstTargetResponseByteMs": null
+    },
+    {
+      "target": 4,
+      "advancingFrameMs": 42,
+      "targetBufferAvailableMs": 1,
+      "frameAfterTargetBufferMs": 41,
+      "firstTargetResponseByteMs": null
+    }
+  ],
+  "partial": [
+    {
+      "target": 16,
+      "advancingFrameMs": 3828,
+      "targetBufferAvailableMs": 3828,
+      "frameAfterTargetBufferMs": 0,
+      "firstTargetResponseByteMs": 229
+    },
+    {
+      "target": 4,
+      "advancingFrameMs": 5261,
+      "targetBufferAvailableMs": 5261,
+      "frameAfterTargetBufferMs": 0,
+      "firstTargetResponseByteMs": 732
+    },
+    {
+      "target": 12,
+      "advancingFrameMs": 5743,
+      "targetBufferAvailableMs": 5743,
+      "frameAfterTargetBufferMs": 0,
+      "firstTargetResponseByteMs": 2219
+    }
+  ],
+  "limitations": [
+    "Headless local fixture, not installed UI or public torrent throughput acceptance."
+  ],
+  "latestSeek": {
+    "target": 9,
+    "advancingFrameMs": 70,
+    "targetBufferAvailableMs": 43,
+    "frameAfterTargetBufferMs": 27,
+    "firstTargetResponseByteMs": null
+  },
+  "partialInitial": {
+    "state": "initializing",
+    "file_progress": [],
+    "error": null,
+    "progress_bytes": 98304,
+    "uploaded_bytes": 0,
+    "total_bytes": 1267854,
+    "finished": false,
+    "live": null
+  },
+  "partialBeforeSeeks": {
+    "state": "live",
+    "file_progress": [
+      71822
+    ],
+    "error": null,
+    "progress_bytes": 71822,
+    "uploaded_bytes": 0,
+    "total_bytes": 1267854,
+    "finished": false,
+    "live": {
+      "snapshot": {
+        "downloaded_and_checked_bytes": 71822,
+        "fetched_bytes": 71822,
+        "uploaded_bytes": 0,
+        "downloaded_and_checked_pieces": 5,
+        "total_piece_download_ms": 107,
+        "peer_stats": {
+          "queued": 0,
+          "connecting": 0,
+          "live": 1,
+          "seen": 1,
+          "dead": 0,
+          "not_needed": 0,
+          "steals": 0
+        }
+      },
+      "average_piece_download_time": {
+        "secs": 0,
+        "nanos": 21400000
+      },
+      "download_speed": {
+        "mbps": 0,
+        "human_readable": "0.00 MiB/s"
+      },
+      "upload_speed": {
+        "mbps": 0,
+        "human_readable": "0.00 MiB/s"
+      },
+      "time_remaining": null
+    }
+  },
+  "simultaneous": {
+    "state": "live",
+    "file_progress": [
+      645262
+    ],
+    "error": null,
+    "progress_bytes": 645262,
+    "uploaded_bytes": 0,
+    "total_bytes": 1267854,
+    "finished": false,
+    "live": {
+      "snapshot": {
+        "downloaded_and_checked_bytes": 645262,
+        "fetched_bytes": 645262,
+        "uploaded_bytes": 0,
+        "downloaded_and_checked_pieces": 40,
+        "total_piece_download_ms": 14405,
+        "peer_stats": {
+          "queued": 0,
+          "connecting": 0,
+          "live": 1,
+          "seen": 1,
+          "dead": 0,
+          "not_needed": 0,
+          "steals": 0
+        }
+      },
+      "average_piece_download_time": {
+        "secs": 0,
+        "nanos": 360125000
+      },
+      "download_speed": {
+        "mbps": 0.04337882995605469,
+        "human_readable": "0.04 MiB/s"
+      },
+      "upload_speed": {
+        "mbps": 0,
+        "human_readable": "0.00 MiB/s"
+      },
+      "time_remaining": {
+        "duration": {
+          "secs": 14,
+          "nanos": 407000000
+        },
+        "human_readable": "14s"
+      }
+    }
+  },
+  "rangeTrace": [
+    {
+      "range": "bytes=0-",
+      "waitForFirstByteMs": 3
+    },
+    {
+      "range": "bytes=1267086-",
+      "waitForFirstByteMs": 2
+    },
+    {
+      "range": "bytes=1013038-",
+      "waitForFirstByteMs": 488
+    },
+    {
+      "range": "bytes=250171-",
+      "waitForFirstByteMs": 485
+    },
+    {
+      "range": "bytes=760777-",
+      "waitForFirstByteMs": 997
+    }
+  ],
+  "cachedP95Ms": 86,
+  "partialP95Ms": 5743,
+  "afterTargetBufferP95Ms": 0,
+  "passed": true
+}

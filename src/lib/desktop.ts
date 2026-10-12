@@ -4,6 +4,7 @@ import { animeIdentity, animeTitleKey } from './animeIdentity';
 import { clearInterruptedPlayback, markInterruptedPlayback, interruptedSourceKey } from './desktopInterruptedSession';
 import { invokeDesktopData, type DesktopRequestOptions } from './desktopRequests';
 import { readHideEpisodeSpoilers } from './desktopSpoilers';
+import { DESKTOP_AVAILABILITY_KEY, importDesktopAvailabilityRecords } from './desktopAvailability';
 
 export type LocalPlaybackSource = {
   watchedCoverage?: WatchedCoverage;
@@ -863,6 +864,9 @@ const SAFE_DESKTOP_BACKUP_KEYS = [
   'streamnyaa.desktop.scheduleReminders.v1',
   'streamnyaa.desktop.schedule-update-preferences.v1',
   'streamnyaa.desktop.upcomingWatches.v1',
+  'streamnyaa.desktop.releaseSubscriptions.v2',
+  'streamnyaa.desktop.releaseEpisodes.v2',
+  DESKTOP_AVAILABILITY_KEY,
 ] as const;
 
 export function exportDesktopSettingsBackup() {
@@ -893,7 +897,8 @@ export function importDesktopSettingsBackup(payload: string) {
   SAFE_DESKTOP_BACKUP_KEYS.forEach((key) => {
     const value = keys[key];
     if (typeof value === 'string') {
-      localStorage.setItem(key, value);
+      if (key === DESKTOP_AVAILABILITY_KEY) importDesktopAvailabilityRecords(value);
+      else localStorage.setItem(key, value);
       imported += 1;
     }
   });
@@ -904,6 +909,7 @@ export function importDesktopSettingsBackup(payload: string) {
   emitDesktopEvent(DESKTOP_PLAYER_PREFERENCES_EVENT);
   emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
   emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
+  emitDesktopEvent('streamnyaa.desktop.reminders.imported');
   return imported;
 }
 
@@ -1166,6 +1172,7 @@ function saveCachedDesktopRuntimeStatus(status: DesktopRuntimeStatus | null) {
 }
 
 export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource, settings: DesktopPlaybackSettings) {
+  window.dispatchEvent(new Event('streamnyaa:foreground-work'));
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
     throw new Error('Desktop streaming is only available inside the StreamNyaa desktop app.');
@@ -1313,17 +1320,18 @@ export async function copyDesktopDiagnosticsReport(diagnostics: DesktopDiagnosti
   return text;
 }
 
+const playbackProgressFlights = new Map<string, Promise<DesktopPlaybackProgress>>();
 export async function getLocalPlaybackProgress(torrentId: string) {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (!invoke) {
     throw new Error('Playback progress is only available inside the StreamNyaa desktop app.');
   }
 
-  return invoke<DesktopPlaybackProgress>('get_local_playback_progress', {
-    request: {
-      torrent_id: torrentId,
-    },
-  });
+  const existing = playbackProgressFlights.get(torrentId);
+  if (existing) return existing;
+  const request = invoke<DesktopPlaybackProgress>('get_local_playback_progress', { request: { torrent_id: torrentId } }).finally(() => playbackProgressFlights.delete(torrentId));
+  playbackProgressFlights.set(torrentId, request);
+  return request;
 }
 
 export async function controlLocalPlayer(action: DesktopPlayerControlAction, value?: number) {
@@ -1617,7 +1625,7 @@ export async function listenDesktopPlayerReady(listener: (event: DesktopPlayerRe
 export async function fetchDesktopSourceApi(url: string, options: DesktopRequestOptions = {}): Promise<DesktopSourceApiResponse> {
   const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke;
   if (invoke) {
-    return invokeDesktopData<DesktopSourceApiResponse>(invoke, 'fetch_desktop_source_api', { url }, { deadlineMs: 12_000, ...options });
+    return invokeDesktopData<DesktopSourceApiResponse>(invoke, 'fetch_desktop_source_api', { url }, { deadlineMs: 30_000, ...options });
   }
 
   const response = await fetch(url);

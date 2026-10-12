@@ -1,0 +1,225 @@
+{
+  "startedAt": "2026-10-12T09:07:16.574Z",
+  "completedAt": "2026-10-12T09:07:47.320Z",
+  "transport": "Normal direct public HTTPS POST using final source query builders; no native UI acceptance implied.",
+  "minimumRequestStartSpacingMs": 2100,
+  "fallbackUsed": false,
+  "sourceSha256": {
+    "src/api/desktopHomeBatch.ts": "f82b76e4a047453ab4d1d1413036e105440f81ef5a6f44feccb9f02f282cd6b4",
+    "src/api/desktopExplore.ts": "1baee39206db05672c634486eb07305da0230be207fb4818f1fabc975f3fe65f",
+    "src/api/desktopRecentSchedule.ts": "88b085d56301f92fdde402d09043dd67364b70891429eb2088138c3212ab389a"
+  },
+  "passed": false,
+  "results": [
+    {
+      "name": "explore:new",
+      "startedAt": "2026-10-12T09:07:16.575Z",
+      "querySha256": "db2ee42d8f9d90f555c274ca6f1fd33e7faa05895b46b1b7a4609018df0eefc2",
+      "status": 200,
+      "durationMs": 685,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "29"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true,
+          "confirmedEpisodeRecords": 25,
+          "before": 1791796020
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "explore:trending",
+      "startedAt": "2026-10-12T09:07:18.680Z",
+      "querySha256": "0ada383d9f496aad0cb580032ecdcb7d979db2ba0aaf218fb3970dd8cbe8b954",
+      "status": 200,
+      "durationMs": 2672,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "28"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "explore:airing",
+      "startedAt": "2026-10-12T09:07:21.361Z",
+      "querySha256": "f4ac1ee188e7663088a7ef80db3881da8ec55c6e5c191ffe325c558cabc4194a",
+      "status": 200,
+      "durationMs": 2119,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "27"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "explore:seasonal",
+      "startedAt": "2026-10-12T09:07:23.489Z",
+      "querySha256": "43f0c6b6183641f85e7cc59caf2d67f998d8dd98095a88fda6bed5f0a3f127f2",
+      "status": 200,
+      "durationMs": 613,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "26"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "explore:popular",
+      "startedAt": "2026-10-12T09:07:25.590Z",
+      "querySha256": "508601c843f4ffb8090480aa12abeb86c0bc17ce954622f782de34760a1be5f2",
+      "status": 200,
+      "durationMs": 2906,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "25"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "explore:top",
+      "startedAt": "2026-10-12T09:07:28.499Z",
+      "querySha256": "b4328f7c3aa48b967598f2ca089d3eebfa0180ee076e58befbcd4f7ddeae37c4",
+      "status": 200,
+      "durationMs": 2775,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "24"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "explore:ranking",
+      "startedAt": "2026-10-12T09:07:31.284Z",
+      "querySha256": "b4328f7c3aa48b967598f2ca089d3eebfa0180ee076e58befbcd4f7ddeae37c4",
+      "status": 200,
+      "durationMs": 846,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "23"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "explore:upcoming",
+      "startedAt": "2026-10-12T09:07:33.394Z",
+      "querySha256": "593fcd8c824e1a4126694cf5cfc16e3293e731223baa6acb825c45403790ac52",
+      "status": 200,
+      "durationMs": 608,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "22"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "explore:year",
+      "startedAt": "2026-10-12T09:07:35.494Z",
+      "querySha256": "51ba375b2deb412ee471d07bd436d38bd1d32963dfda4ce02300e7499df3ecc1",
+      "status": 200,
+      "durationMs": 2656,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "21"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "home:visible-shelf-aliases",
+      "startedAt": "2026-10-12T09:07:38.153Z",
+      "querySha256": "ce271ea7f00fd22f8d05f094e162524c93fba70a8df32594e805a309524fdcbe",
+      "durationMs": 8005,
+      "errorKind": "TimeoutError",
+      "passed": false
+    },
+    {
+      "name": "explore:active-date-format-genre-filters",
+      "startedAt": "2026-10-12T09:07:46.160Z",
+      "querySha256": "afcf818f3a677f0a8f55835dd1deaeda0b6b34e2c230973b32872d4fd15df359",
+      "status": 200,
+      "durationMs": 1160,
+      "rateLimit": {
+        "x-ratelimit-limit": "30",
+        "x-ratelimit-remaining": "19"
+      },
+      "graphqlErrorCount": 0,
+      "aliases": [
+        {
+          "alias": "Page",
+          "count": 25,
+          "validShape": true
+        }
+      ],
+      "passed": true
+    }
+  ]
+}

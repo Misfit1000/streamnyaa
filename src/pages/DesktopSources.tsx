@@ -1,8 +1,10 @@
 import { FormEvent, memo, useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Loader2, Play, Search, SlidersHorizontal } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { searchNyaa, type NyaaItem } from '../api/nyaa';
+import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
+import { buildSourceIdentity, parseSourceEpisode, sourceEpisodeIdentity } from '../lib/desktopSourceIdentity';
+import { runSourceSearchPass, sourceSearchPlan, type SourceDiscovery } from '../lib/desktopSourceDiscovery';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter, type TorrentSourceFilter } from '../lib/torrentBadges';
@@ -18,11 +20,6 @@ const RECENT_SOURCE_SEARCHES_KEY = 'streamnyaa.desktop.recentSourceSearches';
 
 function isBatchSource(title = '') {
   return /\b(batch|complete|season pack|complete season|collection)\b/i.test(title);
-}
-
-function sourceEpisode(title = '') {
-  const match = title.match(/\b(?:S\d{1,2})?E?(\d{1,3})\b(?!\s*p)/i);
-  return match?.[1] || '';
 }
 
 function loadRecentSourceSearches() {
@@ -58,9 +55,12 @@ const SourceCard = memo(function SourceCard({
   onStatus: (value: string) => void;
 }) {
   const score = sourceQualityScore(item);
-  const episode = routeEpisode || sourceEpisode(item.title);
+  const evidence = sourceEpisodeIdentity(item.title, routeEpisode);
+  const episode = evidence.episode;
 
   const play = async () => {
+    if (evidence.conflict) { onStatus('This release belongs to a different episode. Choose a matching source.'); return; }
+    if (evidence.needsReview && !window.confirm('The episode in this release could not be verified. Inspect its title before opening it manually. Continue?')) return;
     onStatus(`Opening ${item.title}`);
     try {
       const result = await openLocalSourceNow({
@@ -95,7 +95,7 @@ const SourceCard = memo(function SourceCard({
               <span className="rounded-full border border-white/10 bg-black/28 px-2.5 py-1 text-[11px] font-semibold normal-case tracking-wide text-white/56">
                 Episode {episode}
               </span>
-            ) : null}
+            ) : <span className="text-xs text-amber-300">Episode unverified</span>}
           </div>
           <h2 className="break-words text-[15px] font-semibold leading-6 text-white transition-colors group-hover:text-white/92">{item.title}</h2>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold text-white/48">
@@ -128,7 +128,7 @@ const SourceCard = memo(function SourceCard({
             className="sn-primary-action h-11 px-5"
           >
             <Play className="h-4 w-4 fill-current" />
-            Play
+            Open manually
           </button>
         </div>
       </div>
@@ -137,6 +137,7 @@ const SourceCard = memo(function SourceCard({
 });
 
 export default function DesktopSources() {
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
   const routeAnimeId = searchParams.get('animeId') || '';
@@ -193,18 +194,32 @@ export default function DesktopSources() {
 
   const contextualEpisode = query === initialQuery ? routeEpisode : '';
   const contextualAnimeId = query === initialQuery ? routeAnimeId : '';
+  const requestedSourceEpisode = Number(contextualEpisode) || parseSourceEpisode(query) || undefined;
   const sourceSearchQuery = contextualEpisode
     ? `${query} episode ${String(contextualEpisode).padStart(2, '0')}`
     : query;
+  const sourceSearchKey = ['desktop-sources', sourceSearchQuery, audioMode];
   const searchQuery = useQuery({
-    queryKey: ['desktop-sources', sourceSearchQuery, audioMode],
-    queryFn: ({ signal }) => {
+    queryKey: sourceSearchKey,
+    queryFn: async ({ signal }) => {
       const audioHint = audioMode === 'dual' ? ' dual audio' : '';
-      return searchNyaa(`${sourceSearchQuery}${audioHint}`.trim(), '1_2', '0', '1', {
-        deep: true,
-        pages: 2,
-        wide: audioMode === 'dual',
-        signal,
+      const episode = requestedSourceEpisode;
+      const alias = episode ? query.replace(/\bs(\d{1,2})e\d{1,4}(?:v\d+)?\b/ig, 'Season $1')
+        .replace(/\b(?:episode|ep)\.?\s*\d+\b|\s(?:[-–]\s*)?\d+(?:v\d+)?\s*$/ig, ' ').trim() : query;
+      const identity = buildSourceIdentity({ title: alias });
+      const previous = queryClient.getQueryData<SourceDiscovery<NyaaItem>>(sourceSearchKey);
+      return runSourceSearchPass<NyaaItem>({
+        jobs: previous?.pending?.length ? previous.pending : sourceSearchPlan(identity, episode, audioHint),
+        initial: previous?.pending?.length ? previous.items : undefined,
+        initialState: previous?.pending?.length ? previous : undefined,
+        signal, merge: dedupeNyaaItems, publish: result => queryClient.setQueryData(sourceSearchKey, result),
+        fetch: async (job, deadlineMs) => {
+          const raw = await searchNyaa(job.query, job.category, '0', String(job.page), {
+            deep: false, pages: 1, wide: false, signal, deadlineMs,
+            intent: episode ? { scope: 'episode', episode } : { scope: 'title' },
+          });
+          return { items: raw, complete: raw.complete, stale: raw.stale, fetchedAt: raw.fetchedAt, emptyPage: raw.length === 0, retryAt: raw.retryAt };
+        },
       });
     },
     enabled: query.trim().length >= 2,
@@ -213,7 +228,7 @@ export default function DesktopSources() {
   });
 
   const results = useMemo(() => {
-    const withoutBatches = (searchQuery.data || []).filter((item) => !isBatchSource(item.title));
+    const withoutBatches = (searchQuery.data?.items || []).filter((item) => !isBatchSource(item.title) && !sourceEpisodeIdentity(item.title, requestedSourceEpisode).conflict);
     const filtered = sourceFilter ? withoutBatches.filter((item) => torrentMatchesSourceFilter(item, sourceFilter)) : withoutBatches;
     return [...filtered].sort((a, b) => {
       if (sort === 'seeders') return b.rawSeeders - a.rawSeeders;
@@ -221,7 +236,7 @@ export default function DesktopSources() {
       const score = Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
       return score || b.rawSeeders - a.rawSeeders;
     });
-  }, [searchQuery.data, sort, sourceFilter]);
+  }, [searchQuery.data, sort, sourceFilter, requestedSourceEpisode]);
 
   const runSearch = (value: string) => {
     const nextQuery = value.trim();
@@ -375,12 +390,16 @@ export default function DesktopSources() {
       ) : null}
 
       <section className="mt-6">
+        {searchQuery.data?.complete === false && !searchQuery.isFetching && <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-white/60" role="status">
+          <span>{searchQuery.data.stale ? 'Saved sources are shown while the provider recovers.' : 'More source pages remain to be checked.'}</span>
+          <button type="button" className="sn-secondary-action px-4 py-2" onClick={() => void searchQuery.refetch()}>Find more sources</button>
+        </div>}
         {!query || query.trim().length < 2 ? (
           <div className="sn-empty-state px-6 py-16 text-center text-white/56">
             Search by title plus episode, for example: <span className="font-semibold text-white">Witch Hat Atelier 07</span>
           </div>
         ) : searchQuery.isLoading && !searchQuery.data ? (
-          <DesktopLoadingProgress variant="screen" label="Searching verified sources" percent={46} detail="Exact episode matches are checked before broader title aliases." />
+          <DesktopLoadingProgress variant="screen" label="Searching sources" percent={46} detail="Release filenames are checked for explicit episode conflicts. Inspect manual results before opening." />
         ) : searchQuery.isError && !searchQuery.data ? (
           <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] px-6 py-10 text-center" role="status">
             <p className="text-lg font-semibold text-white">Search couldn’t finish.</p>
@@ -397,8 +416,8 @@ export default function DesktopSources() {
               <span>Batch sources hidden</span>
             </div>
             <div className="sn-glass-panel p-4">
-              <p className="mb-3 text-[11px] font-semibold normal-case tracking-normal text-primary">Recommended Source</p>
-              <SourceCard item={results[0]} animeTitle={query} animeId={contextualAnimeId} episode={contextualEpisode} onStatus={setStatus} />
+              <p className="mb-3 text-[11px] font-semibold normal-case tracking-normal text-primary">Manual source results</p>
+              <SourceCard item={results[0]} animeTitle={query} animeId={contextualAnimeId} episode={String(requestedSourceEpisode || '')} onStatus={setStatus} />
             </div>
             {results.length > 1 ? (
               <div className="pt-2">
@@ -408,7 +427,7 @@ export default function DesktopSources() {
                 </div>
                 <div className="space-y-3">
                   {results.slice(1).map((item) => (
-                    <SourceCard key={item.infoHash || item.link || item.title} item={item} animeTitle={query} animeId={contextualAnimeId} episode={contextualEpisode} onStatus={setStatus} />
+                    <SourceCard key={item.infoHash || item.link || item.title} item={item} animeTitle={query} animeId={contextualAnimeId} episode={String(requestedSourceEpisode || '')} onStatus={setStatus} />
                   ))}
                 </div>
               </div>
@@ -416,8 +435,8 @@ export default function DesktopSources() {
           </div>
         ) : searchQuery.isSuccess ? (
           <div className="sn-empty-state px-6 py-16 text-center">
-            <p className="text-lg font-semibold text-white">No individual episode sources found.</p>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">Try the romanized title, remove the episode number, or search a different release spelling.</p>
+            <p className="text-lg font-semibold text-white">{searchQuery.data?.complete === false ? 'Source search is incomplete.' : 'No individual episode sources found in this view.'}</p>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">{searchQuery.data?.complete === false ? 'Your search is preserved. Continue checking remaining aliases and pages when the provider is ready.' : 'Try the romanized title, remove the episode number, or search a different release spelling.'}</p>
           </div>
         ) : null}
       </section>

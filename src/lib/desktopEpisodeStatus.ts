@@ -7,7 +7,7 @@ export function episodeMetadataStatus(input: {
   const now = input.now ?? Date.now();
   const error = input.error ? desktopDataError('jikan', input.error) : undefined;
   const delay = error?.retryAfterMs ?? (error?.code === 'access-denied' ? 300_000 : 30_000);
-  const retryAt = error ? (input.errorAt || now) + delay : 0;
+  const retryAt = error ? error.retryAt ?? (input.errorAt || now) + delay : 0;
   let message = '';
   if (input.upcoming) message = 'Episode titles will appear when published.';
   else if (!input.enabled) message = input.hasTitles ? '' : 'Episode titles need a verified MyAnimeList identity. Numbered navigation remains available.';
@@ -15,6 +15,7 @@ export function episodeMetadataStatus(input: {
   else if (error) {
     const reason = error.statusCode && error.statusCode >= 500
       ? `The episode provider is temporarily unavailable (HTTP ${error.statusCode}).`
+      : error.code === 'queued' ? 'Episode titles are queued for an update.'
       : error.code === 'rate-limited' ? 'The episode provider has asked us to wait.'
       : error.code === 'access-denied' ? 'The episode provider declined this request.'
       : error.code === 'offline' ? 'Episode updates are offline.'

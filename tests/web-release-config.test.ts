@@ -4,10 +4,17 @@ import test from 'node:test';
 
 type VercelConfig = {
   rewrites?: Array<{ source?: string; destination?: string }>;
+  headers?: Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
 };
 
 const config = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')) as VercelConfig;
 const rewrites = new Map((config.rewrites || []).map((rewrite) => [rewrite.source, rewrite.destination]));
+
+test('immutable browser caching is restricted to build assets', () => {
+  const immutable = (config.headers || []).filter(rule => rule.headers.some(header => header.value.includes('immutable')));
+  assert.deepEqual(immutable.map(rule => rule.source), ['/assets/(.*)']);
+  assert.equal(immutable[0].headers[0].value, 'public, max-age=31536000, immutable');
+});
 
 test('Vercel serves every bookmarkable web route through the SPA shell', () => {
   const expectedRoutes = [

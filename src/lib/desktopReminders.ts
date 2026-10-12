@@ -1,4 +1,6 @@
 import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
+import { buildSourceIdentity, normalizeSourceTitle, type SourceIdentity } from './desktopSourceIdentity';
+import { desktopCanonicalAnimeId, readDesktopAvailabilityRecords, recordDesktopAvailability, type DesktopAvailabilityRecord } from './desktopAvailability';
 
 export const DESKTOP_SCHEDULE_REMINDERS_KEY = 'streamnyaa.desktop.scheduleReminders.v1';
 export const DESKTOP_REMINDER_OFFSET_MINUTES = 10;
@@ -7,6 +9,156 @@ const DESKTOP_REMINDER_FIRE_GRACE_MS = 10 * 60 * 1000;
 const DESKTOP_REMINDERS_EVENT = 'streamnyaa.desktop.scheduleReminders.changed';
 export const DESKTOP_UPCOMING_WATCHES_KEY = 'streamnyaa.desktop.upcomingWatches.v1';
 const DESKTOP_UPCOMING_WATCHES_EVENT = 'streamnyaa.desktop.upcomingWatches.changed';
+export const DESKTOP_RELEASE_SUBSCRIPTIONS_KEY = 'streamnyaa.desktop.releaseSubscriptions.v2';
+export const DESKTOP_RELEASE_EPISODES_KEY = 'streamnyaa.desktop.releaseEpisodes.v2';
+const RELEASE_EVENT = 'streamnyaa.desktop.releaseSubscriptions.changed';
+
+export type DesktopReleaseSubscription = {
+  id: string; title: string; sourceIdentity: SourceIdentity; anilistId?: number; malId?: number;
+  createdAt: number; oneShotEpisode?: number; reminderOffsetMinutes: number;
+};
+export type DesktopReleaseEpisode = {
+  key: string; animeId: string; episode: number; airingAt: number; previousAiringAt?: number;
+  beforeNotifiedAt?: number; airedNotifiedAt?: number; availableNotifiedAt?: number; blocked: boolean;
+};
+type NativeReminderState = { version: 2; subscriptions: DesktopReleaseSubscription[]; episodes: DesktopReleaseEpisode[]; availability: DesktopAvailabilityRecord[] };
+
+function nativeInvoke() { return typeof window === 'undefined' ? undefined : window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke; }
+function readArray<T>(key: string): T[] {
+  try { const value = JSON.parse(window.localStorage.getItem(key) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; }
+}
+export function readDesktopReleaseSubscriptions(): DesktopReleaseSubscription[] {
+  if (typeof window === 'undefined') return [];
+  return readArray<DesktopReleaseSubscription>(DESKTOP_RELEASE_SUBSCRIPTIONS_KEY).filter(value => value && /^(anilist|mal):[1-9]\d*$/.test(value.id)
+    && value.sourceIdentity?.animeId === value.id && typeof value.title === 'string' && Number.isFinite(value.createdAt)).slice(0, 200);
+}
+export function readDesktopReleaseEpisodes(): DesktopReleaseEpisode[] {
+  return typeof window === 'undefined' ? [] : readArray<DesktopReleaseEpisode>(DESKTOP_RELEASE_EPISODES_KEY)
+    .filter(value => value && /^(anilist|mal):[1-9]\d*$/.test(value.animeId) && Number.isInteger(value.episode) && value.episode > 0 && Number.isFinite(value.airingAt)).slice(0, 1200);
+}
+function releaseChanged() { window.dispatchEvent(new CustomEvent(RELEASE_EVENT)); }
+export function subscribeDesktopReleaseSubscriptions(listener: () => void) {
+  const storage = (event: StorageEvent) => { if ([DESKTOP_RELEASE_SUBSCRIPTIONS_KEY, DESKTOP_RELEASE_EPISODES_KEY].includes(event.key || '')) listener(); };
+  window.addEventListener(RELEASE_EVENT, listener); window.addEventListener('storage', storage);
+  return () => { window.removeEventListener(RELEASE_EVENT, listener); window.removeEventListener('storage', storage); };
+}
+function applyNativeReminderState(state: NativeReminderState) {
+  if (state?.version !== 2 || !Array.isArray(state.subscriptions) || !Array.isArray(state.episodes)) return;
+  window.localStorage.setItem(DESKTOP_RELEASE_SUBSCRIPTIONS_KEY, JSON.stringify(state.subscriptions));
+  window.localStorage.setItem(DESKTOP_RELEASE_EPISODES_KEY, JSON.stringify(state.episodes));
+  state.availability?.forEach(record => recordDesktopAvailability(record, false));
+  releaseChanged();
+}
+export async function writeDesktopReleaseSubscriptions(subscriptions: DesktopReleaseSubscription[]) {
+  const invoke = nativeInvoke();
+  if (invoke) {
+    const state = await invoke<NativeReminderState>('sync_desktop_reminder_subscriptions', { subscriptions });
+    applyNativeReminderState(state);
+  } else {
+    window.localStorage.setItem(DESKTOP_RELEASE_SUBSCRIPTIONS_KEY, JSON.stringify(subscriptions)); releaseChanged();
+  }
+}
+export function releaseSubscriptionForAnime(anime: any, oneShotEpisode?: number): DesktopReleaseSubscription | null {
+  const id = desktopCanonicalAnimeId(anime);
+  if (!id) return null;
+  const identity = buildSourceIdentity(anime);
+  return { id, title: String(anime.title_english || anime.title || anime.title_romaji || 'Anime').trim(),
+    sourceIdentity: { ...identity, animeId: id, aliases: identity.aliases.slice(0,20).map(value=>value.slice(0,500)), installmentAliases: identity.installmentAliases.slice(0,20).map(value=>value.slice(0,500)) },
+    anilistId: Number(anime.anilist_id || anime.anilistId) || undefined, malId: Number(anime.mal_id || anime.malId) || undefined,
+    createdAt: Date.now(), oneShotEpisode, reminderOffsetMinutes: DESKTOP_REMINDER_OFFSET_MINUTES };
+}
+export async function toggleDesktopReleaseSubscription(anime: any) {
+  const sub = releaseSubscriptionForAnime(anime);
+  if (!sub) return { saved: false, removed: false, permission: 'error' as DesktopNotificationPermission };
+  const current = readDesktopReleaseSubscriptions();
+  if (current.some(value => value.id === sub.id)) {
+    await writeDesktopReleaseSubscriptions(current.filter(value => value.id !== sub.id));
+    return { saved: false, removed: true, permission: await getDesktopNotificationPermission() };
+  }
+  const permission = await requestDesktopNotificationPermission();
+  if (permission !== 'granted') return { saved: false, removed: false, permission };
+  await writeDesktopReleaseSubscriptions([...current, sub]);
+  await reconcileDesktopReminderSchedule([anime]);
+  return { saved: true, removed: false, permission };
+}
+
+/** Reconcile by qualified identity. Legacy ambiguous IDs wait for one unique catalog match. */
+export async function reconcileDesktopReminderSchedule(items: any[]) {
+  const invoke = nativeInvoke();
+  const current = readDesktopReleaseSubscriptions();
+  const legacy = readDesktopScheduleReminders().filter(value => !value.firedAt);
+  const migrated = new Map<string, string>();
+  for (const reminder of legacy) {
+    const upcoming = readDesktopUpcomingAnimeWatches().find(value => `${value.id}:airing` === reminder.id);
+    const matches = items.filter(anime => upcoming?.anilistId ? String(anime.anilist_id || anime.anilistId) === upcoming.anilistId
+      : upcoming?.malId ? String(anime.mal_id || anime.malId) === upcoming.malId
+        : [anime.anilist_id || anime.anilistId,anime.mal_id || anime.malId].some(id=>id && String(id) === String(reminder.animeId))
+          && normalizeSourceTitle(String(anime.title_english || anime.title || anime.title_romaji || '')) === normalizeSourceTitle(reminder.title));
+    const identities = new Set(matches.map(desktopCanonicalAnimeId));
+    if (identities.size !== 1 || !matches.length) continue;
+    const anime = matches[0]; const episode = Number(reminder.episode);
+    if (!Number.isInteger(episode) || episode <= 0) continue;
+    const sub = releaseSubscriptionForAnime(anime);
+    if (!sub) continue;
+    sub.reminderOffsetMinutes = reminder.reminderOffsetMinutes;
+    if (!current.some(value => value.id === sub.id)) current.push(sub);
+    migrated.set(reminder.id, sub.id);
+  }
+  if (migrated.size) await writeDesktopReleaseSubscriptions(current);
+  const schedule: Array<{animeId:string;episode:number;airingAt:number;blocked:boolean;reminderOffsetMinutes?:number}> = items.flatMap(anime => {
+    const id = desktopCanonicalAnimeId(anime);
+    const sub = current.find(value => value.id === id);
+    const episode = Number(anime.airingEpisode || anime.episode || anime.nextAiringEpisode?.episode);
+    const raw = Number(anime.airingAt || anime.nextAiringEpisode?.airingAt);
+    const airingAt = raw > 1e12 ? raw : raw * 1000;
+    if (!sub || !Number.isInteger(episode) || episode <= 0 || !Number.isFinite(airingAt) || airingAt <= 0 || sub.oneShotEpisode && sub.oneShotEpisode !== episode) return [];
+    const text = ['scheduleStatus','airingStatus','broadcastStatus','episodeStatus','releaseStatus','delayStatus','status','message','notice'].map(key => String(anime[key] || '')).join(' ');
+    const blocked = ['cancelled','canceled','isCancelled','isCanceled','postponed','isPostponed','isDelayed','delayed'].some(key => anime[key]) || /cancel|postpone|suspend|hiatus|delay/i.test(text);
+    return [{ animeId:id, episode, airingAt, blocked }];
+  });
+  // Preserve exact scheduled episodes from legacy records even when the latest schedule moved on.
+  for (const reminder of legacy.filter(value => migrated.has(value.id))) {
+    const id = migrated.get(reminder.id)!;
+    const existing=schedule.find(value => value.animeId === id && value.episode === Number(reminder.episode));
+    if (existing) existing.reminderOffsetMinutes=reminder.reminderOffsetMinutes;
+    else schedule.push({ animeId:id, episode:Number(reminder.episode), airingAt:reminder.airingAt, blocked:false,reminderOffsetMinutes:reminder.reminderOffsetMinutes });
+  }
+  if (invoke && schedule.length) await invoke('reconcile_desktop_reminder_schedule', { items: schedule });
+  if (migrated.size) writeDesktopScheduleReminders(readDesktopScheduleReminders().filter(value => !migrated.has(value.id)));
+}
+
+/** Native timers keep working while the window is hidden; this bridge only mirrors durable state. */
+export async function startDesktopReminderBridge() {
+  const invoke = nativeInvoke(); const listen = window.__TAURI__?.event?.listen;
+  if (!invoke || !listen) return () => {};
+  const unlisten = await listen<NativeReminderState>('streamnyaa-reminders-changed', event => applyNativeReminderState(event.payload));
+  const unavailability = await listen<DesktopAvailabilityRecord>('streamnyaa-source-availability', event => recordDesktopAvailability(event.payload, false));
+  const local = readDesktopReleaseSubscriptions();
+  const localAvailability = readDesktopAvailabilityRecords();
+  const hadLocal = window.localStorage.getItem(DESKTOP_RELEASE_SUBSCRIPTIONS_KEY) !== null;
+  const permission = async () => { const granted = await getDesktopNotificationPermission(); await invoke('set_desktop_reminder_permission', { granted: granted === 'granted' }); };
+  const syncAvailability = async (records: DesktopAvailabilityRecord[]) => {
+    for (const record of records) await invoke('record_desktop_source_availability', { record });
+  };
+  const importReminders = () => { void (async () => {
+    const records = readDesktopAvailabilityRecords();
+    const state = await invoke<NativeReminderState>('sync_desktop_reminder_subscriptions', { subscriptions: readDesktopReleaseSubscriptions(), episodes: readDesktopReleaseEpisodes() });
+    applyNativeReminderState(state);
+    await syncAvailability(records);
+  })().catch(() => undefined); };
+  try {
+    const native = await invoke<NativeReminderState>('get_desktop_reminder_state', {});
+    if (hadLocal) {
+      const state = await invoke<NativeReminderState>('sync_desktop_reminder_subscriptions', { subscriptions: local, episodes: readDesktopReleaseEpisodes() });
+      applyNativeReminderState(state);
+    } else applyNativeReminderState(native);
+    await syncAvailability(localAvailability);
+    await permission();
+  } catch (error) { unlisten(); unavailability(); throw error; }
+  window.addEventListener('focus', permission);
+  window.addEventListener('streamnyaa.desktop.reminders.imported', importReminders);
+  return () => { unlisten(); unavailability(); window.removeEventListener('focus', permission); window.removeEventListener('streamnyaa.desktop.reminders.imported', importReminders); };
+}
 
 export type DesktopNotificationPermission = 'granted' | 'default' | 'denied' | 'unsupported' | 'error';
 
@@ -34,8 +186,19 @@ export type DesktopUpcomingAnimeWatch = {
 };
 
 function upcomingWatchId(anime: any) {
-  const animeId = String(anime?.anilist_id || anime?.id || anime?.mal_id || anime?.title || '').trim();
+  const animeId = desktopCanonicalAnimeId(anime);
   return animeId ? `upcoming:${animeId}` : '';
+}
+
+function upcomingWatchMatches(watch: DesktopUpcomingAnimeWatch, anime: any) {
+  const anilist=String(anime?.anilist_id || anime?.anilistId || '');
+  const mal=String(anime?.mal_id || anime?.malId || '');
+  const pairs=[[watch.anilistId,anilist],[watch.malId,mal]].filter(([left,right])=>left && right);
+  if (pairs.length) return pairs.every(([left,right])=>left===right);
+  if (watch.anilistId || watch.malId) return false;
+  if (watch.animeId?.includes(':')) return watch.animeId === desktopCanonicalAnimeId(anime);
+  return Boolean(watch.animeId && [anilist,mal].includes(watch.animeId)
+    && normalizeSourceTitle(watch.title)===normalizeSourceTitle(String(anime?.title_english || anime?.title || anime?.title_romaji || '')));
 }
 
 function normalizeUpcomingWatch(value: any): DesktopUpcomingAnimeWatch | null {
@@ -93,7 +256,8 @@ export function subscribeDesktopUpcomingAnimeWatches(listener: () => void) {
 
 export function isDesktopUpcomingAnimeWatched(anime: any) {
   const id = upcomingWatchId(anime);
-  return Boolean(id && readDesktopUpcomingAnimeWatches().some((watch) => watch.id === id));
+  return Boolean(id && readDesktopUpcomingAnimeWatches().some((watch) => watch.id === id || upcomingWatchMatches(watch,anime)))
+    || readDesktopReleaseSubscriptions().some(value => value.id === desktopCanonicalAnimeId(anime));
 }
 
 export async function toggleDesktopUpcomingAnimeWatch(anime: any) {
@@ -101,9 +265,15 @@ export async function toggleDesktopUpcomingAnimeWatch(anime: any) {
   const title = String(anime?.title_english || anime?.title || anime?.title_romaji || 'Upcoming anime').trim();
   if (!id) return { saved: false, removed: false, permission: 'error' as DesktopNotificationPermission };
   const current = readDesktopUpcomingAnimeWatches();
-  if (current.some((watch) => watch.id === id)) {
-    writeDesktopUpcomingAnimeWatches(current.filter((watch) => watch.id !== id));
-    writeDesktopScheduleReminders(readDesktopScheduleReminders().filter((reminder) => reminder.id !== `${id}:airing`));
+  const existing=current.find(watch=>watch.id===id || upcomingWatchMatches(watch,anime));
+  if (existing) {
+    writeDesktopUpcomingAnimeWatches(current.filter((watch) => watch.id !== existing.id));
+    writeDesktopScheduleReminders(readDesktopScheduleReminders().filter((reminder) => reminder.id !== `${existing.id}:airing`));
+    if (nativeInvoke()) await writeDesktopReleaseSubscriptions(readDesktopReleaseSubscriptions().filter(value => value.id !== desktopCanonicalAnimeId(anime)));
+    return { saved: false, removed: true, permission: await getDesktopNotificationPermission() };
+  }
+  if (readDesktopReleaseSubscriptions().some(value => value.id === desktopCanonicalAnimeId(anime))) {
+    await writeDesktopReleaseSubscriptions(readDesktopReleaseSubscriptions().filter(value => value.id !== desktopCanonicalAnimeId(anime)));
     return { saved: false, removed: true, permission: await getDesktopNotificationPermission() };
   }
   const permission = await requestDesktopNotificationPermission();
@@ -113,9 +283,9 @@ export async function toggleDesktopUpcomingAnimeWatch(anime: any) {
   const episode = Number(anime?.nextAiringEpisode?.episode || anime?.airingEpisode || 1);
   const next: DesktopUpcomingAnimeWatch = {
     id,
-    animeId: String(anime?.anilist_id || anime?.id || anime?.mal_id || '').trim() || undefined,
-    anilistId: String(anime?.anilist_id || anime?.id || '').trim() || undefined,
-    malId: String(anime?.mal_id || '').trim() || undefined,
+    animeId: desktopCanonicalAnimeId(anime) || undefined,
+    anilistId: String(anime?.anilist_id || anime?.anilistId || '').trim() || undefined,
+    malId: String(anime?.mal_id || anime?.malId || '').trim() || undefined,
     title,
     createdAt: Date.now(),
     airingAt,
@@ -138,6 +308,14 @@ export async function toggleDesktopUpcomingAnimeWatch(anime: any) {
       },
     ]);
   }
+  if (nativeInvoke()) {
+    const subscription = releaseSubscriptionForAnime(anime);
+    if (subscription) {
+      subscription.reminderOffsetMinutes = 0;
+      await writeDesktopReleaseSubscriptions([...readDesktopReleaseSubscriptions().filter(value => value.id !== subscription.id), subscription]);
+      await reconcileDesktopReminderSchedule([anime]);
+    }
+  }
   return { saved: true, removed: false, permission };
 }
 
@@ -148,11 +326,8 @@ export function resolveDesktopUpcomingAnimeWatches(scheduleItems: any[]) {
   let resolved = 0;
   const nextWatches = current.map((watch) => {
     if (watch.airingAt) return watch;
-    const match = scheduleItems.find((anime) => {
-      const ids = [anime?.anilist_id, anime?.id, anime?.mal_id].filter(Boolean).map(String);
-      if ([watch.animeId, watch.anilistId, watch.malId].filter(Boolean).some((id) => ids.includes(String(id)))) return true;
-      return String(anime?.title || '').trim().toLowerCase() === watch.title.toLowerCase();
-    });
+    const matches=scheduleItems.filter(anime=>upcomingWatchMatches(watch,anime));
+    const match=new Set(matches.map(desktopCanonicalAnimeId)).size===1 ? matches[0] : undefined;
     const rawAiringAt = Number(match?.airingAt || match?.nextAiringEpisode?.airingAt || 0);
     if (!rawAiringAt) return watch;
     const airingAt = rawAiringAt > 1_000_000_000_000 ? rawAiringAt : rawAiringAt * 1000;
@@ -249,10 +424,17 @@ export async function getDesktopNotificationPermission(): Promise<DesktopNotific
 
 export async function requestDesktopNotificationPermission(): Promise<DesktopNotificationPermission> {
   const current = await getDesktopNotificationPermission();
-  if (current !== 'default') return current;
+  if (current !== 'default') {
+    const invoke = nativeInvoke();
+    if (invoke) void invoke('set_desktop_reminder_permission', { granted: current === 'granted' }).catch(() => undefined);
+    return current;
+  }
   try {
     const result = await requestPermission();
-    return result === 'granted' || result === 'denied' ? result : 'default';
+    const permission = result === 'granted' || result === 'denied' ? result : 'default';
+    const invoke = nativeInvoke();
+    if (invoke) void invoke('set_desktop_reminder_permission', { granted: permission === 'granted' }).catch(() => undefined);
+    return permission;
   } catch {
     return 'error';
   }

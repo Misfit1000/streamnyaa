@@ -82,7 +82,17 @@ export function preloadDesktopRoute(pathname: string) {
 
 const watchDataPreloads = new Map<string, Promise<void>>();
 
-export function preloadDesktopWatchData(pathWithSearch: string, includeSources = false) {
+function seedIntentData(queryKey: readonly unknown[], value: any) {
+  const fetchedAt = Number(value?.streamnyaa?.fetchedAt || value?.fetchedAt) || Date.now();
+  const current = desktopQueryClient.getQueryState(queryKey);
+  // A late stale hover response must not replace a newer foreground result or
+  // turn old provider data into a newly fetched snapshot.
+  if (!current?.data || current.dataUpdatedAt <= fetchedAt) {
+    desktopQueryClient.setQueryData(queryKey, value, { updatedAt: fetchedAt });
+  }
+}
+
+export function preloadDesktopWatchData(pathWithSearch: string, includeSources = false, intentSignal?: AbortSignal) {
   if (typeof window === 'undefined') return Promise.resolve();
   const url = new URL(pathWithSearch, window.location.origin);
   const match = url.pathname.match(/^\/(?:watch|anime)\/([^/]+)/);
@@ -91,12 +101,25 @@ export function preloadDesktopWatchData(pathWithSearch: string, includeSources =
   const episode = Math.max(1, Number(url.searchParams.get('ep') || 1));
   const preloadKey = `${routeId}|${episode}|${includeSources ? 'sources' : 'metadata'}`;
   const existing = watchDataPreloads.get(preloadKey);
-  if (existing) return existing;
+  if (existing && !intentSignal) return existing;
 
   const anilistId = url.searchParams.get('anilistId') || url.searchParams.get('aid') || '';
   const malIdHint = url.searchParams.get('malId') || url.searchParams.get('mid') || '';
   const detailsKey = desktopAnimeQueryKey(routeId, anilistId, malIdHint);
-  const preload = desktopQueryClient.fetchQuery({
+  const detailsOptions = {
+    signal: intentSignal, priority: includeSources && !intentSignal ? 'foreground' as const : 'prefetch' as const,
+    anilistId: anilistId || undefined, malId: malIdHint || undefined,
+    routeTitle: routeId.replace(/^\d+-?/, '').replace(/-/g, ' '),
+  };
+  // Intent requests own their cancellation. Never cancel a foreground query's subscriber.
+  const cached = desktopQueryClient.getQueryState<{ data: any }>(detailsKey);
+  const details = intentSignal
+    ? cached?.data && Date.now() - cached.dataUpdatedAt < 15 * 60_000 ? Promise.resolve(cached.data)
+      : fetchAnimeDetails(routeId, detailsOptions).then(value => {
+        if (!intentSignal.aborted) seedIntentData(detailsKey, value);
+        return value;
+      })
+    : desktopQueryClient.fetchQuery({
     queryKey: detailsKey,
     queryFn: ({ signal }) => fetchAnimeDetails(routeId, {
       signal, priority: includeSources ? 'foreground' : 'prefetch',
@@ -105,13 +128,21 @@ export function preloadDesktopWatchData(pathWithSearch: string, includeSources =
       routeTitle: routeId.replace(/^\d+-?/, '').replace(/-/g, ' '),
     }),
     staleTime: 1000 * 60 * 15,
-  }).then(async ({ data }) => {
+  });
+  const preload = details.then(async ({ data }) => {
+    if (intentSignal?.aborted) return;
     const malId = data?.mal_id ? String(data.mal_id) : undefined;
     const title = String(data?.title_english || data?.title_romaji || data?.title || '').trim();
     const tasks: Promise<unknown>[] = [];
     if (malId) {
       const page = Math.max(1, Math.ceil(episode / 100));
-      tasks.push(desktopQueryClient.prefetchQuery({
+      const episodeKey = ['episodes', malId, page, 3];
+      if (intentSignal) {
+        const saved = desktopQueryClient.getQueryState(episodeKey);
+        if (!saved?.data || Date.now() - saved.dataUpdatedAt > 10 * 60_000) tasks.push(fetchAnimeEpisodeWindow(malId, page, { signal: intentSignal, priority: 'prefetch' }).then(value => {
+          if (!intentSignal.aborted) seedIntentData(episodeKey, value);
+        }));
+      } else tasks.push(desktopQueryClient.prefetchQuery({
         queryKey: ['episodes', malId, page, 3],
         queryFn: ({ signal }) => fetchAnimeEpisodeWindow(malId, page, { signal, priority: 'prefetch' }),
         staleTime: 1000 * 60 * 10,
@@ -122,14 +153,17 @@ export function preloadDesktopWatchData(pathWithSearch: string, includeSources =
         deep: false,
         pages: 1,
         wide: false,
+        intent: { scope: 'episode', episode },
+        maxAgeMs: 60_000,
         priority: 'prefetch',
+        signal: intentSignal,
       }));
     }
     await Promise.allSettled(tasks);
   }).then(() => undefined).catch(() => undefined).finally(() => {
     window.setTimeout(() => watchDataPreloads.delete(preloadKey), 30_000);
   });
-  watchDataPreloads.set(preloadKey, preload);
+  if (!intentSignal) watchDataPreloads.set(preloadKey, preload);
   return preload;
 }
 

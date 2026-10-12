@@ -82,7 +82,7 @@ local ok, error_message = pcall(function()
   state.cache_buffering_percent = 37
   check(buffering_display_percent() == 37, "Use measured MPV cache fill")
   state.cache_buffering_percent, state.demuxer_cache_duration = nil, 9
-  check(buffering_display_percent() == 50, "Seconds fallback must use the actual buffer target")
+  check(buffering_display_percent() == 100, "Seconds fallback must use the actual buffer target")
   state.demuxer_cache_duration, state.cache_end = 0, 600
   check(buffered_seconds() == 0, "Fresh zero duration must defeat stale cache-end")
   state.demuxer_cache_duration = nil
@@ -109,10 +109,10 @@ local ok, error_message = pcall(function()
   event("file-loaded")
   check(ui.recovery_attempt == attempt, "Reload events must preserve the recovery deadline")
   state.idle, state.duration = true, 0
-  now = now + 11
+  now = now + 13
   check_startup_stream_stall()
   check(ui.recovery_attempt.kind == "backup", "Idle decoder reload must still reach backup")
-  now = now + 11
+  now = now + 13
   check_startup_stream_stall()
   check(ui.recovery_terminal, "Unanswered backup must stop infinite loading")
   local command_count = #commands
@@ -140,7 +140,7 @@ local ok, error_message = pcall(function()
   reset()
   request_same_source_recovery("watchdog")
   seek_relative(-60)
-  check(ui.recovery_attempt.position == 60, "A backward seek must replace a pending recovery checkpoint")
+  check(ui.recovery_attempt == nil, "A newer backward seek invalidates the pending recovery deadline")
   reset()
   state.has_started_playback, state.pos = false, 0
   observers["time-pos"]("time-pos", 120)
@@ -155,7 +155,20 @@ local ok, error_message = pcall(function()
   check_recovery_deadline()
   now = now + 60
   check_recovery_deadline()
-  check(ui.recovery_attempt.kind == "retry", "A deliberate pause must suspend recovery deadlines")
+  check(ui.recovery_attempt == nil, "A deliberate pause invalidates old recovery deadlines")
+
+  reset()
+  request_same_source_recovery("watchdog")
+  for step = 1, 5 do
+    now = now + 10
+    state.demuxer_cache_duration = step
+    check_recovery_deadline()
+    check(ui.recovery_attempt.kind == "retry", "Selected-media buffer progress must extend recovery within its bound")
+  end
+  now = now + 11
+  state.demuxer_cache_duration = 6
+  check_recovery_deadline()
+  check(ui.recovery_attempt.kind == "backup", "Buffer progress must not exceed the continuous sixty-second recovery bound")
 
   reset()
   ui.stall_last_pos, ui.stall_last_buffer, ui.stall_last_progress_at = 120, 0, now - 1
@@ -354,6 +367,11 @@ local ok, error_message = pcall(function()
   check(not ui.recovery_terminal, "Late source failures must not replace the current stream")
   messages["streamnyaa-playback-failed"]("7")
   check(ui.recovery_terminal, "Current source failures must remain actionable")
+  messages["streamnyaa-stream-metrics"](require("mp.utils").format_json({generation=7,fields={state="Ready",loading_percent="96"}}))
+  local current_metrics_count = #commands
+  check(commands[current_metrics_count-1][2] == "user-data/streamnyaa/state" and commands[current_metrics_count-1][3] == "Ready", "Current generation metrics must be applied in one message")
+  messages["streamnyaa-stream-metrics"](require("mp.utils").format_json({generation=6,fields={state="Stale",loading_percent="1"}}))
+  check(#commands == current_metrics_count, "Late stream metrics cannot overwrite the latest generation")
   begin_first_video_frame_handoff()
   check(not hold_cover_for_first_video_frame(), "Decoded video must not retain a timed artwork layer")
 
@@ -380,6 +398,21 @@ local ok, error_message = pcall(function()
   state.paused_for_cache = false
   ui.visible = true
   draw(true, "test-controls")
+  point_at("seek")
+  local before_seek_drag = #commands
+  handle_mouse_down()
+  for step = 1, 8 do
+    properties["mouse-pos"].x = properties["mouse-pos"].x + 15
+    now = now + 0.1
+    handle_mouse_move()
+  end
+  local preview_seeks = 0
+  for index = before_seek_drag + 1, #commands do if commands[index][1] == "seek" then preview_seeks = preview_seeks + 1 end end
+  check(preview_seeks == 0, "Seekbar movement must preview without issuing network seeks")
+  handle_mouse_up()
+  local committed_seeks = 0
+  for index = before_seek_drag + 1, #commands do if commands[index][1] == "seek" then committed_seeks = committed_seeks + 1; check(commands[index][3] == "absolute+exact", "Seek release must commit an exact target") end end
+  check(committed_seeks == 1, "Seek release must commit exactly once")
   for cycle = 1, 30 do
     point_at("settings")
     handle_mouse_down()
@@ -594,7 +627,7 @@ local ok, error_message = pcall(function()
     for index = 1, 30 do
       local name = debug.getupvalue(callback, index)
       if not name then break end
-      if name == "coverage" then sample = callback; break end
+      if name == "coverage_sample" then sample = callback; break end
     end
   end
   check(type(sample) == "function", "Coverage timer must be registered independently of other timers")

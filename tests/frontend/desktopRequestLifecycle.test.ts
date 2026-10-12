@@ -64,8 +64,42 @@ describe('shared native request lifecycle', () => {
     await expect(invokeDesktopData((async () => { throw { code: 'rate-limited', provider: 'anilist', retryAfterMs: 15000, message: 'Please wait' }; }) as any, 'metadata', { id: 5 }))
       .rejects.toMatchObject({ code: 'rate-limited', retryAfterMs: 15000 });
   });
+  it('allows catalog admission wait separately from the HTTP timeout',async()=>{
+    vi.useFakeTimers();
+    const work=deferred();
+    const invoke=vi.fn(()=>work.promise);
+    const pending=invokeDesktopData(invoke as any,'fetch_desktop_metadata_api',{request:{provider:'anilist',body:{query:'queued-fixture'}}});
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(invoke.mock.calls[0][1]).toMatchObject({deadlineMs:80_000});
+    work.resolve({data:'admitted'});
+    await expect(pending).resolves.toMatchObject({data:'admitted'});
+  });
 });
 describe('active-screen recovery', () => {
+  it.each([['desktop-schedule-week', 'background-budget'], ['desktop-watch-sources', 'discovery-budget']])('does not turn intentionally bounded %s discovery into an automatic drain loop', async (prefix, partialReason) => {
+    vi.useFakeTimers();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const request = vi.fn().mockResolvedValue({ data: [], complete: true });
+    const observer = new QueryObserver(client, { queryKey: [prefix, 'bounded'], queryFn: request,
+      initialData: { data: [], complete: false, stale: true, partialReason }, staleTime: Infinity });
+    const unsubscribe = observer.subscribe(() => {}), stop = installDesktopAutoRecovery(client);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(request).not.toHaveBeenCalled();
+    stop(); unsubscribe(); client.clear();
+  });
+  it('resumes provider-interrupted source discovery only after its absolute retry deadline', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(100_000);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const request = vi.fn().mockResolvedValue({ items: [], complete: true });
+    const observer = new QueryObserver(client, { queryKey: ['desktop-watch-sources', 'interrupted'], queryFn: request,
+      initialData: { items: [], complete: false, partialReason: 'provider-failure', retryAt: 160_000 }, staleTime: Infinity });
+    const unsubscribe = observer.subscribe(() => {}), stop = installDesktopAutoRecovery(client);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(request).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2);
+    expect(request).toHaveBeenCalledTimes(1);
+    stop(); unsubscribe(); client.clear();
+  });
   it('does not retry permanent failures or bypass a fresh cooldown', async () => {
     vi.useFakeTimers();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -94,5 +128,19 @@ describe('active-screen recovery', () => {
     await vi.advanceTimersByTimeAsync(70000);
     expect(timeline).toHaveBeenCalledTimes(1);
     stop(); unsubscribe(); unsubscribeAccount(); client.clear();
+  });
+  it('does not reset an absolute cooldown when the same failure is observed again',async()=>{
+    vi.useFakeTimers();vi.setSystemTime(100_000);
+    const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+    const failure={code:'rate-limited',provider:'anilist',retryable:true,retryAt:160_000,retryAfterMs:60_000};
+    const query=vi.fn().mockRejectedValue(failure);
+    const observer=new QueryObserver(client,{queryKey:['desktop-explore-v3','absolute-deadline'],queryFn:query});
+    const unsubscribe=observer.subscribe(()=>{}),stop=installDesktopAutoRecovery(client);
+    await vi.advanceTimersByTimeAsync(50_000);
+    await client.refetchQueries({queryKey:['desktop-explore-v3','absolute-deadline']});
+    expect(query).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect(query).toHaveBeenCalledTimes(3);
+    stop();unsubscribe();client.clear();
   });
 });

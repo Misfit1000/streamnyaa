@@ -12,11 +12,15 @@ import { getCurrentAnimeSeason } from '../lib/currentSeason';
 import { desktopWatchOrBrowsePath, desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { desktopPosterCandidates } from '../lib/desktopArtwork';
 import { episodeAvailabilityLabel } from '../lib/animeEpisodes';
-import { preloadDesktopRoute, preloadDesktopWatchData } from '../lib/desktopRoutePreload';
+import { preloadDesktopRoute } from '../lib/desktopRoutePreload';
 import { primeDesktopWatchSnapshot, readCachedWatchTitles } from '../lib/desktopWatchSnapshot';
 import { readCachedExploreTitles, exploreCatalogCacheKey, readDesktopExploreCatalog, writeDesktopExploreCatalog } from '../lib/desktopExploreCache';
 import { jikanAdultTitle, fetchExplorePage, type ExplorePage, type ExploreRequest, type ExploreService } from '../api/desktopExplore';
 import { useStore } from '../store/useStore';
+import { exploreYear, isYearScope, rememberExploreYear, switchExploreMode } from '../lib/desktopExploreFilters';
+import { recentFeedBound } from '../api/desktopRecentSchedule';
+import { desktopOriginStaleTime } from '../lib/desktopOriginFreshness';
+import { useDesktopCatalogAvailability } from '../lib/desktopCatalogAvailability';
 
 type ExploreMode = 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year' | 'ranking';
 type ExploreDensity = 'poster' | 'compact' | 'list';
@@ -122,7 +126,6 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
   const prepare = () => {
     primeDesktopWatchSnapshot(path, anime);
     void preloadDesktopRoute(path);
-    void preloadDesktopWatchData(path, false);
   };
 
   const imageNode = image && !imageFailed ? (
@@ -187,6 +190,7 @@ function ExploreSkeleton() {
 
 export default function DesktopExplore() {
   const { isAdmin } = useAuth();
+  const availability = useDesktopCatalogAvailability();
   const [organization, setOrganization] = useState(readLibraryOrganization);
   useEffect(() => {
     const refresh = () => setOrganization(readLibraryOrganization());
@@ -203,7 +207,8 @@ export default function DesktopExplore() {
   const format = searchParams.get('format') || 'Any';
   const status = searchParams.get('status') || 'Any';
   const sort = searchParams.get('order') || 'best';
-  const year = Math.max(1960, Math.min(currentYear + 1, Math.floor(Number(searchParams.get('year')) || currentYear)));
+  const selectedYear = exploreYear(mode, searchParams, currentYear);
+  const year = selectedYear ?? currentYear;
   const density = (['poster', 'compact', 'list'].includes(searchParams.get('view') || '') ? searchParams.get('view') : 'poster') as ExploreDensity;
   const ranking = mode === 'ranking';
   const hideCompleted = searchParams.get('hideCompleted') === '1';
@@ -214,10 +219,10 @@ export default function DesktopExplore() {
   const releaseDays = ['7', '30', '90'].includes(searchParams.get('released') || '') ? searchParams.get('released')! : 'all';
   const releasedAfter = useMemo(() => releaseDays === 'all' ? undefined : new Date(Date.now() - Number(releaseDays) * 86_400_000).toISOString().slice(0, 10), [releaseDays]);
   const request = useMemo<ExploreRequest>(() => ({ mode, query, genre, format, status, sort, service, adult,
-    year: ['seasonal', 'year'].includes(mode) || (searchParams.has('year')) ? year : undefined,
+    year: selectedYear,
     season: mode === 'seasonal' ? season : undefined,
     releasedAfter,
-  }), [mode, query, genre, format, status, sort, service, adult, year, season, releasedAfter, ranking, searchParams]);
+  }), [mode, query, genre, format, status, sort, service, adult, selectedYear, season, releasedAfter]);
   const catalogCacheKey = exploreCatalogCacheKey({ ...request, block: ranking ? block : 1, version: mode === 'new' ? 7 : 5 });
   const readSavedCatalog = () => readDesktopExploreCatalog(catalogCacheKey) || (mode === 'new' ? readDesktopExploreCatalog(catalogCacheKey.replace('version:7','version:6')) : null);
   const lastValidFeed = useRef<{key: string; page: ExplorePage} | null>(null);
@@ -227,7 +232,7 @@ export default function DesktopExplore() {
     queryKey: ['desktop-explore-v3', catalogCacheKey],
     initialPageParam: { page: firstPage, service: service as ExploreService, before: undefined as number | undefined },
     queryFn: async ({ signal, pageParam }) => {
-      const before = pageParam.page === firstPage ? Math.floor(Date.now() / 1000) : pageParam.before;
+      const before = pageParam.page === firstPage ? recentFeedBound() : pageParam.before;
       const result = await fetchExplorePage({ ...request, service: pageParam.service, before, releasedAfter: mode === "new" && releaseDays !== "all" ? new Date((before || Date.now()/1000)*1000 - Number(releaseDays)*86_400_000).toISOString().slice(0,10) : request.releasedAfter,
         allowFallback: pageParam.page === 1 }, pageParam.page, signal);
       if (mode === 'new' && pageParam.page === 1 && result.data.some(item => item.catalogAlternative)) {
@@ -249,17 +254,18 @@ export default function DesktopExplore() {
       return { pages: cached.pages as ExplorePage[], pageParams: cached.pages.map((page: ExplorePage, index: number) => ({ page: page.page, service: index === 0 ? service as ExploreService : page.service, before: page.before })) };
     },
     initialDataUpdatedAt: () => Math.min(readSavedCatalog()?.savedAt || 0, readSavedCatalog()?.data?.pages?.[0]?.fetchedAt || 0),
-    staleTime: state => state.state.data?.pages[0]?.paginationVersion !== 2 || state.state.data?.pages[0]?.stale ? 0 : mode === 'new' ? 60_000 : query ? 1000 * 60 * 10 : 1000 * 60 * 25,
+    staleTime: state => state.state.data?.pages[0]?.paginationVersion !== 2 || state.state.data?.pages[0]?.stale ? 0
+      : desktopOriginStaleTime(mode === 'new' ? 60_000 : query ? 1000 * 60 * 10 : 1000 * 60 * 25, state.state),
     refetchOnWindowFocus: true,
     gcTime: 1000 * 60 * 90,
     retry: false,
     retryDelay: (attempt) => 250 + attempt * 500,
     refetchOnReconnect: true,
-    refetchInterval: query => query.state.error || query.state.data?.pages[0]?.fallback || query.state.data?.pages[0]?.stale ? 300_000 : false,
+    refetchInterval: false, // The shared recovery coordinator owns provider recovery.
   });
 
   const [retryClock, setRetryClock] = useState(Date.now());
-  const retryAt = catalogQuery.errorUpdatedAt + Number((catalogQuery.error as {retryAfterMs?:number} | null)?.retryAfterMs || 0);
+  const retryAt = Number((catalogQuery.error as {retryAt?:number} | null)?.retryAt) || catalogQuery.errorUpdatedAt + Number((catalogQuery.error as {retryAfterMs?:number} | null)?.retryAfterMs || 0);
   const retrySeconds = Math.max(0, Math.ceil((retryAt - retryClock)/1000));
   useEffect(() => {
     if (!catalogQuery.isError || retryAt <= Date.now()) return;
@@ -298,14 +304,14 @@ export default function DesktopExplore() {
   const results = useMemo(() => {
     // Preserve item references so appending a page does not invalidate every
     // memoized poster card just to attach its rank.
-    let items = loadedItems;
+    let items = loadedItems.filter(availability.visible);
     if (hideCompleted) items = items.filter((anime) => organization.entries[organizationIdentity(anime)]?.status !== 'Completed');
     if (ranking) return items; // Service filters run before ranking/pagination.
     if (genre !== 'Any') items = items.filter((anime) => genresFor(anime).some((item) => item.toLowerCase() === genre.toLowerCase()));
     if (format !== 'Any') items = items.filter((anime) => formatFor(anime).toLowerCase() === format.toLowerCase());
     if (status !== 'Any') items = items.filter((anime) => statusFor(anime) === status);
     return items;
-  }, [loadedItems, format, genre, status, ranking, hideCompleted, organization]);
+  }, [loadedItems, format, genre, status, ranking, hideCompleted, organization, availability]);
 
   const savedTitles = useStore(state => state.myList);
   const favoriteTitles = useStore(state => state.likedAnimes);
@@ -336,27 +342,20 @@ export default function DesktopExplore() {
   const setParam = (key: string, value: string, defaultValue = '') => {
     const next = new URLSearchParams(searchParams);
     if (!['page', 'view'].includes(key)) next.delete('page');
-    if (key === 'ranking' && value !== service) {
-      try { const stored = localStorage.getItem(`streamnyaa.desktop.rankingFilters.v1.${value}`); if (stored !== null && stored.length < 2000) { const restored = new URLSearchParams(stored); rankingFilterKeys.forEach(key => { next.delete(key); if (restored.has(key)) next.set(key,restored.get(key)!); }); } } catch { /* Retain current filters if storage is unavailable. */ }
-      if (value === 'mal' && next.get('format') === 'TV Short') next.delete('format');
-    }
+    if (key === 'year') rememberExploreYear(mode, value && value !== 'all' ? Number(value) : undefined);
     if (!value || value === defaultValue) next.delete(key);
     else next.set(key, value);
     setSearchParams(next, { replace: true });
   };
 
   const chooseMode = (nextMode: ExploreMode) => {
-    const next = new URLSearchParams(searchParams);
-    next.set('mode', nextMode);
-    next.delete('q');
-    next.delete('page');
-    if (nextMode === 'year') next.set('year', String(year));
-    setSearchParams(next);
+    setSearchParams(switchExploreMode(searchParams, mode, nextMode, currentYear));
   };
 
   const clearFilters = () => {
     const next = new URLSearchParams(searchParams);
     ['genre', 'format', 'status', 'order', 'page', 'released', ...(ranking ? ['year'] : [])].forEach((key) => next.delete(key));
+    if (ranking) rememberExploreYear(mode, undefined);
     setSearchParams(next, { replace: true });
   };
 
@@ -384,6 +383,7 @@ export default function DesktopExplore() {
           <legend className="px-2 text-sm font-semibold">{ranking ? 'Top 100 filters' : 'Catalog filters'}</legend>
           <SlidersHorizontal className="mx-1 h-4 w-4 text-white/38" />
           <label className="flex items-center gap-2 px-2 text-sm text-white/65"><input type="checkbox" checked={hideCompleted} onChange={(event) => setParam('hideCompleted', event.target.checked ? '1' : '')} />Hide marked completed</label>
+          <label className="flex items-center gap-2 px-2 text-sm text-white/65"><input type="checkbox" checked={availability.showUnavailable} onChange={event => availability.setShowUnavailable(event.target.checked)} />Show unavailable titles</label>
           <PremiumSelect ariaLabel="Genre" value={genre} options={genreOptions.map((value) => ({ label: value === 'Any' ? 'All genres' : value, value }))} onChange={(value) => setParam('genre', value, 'Any')} />
           <PremiumSelect ariaLabel="Format" value={format} options={formatOptions.map((value) => ({ label: value === 'Any' ? 'All formats' : value, value }))} onChange={(value) => setParam('format', value, 'Any')} />
           <PremiumSelect ariaLabel="Status" value={status} options={statusOptions.map((value) => ({ label: value === 'Any' ? 'Any status' : value, value }))} onChange={(value) => setParam('status', value, 'Any')} />
@@ -391,7 +391,7 @@ export default function DesktopExplore() {
           <PremiumSelect ariaLabel={mode === 'new' ? 'Episode release window' : 'Premiere window'} value={releaseDays} options={[{ value: 'all', label: 'Any release date' }, { value: '7', label: 'Past 7 days' }, { value: '30', label: 'Past 30 days' }, { value: '90', label: 'Past 90 days' }]} onChange={value => setParam('released', value, 'all')} />
           {['year', 'seasonal'].includes(mode) ? <PremiumSelect ariaLabel="Year" value={String(year)} options={Array.from({ length: 70 }, (_, index) => ({ label: String(currentYear + 1 - index), value: String(currentYear + 1 - index) }))} onChange={(value) => setParam('year', value)} /> : null}
           {mode === 'seasonal' ? <PremiumSelect ariaLabel="Season" value={season.toUpperCase()} options={['WINTER', 'SPRING', 'SUMMER', 'FALL'].map((value) => ({ value, label: value[0] + value.slice(1).toLowerCase() }))} onChange={(value) => setParam('season', value)} /> : null}
-          {ranking ? <PremiumSelect ariaLabel="Ranking year" value={searchParams.has('year') ? String(year) : 'all'} options={[{ value: 'all', label: 'All years' }, ...Array.from({ length: 70 }, (_, index) => ({ label: String(currentYear - index), value: String(currentYear - index) }))]} onChange={value => setParam('year', value, 'all')} /> : null}
+          {ranking ? <PremiumSelect ariaLabel="Ranking year" value={selectedYear ? String(selectedYear) : 'all'} options={[{ value: 'all', label: 'All years' }, ...Array.from({ length: 70 }, (_, index) => ({ label: String(currentYear - index), value: String(currentYear - index) }))]} onChange={value => setParam('year', value, 'all')} /> : null}
 
           {activeFilters.length ? <button type="button" onClick={clearFilters} className="h-10 rounded-lg px-3 text-sm font-semibold text-primary hover:bg-primary/10">Clear filters</button> : null}
           <div className="ml-auto flex rounded-lg bg-white/[0.045] p-1" aria-label="Result layout">
@@ -400,7 +400,7 @@ export default function DesktopExplore() {
         </fieldset>
       </section>
 
-      <div className="mt-3 flex flex-wrap gap-2" aria-label="Active catalog filters">{rankingFilterKeys.filter(key=>searchParams.has(key)).map(key=><button className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/65" key={key} aria-label={`Remove ${key} filter`} onClick={()=>setParam(key,'')}>{key}: {searchParams.get(key)} ×</button>)}</div>
+      <div className="mt-3 flex flex-wrap gap-2" aria-label="Active catalog filters">{rankingFilterKeys.filter(key=>searchParams.has(key) && (key !== 'year' || isYearScope(mode))).map(key=><button className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/65" key={key} aria-label={`Remove ${key} filter`} onClick={()=>setParam(key,'')}>{key}: {searchParams.get(key)} ×</button>)}</div>
 
       <div className="mt-6 flex items-end justify-between gap-4">
         <div><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-semibold">{query ? `Results for “${query}”` : selectedMode.label}</h2>{catalogQuery.isFetching && catalogQuery.data ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white/46"><Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />Refreshing</span> : null}</div><p className="mt-1 text-sm text-white/48">{results.length ? `${results.length} anime title${results.length === 1 ? '' : 's'}` : ranking ? (request.year ? `Year ${request.year}` : 'All years') : mode === 'seasonal' ? `${season} ${year}` : catalogQuery.isError ? 'Catalog unavailable' : 'Loading catalog…'}</p></div>

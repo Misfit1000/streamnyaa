@@ -1,5 +1,5 @@
 import { fetchExplorePage, type ExploreRequest } from './desktopExplore';
-import { desktopDataError } from '../lib/desktopData';
+import { desktopDataError, isDesktopAdmissionWait } from '../lib/desktopData';
 import { useStore } from '../store/useStore';
 
 export async function withDesktopCatalogFallback(
@@ -7,9 +7,9 @@ export async function withDesktopCatalogFallback(
 ) {
   try { return await primary(); }
   catch (error) {
-    if (signal?.aborted || desktopDataError('anilist', error).code === 'cancelled') throw error;
+    if (signal?.aborted || isDesktopAdmissionWait(error) || desktopDataError('anilist', error).code === 'cancelled') throw error;
     const fallback = await fetchExplorePage({ query: '', genre: 'Any', format: 'Any', status: 'Any', sort: 'best',
       adult: useStore.getState().nsfwMode, ...request, service: 'mal', allowFallback: false }, 1, signal);
-    return { ...fallback, provider: 'jikan', fallback: true };
+    return { ...fallback, provider: 'jikan', fallback: true, retryAt: desktopDataError('anilist', error).retryAt };
   }
 }

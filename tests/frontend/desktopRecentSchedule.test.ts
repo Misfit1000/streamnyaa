@@ -1,6 +1,10 @@
 import { watchDeskReleases } from '../../src/lib/desktopWatchDesk';
 import { it, expect } from 'vitest';
-import { recentHomeQuery, validRecentSchedules } from '../../src/api/desktopRecentSchedule';
+import { recentFeedBound, recentHomeQuery, validRecentSchedules } from '../../src/api/desktopRecentSchedule';
+it('shares a stable one-minute feed bound and advances on the next minute',()=>{
+ expect(recentFeedBound(1700000000000)).toBe(recentFeedBound(1700000039000));
+ expect(recentFeedBound(1700000060000)).toBe(recentFeedBound(1700000000000)+60);
+});
 it('keeps distinct episodes and rejects duplicates, future releases and missing identity', () => { const e = { media: { id: 1, title: { english: 'Example' } }, episode: 2, airingAt: 90 }; expect(validRecentSchedules([e, e, { ...e, episode: 3 }, { ...e, airingAt: 101 }, { ...e, episode: 0 }, { ...e, media: { id: 0 } }], 100)).toEqual([e, { ...e, episode: 3 }]); });
 it('includes only tracked releases, prefers loaded schedules and excludes malformed or past dates', () => {
     const bookmarks = [{ mal_id: 1, title: 'Tracked', nextAiringEpisode: { episode: 2, airingAt: 200 } }];

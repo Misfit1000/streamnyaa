@@ -15,11 +15,11 @@ export function readEpisodePage(id: string, page: number): Page | undefined {
     || !Number.isSafeInteger(saved.pagination?.last_visible_page) || !saved.data.every(item => Number.isSafeInteger(item?.mal_id) && item.mal_id > 0 && item.mal_id <= 100000)) return undefined;
   return saved;
 }
-export function saveEpisodePage(id: string, page: number, value: any) {
+export function saveEpisodePage(id: string, page: number, value: any, fetchedAt = Date.now()) {
   if (!/^[1-9]\d*$/.test(id) || !Array.isArray(value.data) || !value.data.length) return;
   try {
     const pages = read();
-    pages[`${id}:${page}`] = { savedAt: Date.now(), data: value.data.map((item: any) => ({ mal_id: item.mal_id, title: item.title, title_english: item.title_english, title_romanji: item.title_romanji, aired: item.aired, filler: item.filler, recap: item.recap })), pagination: value.pagination };
+    pages[`${id}:${page}`] = { savedAt: Math.min(Date.now(), fetchedAt), data: value.data.map((item: any) => ({ mal_id: item.mal_id, title: item.title, title_english: item.title_english, title_romanji: item.title_romanji, aired: item.aired, filler: item.filler, recap: item.recap })), pagination: value.pagination };
     const entries = Object.entries(pages).sort((a,b) => b[1].savedAt - a[1].savedAt).slice(0, 60);
     let json = JSON.stringify({ version: 1, pages: Object.fromEntries(entries) });
     while (json.length > 1_500_000 && entries.length > 1) { entries.pop(); json = JSON.stringify({ version: 1, pages: Object.fromEntries(entries) }); }

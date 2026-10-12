@@ -4,6 +4,7 @@ function setCors(res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization,Content-Type');
+  res.setHeader('Access-Control-Max-Age', '600');
   res.setHeader('Cache-Control', 'no-store');
 }
 
@@ -15,10 +16,9 @@ export default async function handler(req: any, res: any) {
   const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
   if (!token) return res.status(401).json({ error: 'Not signed in' });
 
-  const user = await fetchSupabaseUser(token);
-  if (!user?.id) return res.status(401).json({ error: 'Invalid session' });
-
   try {
+    const user = await fetchSupabaseUser(token);
+    if (!user?.id) return res.status(401).json({ error: 'Invalid session' });
     if (req.method === 'GET') {
       const requestedLimit = Number(req.query?.limit || 20);
       const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 50) : 20;
@@ -28,35 +28,42 @@ export default async function handler(req: any, res: any) {
 
     if (req.method === 'POST') {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-      const title = String(body.title || '').trim();
-      const magnet = String(body.magnet || '').trim();
-      const action = body.action === 'open' ? 'open' : 'copy';
-      if (!title || !magnet) return res.status(400).json({ error: 'History entry is missing title or source link' });
-
-      try {
-        await supabaseRest(`download_history?user_id=eq.${encodeURIComponent(user.id)}&magnet=eq.${encodeURIComponent(magnet)}&action=eq.${encodeURIComponent(action)}`, {
-          method: 'DELETE',
-          headers: { Prefer: 'return=minimal' },
+      const entries = Array.isArray(body.entries) ? body.entries : [body];
+      if (!entries.length || entries.length > 30 || entries.some((entry: any) => !entry || !String(entry.title || '').trim() || !String(entry.magnet || '').trim())) {
+        return res.status(400).json({ error: 'Provide 1–30 history entries with a title and source link' });
+      }
+      // Keep the legacy single-entry contract for installed desktop clients.
+      const rows = new Map<string, any>();
+      for (const entry of entries) {
+        const title = String(entry.title).trim();
+        const magnet = String(entry.magnet).trim();
+        const action = entry.action === 'open' ? 'open' : 'copy';
+        rows.set(JSON.stringify([magnet, action]), {
+          user_id: user.id, title, magnet, action,
+          anime_title: entry.animeTitle || null,
+          anime_id: entry.animeId ? String(entry.animeId) : null,
+          episode: entry.episode ? String(entry.episode) : null,
+          size: entry.size || null,
+          seeders: entry.seeders ? String(entry.seeders) : null,
+          created_at: entry.createdAt || new Date().toISOString(),
         });
-      } catch (deleteError: any) {
-        if (deleteError?.status !== 404) throw deleteError;
+      }
+
+      for (const { magnet, action } of rows.values()) {
+        try {
+          await supabaseRest(`download_history?user_id=eq.${encodeURIComponent(user.id)}&magnet=eq.${encodeURIComponent(magnet)}&action=eq.${encodeURIComponent(action)}`, {
+            method: 'DELETE',
+            headers: { Prefer: 'return=minimal' },
+          });
+        } catch (deleteError: any) {
+          if (deleteError?.status !== 404) throw deleteError;
+        }
       }
 
       await supabaseRest('download_history', {
         method: 'POST',
         headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify([{
-          user_id: user.id,
-          title,
-          magnet,
-          anime_title: body.animeTitle || null,
-          anime_id: body.animeId ? String(body.animeId) : null,
-          episode: body.episode ? String(body.episode) : null,
-          action,
-          size: body.size || null,
-          seeders: body.seeders ? String(body.seeders) : null,
-          created_at: body.createdAt || new Date().toISOString(),
-        }]),
+        body: JSON.stringify([...rows.values()]),
       });
       return res.status(200).json({ ok: true });
     }

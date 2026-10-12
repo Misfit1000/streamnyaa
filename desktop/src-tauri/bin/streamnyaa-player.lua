@@ -1566,8 +1566,8 @@ function apply_adaptive_buffer_target()
   if ui.adaptive_buffer_target == target then return target end
   ui.adaptive_buffer_target = target
   safe_set_property_number("cache-secs", target)
-  safe_set_property_number("demuxer-readahead-secs", math.max(45, target * 2))
-  safe_set_property_number("user-data/streamnyaa/buffer_target_seconds", target)
+  safe_set_property_number("demuxer-readahead-secs", (ui.buffer_underruns or 0) > 0 and 60 or 45)
+  safe_set_property_number("user-data/streamnyaa/buffer_target_seconds", mp.get_property_number("cache-pause-wait", 1))
   msg.info(string.format("[StreamNyaa Lua] Adaptive buffer target set to %ds", target))
   return target
 end
@@ -1579,7 +1579,7 @@ function buffering_display_percent()
   if demuxer_percent then return demuxer_percent end
   local cached = buffered_seconds()
   if cached ~= nil then
-    return math.floor(clamp((cached / apply_adaptive_buffer_target()) * 100, 0, 100) + 0.5)
+    return math.floor(clamp((cached / math.max(0.1, mp.get_property_number("cache-pause-wait", 1))) * 100, 0, 100) + 0.5)
   end
   return nil
 end
@@ -1608,6 +1608,13 @@ function log_buffering_transition()
   local percent = buffering_display_percent()
   if active ~= ui.last_buffering_active then
     if active then
+      if not state.seeking then
+        local now = mp.get_time()
+        ui.buffer_underruns = now - (ui.last_underrun_at or 0) < 60 and (ui.buffer_underruns or 0) + 1 or 1
+        ui.last_underrun_at = now
+        safe_set_property_number("demuxer-readahead-secs", 60)
+        if ui.buffer_underruns >= 2 then safe_set_property_number("cache-pause-wait", 2) end
+      end
       msg.info(string.format("[StreamNyaa Lua] Buffering started percent=%s", percent and tostring(percent) or "unknown"))
     else
       msg.info("[StreamNyaa Lua] Buffering ended")
@@ -1723,7 +1730,7 @@ function request_same_source_recovery(origin)
     or (has_playable_media() and tonumber(state.pos)) or ui.last_video_position or 0
   if path == "" or is_placeholder_path(path) then return false end
   ui.recovery_terminal = false
-  ui.recovery_attempt = { path = path, position = pos, started_at = mp.get_time(), kind = origin == "startup" and "startup" or "retry", restart_seen = false }
+  ui.recovery_attempt = { path = path, position = pos, started_at = mp.get_time(), last_progress_at = mp.get_time(), last_buffer = buffered_seconds(), last_position = tonumber(state.pos), kind = origin == "startup" and "startup" or "retry", restart_seen = false }
   ui.stall_recovery_attempted = true
   ui.source_recovery_count = ui.source_recovery_count + 1
   apply_adaptive_buffer_target()
@@ -1795,7 +1802,7 @@ function request_backup_source_recovery(action)
   ui.stall_backup_requested = true
   ui.stall_backup_at = mp.get_time()
   ui.recovery_terminal = false
-  ui.recovery_attempt = { path = ui.last_video_path ~= "" and ui.last_video_path or state.path, position = pos, started_at = mp.get_time(), kind = "backup", restart_seen = false }
+  ui.recovery_attempt = { path = ui.last_video_path ~= "" and ui.last_video_path or state.path, position = pos, started_at = mp.get_time(), last_progress_at = mp.get_time(), last_buffer = buffered_seconds(), last_position = tonumber(state.pos), kind = "backup", restart_seen = false }
   safe_set_property("user-data/streamnyaa/recovery_stage", "switching")
   safe_commandv("script-message", "streamnyaa-player-recovery-request", action == "retry" and "retry" or "backup", tostring(key), tostring(pos))
 end
@@ -1805,15 +1812,22 @@ function check_recovery_deadline()
   local attempt = ui.recovery_attempt
   if not attempt then return false end
   local now = mp.get_time()
-  local tick = math.max(0, now - (attempt.last_check_at or now))
-  attempt.last_check_at = now
   if state.paused and not state.paused_for_cache then
-    attempt.started_at = attempt.started_at + tick
+    ui.recovery_attempt = nil
+    reset_stall_watchdog(true)
     return true
   end
   local elapsed = now - attempt.started_at
+  local cached, position = buffered_seconds(), tonumber(state.pos) or 0
+  if not state.seeking and ((cached and cached > (attempt.last_buffer or 0) + 0.20) or position > (attempt.last_position or position) + 0.15) then
+    attempt.last_progress_at = now
+  end
+  attempt.last_buffer, attempt.last_position = cached, position
+  local no_progress = now - (attempt.last_progress_at or attempt.started_at)
+  local deadline = attempt.kind == "backup" and STALL_BACKUP_WAIT_SECONDS or (script_options.stall_test_mode and STARTUP_STREAM_BACKUP_SECONDS or STALL_RECOVERY_SECONDS)
+  if elapsed < MAX_CONTINUOUS_BUFFERING_SECONDS and no_progress < deadline then return true end
   if attempt.kind == "backup" then
-    if elapsed >= STALL_BACKUP_WAIT_SECONDS then
+    if no_progress >= STALL_BACKUP_WAIT_SECONDS or elapsed >= MAX_CONTINUOUS_BUFFERING_SECONDS then
       ui.recovery_terminal = true
       ui.stall_actions_visible = true
       ui.startup_stream_actions_visible = true
@@ -1823,7 +1837,7 @@ function check_recovery_deadline()
       show_overlay()
       draw(true, "recovery-exhausted")
     end
-  elseif elapsed >= (attempt.kind == "startup" and STARTUP_STREAM_BACKUP_SECONDS or STALL_ACTION_SECONDS) then
+  elseif no_progress >= deadline or elapsed >= MAX_CONTINUOUS_BUFFERING_SECONDS then
     msg.warn(attempt.kind == "startup"
       and "[StreamNyaa Lua] Startup stream retry did not become playable; requesting backup"
       or "[StreamNyaa Lua] Recovery produced no advancing video; requesting backup")
@@ -1834,6 +1848,11 @@ end
 
 function check_playback_stall()
   local now = mp.get_time()
+  if (ui.buffer_underruns or 0) > 0 and now - (ui.last_underrun_at or now) >= 120 and not is_midplayback_buffering() then
+    ui.buffer_underruns = 0
+    safe_set_property_number("cache-pause-wait", 1)
+    safe_set_property_number("demuxer-readahead-secs", 45)
+  end
   local pos = tonumber(state.pos) or 0
   if check_recovery_deadline() then return end
   if not stall_watchdog_allowed() then
@@ -3033,7 +3052,7 @@ function loading_status_text()
   elseif ui.startup_stream_retried then
     return "REOPENING THE CURRENT STREAM"
   elseif is_placeholder_media() then
-    local stage = tostring(mp.get_property("user-data/streamnyaa/state", "")):lower()
+    local stage = tostring(mp.get_property_native("user-data/streamnyaa/state", "")):lower()
     if stage:find("metadata") then return "CHECKING EPISODE AVAILABILITY" end
     if stage:find("matching") then return "MATCHING THE EPISODE FILE" end
     if stage:find("buffer") then return "BUILDING THE PLAYABLE BUFFER" end
@@ -3052,7 +3071,7 @@ function startup_loading_percent()
   if playable_percent ~= nil and not is_placeholder_media() then
     return math.floor(clamp(playable_percent, 0, 100) + 0.5)
   end
-  local raw_value = mp.get_property("user-data/streamnyaa/loading_percent", "")
+  local raw_value = mp.get_property_native("user-data/streamnyaa/loading_percent", "")
   local value = tonumber(raw_value)
   if not value then return nil end
   local next_value = math.floor(clamp(value, 0, 96) + 0.5)
@@ -3870,11 +3889,9 @@ function note_explicit_seek(target)
   ui.playhead_last_advance_at = mp.get_time()
   -- A user seek during a retry replaces the resume checkpoint. Do not let
   -- recovery jump back to its older position, especially after a backward seek.
-  if ui.recovery_attempt and ui.recovery_attempt.kind ~= "backup" then
-    ui.recovery_attempt.position = ui.last_video_position
-    ui.recovery_attempt.started_at = mp.get_time()
-    ui.recovery_attempt.restart_seen = false
-  end
+  ui.recovery_attempt = nil
+  ui.recovery_terminal = false
+  reset_stall_watchdog(true)
 end
 
 function set_seek_from_mouse(mouse, final, preview_command)
@@ -4415,7 +4432,7 @@ function handle_mouse_move()
     if mouse and (math.abs(mouse.x - (ui.drag_start_x or 0)) > 2 or math.abs(mouse.y - (ui.drag_start_y or 0)) > 2) then
       ui.drag_has_moved = true
     end
-    set_seek_from_mouse(mouse, false, true)
+    set_seek_from_mouse(mouse, false, false)
     draw_drag("mouse-drag-seek")
     return
   elseif ui.dragging == "volume" then
@@ -4665,6 +4682,7 @@ mp.observe_property("time-pos", "number", function(_, value)
 end)
 mp.observe_property("pause", "bool", function(_, value)
   if value == false then ui.sleep_expired = false end
+  if value and not state.paused_for_cache then ui.recovery_attempt = nil; ui.recovery_terminal = false end
   update_property("paused", value or false, true)
   update_stall_watchdog_timer()
 end)
@@ -5147,7 +5165,12 @@ if script_options.stall_test_mode then
         ui.stall_started_at = mp.get_time() - STALL_RECOVERY_SECONDS - STALL_ACTION_SECONDS - 1
         ui.stall_recovery_attempted = true
         ui.stall_recovery_at = mp.get_time() - STALL_ACTION_SECONDS - 1
-        if ui.recovery_attempt then ui.recovery_attempt.started_at = ui.stall_recovery_at end
+        if ui.recovery_attempt then
+          ui.recovery_attempt.started_at = ui.stall_recovery_at
+          ui.recovery_attempt.last_progress_at = ui.stall_recovery_at
+          ui.recovery_attempt.last_buffer = (buffered_seconds() or 0) + 100
+          ui.recovery_attempt.last_position = (tonumber(state.pos) or 0) + 100
+        end
         check_playback_stall()
         ui.recovery_attempt = nil
         ui.recovery_terminal = false
@@ -5184,7 +5207,12 @@ if script_options.stall_test_mode then
           ui.startup_stream_started_at = math.max(0.01, mp.get_time() - STARTUP_STREAM_RETRY_SECONDS - 0.05)
           ui.startup_stream_retried = true
           ui.startup_stream_retry_at = mp.get_time() - STARTUP_STREAM_BACKUP_SECONDS - 1
-          if ui.recovery_attempt then ui.recovery_attempt.started_at = ui.startup_stream_retry_at end
+          if ui.recovery_attempt then
+            ui.recovery_attempt.started_at = ui.startup_stream_retry_at
+            ui.recovery_attempt.last_progress_at = ui.startup_stream_retry_at
+            ui.recovery_attempt.last_buffer = (buffered_seconds() or 0) + 100
+            ui.recovery_attempt.last_position = (tonumber(state.pos) or 0) + 100
+          end
           ui.startup_stream_backup_requested = false
           ui.startup_stream_backup_at = 0
           msg.info("[StreamNyaa Lua] Startup stall test invoking backup recovery")
@@ -5237,6 +5265,14 @@ mp.register_script_message("streamnyaa-source-generation", function(value)
   ui.source_generation = generation
   ui.recovery_terminal = false
   ui.recovery_attempt = nil
+end)
+
+mp.register_script_message("streamnyaa-stream-metrics", function(raw)
+  local payload = utils.parse_json(raw)
+  if type(payload) ~= "table" or payload.generation ~= (ui.source_generation or 0) or type(payload.fields) ~= "table" then return end
+  for _, key in ipairs({"state", "peers", "download", "upload", "downloaded", "buffer", "loading_percent"}) do
+    if payload.fields[key] ~= nil then safe_set_property("user-data/streamnyaa/" .. key, tostring(payload.fields[key])) end
+  end
 end)
 
 mp.register_script_message("streamnyaa-playback-failed", function(value)
@@ -5343,6 +5379,26 @@ mp.register_event("file-loaded",function()
  mp.set_property("user-data/streamnyaa/watched-coverage",utils.format_json(coverage))
 end)
 mp.register_event("seek",function() coverage_sample=nil end)
+mp.register_event("seek", function()
+ ui.seek_generation = (ui.seek_generation or 0) + 1
+ ui.playhead_last_advance_at = mp.get_time()
+ reset_stall_watchdog(true)
+end)
+mp.register_script_message("streamnyaa-explicit-seek", function(value) note_explicit_seek(tonumber(value) or state.pos) end)
+local telemetry_sequence = 0
+mp.add_periodic_timer(0.5, function()
+ if not has_playable_media() or is_placeholder_media() then return end
+ telemetry_sequence = telemetry_sequence + 1
+ local snapshot = {
+  generation=ui.source_generation or 0, seekGeneration=ui.seek_generation or 0, sequence=telemetry_sequence,
+  path=mp.get_property("path", ""), position=mp.get_property_number("time-pos"), duration=mp.get_property_number("duration"),
+  paused=mp.get_property_native("pause"), volume=mp.get_property_number("volume"), buffered=buffered_seconds(),
+  cachePercent=clean_buffering_percent(mp.get_property_number("cache-buffering-state")), buffering=native_buffering_active(),
+  seeking=state.seeking, started=state.has_started_playback, resumeTarget=mp.get_property_number("cache-pause-wait",1),
+  recovery=mp.get_property_native("user-data/streamnyaa/recovery_stage","idle"), coverage=coverage,
+ }
+ safe_commandv("script-message", "streamnyaa-player-telemetry", utils.format_json(snapshot))
+end)
 mp.register_event("end-file",function(event) sample_coverage();publish_progress(event and event.reason=="eof" and "eof" or "closed");coverage_sample=nil end)
 mp.register_event("shutdown",function() sample_coverage();publish_progress("closed") end)
 mp.add_periodic_timer(0.5,sample_coverage)

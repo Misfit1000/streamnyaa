@@ -1,5 +1,8 @@
 import { mergeScheduleWatchEvidence } from '../lib/desktopScheduleWatch';
 import DesktopEpisodeStatus from '../components/DesktopEpisodeStatus';
+import DesktopTrailer from '../components/DesktopTrailer';
+import { selectSourceMode } from '../lib/desktopSourceSelection';
+import { sourceAvailabilityEvidence } from '../lib/desktopHomeReadiness';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { clearInterruptedPlayback } from '../lib/desktopInterruptedSession';
@@ -10,7 +13,7 @@ import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Downloa
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
-import { fetchAnimeDetails, fetchAnimeEpisodeWindow, fetchAnimeInstallments } from '../api/jikan';
+import { fetchAnimeDetails, fetchAnimeEpisodeWindow, fetchAnimeEpisodeTail, mergeAnimeEpisodeTail, fetchAnimeInstallments } from '../api/jikan';
 import { loadSeriesTimeline, type TimelineResult } from '../lib/desktopSeriesTimeline';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
@@ -20,12 +23,15 @@ import { preloadDesktopWatchData } from '../lib/desktopRoutePreload';
 import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { desktopAnimeQueryKey } from '../lib/desktopRequests';
 import { verifiedAiredEpisodeCount } from '../lib/animeEpisodes';
-import { SourceAccumulator, type SourceDiscovery } from '../lib/desktopSourceDiscovery';
+import { runSourceSearchPass, sourceSearchPlan, type SourceDiscovery } from '../lib/desktopSourceDiscovery';
+import { buildSourceIdentity, classifySourceIdentity, parseSourceEpisode, sourceIdentitySignature, validateDesktopSourceCandidates } from '../lib/desktopSourceIdentity';
+import { desktopAvailabilityKey, recordDesktopAvailability } from '../lib/desktopAvailability';
 import { totalEpisodeCount } from '../lib/animeEpisodes';
 import { desktopDataError } from '../lib/desktopData';
 import { desktopLandscapeImageCandidates } from '../lib/desktopArtwork';
 import {
   desktopEpisodeWatchState,
+  isDesktopApp,
   formatPlaybackTime,
   controlLocalPlayer,
   getLocalPlaybackProgress,
@@ -100,6 +106,7 @@ type RankedNyaaItem = NyaaItem & {
   playableStatus: SourcePlayableStatus;
   playableLabel: string;
   playable: boolean;
+  manualOnly?: boolean;
 };
 
 const EPISODE_WINDOW_SIZE = 72;
@@ -110,7 +117,7 @@ const EPISODE_RAIL_DRAG_THRESHOLD = 12;
 const TIMELINE_SKELETON_CARD_COUNT = 5;
 const SOURCE_QUERY_BATCH_SIZE = 2;
 const SOURCE_QUERY_TIMEOUT_MS = 4_000;
-const SOURCE_SEARCH_BUDGET_MS = 12_000;
+const SOURCE_SEARCH_BUDGET_MS = 30_000;
 const SOURCE_RETRY_LIMIT = 4;
 const FAILED_SOURCE_MEMORY_KEY = 'streamnyaa.desktopFailedSources';
 const FAILED_SOURCE_MEMORY_TTL = 1000 * 60 * 60 * 24;
@@ -323,7 +330,7 @@ function trailerUrlFor(anime: any) {
 
 function youtubeEmbedUrlFor(url = '') {
   const youtubeId = youtubeVideoIdFor(url);
-  return youtubeId ? `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0&modestbranding=1` : '';
+  return youtubeId ? `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1&rel=0&fs=1` : '';
 }
 
 function animeStudiosFor(anime: any) {
@@ -957,107 +964,29 @@ function sourceHasValidInput(source: NyaaItem) {
 
 function classifySource(
   source: NyaaItem,
-  context: {
-    anime: any;
-    routeId?: string;
-    installment: InstallmentItem | null;
-    episode: number;
-  },
+  context: { anime: any; routeId?: string; installment: InstallmentItem | null; episode: number },
 ): RankedNyaaItem {
-  const reasons: string[] = [];
-  const title = source.title || '';
-  const aliases = sourceAliasVariants(context.anime, context.routeId, context.installment);
-  const titleCompatibility = sourceTitleCompatibility(title, aliases);
-  const titleMatch = titleCompatibility.compatible;
-  const explicitKind = sourceInstallmentKind(title);
-  const sourceSeason = sourceSeasonNumber(title);
-  const sourcePart = sourcePartNumber(title);
-  const episodeMatch = context.installment?.kind === 'movie'
-    ? true
-    : hasEpisodeSignal(title, context.episode);
-  const mismatchReason = sourceInstallmentMismatchReason(title, context.installment);
-  const validInput = sourceHasValidInput(source);
-  const seeded = source.rawSeeders > 0;
-  const videoSized = source.rawSize > 0 && source.rawSize <= 3 * 1024 * 1024 * 1024;
-  const expectedSourceSeason = context.installment?.seasonNumber || context.installment?.sourceSeasonNumber || null;
-  const laterSeasonNeedsSeasonSignal = context.installment?.kind === 'season'
-    && Boolean(expectedSourceSeason && expectedSourceSeason > 1);
-  const hasRequiredSeasonSignal = !laterSeasonNeedsSeasonSignal
-    || sourceSeason === expectedSourceSeason
-    || sourceTitleMatchesAlias(title, [cleanTitle(context.installment?.name || '').toLowerCase()].filter(Boolean));
-  const hasRequiredPartSignal = !context.installment?.partNumber
-    || sourcePart === context.installment.partNumber
-    || /\b(part|cour)\b/i.test(title);
-  let matchTier: SourceMatchTier = 'rejected';
-
-  if (isBatchSource(title)) reasons.push('Batch source');
-  if (isAncillarySource(title)) reasons.push('Non-episode extra');
-  if (!validInput) reasons.push('Torrent hash missing');
-  if (!seeded) reasons.push('No seeders');
-  if (titleMatch) reasons.push(titleCompatibility.reason);
-  else reasons.push(titleCompatibility.reason);
-  if (titleCompatibility.parsedTitle) reasons.push(`Parsed title: ${titleCompatibility.parsedTitle}`);
-  if (mismatchReason) reasons.push(mismatchReason);
-  if (episodeMatch) reasons.push(context.installment?.kind === 'movie' ? 'Movie match' : 'Exact episode');
-  if (explicitKind) reasons.push(explicitKind === 'season' ? 'TV season' : explicitKind.toUpperCase());
-  if (laterSeasonNeedsSeasonSignal && !hasRequiredSeasonSignal) reasons.push('Missing season signal');
-  if (context.installment?.partNumber && !hasRequiredPartSignal) reasons.push('Missing part signal');
-  if (context.installment?.label) reasons.push(context.installment.label);
-  if (videoSized) reasons.push('Sane size');
-
-  debugSourceDecision({
-    selectedAnime: context.anime?.title || context.anime?.title_english || context.anime?.title_romaji,
-    selectedEpisode: context.episode,
-    searchQuery: source.matchedQuery || '',
-    rawSourceTitle: title,
-    parsedSourceAnimeTitle: titleCompatibility.parsedTitle,
-    titleMatchScore: titleCompatibility.score,
-    sharedTokens: titleCompatibility.sharedTokens,
-    episodeMatch,
-    rejectionReason: titleCompatibility.compatible ? '' : titleCompatibility.reason,
-  });
-
-  if (!isAncillarySource(title) && validInput && titleMatch && !mismatchReason) {
-    if (episodeMatch && seeded && hasRequiredSeasonSignal && hasRequiredPartSignal) matchTier = isBatchSource(title) ? 'likely' : 'exact';
-    else if (episodeMatch || seeded) matchTier = 'likely';
-    else matchTier = 'broad';
+  const identity = buildSourceIdentity(context.anime, context.installment || undefined);
+  const evidence = classifySourceIdentity(source.title, identity, context.episode);
+  if (isDesktopApp()) {
+    evidence.evidence = source.nativeIdentitySignature === sourceIdentitySignature(identity) && source.nativeEvidence
+      ? source.nativeEvidence : 'uncertain';
+    if (evidence.evidence === 'uncertain') evidence.reason = 'Installment identity needs native verification';
   }
-
-  const structurallyPlayable = validInput
-    && seeded
-    && !isAncillarySource(title)
-    && !mismatchReason
-    && matchTier !== 'rejected';
-  const playableStatus: SourcePlayableStatus = !validInput
-    ? 'unsupported'
-    : mismatchReason || !titleMatch
-      ? 'likely-wrong'
-      : !seeded
-        ? 'low-seed'
-        : matchTier === 'exact'
-          ? 'verified'
-          : 'untested';
-  const playable = structurallyPlayable;
-  const playableLabel = playableStatus === 'verified'
-    ? 'High confidence'
-    : playableStatus === 'low-seed'
-      ? 'Low seed'
-      : playableStatus === 'unsupported'
-        ? 'Unsupported'
-        : playableStatus === 'likely-wrong'
-          ? 'Likely wrong'
-          : matchTier === 'broad'
-            ? 'Wide match'
-            : 'Untested';
-
-  return {
-    ...source,
-    matchTier,
-    matchReasons: reasons.filter((reason, index, list) => Boolean(reason) && list.indexOf(reason) === index),
-    playableStatus,
-    playableLabel,
-    playable,
-  };
+  const titleCompatibility = sourceTitleCompatibility(source.title, sourceAliasVariants(context.anime, context.routeId, context.installment));
+  const validInput = sourceHasValidInput(source), seeded = source.rawSeeders > 0;
+  let matchTier: SourceMatchTier = 'rejected';
+  if (evidence.evidence === 'exact' && validInput && !isAncillarySource(source.title)) matchTier = 'exact';
+  else if (evidence.evidence === 'uncertain' && validInput && !isAncillarySource(source.title)) matchTier = 'broad';
+  const manualOnly = evidence.evidence === 'uncertain';
+  const playable = evidence.evidence === 'exact' && validInput && seeded && !isAncillarySource(source.title);
+  const playableStatus: SourcePlayableStatus = !validInput ? 'unsupported' : evidence.evidence === 'conflict' ? 'likely-wrong' : !seeded ? 'low-seed' : playable ? 'verified' : 'untested';
+  const matchReasons = [evidence.reason, titleCompatibility.reason, !seeded ? 'No seeders' : 'Has seeders',
+    evidence.episodeMatch ? 'Exact episode' : '', context.installment?.label || '', manualOnly ? 'Manual review required' : ''].filter(Boolean);
+  debugSourceDecision({ selectedAnime: context.anime?.title, selectedEpisode: context.episode, searchQuery: source.matchedQuery,
+    rawSourceTitle: source.title, parsedSourceAnimeTitle: titleCompatibility.parsedTitle, episodeMatch: evidence.episodeMatch, rejectionReason: evidence.reason });
+  return { ...source, matchTier, matchReasons, playableStatus, playable,
+    manualOnly, playableLabel: manualOnly ? 'Identity unverified' : playable ? 'High confidence' : !seeded ? 'Low seed' : 'Blocked' };
 }
 
 function sourceTierWeight(tier: SourceMatchTier) {
@@ -1281,32 +1210,6 @@ function sourceConfidenceBadges(
   if (isTrustedSource(source)) badges.push('Trusted');
   if (hasPlayableVideoSignal(source.title)) badges.push('Video file');
   return badges.filter((badge, index, list) => list.indexOf(badge) === index).slice(0, 4);
-}
-
-function sourceMeetsConfidenceMode(
-  source: RankedNyaaItem,
-  mode: SourceFilterMode,
-  shouldUseBroadFallback: boolean,
-  records: Record<string, SourceFailureRecord>,
-  audioPreference: DesktopAudioPreference,
-  audioMode: AudioMode,
-) {
-  if (!source.playable) return false;
-  const score = sourceConfidenceScore(source, records, audioPreference, audioMode);
-  const workedBefore = Boolean(sourceSuccessFor(source, records));
-  const recentlyFailed = Boolean(sourceFailureFor(source, records));
-  if (mode === 'strict') {
-    return source.matchTier === 'exact'
-      && score >= 72
-      && !recentlyFailed
-      && (!isBatchSource(source.title) || workedBefore);
-  }
-  if (mode === 'balanced') {
-    if (source.matchTier === 'broad' && !shouldUseBroadFallback) return false;
-    if (isBatchSource(source.title) && !workedBefore && score < 68) return false;
-    return score >= 42;
-  }
-  return score >= 16;
 }
 
 function isTrustedSource(source: NyaaItem) {
@@ -1743,6 +1646,7 @@ export default function DesktopWatch() {
   const [episodeViewMode, setEpisodeViewMode] = useState<EpisodeViewMode>('cards');
   const [episodeJumpValue, setEpisodeJumpValue] = useState('');
   const [trailerOpen, setTrailerOpen] = useState(false);
+  const closeTrailer = useCallback(() => setTrailerOpen(false), []);
   const [episodeRailDragging, setEpisodeRailDragging] = useState(false);
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
   const [playback, setPlayback] = useState<{ torrentId: string; title: string; source: LocalPlaybackSource } | null>(null);
@@ -1940,6 +1844,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     [anime?.anilist_id, anime?.id, anime?.mal_id, id, routeAniListId, routeMalId],
   );
 
+  const [expandTimeline, setExpandTimeline] = useState(false);
+  useEffect(() => { setExpandTimeline(false); }, [timelineCacheKey]);
   const installmentGraphQuery = useQuery({
     queryKey: ['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind],
     queryFn: async ({ signal }) => loadSeriesTimeline({
@@ -1963,7 +1869,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       },
       onPartial: (result) => queryClient.setQueryData(['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind], result),
     }),
-    enabled: Boolean(timelineCacheKey) && hasFullMetadata,
+    enabled: Boolean(timelineCacheKey) && hasFullMetadata && expandTimeline,
     staleTime: 1000 * 60 * 15,
     gcTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
@@ -1975,13 +1881,23 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     queryKey: ['episodes', episodeLookupId, episodePage, 3],
     queryFn: ({ signal }) => fetchAnimeEpisodeWindow(episodeLookupId, episodePage, { signal }),
     enabled: canFetchEpisodeMetadata,
-    refetchInterval: query => query.state.error || query.state.data?.latestPageResolved === false || query.state.data?.streamnyaa?.status === 'stale' ? 60_000 : false,
     retry: false,
     staleTime: 1000 * 60 * 10,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
   });
-  const episodeData = episodeQuery.data;
+  const latestEpisodePage = Number(episodeQuery.data?.latestPage || 1);
+  const episodeTailQuery = useQuery({
+    queryKey: ['episode-tail', episodeLookupId, latestEpisodePage, 3],
+    queryFn: ({ signal }) => fetchAnimeEpisodeTail(episodeLookupId, latestEpisodePage, { signal }),
+    enabled: canFetchEpisodeMetadata && latestEpisodePage > 1 && latestEpisodePage !== episodePage,
+    retry: false, staleTime: 1000 * 60 * 10, refetchOnWindowFocus: false,
+  });
+  useEffect(() => {
+    if (!episodeTailQuery.data) return;
+    queryClient.setQueryData(['episodes', episodeLookupId, episodePage, 3], (current: any) => current ? mergeAnimeEpisodeTail(current, episodeTailQuery.data!) : current);
+  }, [episodeLookupId, episodePage, episodeTailQuery.data, queryClient]);
+  const episodeData = episodeTailQuery.data && episodeQuery.data ? mergeAnimeEpisodeTail(episodeQuery.data, episodeTailQuery.data) : episodeQuery.data;
 
   const pageItems = episodeData?.data || [];
   const airedCount = knownAiredEpisodeCount(anime, pageItems);
@@ -2176,245 +2092,96 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     });
   }, [airedCount, anime, animeNotYetAired, id, selectedEpisode, selectedInstallment]);
 
+  const sourceIdentity = useMemo(() => buildSourceIdentity(anime, selectedInstallment || undefined), [anime, selectedInstallment]);
+  const sourceContextSignature = sourceIdentitySignature(sourceIdentity);
   const sourceQueryKey = useMemo(() => [
-    'desktop-watch-sources', anime?.anilist_id ? 'anilist:' + anime.anilist_id : 'mal:' + anime?.mal_id,
-    selectedEpisode, audioMode, audioPreference, sourceMode,
-  ] as const, [anime?.anilist_id, anime?.mal_id, selectedEpisode, audioMode, audioPreference, sourceMode]);
-
+    'desktop-watch-sources', sourceContextSignature, selectedEpisode,
+  ] as const, [sourceContextSignature, selectedEpisode]);
   const { data: sources, error: sourcesError, isLoading: sourcesLoading, isFetching: sourcesFetching, refetch: refetchSources } = useQuery({
     queryKey: sourceQueryKey,
     queryFn: async ({ signal }) => {
       const progressToken = ++sourceProgressTokenRef.current;
-      const reportProgress = (value: number) => {
-        if (sourceProgressTokenRef.current === progressToken && !signal?.aborted) {
-          setSourceSearchProgress((current) => Math.max(current, value));
-        }
-      };
       setSourceSearchProgress(18);
-      const epPadded = String(selectedEpisode).padStart(2, '0');
-      const titleCandidates = sourceSearchTitleVariants(anime, id, selectedInstallment)
-        .filter(isSafeSourceQueryTitle)
-        .slice(0, 5);
-      const seasonHints = sourceSearchSeasonHints(anime, id, selectedInstallment);
-      const partHints = sourceSearchPartHints(anime, id, selectedInstallment);
-      const audioSuffix = audioMode === 'dub' ? ' dub' : '';
-      const requestId = `${Date.now().toString(36)}-${selectedEpisode}-${sourceMode}`;
-      const startedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-      const elapsedMs = () => Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startedAt);
-      const remainingBudgetMs = () => Math.max(0, SOURCE_SEARCH_BUDGET_MS - elapsedMs());
-      const isAborted = () => Boolean(signal?.aborted);
-      const accumulator = new SourceAccumulator<RankedNyaaItem>((items) => dedupeNyaaItems(items) as RankedNyaaItem[]);
-      let completedSourceQueries = 0;
-      let timedOutSourceQueries = 0;
-      let failedSourceQueries = 0;
-      const finish = (items: RankedNyaaItem[], stage: string) => {
-        if (isAborted()) {
-          throw desktopDataError('nyaa', new DOMException('Playback preparation was cancelled.', 'AbortError'));
-        }
-        if (!items.length && completedSourceQueries === 0 && (timedOutSourceQueries > 0 || failedSourceQueries > 0)) {
-          throw desktopDataError('nyaa', new Error('Playback preparation could not complete before the connection limit.'));
-        }
-        accumulator.add(items);
-        if (timedOutSourceQueries || failedSourceQueries || remainingBudgetMs() <= 0) accumulator.interrupt();
-        reportProgress(96);
-        debugSourceLoading('done', {
-          request: requestId,
-          stage,
-          anime: anime?.title || anime?.title_english || anime?.title_romaji || id,
-          episode: selectedEpisode,
-          mode: sourceMode,
-          count: items.length,
-          totalMs: elapsedMs(),
-          aborted: isAborted(),
-        });
-        return accumulator.result();
+      const saved = queryClient.getQueryData<SourceDiscovery<NyaaItem>>(sourceQueryKey);
+      const previous = saved?.pending?.length ? saved : undefined;
+      const jobs = previous?.pending?.length ? previous.pending : sourceSearchPlan(sourceIdentity, selectedEpisode);
+      const publishPartial = (result: SourceDiscovery<NyaaItem>) => {
+        if (signal.aborted || sourceProgressTokenRef.current !== progressToken) return;
+        queryClient.setQueryData(sourceQueryKey, result);
+        setSourceSearchProgress(Math.min(94, 30 + Math.round((jobs.length - (result.pending?.length || 0)) / Math.max(1, jobs.length) * 64)));
       };
-
-      debugSourceLoading('start', {
-        request: requestId,
-        anime: anime?.title || anime?.title_english || anime?.title_romaji || id,
-        episode: selectedEpisode,
-        mode: sourceMode,
-        audioMode,
-        titleCandidates: titleCandidates.length,
+      const result = await runSourceSearchPass<NyaaItem>({
+        jobs, initial: previous?.items, initialState: previous, signal, budgetMs: SOURCE_SEARCH_BUDGET_MS, requestLimit: 12,
+        merge: dedupeNyaaItems, publish: publishPartial,
+        fetch: async (job, deadlineMs) => {
+          const raw = await searchNyaa(job.query, job.category, '0', String(job.page), {
+            deep: false, pages: 1, wide: false, signal, deadlineMs, maxAgeMs: 60_000,
+            intent: { scope: 'episode', episode: selectedEpisode },
+          });
+          const items = await validateDesktopSourceCandidates(raw, sourceIdentity, selectedEpisode);
+          return { items, complete: raw.complete, stale: raw.stale, fetchedAt: raw.fetchedAt, emptyPage: raw.length === 0, retryAt: raw.retryAt };
+        },
       });
-
-      const normalizeSourcePool = (items: NyaaItem[]) => {
-        const deduped = dedupeNyaaItems(items)
-          .filter((source) => !isAncillarySource(source.title));
-        if (!deduped.length) return [];
-        const ranked = deduped
-          .map((source) => classifySource(source, {
-            anime,
-            routeId: id,
-            installment: selectedInstallment,
-            episode: selectedEpisode,
-          }))
-          .filter((source) => source.matchTier !== 'rejected');
-        if (!ranked.length) return [];
-        const seeded = ranked.filter((source) => source.rawSeeders > 0);
-        const viable = seeded.length ? seeded : ranked;
-        const audioFiltered = audioMode === 'dub'
-          ? viable.filter((source) => {
-              if (audioPreference === 'dub-only') return isDubOnlySource(source.title) || isDualAudioSource(source.title);
-              return isDubSource(source.title);
-            })
-          : viable.filter((source) => !isDubOnlySource(source.title));
-        return audioFiltered.length ? audioFiltered : viable;
-      };
-
-      const combineSources = (items: RankedNyaaItem[]) => dedupeNyaaItems(items) as RankedNyaaItem[];
-      const publishPartial = (items: RankedNyaaItem[], stage: string) => {
-        if (isAborted() || !items.length) return;
-        const partial = combineSources(items);
-        accumulator.add(partial);
-        queryClient.setQueryData<SourceDiscovery<RankedNyaaItem>>(sourceQueryKey, { items: accumulator.result().items, complete: false });
-        reportProgress(stage === 'exact' ? 54 : stage === 'season' ? 74 : 88);
-        debugSourceLoading('partial', { request: requestId, stage, count: partial.length, totalMs: elapsedMs() });
-      };
-
-      const runQuery = async (query: string, options: { pages?: number; wide?: boolean; deep?: boolean }) => {
-        if (isAborted() || remainingBudgetMs() <= 0) return [];
-        const queryStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
-        const timeoutMs = Math.min(SOURCE_QUERY_TIMEOUT_MS, remainingBudgetMs());
-        let result: NyaaItem[] | null;
-        try {
-          result = await searchNyaa(query, '1_2', '0', '1', { ...options, signal, deadlineMs: timeoutMs });
-        } catch (error) {
-          if (isAborted()) throw error;
-          failedSourceQueries += 1;
-          debugSourceLoading('query-failed', { request: requestId, ms: Math.round(elapsedMs()) });
-          return [];
-        }
-        const queryMs = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - queryStartedAt);
-        if (isAborted()) {
-          debugSourceLoading('stale-query', { request: requestId, query, ms: queryMs });
-          return [];
-        }
-        if (!result) {
-          timedOutSourceQueries += 1;
-          debugSourceLoading('query-timeout', { request: requestId, query, ms: queryMs });
-          return [];
-        }
-        if ((result as NyaaItem[] & { complete?: boolean }).complete === false) accumulator.interrupt();
-        completedSourceQueries += 1;
-        const normalized = normalizeSourcePool(result);
-        debugSourceLoading('provider', { request: requestId, query, raw: result.length, usable: normalized.length, ms: queryMs });
-        return normalized;
-      };
-
-      const attemptedQueries = new Set<string>();
-      const tryQueries = async (
-        queries: string[],
-        options: { pages?: number; wide?: boolean; deep?: boolean },
-        maxQueries: number,
-        stage: 'exact' | 'season' | 'broad',
-        baseItems: RankedNyaaItem[] = [],
-      ) => {
-        const pending: string[] = [];
-        for (const rawQuery of queries) {
-          const query = rawQuery.replace(/\s+/g, ' ').trim();
-          if (!query) continue;
-          const key = query.toLowerCase();
-          if (attemptedQueries.has(key)) continue;
-          attemptedQueries.add(key);
-          pending.push(query);
-          if (pending.length >= maxQueries) break;
-        }
-
-        let accumulated: RankedNyaaItem[] = [];
-        for (let index = 0; index < pending.length; index += SOURCE_QUERY_BATCH_SIZE) {
-          if (isAborted() || remainingBudgetMs() <= 0) { accumulator.interrupt(); return accumulated; }
-          const batch = pending.slice(index, index + SOURCE_QUERY_BATCH_SIZE);
-          const results = await Promise.all(batch.map(async (query) => ({ query, items: await runQuery(query, options) })));
-          if (isAborted()) return [];
-          const hitItems = combineSources(results.flatMap((result) => result.items));
-          accumulated = combineSources([...accumulated, ...hitItems]);
-          if (accumulated.length) publishPartial(combineSources([...baseItems, ...accumulated]), stage);
-          const healthyMatches = accumulated.filter((source) => source.playable && source.rawSeeders > 0);
-          if (healthyMatches.length >= 3) return accumulated;
-        }
-        return accumulated;
-      };
-
-      const seasonCodeEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
-        const stripped = stripSeasonDecorators(title) || cleanTitle(title);
-        const seasonPadded = String(seasonNumber).padStart(2, '0');
-        const queries = [`${stripped} s${seasonPadded}e${epPadded}${audioSuffix}`];
-        partHints.forEach((partNumber) => {
-          queries.push(`${stripped} s${seasonPadded} part ${partNumber} e${epPadded}${audioSuffix}`);
-          queries.push(`${stripped} season ${seasonNumber} part ${partNumber} episode ${selectedEpisode}${audioSuffix}`);
-        });
-        return queries;
-      }));
-      const exactEpisodeQueries = titleCandidates.flatMap((title) => {
-        const cleanedTitle = cleanTitle(title);
-        return [
-          `${cleanedTitle} ${epPadded}${audioSuffix}`,
-          `${cleanedTitle} episode ${selectedEpisode}${audioSuffix}`,
-          `${cleanedTitle} ep ${selectedEpisode}${audioSuffix}`,
-        ];
-      });
-      const exactQueries = [...seasonCodeEpisodeQueries.slice(0, 1), ...exactEpisodeQueries.slice(0, 1), ...seasonCodeEpisodeQueries.slice(1), ...exactEpisodeQueries.slice(1)];
-      const exact = await tryQueries(exactQueries, { pages: 1, wide: false, deep: false }, 6, 'exact');
-      if (isAborted()) return finish([], 'aborted-after-exact');
-      publishPartial(exact, 'exact');
-      if (exact.filter((source) => source.matchTier === 'exact' && source.playable && source.rawSeeders > 0).length >= 3) return finish(exact, 'exact');
-      if (remainingBudgetMs() <= 0) return finish(exact, 'budget-after-exact');
-
-      const seasonEpisodeQueries = seasonHints.flatMap((seasonNumber) => titleCandidates.flatMap((title) => {
-        const stripped = stripSeasonDecorators(title) || cleanTitle(title);
-        const seasonPadded = String(seasonNumber).padStart(2, '0');
-        const queries = [
-          `${stripped} s${seasonPadded}e${epPadded}${audioSuffix}`,
-          `${stripped} season ${seasonNumber} episode ${selectedEpisode}${audioSuffix}`,
-        ];
-        partHints.forEach((partNumber) => {
-          queries.push(`${stripped} season ${seasonNumber} part ${partNumber} episode ${selectedEpisode}${audioSuffix}`);
-          queries.push(`${stripped} season ${seasonNumber} cour ${partNumber} episode ${selectedEpisode}${audioSuffix}`);
-        });
-        return queries;
-      }));
-      const seasonEpisode = await tryQueries(seasonEpisodeQueries, { pages: 1, wide: true, deep: true }, 12, 'season', exact);
-      if (isAborted()) return finish([], 'aborted-after-season');
-      const combinedSeason = combineSources([...exact, ...seasonEpisode]);
-      publishPartial(combinedSeason, 'season');
-      if (sourceMode === 'strict') return finish(combinedSeason, 'strict-season');
-      if (combinedSeason.filter((source) => source.playable && (source.matchTier === 'exact' || source.matchTier === 'likely')).length >= 3) return finish(combinedSeason, 'exact-or-likely');
-      if (remainingBudgetMs() <= 0) return finish(combinedSeason, 'budget-after-season');
-
-      const broadEpisodeQueries = titleCandidates.flatMap((title) => {
-        const cleanedTitle = cleanTitle(title);
-        return [
-          `${cleanedTitle} ${selectedEpisode}${audioSuffix}`,
-          `${cleanedTitle} ${epPadded}`,
-          `${cleanedTitle} ${selectedEpisode}`,
-        ];
-      });
-      const broad = await tryQueries(broadEpisodeQueries, { pages: 2, wide: true, deep: true }, 8, 'broad', combinedSeason);
-      const combinedEpisode = combineSources([...exact, ...seasonEpisode, ...broad]);
-      if (isAborted()) return finish([], 'aborted-after-broad');
-      publishPartial(combinedEpisode, 'broad');
-      if (combinedEpisode.filter((source) => source.playable && (source.matchTier === 'exact' || source.matchTier === 'likely')).length >= 3) return finish(combinedEpisode, 'broad-needed');
-      if (remainingBudgetMs() <= 0) return finish(combinedEpisode, 'budget-after-broad');
-
-      const fallback = await tryQueries(titleCandidates.map((title) => cleanTitle(title)), { pages: 2, wide: true, deep: true }, 4, 'broad', combinedEpisode);
-      if (isAborted()) return finish([], 'aborted-after-fallback');
-      if (fallback.length) return finish(combineSources([...combinedEpisode, ...fallback]), 'fallback');
-
-      return finish(combinedEpisode, 'empty');
+      if (signal.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
+      setSourceSearchProgress(96);
+      const checkedAt = result.fetchedAt || Date.now();
+      const available = result.items.some(source => source.nativeEvidence === 'exact' && source.rawSeeders > 0 && sourceHasValidInput(source));
+      const ready = result.items.find(source => source.nativeEvidence === 'exact' && source.rawSeeders > 0 && sourceHasValidInput(source));
+      if (!result.stale && ready) recordDesktopAvailability(sourceAvailabilityEvidence(anime, ready, selectedEpisode, checkedAt));
+      if (!result.stale && !available && result.complete && !result.items.length) recordDesktopAvailability({ key: desktopAvailabilityKey(sourceIdentity.animeId, selectedEpisode), animeId: sourceIdentity.animeId,
+        episode: selectedEpisode, scope: 'episode', status: available ? 'available' : 'unavailable', checkedAt,
+        expiresAt: checkedAt + (available ? 20 * 60_000 : 15 * 60_000), complete: available || result.complete, evidence: available ? 'exact-source' : 'no-matching-source' });
+      return result;
     },
     enabled: sourceSearchReady,
-    staleTime: 1000 * 60 * 15,
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: true,
     retry: false,
-    retryDelay: (attempt) => 350 + attempt * 600,
   });
+  const findMoreSources = () => { void refetchSources(); };
+  const [checkTitleSources, setCheckTitleSources] = useState(false);
+  useEffect(() => { setCheckTitleSources(false); }, [sourceContextSignature]);
+  const titleSourcesQuery = useQuery({
+    queryKey: ['desktop-title-sources', sourceContextSignature],
+    enabled: sourceSearchReady && checkTitleSources,
+    queryFn: async ({ signal }) => {
+      const key = ['desktop-title-sources', sourceContextSignature];
+      const previous = queryClient.getQueryData<SourceDiscovery<NyaaItem>>(key);
+      const result = await runSourceSearchPass<NyaaItem>({
+        jobs: previous?.pending?.length ? previous.pending : sourceSearchPlan(sourceIdentity), initial: previous?.pending?.length ? previous.items : undefined,
+        initialState: previous?.pending?.length ? previous : undefined, signal,
+        merge: dedupeNyaaItems, publish: partial => queryClient.setQueryData(key, partial),
+        fetch: async (job, deadlineMs) => {
+          const raw = await searchNyaa(job.query, job.category, '0', String(job.page), { signal, deadlineMs, deep: false, pages: 1, intent: { scope: 'title' }, maxAgeMs: 5 * 60_000 });
+          const items = await validateDesktopSourceCandidates(raw, sourceIdentity, null);
+          return { items, complete: raw.complete, stale: raw.stale, fetchedAt: raw.fetchedAt, emptyPage: raw.length === 0, retryAt: raw.retryAt };
+        },
+      });
+      const available = result.items.some(source => source.rawSeeders > 0 && source.nativeEvidence === 'exact' && sourceHasValidInput(source));
+      // A bounded nonempty result may have valid releases on a later page.
+      // Only entirely empty successful title lanes can establish title absence.
+      const emptyTitle = result.complete && result.items.length === 0;
+      if (!result.stale && (available || emptyTitle)) {
+        const checkedAt = result.fetchedAt || Date.now();
+        recordDesktopAvailability({ key: desktopAvailabilityKey(sourceIdentity.animeId), animeId: sourceIdentity.animeId, scope: 'title',
+          status: available ? 'available' : 'unavailable', checkedAt, expiresAt: checkedAt + (available ? 20 : 15) * 60_000,
+          complete: available || result.complete, evidence: available ? 'exact-source' : 'no-matching-source' });
+      }
+      return result;
+    },
+    staleTime: 5 * 60_000, retry: false, refetchOnWindowFocus: false,
+  });
+  useEffect(() => {
+    if (!sources || sourcesFetching || expandTimeline) return;
+    const timer = window.setTimeout(() => setExpandTimeline(true), 1500);
+    return () => window.clearTimeout(timer);
+  }, [sources, sourcesFetching, expandTimeline]);
 
   const failedSourceRecords = useMemo(() => loadSourceFailureRecords(), [failedSourceVersion]);
   const allRankedSources = useMemo<RankedNyaaItem[]>(() => {
-    const items = [...(sources?.items || [])];
+    const items = (sources?.items || []).map(source => classifySource(source, { anime, routeId: id, installment: selectedInstallment, episode: selectedEpisode }))
+      .filter(source => source.matchTier !== 'rejected');
     return items.sort((a, b) => {
       if (sortBy === 'seeders') return b.rawSeeders - a.rawSeeders;
       if (sortBy === 'size') return a.rawSize - b.rawSize;
@@ -2424,36 +2191,18 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       if (tierDifference !== 0) return tierDifference;
       return sourceScore(b, audioPreference, audioMode) - sourceScore(a, audioPreference, audioMode);
     });
-  }, [audioMode, audioPreference, failedSourceRecords, sortBy, sources]);
+  }, [audioMode, audioPreference, failedSourceRecords, sortBy, sources, sourceContextSignature, selectedEpisode]);
   const exactSources = useMemo(() => allRankedSources.filter((source) => source.matchTier === 'exact'), [allRankedSources]);
   const likelySources = useMemo(() => allRankedSources.filter((source) => source.matchTier === 'likely'), [allRankedSources]);
   const broadSources = useMemo(() => allRankedSources.filter((source) => source.matchTier === 'broad'), [allRankedSources]);
+  const excludedSourceCount = Math.max(0, (sources?.items.length || 0) - allRankedSources.length);
   const modeFilteredSources = useMemo(() => {
-    const shouldUseBroadFallback = sourceMode === 'balanced' && !exactSources.length && !likelySources.length;
-    const eligible = sourceMode === 'strict'
-      ? exactSources
-      : sourceMode === 'balanced'
-        ? [...exactSources, ...likelySources, ...(shouldUseBroadFallback ? broadSources : [])]
-        : [...exactSources, ...likelySources, ...broadSources];
-    return eligible
-      .filter((source) => sourceMeetsConfidenceMode(source, sourceMode, shouldUseBroadFallback, failedSourceRecords, audioPreference, audioMode))
+    return selectSourceMode(allRankedSources, sourceMode, audioMode,
+      source => sourceConfidenceScore(source, failedSourceRecords, audioPreference, audioMode),
+      source => Boolean(sourceFailureFor(source, failedSourceRecords)))
       .sort((a, b) => sourceConfidenceScore(b, failedSourceRecords, audioPreference, audioMode) - sourceConfidenceScore(a, failedSourceRecords, audioPreference, audioMode));
-  }, [audioMode, audioPreference, broadSources, exactSources, failedSourceRecords, likelySources, sourceMode]);
-  const modeSortedSources = useMemo(() => {
-    const shouldUseBroadFallback = sourceMode === 'balanced' && !exactSources.length && !likelySources.length;
-    if (sourceMode === 'strict') {
-      return exactSources.filter((source) => sourceMeetsConfidenceMode(source, sourceMode, false, failedSourceRecords, audioPreference, audioMode));
-    }
-    if (sourceMode === 'balanced') {
-      const primary = [...exactSources, ...likelySources]
-        .filter((source) => sourceMeetsConfidenceMode(source, sourceMode, shouldUseBroadFallback, failedSourceRecords, audioPreference, audioMode));
-      const fallback = broadSources
-        .filter((source) => sourceMeetsConfidenceMode(source, sourceMode, true, failedSourceRecords, audioPreference, audioMode));
-      return primary.length ? primary : fallback;
-    }
-    return [...exactSources, ...likelySources, ...broadSources]
-      .filter((source) => sourceMeetsConfidenceMode(source, sourceMode, true, failedSourceRecords, audioPreference, audioMode));
-  }, [audioMode, audioPreference, broadSources, exactSources, failedSourceRecords, likelySources, sourceMode]);
+  }, [audioMode, audioPreference, allRankedSources, failedSourceRecords, sourceMode]);
+  const modeSortedSources = modeFilteredSources;
   const qualityCounts = useMemo(() => {
     const counts = new Map<SourceQualityFilter, number>();
     modeSortedSources.forEach((source) => {
@@ -2472,9 +2221,9 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   }, [qualityCounts]);
   const playableSources = useMemo(() => (
     sourceQuality === 'auto'
-      ? modeFilteredSources.filter(source => source.playable)
-      : modeFilteredSources.filter((source) => source.playable && sourceQualityBucket(source.title) === sourceQuality)
-  ), [modeFilteredSources, sourceQuality]);
+      ? modeFilteredSources.filter(source => source.playable && !source.manualOnly && !sourceFailureFor(source, failedSourceRecords))
+      : modeFilteredSources.filter((source) => source.playable && !source.manualOnly && !sourceFailureFor(source, failedSourceRecords) && sourceQualityBucket(source.title) === sourceQuality)
+  ), [modeFilteredSources, sourceQuality, failedSourceRecords]);
   const sortedSources = useMemo(() => (
     sourceQuality === 'auto'
       ? modeSortedSources
@@ -2712,7 +2461,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     return { result, playbackSource };
   }, [sourcePayloadFor]);
 
-  const playSource = useCallback(async (source: RankedNyaaItem, resumeOverride?: number) => {
+  const playSource = useCallback(async (source: RankedNyaaItem, resumeOverride?: number, manualConfirmed = false) => {
     const current = playbackValueRef.current?.source;
     const currentSeconds = playbackProgressValueRef.current?.current_seconds;
     if (resumeOverride === undefined && current && String(current.animeId) === String(anime.mal_id || anime.id)
@@ -2722,7 +2471,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       setPlaybackNotice({ tone: 'loading', text: 'This source is already opening.' });
       return;
     }
-    if (!source.playable) {
+    if (!source.playable && !(manualConfirmed && source.manualOnly && sourceHasValidInput(source) && source.rawSeeders > 0)) {
       setPlaybackNotice({ tone: 'error', text: `${source.playableLabel} source. StreamNyaa will only play sources that pass the same-anime, same-installment, same-episode checks.` });
       return;
     }
@@ -2732,7 +2481,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     playActionLockRef.current = true;
     const retryPool = [
       source,
-      ...playableSources.filter((candidate) => (
+      ...(manualConfirmed ? [] : playableSources.filter((candidate) => (
         (candidate.infoHash || candidate.magnet) !== (source.infoHash || source.magnet)
         && (
           candidate.matchTier !== 'broad'
@@ -2740,7 +2489,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
           || sourceMode === 'broad'
           || (!exactSources.length && !likelySources.length)
         )
-      )),
+      ))),
     ].slice(0, SOURCE_RETRY_LIMIT);
     const errors: string[] = [];
     setPlaybackNotice({
@@ -3290,16 +3039,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     ) : null}
                   </div>
                 </div>
-                {trailerOpen && trailerEmbedUrl ? (
-                  <iframe
-                    title={`${anime.title} trailer`}
-                    src={trailerEmbedUrl}
-                    className="aspect-video w-full bg-black"
-                    loading="lazy"
-                    allow="accelerometer; autoplay; encrypted-media; picture-in-picture"
-                    allowFullScreen
-                  />
-                ) : (
+                {trailerOpen && trailerEmbedUrl && <DesktopTrailer title={anime.title} url={trailerEmbedUrl} onClose={closeTrailer} />}
+                {(
                   <button
                     type="button"
                     onClick={() => {
@@ -3405,6 +3146,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
               </div>
               <div
                 ref={seasonRailRef}
+                onPointerEnter={() => setExpandTimeline(true)}
+                onFocusCapture={() => setExpandTimeline(true)}
                 onWheel={(event) => railWheelScroll(event, seasonRailRef.current)}
                 className="grid max-h-[274px] grid-cols-[repeat(auto-fill,minmax(278px,1fr))] gap-3 overflow-y-auto pr-1 custom-scrollbar"
               >
@@ -4215,10 +3958,24 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
             <details key={`${id}:${selectedEpisode}`} open ref={playbackOptionsRef} className="sn-playback-options">
               <summary className="flex min-h-14 cursor-pointer items-center justify-between gap-4 px-5 py-3 font-semibold">
-                <span>Change playback option</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} available${sourceSearchInProgress ? ' · finding more' : ''}` : 'View options'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
+                <span>Change playback option</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} shown · ${playableSources.length} verified${sourceSearchInProgress ? ' · finding more' : ''}` : 'View options'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
               </summary>
               <div className="p-4">
-            {sourceSearchInProgress && !sourcesBusy && <p role="status" className="mb-3 text-sm text-white/60">Matching sources are ready to play. Additional options are still being checked.</p>}
+            {!!sources?.items.length && <p className="mb-3 text-xs text-white/50">{sources.items.length} retrieved · {sortedSources.length} shown · {excludedSourceCount} incompatible sources excluded</p>}
+            {sourceSearchInProgress && !sourcesBusy && <p role="status" className="mb-3 text-sm text-white/60">{playableSources.length ? 'Verified sources are ready to play.' : 'Source identity checks are in progress.'} Additional options are still being checked.</p>}
+            {!sourcesFetching && sources?.complete === false && <div role="status" className="mb-3 flex flex-wrap items-center gap-3 text-sm text-white/60">
+              <span>{sources.stale ? 'Saved sources are shown while the provider recovers.' : 'More source spellings and pages remain to be checked.'}</span>
+              <button type="button" onClick={findMoreSources} className="sn-secondary-action px-3 py-2">Find more sources</button>
+            </div>}
+            {!sourcesFetching && !sourcesBusy && !playableSources.length && <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-white/60">
+              <span>{titleSourcesQuery.isFetching ? 'Checking releases for this title…' : titleSourcesQuery.data?.complete ? 'Title source check finished.' : 'This episode may be missing while other episodes are available.'}</span>
+              <button type="button" disabled={titleSourcesQuery.isFetching} className="sn-secondary-action px-3 py-2" onClick={() => { if (checkTitleSources) void titleSourcesQuery.refetch(); else setCheckTitleSources(true); }}>
+                {titleSourcesQuery.data?.pending?.length ? 'Continue title source check' : 'Check title sources'}
+              </button>
+            </div>}
+            {sourceMode !== 'broad' && broadSources.some(source => source.manualOnly) && <p className="mb-3 text-sm text-white/60">
+              Some releases have unverified installment or episode identity. <button type="button" className="text-primary underline" onClick={() => setSourceMode('broad')}>Review uncertain releases</button>
+            </p>}
             {animeNotYetAired ? null : sourceSearchInProgress && !sortedSources.length ? (
               <div className="grid gap-3">
                 <DesktopLoadingProgress label={`Preparing Episode ${selectedEpisode}`} percent={sourceSearchProgress} detail="Checking video quality, audio preference, and playback health." />
@@ -4305,9 +4062,13 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                           <button type="button" onClick={() => navigator.clipboard?.writeText(source.magnet || torrentUrlFor(source))} className="grid h-10 w-10 place-items-center rounded-lg border border-white/[0.10] bg-white/[0.05] text-white/62 transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]" aria-label="Copy source link">
                             <Copy className="h-4 w-4" />
                           </button>
-                          <button type="button" disabled={Boolean(active) || !source.playable} onClick={() => void playSource(source)} className="inline-flex h-10 min-w-[86px] items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold normal-case tracking-normal text-white shadow-none shadow-primary/24 transition-all hover:bg-[#ff3345] hover:shadow-primary/34 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60">
+                          <button type="button" disabled={Boolean(active) || (!source.playable && !(source.manualOnly && source.rawSeeders > 0))} onClick={() => {
+                            if (source.manualOnly) {
+                              if (window.confirm('This release has not been verified for the selected installment and episode. Inspect its title carefully. Open this release manually?')) void playSource(source, undefined, true);
+                            } else void playSource(source);
+                          }} className="inline-flex h-10 min-w-[86px] items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold normal-case tracking-normal text-white shadow-none shadow-primary/24 transition-all hover:bg-[#ff3345] hover:shadow-primary/34 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60">
                             {active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}
-                            {active ? 'Opening' : source.playable ? 'Play' : 'Blocked'}
+                            {active ? 'Opening' : source.playable ? 'Play' : source.manualOnly ? 'Review & play' : 'Blocked'}
                           </button>
                         </div>
                       </div>
@@ -4387,7 +4148,7 @@ function sourceHealth(seedCount: number) {
 function sourceTierLabel(tier: SourceMatchTier) {
   if (tier === 'exact') return 'Exact matches';
   if (tier === 'likely') return 'Likely matches';
-  if (tier === 'broad') return 'Broad matches';
+  if (tier === 'broad') return 'Advanced / uncertain matches';
   return 'Rejected';
 }
 

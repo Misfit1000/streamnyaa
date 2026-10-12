@@ -76,8 +76,8 @@ it('refreshes the first recent-feed cursor but keeps subsequent pages within tha
   fireEvent.click(screen.getByRole('button',{name:'Load more'}));await screen.findByRole('heading',{name:'anilist title 26',exact:true});
   expect(vi.mocked(fetchExplorePage).mock.calls[1][0].before).toBe(before);
   await clients[0].refetchQueries();
-  expect(vi.mocked(fetchExplorePage).mock.calls[2][0].before).toBe(Math.floor(clock/1000));
-  expect(vi.mocked(fetchExplorePage).mock.calls[3][0].before).toBe(Math.floor(clock/1000));
+  expect(vi.mocked(fetchExplorePage).mock.calls[2][0].before).toBe(Math.floor(clock/60_000)*60);
+  expect(vi.mocked(fetchExplorePage).mock.calls[3][0].before).toBe(Math.floor(clock/60_000)*60);
  } finally {now.mockRestore();}
 });
 
