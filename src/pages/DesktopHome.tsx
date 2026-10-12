@@ -35,7 +35,7 @@ import { airedEpisodeCount, episodeAvailabilityLabel } from '../lib/animeEpisode
 import { readDesktopCatalog, writeDesktopCatalog } from '../lib/desktopCatalogCache';
 import { withDesktopCatalogFallback } from '../api/desktopCatalogFallback';
 import { getCurrentAnimeSeason } from '../lib/currentSeason';
-import { chooseReadyEpisode, useDesktopHomeReadiness } from '../lib/desktopHomeReadiness';
+import { chooseReadyEpisode, useDesktopHomeReadiness, homeHistoryAnime } from '../lib/desktopHomeReadiness';
 import { jikanAdultTitle } from '../api/desktopExplore';
 import { desktopOriginStaleTime } from '../lib/desktopOriginFreshness';
 
@@ -467,7 +467,8 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
     : source.episode ? `Episode ${source.episode}` : source.size || 'Recent source';
   const episodeLabel = source.episode ? `Episode ${source.episode}` : 'Recent source';
   const lastWatchedText = sourceUpdatedLabel(source);
-  const detailsPath = source.animeId ? desktopWatchPath({mal_id:source.animeId,title:source.animeTitle || source.title}, source.episode ? {ep:String(source.episode)} : undefined) : `/search?q=${encodeURIComponent(source.animeTitle || source.title)}`;
+  const detailsAnime = homeHistoryAnime(source);
+  const detailsPath = detailsAnime.mal_id || detailsAnime.anilist_id ? desktopWatchPath(detailsAnime, source.episode ? {ep:String(source.episode)} : undefined) : `/search?q=${encodeURIComponent(source.animeTitle || source.title)}`;
   const resume = () => {
     void openLocalSourceNow(source).catch((error) => {
       console.warn(error instanceof Error ? error.message : String(error || 'Source link could not open.'));
@@ -500,7 +501,7 @@ const SourceCard = memo(function SourceCard({ source }: { source: LocalPlaybackS
             </span>
           </span>
         </button>
-        <DesktopBookmarkButton anime={{mal_id:source.animeId,title:source.animeTitle || source.title,images:{jpg:{image_url:source.poster}}}} className="absolute left-3 top-3 z-20" />
+        <DesktopBookmarkButton anime={{...detailsAnime,images:{jpg:{image_url:source.poster}}}} className="absolute left-3 top-3 z-20" />
         <div className="absolute right-3 top-3 flex gap-1.5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           <button
             type="button"
@@ -644,10 +645,10 @@ export default function DesktopHome() {
   const upcomingData = upcomingQuery.data;
   const yearlyTopData = yearlyTopQuery.data;
   const historyAnime = (source: LocalPlaybackSource) => {
+    const identity = homeHistoryAnime(source);
     const known = [seasonalData, trendingData, recentEpisodeData, popularData, topAiringData, yearlyTopData]
-      .flatMap(data => data?.data || []).find(anime => String(anime.mal_id) === String(source.animeId) || `anilist:${anime.anilist_id}` === String(source.animeId));
-    return known || { mal_id: /^\d+$/.test(String(source.animeId)) ? Number(source.animeId) : undefined,
-      anilist_id: String(source.animeId).startsWith('anilist:') ? Number(String(source.animeId).slice(8)) : undefined, title: source.animeTitle || source.title };
+      .flatMap(data => data?.data || []).find(anime => identity.mal_id && Number(anime.mal_id) === identity.mal_id || identity.anilist_id && Number(anime.anilist_id) === identity.anilist_id);
+    return known || identity;
   };
   const readinessCandidates = useMemo(() => [
     ...(activeShelves.has('spotlight') || activeShelves.has('season') ? (seasonalData?.data || []).slice(0, 8) : []),

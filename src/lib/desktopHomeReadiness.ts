@@ -7,7 +7,13 @@ import { useDesktopCatalogAvailability } from './desktopCatalogAvailability';
 import { sourceSearchPlan, type SourceSearchJob } from './desktopSourceDiscovery';
 import { getDownloadQueue, getOfflineFiles, listenDownloadsChanged } from './desktopDownloads';
 import { isUpcomingAnime } from './desktopAnimeRoute';
-import type { DesktopAudioPreference } from './desktop';
+import type { DesktopAudioPreference, LocalPlaybackSource } from './desktop';
+
+export function homeHistoryAnime(source: LocalPlaybackSource) {
+  const id = String(source.animeId || '');
+  return { mal_id: /^(?:mal:)?[1-9]\d*$/.test(id) ? Number(id.replace(/^mal:/, '')) : undefined,
+    anilist_id: /^anilist:[1-9]\d*$/.test(id) ? Number(id.slice(8)) : undefined, title: source.animeTitle || source.title };
+}
 
 export function sourceAvailabilityEvidence(anime: any, source: NyaaItem, episode: number, checkedAt: number): DesktopAvailabilityRecord {
   const identity = buildSourceIdentity(anime);

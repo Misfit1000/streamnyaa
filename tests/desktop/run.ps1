@@ -386,7 +386,7 @@ Assert-Match $desktopHistory "setPendingClear\('all'\)" 'Desktop History Clear a
 Assert-Match $desktopBridge 'LOCAL_PLAYBACK_HISTORY_LIMIT\s*=\s*18' 'Desktop playback history must remain bounded.'
 Assert-Match $desktopHome 'Resume' 'Continue Watching should expose Resume instead of Restart.'
 Assert-NotMatch $desktopHome '>\s*Restart\s*<' 'Continue Watching must not offer a misleading restart action.'
-Assert-Match $desktopHome 'const detailsPath = source.animeId \? desktopWatchPath' 'Continue Watching details should open the anime Watch page.'
+Assert-Match $desktopHome 'const detailsPath = detailsAnime.mal_id \|\| detailsAnime.anilist_id \? desktopWatchPath' 'Continue Watching details should use a provider-qualified anime Watch route.'
 Assert-Match $desktopSources "searchParams\.get\('animeId'\)" 'Source Browser should preserve canonical anime identity from Continue Watching.'
 Assert-Match $desktopSources "searchParams\.get\('ep'\)" 'Source Browser should preserve the requested episode context.'
 Assert-Match $desktopExplore 'contentVisibility' 'Desktop Explore should skip layout and paint work for off-screen cards.'

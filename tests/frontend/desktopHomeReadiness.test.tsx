@@ -4,13 +4,23 @@ vi.mock('../../src/api/nyaa', () => ({ searchNyaa: vi.fn(async () => Object.assi
 vi.mock('../../src/lib/desktopDownloads', () => ({ getDownloadQueue: vi.fn(async () => ({ items: [] })), getOfflineFiles: vi.fn(async () => []), listenDownloadsChanged: vi.fn(async () => () => {}) }));
 import { searchNyaa } from '../../src/api/nyaa';
 import { getDownloadQueue, getOfflineFiles } from '../../src/lib/desktopDownloads';
-import { homeReadyEpisodes, sourceAvailabilityEvidence, chooseReadyEpisode, useDesktopHomeReadiness } from '../../src/lib/desktopHomeReadiness';
+import { homeReadyEpisodes, sourceAvailabilityEvidence, chooseReadyEpisode, useDesktopHomeReadiness, homeHistoryAnime } from '../../src/lib/desktopHomeReadiness';
+import { desktopWatchPath } from '../../src/lib/desktopAnimeRoute';
 import { selectSourceMode } from '../../src/lib/desktopSourceSelection';
 const anime = { anilist_id: 123, mal_id: 456, title: 'Example Season 2', type: 'TV' };
 const source = { infoHash: 'a'.repeat(40), title: '[Group] Example S02E03 [1080p]', nativeEvidence: 'exact', rawSeeders: 5 } as any;
 beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); vi.spyOn(document, 'hidden', 'get').mockReturnValue(false); });
 afterEach(() => { cleanup(); localStorage.clear(); });
 describe('positive Home readiness', () => {
+ it('keeps qualified provider identities and the selected episode in history routes', () => {
+  const saved={magnet:'magnet',title:'Release',animeTitle:'Example',episode:3};
+  expect(homeHistoryAnime({...saved,animeId:'mal:456'}).mal_id).toBe(456);
+  expect(homeHistoryAnime({...saved,animeId:456}).mal_id).toBe(456);
+  const identity=homeHistoryAnime({...saved,animeId:'anilist:123'});
+  expect(identity.anilist_id).toBe(123);expect(identity.mal_id).toBeUndefined();
+  expect(desktopWatchPath(identity,{ep:3})).toContain('ep=3');
+  expect(homeHistoryAnime({...saved,animeId:'unrelated title'}).mal_id).toBeUndefined();
+ });
  it('rejects legacy metadata, stale evidence, wrong identities and upcoming entries', () => {
   const record = sourceAvailabilityEvidence(anime, source, 3, Date.now());
   expect(homeReadyEpisodes(anime, [record], 'sub')).toEqual([3]);

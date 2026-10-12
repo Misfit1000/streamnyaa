@@ -17,8 +17,8 @@ This revision preserves application identity `xyz.streamnyaa.desktop` and existi
 
 ## Verification
 
-- TypeScript passed; all 344 frontend tests across 64 files passed.
-- Rust: 87 passed, one existing local-download integration test ignored by the default suite. No compiler warnings.
+- TypeScript passed; all 345 frontend tests across 64 files passed.
+- Rust: 87 passed, one existing local-download integration test ignored by the default suite. The test build has no compiler warnings; the release build reports one unused legacy test-helper wrapper.
 - Desktop contracts passed. Native player-state: 525 behavioral assertions passed, including preview-only dragging, single exact release seek, generation rejection and progress-aware recovery.
 - Native controls, 12 episode replacements, stall integration and 100-cycle soak passed. Affected web/API compatibility: 16 passed.
 - Local real-media integration used the bundled MPV and rqbit, a private localhost tracker, existing verified media and a partially downloaded copy, with a simultaneous second torrent sharing a 64 KiB/s cap. No public media, installed application data or user torrents were used.
