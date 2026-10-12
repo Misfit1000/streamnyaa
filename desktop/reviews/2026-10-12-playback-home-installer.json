@@ -1,0 +1,1554 @@
+{
+  "product": "StreamNyaa Desktop",
+  "version": "0.1.10",
+  "identifier": "xyz.streamnyaa.desktop",
+  "releaseRevision": "playback-home-reliability",
+  "builtAt": "2026-10-12T21:22:10.2525987+05:45",
+  "sourceCommit": "bcaeee71dc50db314599281ecdb2afbbab85134c",
+  "installer": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\releases\\v0.1.10\\StreamNyaa_0.1.10_x64-setup.exe",
+  "bytes": 41843407,
+  "sha256": "BE3451DDABCB0EE667302400EBF42F907882B7EDA4FFB52DA232EB3DA11AA623",
+  "signature": "NotSigned",
+  "rollback": {
+    "installer": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\releases\\v0.1.9\\StreamNyaa_0.1.9_x64-setup.exe",
+    "sha256": "38B7A8E3A3BF58978000EC4DDF21DF7D418AE8D667C9873592BFCA0234593E17"
+  },
+  "resources": [
+    {
+      "name": "d3dcompiler_43.dll",
+      "bytes": 4481992,
+      "sha256": "4B074A3976399DC735484F5D43D04B519B7BDEE8AC719D9AB8ED6BD4E6BE0345",
+      "stagedMatches": true,
+      "nsisInclusionVerified": true
+    },
+    {
+      "name": "mpv.com",
+      "bytes": 3584,
+      "sha256": "A6C822DB4EA4F4207B963E56EE50A125B5720031ACA22C88EE00524940A1C5AC",
+      "stagedMatches": true,
+      "nsisInclusionVerified": true
+    },
+    {
+      "name": "mpv.exe",
+      "bytes": 120308736,
+      "sha256": "1645E57569C0AF58A70C61257F3716F2EE6EB31BB170EDC51F3F25A0B8D0D99C",
+      "stagedMatches": true,
+      "nsisInclusionVerified": true
+    },
+    {
+      "name": "rqbit.exe",
+      "bytes": 13963264,
+      "sha256": "4D4E5F4D81A7C9432BF37F1857E34486C9B1114E258573FC5486FBB1DB18898C",
+      "stagedMatches": true,
+      "nsisInclusionVerified": true
+    },
+    {
+      "name": "streamnyaa-player.lua",
+      "bytes": 224078,
+      "sha256": "AF75EB23DB44B44F1E068311087BBAD181309EB91BD7CA2CB027FE52C231989D",
+      "stagedMatches": true,
+      "nsisInclusionVerified": true
+    }
+  ],
+  "sourceFiles": {
+    "value": [
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\_shared\\adminAuth.js",
+        "sha256": "19673FC87C2C41C895483792F3E770237CA8A50A8678ADAD6B4C745E944C1776"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\_shared\\adminAuth.ts",
+        "sha256": "A2DDD30E7765E4C0B6EBDE9D1625E8A79FC942AB6B876A0754B70F974995F104"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\_shared\\nativeAuthRelay.ts",
+        "sha256": "6837532E78ED4822C41043552D87B46DD801F817F51C718525FBF5F3C12BD847"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\account-sync.ts",
+        "sha256": "26F7807B421CB4F3EF1971F7303F539A68606DD7B62B2FA7043D621FDEDAF1DA"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\admin\\[route].ts",
+        "sha256": "1E4C87B22F8F290F57ECC16C0CA161211A7FDE5893382C80A899E30C4AF0CF24"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\auth\\[route].ts",
+        "sha256": "14C032D707518185A5A5FB28B581E2CA2D3452D661C7FDB3472A2514EB793426"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\blog.ts",
+        "sha256": "D3B0BEDBB2A3D58BB0E02195AE4EF692D13F798EA6C5EEF805B672D7F4689FEB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\blogArchive.js",
+        "sha256": "9378023978EC72F4977B82D4FEFC15CA0D9DA2A836A5C21175F58CD9F332E55E"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\blog-archive.ts",
+        "sha256": "3E2A3F08B7C982D380B07227FC6D853D767392E990AD22CC39779978D92B221F"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\blog-sitemap.ts",
+        "sha256": "02BDF5FC19CE8F4062D7F2B557FCB1284800B96FA6E4C88D1AA275D1DE58A5BC"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\cron\\blog.ts",
+        "sha256": "382EE759EF8B6288D8AA06C4766C1FC9C70B745D4BFC02063FFA08984959E1DC"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\download-history.ts",
+        "sha256": "E1690826AB14B831335A9F6890EA0BFDF09FC9CF0BCAB7A332913D067E35D519"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\nyaa.ts",
+        "sha256": "D471D62D92A8F30CA39FABE4397258A0FD3A9CC20AE75786092273717059E81B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\stream-sources.ts",
+        "sha256": "B760155C54E4C0A6423272BC1DD72E5CC66E78A44DE18D1481D0A83A59729122"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\api\\torrent.ts",
+        "sha256": "14B68029CC6DF9A7C1872542DBDD2F6C97C33D6D2A685445FC20809A18FFE87A"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\d3dcompiler_43.dll",
+        "sha256": "4B074A3976399DC735484F5D43D04B519B7BDEE8AC719D9AB8ED6BD4E6BE0345"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\mpv.com",
+        "sha256": "A6C822DB4EA4F4207B963E56EE50A125B5720031ACA22C88EE00524940A1C5AC"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\mpv.exe",
+        "sha256": "1645E57569C0AF58A70C61257F3716F2EE6EB31BB170EDC51F3F25A0B8D0D99C"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\mpv\\fonts.conf",
+        "sha256": "F141C1B89B172D22F213531646C21E288F0EBF3EC46484698896E1B33C626756"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\rqbit.exe",
+        "sha256": "4D4E5F4D81A7C9432BF37F1857E34486C9B1114E258573FC5486FBB1DB18898C"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\streamnyaa-player.lua",
+        "sha256": "AF75EB23DB44B44F1E068311087BBAD181309EB91BD7CA2CB027FE52C231989D"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\build.rs",
+        "sha256": "4AE2333B11623039CC115E29B696E7FF5CDFCD5B7D628280DDF48FA733E6418D"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\capabilities\\main.json",
+        "sha256": "791CA786B0CB117A9A87E1E5261FAB98010CC513D2A674D5559B9BF041A00782"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\Cargo.lock",
+        "sha256": "56D550709F5837BD896D921260C7D05608AB086420CC270CC3AFEE17E41CD99B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\Cargo.toml",
+        "sha256": "81AFB99CC29A88E62E1A2C9933E0C7012F0A0EE9DC50505F5BC6BCC446316971"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\icons\\icon.ico",
+        "sha256": "07116A36F14F6EB7A8B1A06540C8CA2E4FDBAAB68F0C2A686593AC098842EC44"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\icons\\icon.png",
+        "sha256": "C4BFF5FE602DE31B598432D8E403B3FD01DD3D00EA5677D23228A7B86CF013A4"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\data_requests.rs",
+        "sha256": "D3E989D8B7489C1A6DD4EC4CE3A63A68D25205051A38FCBDFEE07B9331188F42"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\download_queue.rs",
+        "sha256": "F4EFA029796A0D583A9123965CDFA281EE166FC28D137ADF4F80204CAEB04813"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\main.rs",
+        "sha256": "31E5BB0F62468ED16EE473D74DF4E551C11CBCB825A533E18A14951704658849"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\playback_progress.rs",
+        "sha256": "C2444611BE6B54DBDFD25A03F1C53C8301200A9BF5CA0E1F6DD573D7DCF21D0F"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\player_download.rs",
+        "sha256": "F0DED113EA075B5519C5AD6A6A78A8FE04573B4EA3231BB0EF80EA70E4BA8279"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\player_shortcuts.rs",
+        "sha256": "C789197A3D12123151411C79BA24038F3C70A1E36C4F01D90A4B28BEC4C615B0"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\player_telemetry.rs",
+        "sha256": "1E423E2E4A0F7D1C16F9D4C3E0D6E37D955F8E51E575A3389BC6491296C28F29"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\reminder_scheduler.rs",
+        "sha256": "490958D3260C6E9ECAEEC94A4B7F0BC872A7B451F07837D4FD1E233A7397A563"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\source_identity.rs",
+        "sha256": "4CB7EA61FF6A9548DC17306083C11D28AF2B2B6F21CCCF0123A35E37058A1B76"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\tauri.conf.json",
+        "sha256": "8453FF5C60B91D7230F4BF9CBE6AD5350E86681316D3D8A85C82C01EC91A5CC2"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\package.json",
+        "sha256": "EDEF5CC63179404A840D74EF4093AC3764FC7A30B46F4FC8F84E8B5EEE258221"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\package-lock.json",
+        "sha256": "06E50CD4F5666B5714DD246724FD987483AA0838CA530583FB7D94C0462236A8"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\ads.txt",
+        "sha256": "1E68CCDB4AA83DD409F2A944E1CAE49972E5DE334964BB13C05DBF7950B239FC"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\generated-blog-archive\\.gitkeep",
+        "sha256": "7EB70257593DA06F682A3DDDA54A9D260D4FC514F645237F5CA74B08F8DA61A6"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\generated-blog-archive\\index.json",
+        "sha256": "A05B0C0C70976412ED3BC6786B3CFEFFB3544EE489275FF98D95AB5FE5B1797D"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\logo.svg",
+        "sha256": "D3D17D2D08A53DF83E5BE5FF6610BCD362D21C8E243F90181D3954327210F56E"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\robots.txt",
+        "sha256": "2AD09EA276AAD874F45008BFE90434F30F6F195AFE2B2A0A87EFCAE481C1108E"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\sitemap.xml",
+        "sha256": "8DD0438FDDC2A4F7F2255B4D80FB84E5BAC644CB42998D62BC0581747284A88A"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\sitemap-anime.xml",
+        "sha256": "EA00F7A7F56474796447C920B4C0D5371315AE388AF773A8FA7A434A81F15CF6"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\sitemap-blog.xml",
+        "sha256": "BDCA53FB5865A94D93CEF508203C27A24E0EF843CE8FB63941B0DB7E93C941C2"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\sitemap-manga.xml",
+        "sha256": "4CD1E43BA1AB21E7919E887CB16CB820B466F84D900164E738B793B6006BF0A0"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\sitemap-static.xml",
+        "sha256": "CF41FD6AF4668BDED1DD19ED7E80C7F9F3AC8052B55DFCC1A0098198C86CD67A"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\public\\test-webtor.html",
+        "sha256": "778CA04F1E32A520E5DE18E907524F67E1687885A929387EE5FCDEE1D59F34E0"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop.mjs",
+        "sha256": "710DBD456CA80349E5D7D062D3F1862912AE60C98EF4637066DA59490C9C03FB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop-css.mjs",
+        "sha256": "59BEA7DEFC3A684777026711F9CCE076AA9FD15528A155691B3142AEF9D97F8F"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop-fallback.ps1",
+        "sha256": "70DEEEA48417D9C82BDE90B92B46702178FAB224F3B8AE8BC87125729D541303"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop-release.ps1",
+        "sha256": "3AD1C7063326D9310A07C0AFDFB938CC5C1CEC980963EC0D207F04C6554E5253"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop-tauri.ps1",
+        "sha256": "BBD6F0C3B3A2D56D190B80EE88E528D04D82AC736EDE5A2A82C846CE9B6CDEE7"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\check-desktop-tooling.ps1",
+        "sha256": "B4143B276950284DE12485165D399D6FFF4B44FD5559362A465391F6419363B8"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\check-web-build.mjs",
+        "sha256": "71DF338E7081F994CB208D72F95F897EF3D808D3A4920C991B4D89A16F10B8DE"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\generate-sitemap.mjs",
+        "sha256": "BAB98F73C8A21F20EEAE55860747A03D16DE9C1BB8AF33FCFBA7556F4012DBF3"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\prepare-desktop-binaries.mjs",
+        "sha256": "C932B5C9254FAAE08C00105D12806CA24C7773C0D681D86ACAFD8378A095C51B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\prepare-desktop-candidate.ps1",
+        "sha256": "23130CACF634B0136AF756AF646F1C95B07DB4DF95296B0079A8207E16008AD8"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\prepare-desktop-frontend.ps1",
+        "sha256": "2BE932B7DC0557CC8FCCAA26549EE3BCBA3399DE6099FF2BA2E58777569D7C82"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\prepare-desktop-release.ps1",
+        "sha256": "6AC9E19203B172F8CC7924C69675263E16DC26D029868B581E9748B18EAC1EF9"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\serve-desktop-dist.mjs",
+        "sha256": "8C962C1C0DF984D9424033E8F1AD35967B41622AB9986F18D89EB7FDFE8991C3"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\smoke-web-server.mjs",
+        "sha256": "A6560D56BE5232DFAA32FD29D84B7835878AFF89C5A31D2F197BE067597825DE"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\write-desktop-html.mjs",
+        "sha256": "6CFEA4351190F03130CF6340EB84DF87EFAA2BC50605BBAF9173AE3AF968AEA7"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\blog.ts",
+        "sha256": "CF575E676D8CB6166D64CA93DFB4F972D3523F8537931FCB44FC70F8A7F23356"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\blogShared.ts",
+        "sha256": "82261C444D9DED3F2FE59798A164AF8E230A09E3BC7A3C1414626DBFAA00344B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopCatalogFallback.ts",
+        "sha256": "18CAC2A10D1FE8C542687838B4D3C2C8751FC60225DD5422BD2624D5BD6F5153"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopExplore.ts",
+        "sha256": "1BAEE39206DB05672C634486EB07305DA0230BE207FB4818F1FABC975F3FE65F"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopHomeBatch.ts",
+        "sha256": "2C3BD2026CDAA0E837A33EE16CFA13628C6108652940528A16B756A410971B58"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopRecentEpisodes.ts",
+        "sha256": "BE2456EBF57A2C9D32BB7A3CF30DEB0EE841C0B9CE3067F2C08B668E7287514F"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopRecentSchedule.ts",
+        "sha256": "88B085D56301F92FDDE402D09043DD67364B70891429EB2088138C3212AB389A"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\jikan.ts",
+        "sha256": "2AA27BEDEB5240854C74EFDF598872FD48FD252EE304829BC84A1755E0C60FB0"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\nyaa.ts",
+        "sha256": "3688D3FA8ED536A7774A6749506A5B53FAA17C84118477B2313CAF8AAD6C1F9B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\App.tsx",
+        "sha256": "40AC28C5981CB8E7BF233038EF82186B1DA5EDD81F0302421CCDCA44B394147F"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\AppDesktop.tsx",
+        "sha256": "14DF0F1FE5125CB78A88A2C7A07F796829F600C8FBFF0BE80B7F38ECE92323C5"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\app-entry.d.ts",
+        "sha256": "FDDAE0B3F0E9908E20AF1569C99341C0A86601A9DAAE311535E3B1196ED782B8"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\assets\\desktop-logo.png",
+        "sha256": "3BA225078D6A3BBD77B1B107CC917C0A2BFFC048B2DB6DB234838967337F25A2"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\AdSenseAd.tsx",
+        "sha256": "9F59E10346702F635E5A1C983F16070552552F52680C46BF4972D08ED48B5359"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\AnimeCard.tsx",
+        "sha256": "5A0B898B38982D05E45A75A70C04216D1422CACACC8BE3135D79D7885895BA2C"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopActivityCenter.tsx",
+        "sha256": "4F657F823DB3EB0B8A4F0018EA01291EBA7615D43B51A58530AE311183C6DD0B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopActivitySummary.tsx",
+        "sha256": "44698C643B473D46648559F029281DE3198BA1A795E7AFF0389E21DC734B035A"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopAppearanceSettings.tsx",
+        "sha256": "70598B7DA251C4627A9A539B98939B28EA4D75C2CA35D9F19AF291F4BC916FAB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopBookmarkButton.tsx",
+        "sha256": "6F8CBB968DCA753E3024CDD31F995B07A61212CB37177655080B2B99B109F1FC"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopCatalogActions.tsx",
+        "sha256": "5A2C85A32DAF515E3CBEB68EDCAF6D5777A2B05764CC3E7CF172076E8D8EED52"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopCommandPalette.tsx",
+        "sha256": "80D590951ACAACB305438AB0E5E24E2B8A6B8817237C1BE1C4F1AA7115275872"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDiagnosticCheck.tsx",
+        "sha256": "47237CE43C6C13FC0B8892B400A828ECB89EE56FB3DE58FED51DE05A7A620986"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDownloadManager.tsx",
+        "sha256": "74067B0437228E070A65371E62EDDC28F9DECC4F61E779DDAD66320EF0232661"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDownloads.tsx",
+        "sha256": "BD2386F3C739488C30701B876FEB934C757CB009FAA2D917CC3E7A217FA3FA69"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDownloadSettings.tsx",
+        "sha256": "43FC92C22617BABB7664D6F3080F1AD8E089A4CEEAADB8AC5706B30A08EF27D7"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDragRail.tsx",
+        "sha256": "1D5C8F90B7D66B3D0FCAF246476557AEFF45E51BBB6B31EBFCE89CB4C6C54647"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopEpisodeStatus.tsx",
+        "sha256": "849683F44602FFD4F9BEA6F3939AEF024F46B002A7E765D8CD9656F07B7DD65D"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopExplorePresetManager.tsx",
+        "sha256": "D3D1CF106B6C2108C71E92BDB6795417F890A5AC0561C45699CA17ADE625FD55"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopHomeCustomize.tsx",
+        "sha256": "631BDDB9F1C4F9B90FB00E93FC29D0B9883963B68C3F9B15FB97B60726F4429F"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopHomeSettings.tsx",
+        "sha256": "C394C1CA0097BF00B954294C94D96C1DE42AA821F65F3DEA980B8CDCA0A834AF"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopLibraryOrganizer.tsx",
+        "sha256": "8F5EE5431BE773BECFE71F4B1607735F5956915078AA05F338C596EABE660A64"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopLoadingProgress.tsx",
+        "sha256": "C53F8B2C27246D110D033F075F13CCC63B67F68C32256FC5298F298BFB25C0EE"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopNotificationCenter.tsx",
+        "sha256": "C9775F97EA10506F2E37D15D4394DFFF8B601AD330A3B41CC5DFBAE5820EBE05"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopOfflineEpisodeLink.tsx",
+        "sha256": "ADA33F27ACAF0DC9605EA1AC98236E6A4AA2AACE03064273ED192E6FE37DC5AA"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopPlayerPreferenceBridge.tsx",
+        "sha256": "4B5587591899D5C186B30275BC76896B879C0E9046428D896FC8B06750676657"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopProgressBridge.tsx",
+        "sha256": "5B9764EA8DA83182EBB1FE4F60096696C7A5327DC3FF81923AC5D4D41528B844"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopScheduleFallback.tsx",
+        "sha256": "53FA693D4C269DF545BD33D73BDE0EAC76890F52B7336C3470DFD50D1E2C67E4"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopSessionRecovery.tsx",
+        "sha256": "101FCDADC23881BF81D75C2C06AB50A0A301E3D0BFA2EC8330A0C321A10473ED"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopSettingsSearch.tsx",
+        "sha256": "66AE163A3745402C68F2983F64CDF9A13B534FCD1E0D11F670070527D5F744E0"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopShell.tsx",
+        "sha256": "B9F6442A92B3A1FC6CE07F6DFCA853B04B982035D1A0BB9BA4D3057413593995"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopShortcutEditor.tsx",
+        "sha256": "C7049A91EFC4E083269B585D8E586C884C372CCC14EEACCA306C21756A20566C"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopTrailer.tsx",
+        "sha256": "D2C42F15D3864D3E8BC8D69B979D22EA52B042787B66FA3802F662CBE62045A5"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopWatchDesk.tsx",
+        "sha256": "A8518483BBA2C0B23AAAC7F5A0790248C5DBFEDFB7414760C3029443D6BB1588"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\Layout.tsx",
+        "sha256": "2098C43FF17AB0D7CE9F180310C746F9CAE338AF9837789F2712E794C6D9B970"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\Navbar.tsx",
+        "sha256": "FAC3994D10940432F2EFB01010AFA26C54C90E2D6409973F1448D381F38A91FA"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\RelatedBlogArticles.tsx",
+        "sha256": "A7AD95BC571A0CF22B39AA2DFF15ECF263B1B22EB5E67F9F6FC447EB908CC4D5"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\RouteSeo.tsx",
+        "sha256": "DC597DDEE96FE61C1FC1618DFEC6567785FF89A8E1F6D22155FA4D61FBE6AB22"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\ScrollToTop.tsx",
+        "sha256": "F4472FBB949FAC2481093836EDFE1B0CB821882C11E14CFAC2C8A04742DB946E"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\Seo.tsx",
+        "sha256": "9ACAD684F1AFA30AE446CED9BB2640AFED360A733B424A25F28946452797BBAB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\SeoDesktop.tsx",
+        "sha256": "426F15B0EBEFFA8678340DB49FD361C71876ACC8ADA80B91B852D80E2409BF07"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\Spotlight.tsx",
+        "sha256": "CC51769C97052E98A3DF778EFC18C244FC275463014DD6CB6AD5E92998D2934C"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\UpcomingNotifyButton.tsx",
+        "sha256": "1C684DF16E86C0483DF4F993CA57E911FEBA826EB01277FA7DE492C8E60011FE"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\context\\AccountSyncContext.tsx",
+        "sha256": "5FAF80C6388F2BA43A85DB9445E9255401B284A3AE9F74E02C1BF92E85B551DF"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\context\\accountSyncShared.ts",
+        "sha256": "955360A3049A2E04A167E158578E0229D0AFA6D0AA5C73D96E7A64CDCA3FDB05"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\context\\AuthContext.tsx",
+        "sha256": "A181B56EC93259A4E4839405E761F9B19B9D32EAD88B11BA5A74ACDC3A1656CF"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\context\\WebAccountSyncContext.tsx",
+        "sha256": "D5B68C1FA98880D687EDCF760EA165832DE1BD9A34234223CD227243898BA852"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\index.css",
+        "sha256": "644989D8A35F8F7B04BCA20239FA83A3FA90E4658C357F2C23226544E39263E4"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\accountApi.ts",
+        "sha256": "283C1AABECBB6E7C46FC314D72C4565F180F6A241B57CFE39424B10A4D1ADEB1"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\accountSync.ts",
+        "sha256": "AB4BBABC79E4EB5B1286ACCBD820DCA3EF63EBCF3D3BC0D9C40F3E3BC3C31400"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\activity.ts",
+        "sha256": "228DD054D413BA80CB416AE14A24843A10C5DBB2BF8719BEAE37B755EE19AA54"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\animeEpisodes.ts",
+        "sha256": "87E67B902E1842ABD840AACF991139D1E3FD22FA193516AE6CC446223FF01113"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\animeIdentity.ts",
+        "sha256": "8B2C54B9968AC1E3D3230CFD9FE8A712752EC8E727770F53D0267F6C42FFB246"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\currentSeason.ts",
+        "sha256": "B0D70C0D29E530FD005CB563490AF192BAAA393A3F812FEA10E1961CB8BBF067"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktop.ts",
+        "sha256": "B1A084CD22A435A6009278467381C78D47D40E2931385C38FA82F39264C1581F"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopAnimeRoute.ts",
+        "sha256": "02507D4F2571873C42698F86225CFBB3301D7244C8D59AA0A111E8761A750B71"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopAppearance.ts",
+        "sha256": "68929C94A6A2E9F9141FC7984AD95600722445ACC42D057E389BE77E0A5F0A57"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopArtwork.ts",
+        "sha256": "26CC9AB5ADE8572FAD7CA58C9F9E769E83D5AE94B209E8F928C88A71AE1329EC"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopAutoRecovery.ts",
+        "sha256": "494CCE9DA9B423D982A21566D42B823C2D107D809997F0D9899E3CCE6BFB1A93"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopAvailability.ts",
+        "sha256": "052FFACF84BD87A2568493BACBAB387B2EE6C5FD5236F08DF5258B08C2AAA4DB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopBoot.ts",
+        "sha256": "D4AED3D1247D17B7BF78BDC7786F86B8A4CB9B52865A3E5B77E1C76AFFE21FD9"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopCatalogAvailability.ts",
+        "sha256": "73639877D1FABA4021CD078B2FE3FBE20C4EF9FB5FA0AB7A7C0F8E65D7E49E5E"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopCatalogCache.ts",
+        "sha256": "2670316D70174826376A8D0B4BD1BAD4E73A2EE36798B519E889689CD1C52CD6"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopCoverage.ts",
+        "sha256": "9B02F4B396DD3C9A0704BAE2D7B5D9E435AD6CC0C5C28D21B3FD9B08B2915F8B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopData.ts",
+        "sha256": "B1EEC99EFB1A02E59234A01730AEE9038538FC77FE231E3A5314C8E9A97D433E"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopDownloads.ts",
+        "sha256": "1EFB87243E4F0B4D9860BCC53A0FD6DD838FB243FE44FC9BC88684F2EBA581AE"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopEpisodeCache.ts",
+        "sha256": "473BB485AA9B0A59F28842C3B95D91E0F9846018B8B9F861B37EFB2351AD3C8C"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopEpisodeInteraction.ts",
+        "sha256": "2121AB10BE38F57672072E1BBF36666EC7BA393608FE8ACB19EE192B1C5F8413"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopEpisodeStatus.ts",
+        "sha256": "AB74F0021525C3E938DD82E352BC0F12E7508AB4562365B22BB2D7172A67D67B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopExploreCache.ts",
+        "sha256": "2DF7320BD7ED1BC7C1EBF9170173AA9A8DDF57EBC4AE1FD8D062B6C639F82345"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopExploreFilters.ts",
+        "sha256": "60A458C3B05B53DF243ED8241CBB85D207CC91411FE4C23654C5D5EA90494DBB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopExplorePresets.ts",
+        "sha256": "402BFCEE6A0D8550125F3DC16CE2AD9D064AF7D174D6A22097BDF2ED31FEB61B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopHomeLayout.ts",
+        "sha256": "CBD05BDDEC199E3EB0DD6B2AD95BD4E38CE038BEE3D57080890AE2BC39469EF6"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopHomeReadiness.ts",
+        "sha256": "2DF20E788B913AA5D02101AE885DA0FE203BC321470350E950B6E2F59209450B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopInterruptedSession.ts",
+        "sha256": "D1DC499A123895FDC4135727EDCF03CE3A2E7F1743FCBD0488D3D55749916A08"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopLibraryOrganization.ts",
+        "sha256": "8E82F89DB9E35D7B4E9448F5EE00AC07920997CE50E498E3B46289C983FD807A"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopLoading.ts",
+        "sha256": "8D6F46F4EF2B2CA49D85E774F272F96139644046A6F9B697630E11792331E51B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopNativeProgress.ts",
+        "sha256": "654E34730C3F9DC94B63DACA3B05101A20FED696213F2B86A99136DE01B7CEAB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopOfflineProgress.ts",
+        "sha256": "C41511DD5F66C4420B17E12CB7FEEA14A8CFB360E7D33D70D4B24169ED6A486B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopOriginFreshness.ts",
+        "sha256": "3E2A06B9E8DFEAB9990C651463A1FF3BEFBD7506287C14171EEA3AD72D953943"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopPersonalBackup.ts",
+        "sha256": "09C1F796076E5AA6FEBAEB323305D5FF6CC789FEFC105D3DD244FD79F02B7292"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopPlayerShortcuts.ts",
+        "sha256": "F09A4E0B80CB336E2F38456BF7DC51436E153F57C0C8AED2553BF6468039817D"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopQueryClient.ts",
+        "sha256": "8966D7A5ED8975C449C7FA38946FD43CFA158DD1C6D4476EBAB8B9B0E7CEECAD"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopQuerySnapshot.ts",
+        "sha256": "F80F6599861895653D2B1170B8D429FA996C6CACEA0D0B447EFB2F745445E219"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopReminders.ts",
+        "sha256": "9A5518A0F7C6F4A6AB08A40291EBAFC05650DFA3E953024E390B8B9A32524721"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopRequests.ts",
+        "sha256": "D3758BAFD1D25C0B73F0BA12D67D8EEB11D2ADE1B2ABF295F02C6B2008625E38"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopRoutePreload.ts",
+        "sha256": "EF927A8352F0ED4F4D42C074D363CEAC06BD91BC6E56F7F8F7FC0CDB8A139378"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopScheduleCache.ts",
+        "sha256": "32D51B14E14BD22E38FCBD3DAB6CF89165D1ADA527291115455DBA8E1C88E784"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopScheduleQuery.ts",
+        "sha256": "35FD3971C674ECD554CBD8D55F02A2858F810C54CD470A85794B5A71373E5035"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopScheduleWatch.ts",
+        "sha256": "6FBCE8072B8B36B54B6D69D56799F9D57994DA21D51AA206E8CDEF70C2E9709C"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopScrollRestore.ts",
+        "sha256": "7621BAAFE64F83C7152D8FA231639A0E1C7109DD993708477A2E4D4170C26A0C"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSearchRoute.ts",
+        "sha256": "10BFDA6AAB3C520C6E27F64D888FEF488FFA3F030CAD9A6EF1047759508A08E4"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSecurity.ts",
+        "sha256": "47208F67F4C6AAA44C6A290E16AF187EA238DCBE43E0FEE5B208DD64AF8C6E9E"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSeriesTimeline.ts",
+        "sha256": "69F307CF36B2E808B84829F7EC3D0638B28E7B6E1EDE6E689BDF422682CF20F0"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopShortcutConfig.ts",
+        "sha256": "9D7B3DA6DCF5B5AEC67468DB9EF185BDA3CE46A5A44F955253ABE23467F9F8D2"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSourceDiscovery.ts",
+        "sha256": "04CFAC2B3C3A99E786E591B571EA7706A83BCB68EB3A06D2507F182FDD871E49"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSourceIdentity.ts",
+        "sha256": "25FA3D7C7CB0C678F100AD949ED3DEB576FD19CAC9567AD6F0CAF916E80BF627"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSourceSelection.ts",
+        "sha256": "7B400FE6B8170D1DF10C770AB389C385A8749082EE9C995B47BED9AD14B9A637"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSpoilers.ts",
+        "sha256": "189AA4A0811911BA022B204305AEE3209BAED8604D4101AE0D0B3DC32EF94555"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopWatchDesk.ts",
+        "sha256": "DE75541D89C005C536DCF783528A5E40C69A5AECE7E1750468007D8A155C1D3E"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopWatchSnapshot.ts",
+        "sha256": "60671225414980C5B84ADFEE78A36DC2B44DC4E4B82144513E7C172D75ECAA67"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\queryClient.ts",
+        "sha256": "F2D3746515EEBEBB9017A0E1D576011D53CCE15121A5F641DE45237D245051E2"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\scheduleRevisions.ts",
+        "sha256": "827F23C8EE95CC393ADC6C731191DC8D2883DC57098DF36F2796B770CB2FB0E8"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\seasonalAnime.ts",
+        "sha256": "80A0075E33956B32BD12BBC9338C39E6503B96CA7B69C1BBA5B2F06820753056"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\slug.ts",
+        "sha256": "A67CC61FB0F36F575C8C21352627E649A95C382A58E17F04C7861217FAA65341"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\sourceQuality.ts",
+        "sha256": "73C59375B0571883D47244F285A2F81BACE87712B1190679B3D3296AED14B463"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\supabaseAuth.ts",
+        "sha256": "579C25ECED22C69EEF4A8BDEAB153143878E5D328629C9C4879997EC5D8D6073"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\torrentBadges.ts",
+        "sha256": "A1DB7CB21ADA349A9FD6F45B1FD4A0264D113F49D0BBB42C29931FBDC6F6C95E"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\webRecovery.ts",
+        "sha256": "6E666610D072D91FAFA43714E877016511254C91F807F0CA1D712F3FD7D02B55"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\main.desktop.tsx",
+        "sha256": "F7D44CC7A5BD71E9D17A4AE655C20053E3738521A7BB652F683FAC9837D43CAA"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\main.tsx",
+        "sha256": "234BA0709C2FA8C85755E23816542C991D58FCAB4F2739D9C76B0673E3A53902"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AdminDashboard.tsx",
+        "sha256": "B64030CB1704663D0716F9DDBE61B1FA80C256DB6EE6834166ABD22EA36D0813"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AnimeCompare.tsx",
+        "sha256": "BB9E86FB626620A04B7BFD2897A9EBBCB4E89E1735018C27AF66FA5A85597446"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AnimeDetails.tsx",
+        "sha256": "DDC2EE68309313A9FE6700DBD4506B8682FA3BFB6C141C07411E45BDBBF5E583"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AnimeDownloads.tsx",
+        "sha256": "6C63B01B2D68EB1150811DD2CED0AEE9B2190132D60790923E54591B6ABADACE"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AnimeLanding.tsx",
+        "sha256": "0941015655EEB6E247B811783FA8D70AC1C75E66BB7602DA3C7A4A7902AC6A96"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Blog.tsx",
+        "sha256": "6BCB0BCF2A17328EEA9C4762FDC7A6E7D7F4CD7045B0872A63236E2DF08D06CC"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\BlogPost.tsx",
+        "sha256": "8560701A2F4195D644CD0D075C1B15F2D33336B3902182D0C7B5AF41E0246D3C"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Dashboard.tsx",
+        "sha256": "4B251E40314F7E36B93E112726D4D9C316B0539311A84A5CF241DB05C5D19E43"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopAnimeCompare.tsx",
+        "sha256": "20D8759564D1D653843136A6E600ADB5809629E00548A9DB6FE0F8FFAACC1EF4"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopAnimeDownloads.tsx",
+        "sha256": "143AC9C030A69D9CE851660F2432AA03789D5B2DAA579A2E083E920304475EFB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopAnimeLanding.tsx",
+        "sha256": "D9C334EC64A567388818A58C6490446B934D7885BAC4FA2E1B1CF440C6C38E19"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopExplore.tsx",
+        "sha256": "0907AA84386195081134F7AFE00F2E90B7AF2187329FB77F03D2ED65625DE984"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopHistory.tsx",
+        "sha256": "87FC3DEF784CCCF092F8D513F964640DF6A195E631549779B00BAE17691CFE53"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopHome.tsx",
+        "sha256": "73423384C6C5519BE04C48500139664DAE3240F0AE08DA0E54F92BBE868B2AB6"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopLibrary.tsx",
+        "sha256": "BFE1A661D065DC74590CAB349B880D867D63171C4DCCA109EAC756002842F12B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopProfile.tsx",
+        "sha256": "40DF5701ACAE63CF016923F4901C42CCD385E9B78CF6641DF4294DB54183261B"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopSchedule.tsx",
+        "sha256": "64B875CD03436A7E0DABE32D60CA5C4DA1D7347F06C3E45FBA115371D52066FB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopSettings.tsx",
+        "sha256": "21559707FAC62B622177346891E1E88F0C043AA5B8387CEF113BE8AA26EA1412"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopSources.tsx",
+        "sha256": "5CC9D1088FCA37FBFEF669C88FA4F9BB3BF1DB1ABDCBED1B42FAEF3C53A90BCC"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopWatch.tsx",
+        "sha256": "34007F4550D2917C62C2E03E818B55B21A5930C51E03FB003EA6570F07A71498"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Home.tsx",
+        "sha256": "9CCED515A52A1258726D5069C2ABB40F2CFE3406C094DE294C0E21F3A7DE52BB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\InfoPages.tsx",
+        "sha256": "C0E171F75D94DB85F7EE4B27A2FF2626DAF809F270ECED2DC2B27098384CD3CB"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Login.tsx",
+        "sha256": "2F262A295619AE28344B5570EB5F1A4D42FA278DA9E480D5138A54333AC11547"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\MangaDetails.tsx",
+        "sha256": "8FD971798B8ED34FBFA55C5922064EEED6D5AD7F613FFA2BA6A08684AB1307B6"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\MyList.tsx",
+        "sha256": "84C76991EBFC2BCDD1ECDA80878CD969D57CFC98AFAE9E3B561C155ABEA785BA"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\NyaaSearchPage.tsx",
+        "sha256": "383812141CFF3957D53EA4292F06E293CF377C7984397B0E1CE65663CDC6CCD2"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Schedule.tsx",
+        "sha256": "B5F5ED3112225EB346D11BA1DD7563537643A5891A38621B8DBE88C8F494EFB1"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Search.tsx",
+        "sha256": "68EAA327B5795CE548732BBA7AF922D8EDC3BF70701184A467FDF1DCF0B87B1A"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\store\\useStore.ts",
+        "sha256": "0B85F40D97CBE1A25B164D9F4B2B8FEAB3F1F687C48E6B560CEAD74AE369A422"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\styles\\desktop-calendar.css",
+        "sha256": "32275EC805BE0D890BABE705978D69662618B2A9545B297F06C9F700B94F5544"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\styles\\desktop-revamp.css",
+        "sha256": "CE712A9FFF69D42C401D38D1364457FFEC489637F406B509693FC8AD5FE8CEB7"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\vite-env.d.ts",
+        "sha256": "FBF5B1214A8657F7FE98C4790B2CA47A8A6EBF3F14A80CFC0075949ECB91E0D4"
+      },
+      {
+        "path": "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\tsconfig.json",
+        "sha256": "FB12937EBAAB14A70518078D0B5C498259328B9354A926D82472E687D84CC7C7"
+      }
+    ],
+    "Count": 218
+  },
+  "executableVersion": "0.1.10",
+  "executableSha256": "57AA7BD1B4A8423C27734BEC435FD2DD3DC6B04A1CCFA1F5422C45FC5BA94512",
+  "validation": {
+    "checks": [
+      {
+        "sha256": "E1BAF139098B1D2C5031A2F2127CFE2119AF13529D846BFE7656B0D331FAC5A2",
+        "name": "desktop-state"
+      },
+      {
+        "sha256": "D2C2FD5854FA2FF7F510736F27320454C70EE2F0E97BD3A1B77AC33948C18B58",
+        "name": "frontend"
+      },
+      {
+        "sha256": "89CD2C8098DA83C7F857CFA856B74330C37B1C598F20BC1730FEE1643552866E",
+        "name": "desktop-soak"
+      },
+      {
+        "sha256": "06F2CA595AAF89A81D00BA8980E0209F29F613270A4E8EC766A9087C0C193FF9",
+        "name": "desktop"
+      },
+      {
+        "sha256": "89727D9954ED92242107F889A64B66EA4D949089BA0B429BC4FEF6B0CCB4E6B6",
+        "name": "rust"
+      },
+      {
+        "sha256": "41C47312E7AB15291B5A44D647263840547044CB6F4A3FE290A500C4B13C5FF7",
+        "name": "desktop-controls"
+      },
+      {
+        "sha256": "0696F53D119850470FBF63D62E4F374FE541673A4D27E1AC57634008896CFCB6",
+        "name": "web"
+      },
+      {
+        "sha256": "5C08EA502EB6B1FD1664723BD33C4F7A1254229BD6BD57AD97582C9D073CA375",
+        "name": "typescript"
+      },
+      {
+        "sha256": "2B96863EA4A013DB85F2FDA3B09FBC25270193CEE6B61090170A2E1FA071381F",
+        "name": "desktop-stall"
+      }
+    ],
+    "automatedPassed": true,
+    "rustPassed": 87,
+    "playerStateAssertions": 525,
+    "frontendTests": 345,
+    "playbackFixture": {
+      "fixtureBytes": 1267854,
+      "frames": "FFmpeg showinfo decoded PTS plus MPV playback position",
+      "range": [
+        {
+          "offset": 0,
+          "status": 206,
+          "contentRange": "bytes 0-1267853/1267854",
+          "verifiedBytes": 1024
+        },
+        {
+          "offset": 16384,
+          "status": 206,
+          "contentRange": "bytes 16384-1267853/1267854",
+          "verifiedBytes": 1024
+        },
+        {
+          "offset": 633927,
+          "status": 206,
+          "contentRange": "bytes 633927-1267853/1267854",
+          "verifiedBytes": 1024
+        }
+      ],
+      "cached": [
+        {
+          "target": 10,
+          "advancingFrameMs": 31,
+          "targetBufferAvailableMs": 2,
+          "frameAfterTargetBufferMs": 29,
+          "firstTargetResponseByteMs": null
+        },
+        {
+          "target": 3,
+          "advancingFrameMs": 86,
+          "targetBufferAvailableMs": 40,
+          "frameAfterTargetBufferMs": 45,
+          "firstTargetResponseByteMs": null
+        },
+        {
+          "target": 15,
+          "advancingFrameMs": 41,
+          "targetBufferAvailableMs": 1,
+          "frameAfterTargetBufferMs": 40,
+          "firstTargetResponseByteMs": null
+        },
+        {
+          "target": 6,
+          "advancingFrameMs": 41,
+          "targetBufferAvailableMs": 1,
+          "frameAfterTargetBufferMs": 41,
+          "firstTargetResponseByteMs": null
+        },
+        {
+          "target": 12,
+          "advancingFrameMs": 42,
+          "targetBufferAvailableMs": 1,
+          "frameAfterTargetBufferMs": 41,
+          "firstTargetResponseByteMs": null
+        },
+        {
+          "target": 2,
+          "advancingFrameMs": 41,
+          "targetBufferAvailableMs": 1,
+          "frameAfterTargetBufferMs": 40,
+          "firstTargetResponseByteMs": null
+        },
+        {
+          "target": 16,
+          "advancingFrameMs": 41,
+          "targetBufferAvailableMs": 1,
+          "frameAfterTargetBufferMs": 40,
+          "firstTargetResponseByteMs": null
+        },
+        {
+          "target": 8,
+          "advancingFrameMs": 42,
+          "targetBufferAvailableMs": 1,
+          "frameAfterTargetBufferMs": 41,
+          "firstTargetResponseByteMs": null
+        },
+        {
+          "target": 14,
+          "advancingFrameMs": 41,
+          "targetBufferAvailableMs": 1,
+          "frameAfterTargetBufferMs": 40,
+          "firstTargetResponseByteMs": null
+        },
+        {
+          "target": 4,
+          "advancingFrameMs": 42,
+          "targetBufferAvailableMs": 1,
+          "frameAfterTargetBufferMs": 41,
+          "firstTargetResponseByteMs": null
+        }
+      ],
+      "partial": [
+        {
+          "target": 16,
+          "advancingFrameMs": 3828,
+          "targetBufferAvailableMs": 3828,
+          "frameAfterTargetBufferMs": 0,
+          "firstTargetResponseByteMs": 229
+        },
+        {
+          "target": 4,
+          "advancingFrameMs": 5261,
+          "targetBufferAvailableMs": 5261,
+          "frameAfterTargetBufferMs": 0,
+          "firstTargetResponseByteMs": 732
+        },
+        {
+          "target": 12,
+          "advancingFrameMs": 5743,
+          "targetBufferAvailableMs": 5743,
+          "frameAfterTargetBufferMs": 0,
+          "firstTargetResponseByteMs": 2219
+        }
+      ],
+      "limitations": [
+        "Headless local fixture, not installed UI or public torrent throughput acceptance."
+      ],
+      "latestSeek": {
+        "target": 9,
+        "advancingFrameMs": 70,
+        "targetBufferAvailableMs": 43,
+        "frameAfterTargetBufferMs": 27,
+        "firstTargetResponseByteMs": null
+      },
+      "partialInitial": {
+        "state": "initializing",
+        "file_progress": [],
+        "error": null,
+        "progress_bytes": 98304,
+        "uploaded_bytes": 0,
+        "total_bytes": 1267854,
+        "finished": false,
+        "live": null
+      },
+      "partialBeforeSeeks": {
+        "state": "live",
+        "file_progress": [
+          71822
+        ],
+        "error": null,
+        "progress_bytes": 71822,
+        "uploaded_bytes": 0,
+        "total_bytes": 1267854,
+        "finished": false,
+        "live": {
+          "snapshot": {
+            "downloaded_and_checked_bytes": 71822,
+            "fetched_bytes": 71822,
+            "uploaded_bytes": 0,
+            "downloaded_and_checked_pieces": 5,
+            "total_piece_download_ms": 107,
+            "peer_stats": {
+              "queued": 0,
+              "connecting": 0,
+              "live": 1,
+              "seen": 1,
+              "dead": 0,
+              "not_needed": 0,
+              "steals": 0
+            }
+          },
+          "average_piece_download_time": {
+            "secs": 0,
+            "nanos": 21400000
+          },
+          "download_speed": {
+            "mbps": 0,
+            "human_readable": "0.00 MiB/s"
+          },
+          "upload_speed": {
+            "mbps": 0,
+            "human_readable": "0.00 MiB/s"
+          },
+          "time_remaining": null
+        }
+      },
+      "simultaneous": {
+        "state": "live",
+        "file_progress": [
+          645262
+        ],
+        "error": null,
+        "progress_bytes": 645262,
+        "uploaded_bytes": 0,
+        "total_bytes": 1267854,
+        "finished": false,
+        "live": {
+          "snapshot": {
+            "downloaded_and_checked_bytes": 645262,
+            "fetched_bytes": 645262,
+            "uploaded_bytes": 0,
+            "downloaded_and_checked_pieces": 40,
+            "total_piece_download_ms": 14405,
+            "peer_stats": {
+              "queued": 0,
+              "connecting": 0,
+              "live": 1,
+              "seen": 1,
+              "dead": 0,
+              "not_needed": 0,
+              "steals": 0
+            }
+          },
+          "average_piece_download_time": {
+            "secs": 0,
+            "nanos": 360125000
+          },
+          "download_speed": {
+            "mbps": 0.04337882995605469,
+            "human_readable": "0.04 MiB/s"
+          },
+          "upload_speed": {
+            "mbps": 0,
+            "human_readable": "0.00 MiB/s"
+          },
+          "time_remaining": {
+            "duration": {
+              "secs": 14,
+              "nanos": 407000000
+            },
+            "human_readable": "14s"
+          }
+        }
+      },
+      "rangeTrace": [
+        {
+          "range": "bytes=0-",
+          "waitForFirstByteMs": 3
+        },
+        {
+          "range": "bytes=1267086-",
+          "waitForFirstByteMs": 2
+        },
+        {
+          "range": "bytes=1013038-",
+          "waitForFirstByteMs": 488
+        },
+        {
+          "range": "bytes=250171-",
+          "waitForFirstByteMs": 485
+        },
+        {
+          "range": "bytes=760777-",
+          "waitForFirstByteMs": 997
+        }
+      ],
+      "cachedP95Ms": 86,
+      "partialP95Ms": 5743,
+      "afterTargetBufferP95Ms": 0,
+      "passed": true
+    },
+    "rustIgnored": 1,
+    "soakCycles": 100,
+    "validatedAt": "2026-10-12T21:17:58.2449573+05:45",
+    "unresolved": [
+      "Not code-signed",
+      "Installed UI and display scaling acceptance",
+      "Real notification acceptance",
+      "Isolated install, upgrade and rollback",
+      "Live account sync",
+      "Public torrent endurance",
+      "Independent fine-grained uncached acquisition-to-frame timing",
+      "Separate Vercel deployment verification"
+    ]
+  },
+  "payloadVerification": "Staged resource hashes and exact NSIS inclusions; independent installer extraction not performed",
+  "evidence": [
+    {
+      "sha256": "1F5376C657573B1A3DD49080153639B6CCC87545BF9EA4C0A30926F4E4A9D769",
+      "name": "0.1.10-build.log"
+    },
+    {
+      "sha256": "41C47312E7AB15291B5A44D647263840547044CB6F4A3FE290A500C4B13C5FF7",
+      "name": "0.1.10-desktop-controls.log"
+    },
+    {
+      "sha256": "89CD2C8098DA83C7F857CFA856B74330C37B1C598F20BC1730FEE1643552866E",
+      "name": "0.1.10-desktop-soak.log"
+    },
+    {
+      "sha256": "2B96863EA4A013DB85F2FDA3B09FBC25270193CEE6B61090170A2E1FA071381F",
+      "name": "0.1.10-desktop-stall.log"
+    },
+    {
+      "sha256": "E1BAF139098B1D2C5031A2F2127CFE2119AF13529D846BFE7656B0D331FAC5A2",
+      "name": "0.1.10-desktop-state.log"
+    },
+    {
+      "sha256": "06F2CA595AAF89A81D00BA8980E0209F29F613270A4E8EC766A9087C0C193FF9",
+      "name": "0.1.10-desktop.log"
+    },
+    {
+      "sha256": "D2C2FD5854FA2FF7F510736F27320454C70EE2F0E97BD3A1B77AC33948C18B58",
+      "name": "0.1.10-frontend.log"
+    },
+    {
+      "sha256": "8122CDC4B24EB104FDE87C1A0D65AF7B92226493EF073907F7E0EAAC509A5044",
+      "name": "0.1.10-player-state-target.log"
+    },
+    {
+      "sha256": "76B7588D335320E21680DE9C5F0693C583CF2E81FCD1DC0C213436AE32D6A937",
+      "name": "0.1.10-rust-compile.log"
+    },
+    {
+      "sha256": "89727D9954ED92242107F889A64B66EA4D949089BA0B429BC4FEF6B0CCB4E6B6",
+      "name": "0.1.10-rust.log"
+    },
+    {
+      "sha256": "9EFE61BD7F835CCA8151AEAC4A98517ABE74B552336F402C6EB83BD59DCB97B0",
+      "name": "0.1.10-streaming.log"
+    },
+    {
+      "sha256": "107CCF122639269E6A9985D5D64B16D2B6757C47438FEFC81EC898F32039A3E3",
+      "name": "0.1.10-targeted.log"
+    },
+    {
+      "sha256": "5C08EA502EB6B1FD1664723BD33C4F7A1254229BD6BD57AD97582C9D073CA375",
+      "name": "0.1.10-typescript.log"
+    },
+    {
+      "sha256": "0696F53D119850470FBF63D62E4F374FE541673A4D27E1AC57634008896CFCB6",
+      "name": "0.1.10-web.log"
+    },
+    {
+      "sha256": "DB890BB24B8C203D4A3DC7A2022E5477133F10277FC855C29CC4D30942A369DB",
+      "name": "2026-10-12-playback-streaming.json"
+    }
+  ],
+  "executableSignature": "NotSigned",
+  "frontendAssets": [
+    {
+      "sha256": "3BA225078D6A3BBD77B1B107CC917C0A2BFFC048B2DB6DB234838967337F25A2",
+      "name": "desktop-asset-desktop-logo-CFJ6O47Q.png"
+    },
+    {
+      "sha256": "F1674BD2827BBC607AEE1BB468C839DA10D33A169382CA0F887900BFCBB4A060",
+      "name": "desktop-chunk-chunk-2P277TWL.js"
+    },
+    {
+      "sha256": "A5C00A506A59856ADA4C373B6B53CE28E58A90D3CC81F4FC1746E8859773036A",
+      "name": "desktop-chunk-chunk-57LVV3J4.js"
+    },
+    {
+      "sha256": "ED371584F7116AE1C9C8089DF0910B99A47DA1FBC245AF462D961DC39665EA29",
+      "name": "desktop-chunk-chunk-5SAQLYSR.js"
+    },
+    {
+      "sha256": "75F70D66556E114A8B40CE027E787AD1B692CAF52A5F23E1633E56FAC248C48B",
+      "name": "desktop-chunk-chunk-644L4MIZ.js"
+    },
+    {
+      "sha256": "9F4E927D28BFBFD87CD24C1914816DBCF0E11ED800B48667C35EC2DF75EAEC45",
+      "name": "desktop-chunk-chunk-6A4HJLOZ.js"
+    },
+    {
+      "sha256": "7FE708643BCA255D139531F80C5B6380C052E5F1C226D977ECB6BB70D467E479",
+      "name": "desktop-chunk-chunk-6OV2EBS5.js"
+    },
+    {
+      "sha256": "9845E685EDF72AFE105CB41EC23451A68CB6BBC07B798B23B90F388457231ABC",
+      "name": "desktop-chunk-chunk-6QXYUDYA.js"
+    },
+    {
+      "sha256": "9AF25B354D81E176FEFCC13FCF060024C045BBBAE86E6271E4254BDF875CB64C",
+      "name": "desktop-chunk-chunk-7DK56Y3X.js"
+    },
+    {
+      "sha256": "564ECA95BAA54358FD2F97E7A39F0E3285B69241FEC817DD9255684FFC4146CA",
+      "name": "desktop-chunk-chunk-7X6KMUQD.js"
+    },
+    {
+      "sha256": "189BD98062306D969787CC60F3F7E0F73114BB87E1135348857FF4B055D7F4AE",
+      "name": "desktop-chunk-chunk-A55L72MG.js"
+    },
+    {
+      "sha256": "ADAA92C69A9464DFD053804213766CF11995876C82B4B4803021015C7BE3F13D",
+      "name": "desktop-chunk-chunk-B2U6U5CC.js"
+    },
+    {
+      "sha256": "EBC085DFBF9EC96CFD8E6D2A05644D7AB428404D94CB0D9D4C16F4CC2638255E",
+      "name": "desktop-chunk-chunk-DMXYOGMJ.js"
+    },
+    {
+      "sha256": "1FD0148AAD42C93B8BD20D80304DD0F7E022C814C6913389AA86CAD2A1824925",
+      "name": "desktop-chunk-chunk-EG3FAGK5.js"
+    },
+    {
+      "sha256": "6C478251281E495E736E76809334CA08B6FE679E209F4AEB320E41E96B5746A8",
+      "name": "desktop-chunk-chunk-EOVPJKML.js"
+    },
+    {
+      "sha256": "7D7562EB6C66A40621E3BE73B9AFE372F4DA709337C87B4AB6110AA6744A9F80",
+      "name": "desktop-chunk-chunk-F6ZDUI3U.js"
+    },
+    {
+      "sha256": "24FEA6114EDBD73C6FEFF00580A7CF3043EEC28D5547A545CC25A7E0885C71DB",
+      "name": "desktop-chunk-chunk-GSWTEXDJ.js"
+    },
+    {
+      "sha256": "03D11D9C3236C200BF78E945B63124402C66EF3290FCEBC91B0B23CCFDFA8538",
+      "name": "desktop-chunk-chunk-HT75S5O5.js"
+    },
+    {
+      "sha256": "C30BC6F482992504DBEE10DDFFA20D29EE7F8D0924EAB51868238402BE3165EF",
+      "name": "desktop-chunk-chunk-INHGEI63.js"
+    },
+    {
+      "sha256": "8CC4B4FAD7313A4CADADE3E7F229D4C6EABCE00BCBDBC0D5A45A94297C0B05E3",
+      "name": "desktop-chunk-chunk-JZ737IZV.js"
+    },
+    {
+      "sha256": "E5FE61CBFEFEE4D179AEB3FE478B0486AD1F97EFD54A96EE56BEC6E5E9EC2877",
+      "name": "desktop-chunk-chunk-KI7U3ZOR.js"
+    },
+    {
+      "sha256": "FA7905DF1B9D3E5F4F103145AC7CAD3C7FB003101B8BD7C2675AF3141547658B",
+      "name": "desktop-chunk-chunk-LMQKLTH2.js"
+    },
+    {
+      "sha256": "1E2A688A7A9ABABD7C0CC62BE956552C4E826AB1DB02A81FE45DDE7F00E2E11F",
+      "name": "desktop-chunk-chunk-LQLCCDXD.js"
+    },
+    {
+      "sha256": "764423D24A91CA7A8BB4DC9DC26313E59AC5C83E460B5CB2DF177E65FD804A0D",
+      "name": "desktop-chunk-chunk-MJC6O3E6.js"
+    },
+    {
+      "sha256": "E0217B1988DF941E3A590CF026E7183BC8089DF3C79E166D0F19E39D6F3CF78E",
+      "name": "desktop-chunk-chunk-MRCLKB5G.js"
+    },
+    {
+      "sha256": "6C222DE9F5DF9BBF3816CE8951FFF41DCD7A0941B9EBA8DACC2966FCCF5C5BE2",
+      "name": "desktop-chunk-chunk-MSZH6L6A.js"
+    },
+    {
+      "sha256": "AE21CC6E6309787C9E13650C1A6684C88CB061B68DE8A5578455DC3D0F149777",
+      "name": "desktop-chunk-chunk-N35M5FRF.js"
+    },
+    {
+      "sha256": "54323888A3EF46F7D12C4414505145E3A34E9DC7E0185016F696951D45A5483B",
+      "name": "desktop-chunk-chunk-OIMU7XHS.js"
+    },
+    {
+      "sha256": "438688FCCB2830CB6A5A9413DC74C9730AC353ADEB4F97A75DC7432859C9E353",
+      "name": "desktop-chunk-chunk-PHUIBO5I.js"
+    },
+    {
+      "sha256": "015269C6DFA8E1BED85F3E19ECAE656CB6FB7DFFA4BB204C94209E3B94B83913",
+      "name": "desktop-chunk-chunk-PTPG6H24.js"
+    },
+    {
+      "sha256": "CD9FBB9B01CF1F105931E96F5B03CEB535181FB5CB59BF60183BD9D9E5CA3313",
+      "name": "desktop-chunk-chunk-Q5GDA5KD.js"
+    },
+    {
+      "sha256": "C66B1728246B2444ABD011CAB12C8E71AAEFBCA2EBC5AB6D9F8FD248CFA89E0E",
+      "name": "desktop-chunk-chunk-QJYQMG2V.js"
+    },
+    {
+      "sha256": "5DE62C21CD0604B0FD14A9F2704E4C1CB917467A584EF7C2975D8DCDF3DB09B8",
+      "name": "desktop-chunk-chunk-STVH4ULY.js"
+    },
+    {
+      "sha256": "FF8306DB9D8A55A40807BE27ED04DD870925F1C9E384EF891687F40D0F40FA54",
+      "name": "desktop-chunk-chunk-UDDGC6WN.js"
+    },
+    {
+      "sha256": "F718A841DA68F0C9939B4CF200C4521B190BDF1AC8EE9BCEDCF55DBC2A49A030",
+      "name": "desktop-chunk-chunk-UP4K7TQ6.js"
+    },
+    {
+      "sha256": "7741CFBD293DFACAC70BA512FD9CF4D3583874F611A38A6AEF4F59C8758F7804",
+      "name": "desktop-chunk-chunk-WJ4XBNMF.js"
+    },
+    {
+      "sha256": "A5AF77BD7F0F78F48AB195E6781D2D0B9CAEF39EE5534DD8C33505967DDBFDE0",
+      "name": "desktop-chunk-chunk-XXQGQVYE.js"
+    },
+    {
+      "sha256": "138C6F156BFF898E2B37CC0EFB462CA853A2AE1379D6BB3EF6BFAFE1364B3BF3",
+      "name": "desktop-chunk-chunk-Z5FJGDTZ.js"
+    },
+    {
+      "sha256": "CF53A1366107E25BA6C978DDAE8708DD2D0C1717FA8440DDEF0EC7CD9017E98B",
+      "name": "desktop-chunk-DesktopAnimeCompare-5ZLO2XU7.js"
+    },
+    {
+      "sha256": "C52567C663AF4654BA3750AFE7E69008E37763F3003DDB037590158D08E1D634",
+      "name": "desktop-chunk-DesktopAnimeDownloads-QWYG6VSH.js"
+    },
+    {
+      "sha256": "178DA72B401C22AC086E7E3C3D772BAC693E3E74023CA38A6D8B57CFE7777B4B",
+      "name": "desktop-chunk-DesktopAnimeLanding-EWRZJHTF.js"
+    },
+    {
+      "sha256": "725BA02B93C0E270E615C5C26ED673C1FD405A124BD22E0438B4CA6AC02E6B15",
+      "name": "desktop-chunk-DesktopAnimeLanding-GWNUS6CE.css"
+    },
+    {
+      "sha256": "5DD79CBCD1C418F2E6FBDA3C7428736C11C1F24755E1D78FD799E339AA906808",
+      "name": "desktop-chunk-DesktopExplore-2PHLGFF3.js"
+    },
+    {
+      "sha256": "725BA02B93C0E270E615C5C26ED673C1FD405A124BD22E0438B4CA6AC02E6B15",
+      "name": "desktop-chunk-DesktopExplore-LRLYYDFF.css"
+    },
+    {
+      "sha256": "9A1B7AF06C150C124AC13490CA79B84139FAE33844A3A41F80FBD2334C08C38E",
+      "name": "desktop-chunk-DesktopHistory-23K6RJPS.js"
+    },
+    {
+      "sha256": "C6AA218F7B02887D0F65CB7FE528CAB057E705C1CA98935D05EE0FB00DF989D7",
+      "name": "desktop-chunk-DesktopHome-OPPMZ6YK.css"
+    },
+    {
+      "sha256": "6A5950BE7417E02597F33153EECA4A6E0A9067E149038BB49AF292CBB42D2006",
+      "name": "desktop-chunk-DesktopHome-SZ4XKPX6.js"
+    },
+    {
+      "sha256": "725BA02B93C0E270E615C5C26ED673C1FD405A124BD22E0438B4CA6AC02E6B15",
+      "name": "desktop-chunk-DesktopLibrary-PJA4OFZF.css"
+    },
+    {
+      "sha256": "082B14782288B8041B134CDEEA177D6F5D8E9A0FA9ABC41F4BC7F9AC744BDC43",
+      "name": "desktop-chunk-DesktopLibrary-Z667KZ42.js"
+    },
+    {
+      "sha256": "BFE0C64466E79C84F26F2B58C8DD42E28B3A101CDED65CA00B03E2F71CCB69F2",
+      "name": "desktop-chunk-DesktopProfile-3D5UFRPK.js"
+    },
+    {
+      "sha256": "4CC2CEE506897C47C85F58E6671428F30C66EA949D8E5FF1B57FE86DE8CE0A42",
+      "name": "desktop-chunk-DesktopSchedule-42DLKIWZ.js"
+    },
+    {
+      "sha256": "71C0004A9B92A96C72E731F52BE3F33E0017A47075F308AC6EF592ED419A3370",
+      "name": "desktop-chunk-DesktopSchedule-M4L35E3S.css"
+    },
+    {
+      "sha256": "49F90FDA1350482E7E7CBD933B16F15BE91BCBFD7B1BE87301F505BD14EAB08F",
+      "name": "desktop-chunk-DesktopSettings-JPQSQ2I4.js"
+    },
+    {
+      "sha256": "C6AA218F7B02887D0F65CB7FE528CAB057E705C1CA98935D05EE0FB00DF989D7",
+      "name": "desktop-chunk-DesktopSettings-NFR6P4DU.css"
+    },
+    {
+      "sha256": "1D472ED9810719C72CBB8FD0F087E0D03F06AE9EFEAB89119DB3A392177A7C13",
+      "name": "desktop-chunk-DesktopSources-PUIQAXW3.js"
+    },
+    {
+      "sha256": "725BA02B93C0E270E615C5C26ED673C1FD405A124BD22E0438B4CA6AC02E6B15",
+      "name": "desktop-chunk-DesktopWatch-GKMVKZYT.css"
+    },
+    {
+      "sha256": "B5EFB8592788322CDED6B0CD687EEBBE8243481E515C412E634AD57204E0779C",
+      "name": "desktop-chunk-DesktopWatch-MTIMUV7V.js"
+    },
+    {
+      "sha256": "37A26DFA8863FB6E580EEBC7CF9D07FE02383D11C188CC6375D6CDBE23080E0E",
+      "name": "desktop-chunk-Login-67BMOBUO.js"
+    },
+    {
+      "sha256": "F79EB8B9407C3157D905F009595ADB8B48148142114C46CC8E1446EA8C920228",
+      "name": "desktop-chunk-MangaDetails-5OZF3MAH.js"
+    },
+    {
+      "sha256": "88605E38B94668570CFF513C1FBE150E1AE3A58F83A7FAE0E3852598A5E6F98E",
+      "name": "desktop-entry-RHHDR54I.js"
+    },
+    {
+      "sha256": "C4A0BF39F37A0831D4AB0D45A8BA05CB6586B5757A336BE810A5907215FA4F1E",
+      "name": "desktop-style.css"
+    }
+  ]
+}
