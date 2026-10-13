@@ -1,3 +1,5 @@
+October 13, 2026: [Home source-verification coverage repair](2026-10-13-home-readiness.md) fixes the permanent first-eight-candidate restriction, verification cancellation on shelf changes, metadata mismatches between Home and Watch, and Calendar overwriting source proof. Target remains **0.1.10**; installed Home population acceptance remains open.
+
 October 12, 2026 current target: **0.1.10**. [Playback and Home reliability](2026-10-12-playback-home.md) supersedes the older implementation status below. Home uses positive episode/offline evidence; Explore retains complete-negative suppression. Automated evidence and native fixture timings are recorded separately from the user's installed UI testing. Signing, installed interactions/notifications, isolated install/upgrade/rollback, live account sync, public-torrent endurance and the Vercel batch-history deployment remain explicit open gates.
 
 # Active desktop completion gates (0.1.8 update)

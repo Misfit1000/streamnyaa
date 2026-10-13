@@ -1,4 +1,11 @@
-param([string]$ReleaseTree)
+param(
+  [string]$ReleaseTree,
+  [string]$ValidationRecord = '.validation/0.1.10-results.json',
+  [string]$BuildInputs = '.validation/0.1.10-build-inputs.json',
+  [string]$ValidationNotes = 'desktop/reviews/2026-10-12-playback-home.md',
+  [string]$EvidenceManifest = 'desktop/reviews/2026-10-12-playback-home-installer.json',
+  [string]$ReleaseRevision = 'playback-home-reliability'
+)
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if (!$ReleaseTree) {
@@ -16,10 +23,10 @@ if ($exe.VersionInfo.ProductVersion -notlike "$version*") { throw 'Executable ve
 $nsi = Get-Content -Raw (Join-Path $target 'nsis/x64/installer.nsi')
 if (!$nsi.Contains("!define VERSION `"$version`"")) { throw 'NSIS version mismatch.' }
 if ($installer.Length -lt 30MB -or $installer.Length -gt 50MB) { throw 'Unexpected installer size.' }
-$checksPath = Join-Path $repoRoot '.validation/0.1.10-results.json'
+$checksPath = Join-Path $repoRoot $ValidationRecord
 $checks = Get-Content -Raw $checksPath | ConvertFrom-Json
 if (!$checks.automatedPassed) { throw 'Final checks have not passed.' }
-$inputs = Get-Content -Raw (Join-Path $repoRoot '.validation/0.1.10-build-inputs.json') | ConvertFrom-Json
+$inputs = Get-Content -Raw (Join-Path $repoRoot $BuildInputs) | ConvertFrom-Json
 foreach ($inputFile in $inputs) { if ((Get-FileHash -LiteralPath $inputFile.path -Algorithm SHA256).Hash -ne $inputFile.sha256) { throw "Validated source changed: $($inputFile.path)" } }
 $resources = foreach ($resource in Get-ChildItem -LiteralPath (Join-Path $repoRoot 'desktop/src-tauri/bin') -File) {
   $hash = (Get-FileHash -LiteralPath $resource.FullName -Algorithm SHA256).Hash
@@ -44,7 +51,7 @@ if (Test-Path -LiteralPath $destination) {
 Copy-Item -LiteralPath $installer.FullName -Destination $destination -Force
 if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $hash) { throw 'Release copy mismatch.' }
 $manifest = [ordered]@{
-  product='StreamNyaa Desktop'; version=$version; identifier=$config.identifier; releaseRevision='playback-home-reliability'; builtAt=(Get-Date).ToString('o'); sourceCommit=(git -C $repoRoot rev-parse HEAD);
+  product='StreamNyaa Desktop'; version=$version; identifier=$config.identifier; releaseRevision=$ReleaseRevision; builtAt=(Get-Date).ToString('o'); sourceCommit=(git -C $repoRoot rev-parse HEAD);
   installer=$destination; bytes=$installer.Length; sha256=$hash; signature=(Get-AuthenticodeSignature -LiteralPath $destination).Status.ToString();
   rollback=@{installer=$rollback;sha256=$rollbackHash}; resources=$resources; sourceFiles=$inputs;
   executableVersion=$exe.VersionInfo.ProductVersion; executableSha256=(Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash;
@@ -52,6 +59,6 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $release 'release-manifest.json') -Encoding UTF8
 "$hash  $($installer.Name)" | Set-Content -LiteralPath (Join-Path $release 'SHA256SUMS.txt') -Encoding ASCII
-$manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $repoRoot 'desktop/reviews/2026-10-12-playback-home-installer.json') -Encoding UTF8
-Copy-Item -LiteralPath (Join-Path $repoRoot 'desktop/reviews/2026-10-12-playback-home.md') -Destination (Join-Path $release 'validation-notes.md') -Force
-$manifest | Select-Object installer,bytes,sha256,signature,sourceCommit | ConvertTo-Json
+$manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $repoRoot $EvidenceManifest) -Encoding UTF8
+Copy-Item -LiteralPath (Join-Path $repoRoot $ValidationNotes) -Destination (Join-Path $release 'validation-notes.md') -Force
+[ordered]@{installer=$manifest.installer;bytes=$manifest.bytes;sha256=$manifest.sha256;signature=$manifest.signature;sourceCommit=$manifest.sourceCommit} | ConvertTo-Json

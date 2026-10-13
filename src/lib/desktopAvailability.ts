@@ -88,6 +88,9 @@ export function recordDesktopAvailability(record: DesktopAvailabilityRecord, syn
   // An interrupted refresh cannot erase still-valid positive or complete negative evidence.
   const prior = old.find(value => value.key === record.key);
   if (record.status === 'unknown' && prior && prior.expiresAt > Date.now() && prior.status !== 'unknown') return;
+  // Calendar's lightweight positive probes omit the source proof. Keep the
+  // existing proof at its original age rather than replacing it with metadata.
+  if (record.status === 'available' && !record.sourceHash && prior?.status === 'available' && prior.sourceHash && prior.expiresAt > Date.now()) return;
   try {
     const next = [record, ...old.filter(value => value.key !== record.key && value.expiresAt > Date.now())].slice(0, MAX_RECORDS);
     window.localStorage.setItem(DESKTOP_AVAILABILITY_KEY, JSON.stringify(next));

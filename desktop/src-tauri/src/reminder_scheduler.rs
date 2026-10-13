@@ -388,6 +388,11 @@ fn put_availability(state: &mut State, record: Availability) {
         if record.status == "unknown" && prior.status != "unknown" && prior.expires_at > now_ms() {
             return;
         }
+        if record.status == "available" && prior.status == "available" && prior.expires_at > now_ms()
+            && prior.details.get("sourceHash").and_then(|value| value.as_str()).is_some_and(|hash| !hash.is_empty())
+            && record.details.get("sourceHash").and_then(|value| value.as_str()).is_none_or(|hash| hash.is_empty()) {
+            return;
+        }
         if record.checked_at >= prior.checked_at {
             *prior = record;
         }
@@ -1082,6 +1087,26 @@ mod tests {
         record.evidence = Some("bounded-check-incomplete".into());
         put_availability(&mut state, record);
         assert_eq!(state.availability[0].status, "available");
+    }
+    #[test]
+    fn lightweight_positive_preserves_original_home_proof_and_expiry() {
+        let now = now_ms();
+        let mut state = state();
+        let mut record = Availability {
+            details: serde_json::from_value(serde_json::json!({"sourceHash": "a".repeat(40), "playableEpisode": 2})).unwrap(),
+            key: "anilist:123:episode-2".into(), anime_id: "anilist:123".into(), episode: Some(2),
+            scope: "episode".into(), status: "available".into(), checked_at: now - 1000,
+            expires_at: now + 1000, complete: true, evidence: Some("exact-source".into()),
+        };
+        put_availability(&mut state, record.clone());
+        record.details.clear(); record.checked_at = now; record.expires_at = now + 1_200_000;
+        put_availability(&mut state, record.clone());
+        assert_eq!(state.availability[0].checked_at, now - 1000);
+        assert_eq!(state.availability[0].expires_at, now + 1000);
+        assert!(state.availability[0].details.contains_key("sourceHash"));
+        state.availability[0].expires_at = now - 1;
+        put_availability(&mut state, record);
+        assert!(!state.availability[0].details.contains_key("sourceHash"));
     }
     #[test]
     fn legacy_episode_offset_survives_future_recurring_records() {

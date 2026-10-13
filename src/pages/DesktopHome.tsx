@@ -651,13 +651,13 @@ export default function DesktopHome() {
     return known || identity;
   };
   const readinessCandidates = useMemo(() => [
-    ...(activeShelves.has('spotlight') || activeShelves.has('season') ? (seasonalData?.data || []).slice(0, 8) : []),
+    ...(activeShelves.has('spotlight') || activeShelves.has('season') ? seasonalData?.data || [] : []),
     ...uniqueRecentSources(history).slice(0, 6).map(source => ({ ...historyAnime(source), homeRequiredEpisode: Number(source.episode) || 1 })),
-    ...(activeShelves.has('episodes') ? (recentEpisodeData?.data || []).slice(0, 8).map(anime => ({ ...anime, homeRequiredEpisode: Number(anime.listedEpisode || anime.latestEpisode || 1) })) : []),
-    ...(activeShelves.has('trending') ? (trendingData?.data || []).slice(0, 8) : []),
-    ...(activeShelves.has('popular') ? (popularData?.data || []).slice(0, 8) : []),
-    ...(activeShelves.has('airing') ? (topAiringData?.data || []).slice(0, 8) : []),
-    ...(activeShelves.has('yearly') ? (yearlyTopData?.data || []).slice(0, 8) : []),
+    ...(activeShelves.has('episodes') ? (recentEpisodeData?.data || []).map(anime => ({ ...anime, homeRequiredEpisode: Number(anime.listedEpisode || anime.latestEpisode || 1) })) : []),
+    ...(activeShelves.has('trending') ? trendingData?.data || [] : []),
+    ...(activeShelves.has('popular') ? popularData?.data || [] : []),
+    ...(activeShelves.has('airing') ? topAiringData?.data || [] : []),
+    ...(activeShelves.has('yearly') ? yearlyTopData?.data || [] : []),
   ], [activeShelves, history, seasonalData, recentEpisodeData, trendingData, popularData, topAiringData, yearlyTopData]);
   const availability = useDesktopHomeReadiness(readinessCandidates, audioPreference);
   const readyItems = (items: any[], recent = false) => items.flatMap(anime => {
@@ -759,8 +759,9 @@ export default function DesktopHome() {
     <div ref={homeRoot} className="desktop-home-cinema sn-page pb-9 pt-4" style={design === 'revamped' ? {display:'flex',flexDirection:'column'} : undefined}>
       <Seo title="StreamNyaa Desktop Cinema" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
       <DesktopWatchDesk sources={uniqueRecentSources(history)} history={history} upcoming={watchDeskReleases(bookmarks, history, [...seasonalItems, ...topAiringItems])} />
-      <label className="mb-3 flex items-center gap-2 self-end text-xs text-white/60" style={{order:2}}><input type="checkbox" checked={availability.showUnavailable} onChange={event => availability.setShowUnavailable(event.target.checked)} />Show unavailable titles</label>
-      {!availability.showUnavailable && <p role="status" className="mb-3 text-xs text-white/55" style={{order:2}}>{availability.checking ? 'Checking ready-to-watch titles…' : 'Home shows titles with matching episode sources or verified offline files.'} {!seasonalItems.length && !popularItems.length && !recentEpisodeItems.length && <Link to="/search" className="text-primary underline">Browse all anime</Link>}</p>}
+      <label className="mb-3 flex items-center gap-2 self-end text-xs text-white/60" style={{order:2}} title="Includes titles that have not been checked yet; this does not mean they have no sources."><input type="checkbox" checked={availability.showUnavailable} onChange={event => availability.setShowUnavailable(event.target.checked)} />Show unavailable titles</label>
+      {availability.showUnavailable && <p role="status" className="mb-3 text-xs text-white/55" style={{order:2}}>Showing all titles, including unverified availability. Source checks continue in the background.</p>}
+      {!availability.showUnavailable && <p role="status" className="mb-3 text-xs text-white/55" style={{order:2}}>{availability.checking ? 'Checking ready-to-watch titles…' : 'Home shows titles with matching episode sources or verified offline files.'} {availability.pendingTitles > 0 && `${availability.pendingTitles} titles still need source verification; they are not confirmed unavailable. `}{!seasonalItems.length && !popularItems.length && !recentEpisodeItems.length && <button type="button" onClick={() => availability.setShowUnavailable(true)} className="text-primary underline">Browse all titles while checks continue</button>}</p>}
       {isAdmin && (homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <details className="mb-3 text-sm text-white/60" style={{order:2}}><summary className="cursor-pointer py-2">Catalog status · some shelves use saved or fallback data</summary><p className="mt-2">Exact airing times and trending require AniList. Recent MAL additions are shown when available. MyAnimeList shelves keep their own provider identity. <button className="underline" onClick={retryHome}>Retry affected shelves</button></p></details>}
 
       {!isAdmin && (homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <p className="mb-3 text-sm text-white/60" style={{order:2}}>Some shelves could not update. Previously saved results remain available. <button className="underline" onClick={retryHome}>Retry updates</button></p>}

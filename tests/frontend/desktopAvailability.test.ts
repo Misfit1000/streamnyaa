@@ -42,6 +42,17 @@ describe('shared desktop source evidence', () => {
     recordDesktopAvailability(record({checkedAt:Date.now()+120_000,expiresAt:Date.now()+300_000}));
     expect(readDesktopAvailability({anilist_id:123})).toBeNull();
   });
+  it('keeps original source proof and freshness when Calendar publishes a lightweight positive', () => {
+    const now=Date.now();
+    const proof=record({key:'anilist:123:episode-2',scope:'episode',episode:2,status:'available',
+      sourceHash:'a'.repeat(40),sourceTitle:'Example - 02',playableEpisode:2,checkedAt:now-1000,expiresAt:now+1000});
+    recordDesktopAvailability(proof,false);
+    recordDesktopAvailability({...proof,sourceHash:undefined,sourceTitle:undefined,checkedAt:now,expiresAt:now+1_200_000},false);
+    expect(readDesktopAvailability({anilist_id:123},2)).toEqual(proof);
+    vi.useFakeTimers();vi.setSystemTime(now+1001);
+    recordDesktopAvailability({...proof,sourceHash:undefined,sourceTitle:undefined,checkedAt:now+1001,expiresAt:now+1_200_000},false);
+    expect(readDesktopAvailability({anilist_id:123},2)?.sourceHash).toBeUndefined();
+  });
   it('backs up validated evidence and refreshes catalog listeners without regressing newer checks', () => {
     const now=Date.now(); const newer=record({checkedAt:now,expiresAt:now+300_000});
     recordDesktopAvailability(newer,false);
