@@ -1,0 +1,988 @@
+﻿{
+    "product":  "StreamNyaa Desktop",
+    "version":  "0.1.10",
+    "identifier":  "xyz.streamnyaa.desktop",
+    "releaseRevision":  "measured-desktop-optimization",
+    "builtAt":  "2026-10-13T13:56:32.3794717+05:45",
+    "sourceCommit":  "22698680f74f51933ab75a717e4a9a199c79182a",
+    "installer":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\releases\\v0.1.10\\StreamNyaa_0.1.10_x64-setup.exe",
+    "bytes":  41837860,
+    "sha256":  "A68701A552D7C75BEF3D3D6F83198504F36E62B53CB1D715EAFBE3E2619E6547",
+    "signature":  "NotSigned",
+    "rollback":  {
+                     "requestedVersion":  "0.1.9",
+                     "installer":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-desktop\\desktop\\releases\\archive\\v0.1.10-20261013-135631\\StreamNyaa_0.1.10_x64-setup.exe",
+                     "sha256":  "ECAA46E5A5AE547F7099BC2E761662CE416C497ACABA0B1BD5DAE792175DA7F4",
+                     "version":  "0.1.10",
+                     "requestedVersionAvailable":  false
+                 },
+    "resources":  [
+                      {
+                          "name":  "d3dcompiler_43.dll",
+                          "bytes":  4481992,
+                          "sha256":  "4B074A3976399DC735484F5D43D04B519B7BDEE8AC719D9AB8ED6BD4E6BE0345",
+                          "stagedMatches":  true,
+                          "nsisInclusionVerified":  true
+                      },
+                      {
+                          "name":  "mpv.com",
+                          "bytes":  3584,
+                          "sha256":  "A6C822DB4EA4F4207B963E56EE50A125B5720031ACA22C88EE00524940A1C5AC",
+                          "stagedMatches":  true,
+                          "nsisInclusionVerified":  true
+                      },
+                      {
+                          "name":  "mpv.exe",
+                          "bytes":  120308736,
+                          "sha256":  "1645E57569C0AF58A70C61257F3716F2EE6EB31BB170EDC51F3F25A0B8D0D99C",
+                          "stagedMatches":  true,
+                          "nsisInclusionVerified":  true
+                      },
+                      {
+                          "name":  "rqbit.exe",
+                          "bytes":  13963264,
+                          "sha256":  "4D4E5F4D81A7C9432BF37F1857E34486C9B1114E258573FC5486FBB1DB18898C",
+                          "stagedMatches":  true,
+                          "nsisInclusionVerified":  true
+                      },
+                      {
+                          "name":  "streamnyaa-player.lua",
+                          "bytes":  224078,
+                          "sha256":  "AF75EB23DB44B44F1E068311087BBAD181309EB91BD7CA2CB027FE52C231989D",
+                          "stagedMatches":  true,
+                          "nsisInclusionVerified":  true
+                      }
+                  ],
+    "sourceFiles":  {
+                        "value":  [
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\d3dcompiler_43.dll",
+                                          "sha256":  "4B074A3976399DC735484F5D43D04B519B7BDEE8AC719D9AB8ED6BD4E6BE0345"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\mpv.com",
+                                          "sha256":  "A6C822DB4EA4F4207B963E56EE50A125B5720031ACA22C88EE00524940A1C5AC"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\mpv.exe",
+                                          "sha256":  "1645E57569C0AF58A70C61257F3716F2EE6EB31BB170EDC51F3F25A0B8D0D99C"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\mpv\\fonts.conf",
+                                          "sha256":  "F141C1B89B172D22F213531646C21E288F0EBF3EC46484698896E1B33C626756"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\rqbit.exe",
+                                          "sha256":  "4D4E5F4D81A7C9432BF37F1857E34486C9B1114E258573FC5486FBB1DB18898C"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\bin\\streamnyaa-player.lua",
+                                          "sha256":  "AF75EB23DB44B44F1E068311087BBAD181309EB91BD7CA2CB027FE52C231989D"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\build.rs",
+                                          "sha256":  "4AE2333B11623039CC115E29B696E7FF5CDFCD5B7D628280DDF48FA733E6418D"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\capabilities\\main.json",
+                                          "sha256":  "791CA786B0CB117A9A87E1E5261FAB98010CC513D2A674D5559B9BF041A00782"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\Cargo.lock",
+                                          "sha256":  "56D550709F5837BD896D921260C7D05608AB086420CC270CC3AFEE17E41CD99B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\Cargo.toml",
+                                          "sha256":  "81AFB99CC29A88E62E1A2C9933E0C7012F0A0EE9DC50505F5BC6BCC446316971"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\gen\\schemas\\acl-manifests.json",
+                                          "sha256":  "4A9EC0BD1ED6ED7FED5D856781E9AA348EB9C12FAC1411BB22961B8E5A030F25"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\gen\\schemas\\capabilities.json",
+                                          "sha256":  "51965097AD6F85D62960BF9430CF211C05B6D415F7C06BB36C3462A77E537DB5"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\gen\\schemas\\desktop-schema.json",
+                                          "sha256":  "DF7CB0F4C20D415997BBB7B283A97C0DCB56F35CBBCF7490AD484B5903986E7B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\gen\\schemas\\windows-schema.json",
+                                          "sha256":  "DF7CB0F4C20D415997BBB7B283A97C0DCB56F35CBBCF7490AD484B5903986E7B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\icons\\icon.ico",
+                                          "sha256":  "07116A36F14F6EB7A8B1A06540C8CA2E4FDBAAB68F0C2A686593AC098842EC44"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\icons\\icon.png",
+                                          "sha256":  "C4BFF5FE602DE31B598432D8E403B3FD01DD3D00EA5677D23228A7B86CF013A4"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\prepare-desktop-frontend.cmd",
+                                          "sha256":  "71EA39D9A15C3879CBA90D5BEEB94C285DB27AB4A8BA52295E6B28F6F4BF312D"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\prepare-desktop-frontend.ps1",
+                                          "sha256":  "0C03476588FB4A9CE5848E236AA36ED8EE058D52AEC08063F737C3382B7BA03D"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\run-desktop-dev.cmd",
+                                          "sha256":  "3A53F2F6E1130906D23AAC4816070F25692F8504B771DEA0C6645695887A8DA6"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\run-desktop-dev.ps1",
+                                          "sha256":  "4258FA5210864FB625D867354594A09BDEB43DF84728F7D648B669543FD49F66"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\data_requests.rs",
+                                          "sha256":  "D3E989D8B7489C1A6DD4EC4CE3A63A68D25205051A38FCBDFEE07B9331188F42"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\download_queue.rs",
+                                          "sha256":  "F4EFA029796A0D583A9123965CDFA281EE166FC28D137ADF4F80204CAEB04813"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\main.rs",
+                                          "sha256":  "31E5BB0F62468ED16EE473D74DF4E551C11CBCB825A533E18A14951704658849"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\playback_progress.rs",
+                                          "sha256":  "C2444611BE6B54DBDFD25A03F1C53C8301200A9BF5CA0E1F6DD573D7DCF21D0F"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\player_download.rs",
+                                          "sha256":  "F0DED113EA075B5519C5AD6A6A78A8FE04573B4EA3231BB0EF80EA70E4BA8279"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\player_shortcuts.rs",
+                                          "sha256":  "C789197A3D12123151411C79BA24038F3C70A1E36C4F01D90A4B28BEC4C615B0"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\player_telemetry.rs",
+                                          "sha256":  "1E423E2E4A0F7D1C16F9D4C3E0D6E37D955F8E51E575A3389BC6491296C28F29"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\reminder_scheduler.rs",
+                                          "sha256":  "EAB76D452CD88E182D5B35C4A08CAE8EE525E1B10159E647B4271B6A1CE108FF"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\src\\source_identity.rs",
+                                          "sha256":  "4CB7EA61FF6A9548DC17306083C11D28AF2B2B6F21CCCF0123A35E37058A1B76"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\desktop\\src-tauri\\tauri.conf.json",
+                                          "sha256":  "8453FF5C60B91D7230F4BF9CBE6AD5350E86681316D3D8A85C82C01EC91A5CC2"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\index.html",
+                                          "sha256":  "2702AF67DFFAD7D72AC0B54D0A4D2B6C77F6B8927B3AAD0BAE2F2F3AC9B10AA0"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\package.json",
+                                          "sha256":  "EDEF5CC63179404A840D74EF4093AC3764FC7A30B46F4FC8F84E8B5EEE258221"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\package-lock.json",
+                                          "sha256":  "06E50CD4F5666B5714DD246724FD987483AA0838CA530583FB7D94C0462236A8"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop.mjs",
+                                          "sha256":  "710DBD456CA80349E5D7D062D3F1862912AE60C98EF4637066DA59490C9C03FB"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop-css.mjs",
+                                          "sha256":  "59BEA7DEFC3A684777026711F9CCE076AA9FD15528A155691B3142AEF9D97F8F"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop-fallback.ps1",
+                                          "sha256":  "70DEEEA48417D9C82BDE90B92B46702178FAB224F3B8AE8BC87125729D541303"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop-release.ps1",
+                                          "sha256":  "3AD1C7063326D9310A07C0AFDFB938CC5C1CEC980963EC0D207F04C6554E5253"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\build-desktop-tauri.ps1",
+                                          "sha256":  "BBD6F0C3B3A2D56D190B80EE88E528D04D82AC736EDE5A2A82C846CE9B6CDEE7"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\check-desktop-tooling.ps1",
+                                          "sha256":  "B4143B276950284DE12485165D399D6FFF4B44FD5559362A465391F6419363B8"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\check-web-build.mjs",
+                                          "sha256":  "71DF338E7081F994CB208D72F95F897EF3D808D3A4920C991B4D89A16F10B8DE"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\generate-sitemap.mjs",
+                                          "sha256":  "BAB98F73C8A21F20EEAE55860747A03D16DE9C1BB8AF33FCFBA7556F4012DBF3"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\prepare-desktop-binaries.mjs",
+                                          "sha256":  "C932B5C9254FAAE08C00105D12806CA24C7773C0D681D86ACAFD8378A095C51B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\prepare-desktop-candidate.ps1",
+                                          "sha256":  "23130CACF634B0136AF756AF646F1C95B07DB4DF95296B0079A8207E16008AD8"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\prepare-desktop-frontend.ps1",
+                                          "sha256":  "2BE932B7DC0557CC8FCCAA26549EE3BCBA3399DE6099FF2BA2E58777569D7C82"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\prepare-desktop-release.ps1",
+                                          "sha256":  "19409F319F82702E6F5A4B0081B9CCDBFDF32318EB22746F4FD96D54EEC8CA3F"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\serve-desktop-dist.mjs",
+                                          "sha256":  "8C962C1C0DF984D9424033E8F1AD35967B41622AB9986F18D89EB7FDFE8991C3"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\smoke-web-server.mjs",
+                                          "sha256":  "A6560D56BE5232DFAA32FD29D84B7835878AFF89C5A31D2F197BE067597825DE"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\scripts\\write-desktop-html.mjs",
+                                          "sha256":  "6CFEA4351190F03130CF6340EB84DF87EFAA2BC50605BBAF9173AE3AF968AEA7"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\blog.ts",
+                                          "sha256":  "CF575E676D8CB6166D64CA93DFB4F972D3523F8537931FCB44FC70F8A7F23356"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\blogShared.ts",
+                                          "sha256":  "82261C444D9DED3F2FE59798A164AF8E230A09E3BC7A3C1414626DBFAA00344B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopCatalogFallback.ts",
+                                          "sha256":  "18CAC2A10D1FE8C542687838B4D3C2C8751FC60225DD5422BD2624D5BD6F5153"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopExplore.ts",
+                                          "sha256":  "1BAEE39206DB05672C634486EB07305DA0230BE207FB4818F1FABC975F3FE65F"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopHomeBatch.ts",
+                                          "sha256":  "2C3BD2026CDAA0E837A33EE16CFA13628C6108652940528A16B756A410971B58"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopRecentEpisodes.ts",
+                                          "sha256":  "BE2456EBF57A2C9D32BB7A3CF30DEB0EE841C0B9CE3067F2C08B668E7287514F"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\desktopRecentSchedule.ts",
+                                          "sha256":  "88B085D56301F92FDDE402D09043DD67364B70891429EB2088138C3212AB389A"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\jikan.ts",
+                                          "sha256":  "2AA27BEDEB5240854C74EFDF598872FD48FD252EE304829BC84A1755E0C60FB0"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\api\\nyaa.ts",
+                                          "sha256":  "3688D3FA8ED536A7774A6749506A5B53FAA17C84118477B2313CAF8AAD6C1F9B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\App.tsx",
+                                          "sha256":  "40AC28C5981CB8E7BF233038EF82186B1DA5EDD81F0302421CCDCA44B394147F"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\AppDesktop.tsx",
+                                          "sha256":  "14DF0F1FE5125CB78A88A2C7A07F796829F600C8FBFF0BE80B7F38ECE92323C5"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\app-entry.d.ts",
+                                          "sha256":  "FDDAE0B3F0E9908E20AF1569C99341C0A86601A9DAAE311535E3B1196ED782B8"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\assets\\desktop-logo.png",
+                                          "sha256":  "3BA225078D6A3BBD77B1B107CC917C0A2BFFC048B2DB6DB234838967337F25A2"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\AdSenseAd.tsx",
+                                          "sha256":  "9F59E10346702F635E5A1C983F16070552552F52680C46BF4972D08ED48B5359"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\AnimeCard.tsx",
+                                          "sha256":  "5A0B898B38982D05E45A75A70C04216D1422CACACC8BE3135D79D7885895BA2C"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopActivityCenter.tsx",
+                                          "sha256":  "4F657F823DB3EB0B8A4F0018EA01291EBA7615D43B51A58530AE311183C6DD0B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopActivitySummary.tsx",
+                                          "sha256":  "FDA55CF51C5E16EBFEA498E19012900372379662A8D0070D010C8F7A62751ECB"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopAppearanceSettings.tsx",
+                                          "sha256":  "70598B7DA251C4627A9A539B98939B28EA4D75C2CA35D9F19AF291F4BC916FAB"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopBookmarkButton.tsx",
+                                          "sha256":  "6F8CBB968DCA753E3024CDD31F995B07A61212CB37177655080B2B99B109F1FC"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopCatalogActions.tsx",
+                                          "sha256":  "5A2C85A32DAF515E3CBEB68EDCAF6D5777A2B05764CC3E7CF172076E8D8EED52"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopCommandPalette.tsx",
+                                          "sha256":  "80D590951ACAACB305438AB0E5E24E2B8A6B8817237C1BE1C4F1AA7115275872"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDiagnosticCheck.tsx",
+                                          "sha256":  "47237CE43C6C13FC0B8892B400A828ECB89EE56FB3DE58FED51DE05A7A620986"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDownloadManager.tsx",
+                                          "sha256":  "97D48F1CFA08E7C23B74ED5F56BE42F87E5FECADEB4E34F626FDC2F6A624809D"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDownloads.tsx",
+                                          "sha256":  "6E267B6F2A657ED6D4A8C4EAF17381FADA0CE6F38EBEB7FCB081D800F70F5C0A"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDownloadSettings.tsx",
+                                          "sha256":  "43FC92C22617BABB7664D6F3080F1AD8E089A4CEEAADB8AC5706B30A08EF27D7"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopDragRail.tsx",
+                                          "sha256":  "1D5C8F90B7D66B3D0FCAF246476557AEFF45E51BBB6B31EBFCE89CB4C6C54647"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopEpisodeStatus.tsx",
+                                          "sha256":  "B90786FB7295FE7B0C9A00DB793CDDBBA9835DFD00CE266BDA631853349257E1"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopExplorePresetManager.tsx",
+                                          "sha256":  "D3D1CF106B6C2108C71E92BDB6795417F890A5AC0561C45699CA17ADE625FD55"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopHomeCustomize.tsx",
+                                          "sha256":  "631BDDB9F1C4F9B90FB00E93FC29D0B9883963B68C3F9B15FB97B60726F4429F"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopHomeSettings.tsx",
+                                          "sha256":  "C394C1CA0097BF00B954294C94D96C1DE42AA821F65F3DEA980B8CDCA0A834AF"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopLibraryOrganizer.tsx",
+                                          "sha256":  "8F5EE5431BE773BECFE71F4B1607735F5956915078AA05F338C596EABE660A64"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopLoadingProgress.tsx",
+                                          "sha256":  "C53F8B2C27246D110D033F075F13CCC63B67F68C32256FC5298F298BFB25C0EE"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopNotificationCenter.tsx",
+                                          "sha256":  "C9775F97EA10506F2E37D15D4394DFFF8B601AD330A3B41CC5DFBAE5820EBE05"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopOfflineEpisodeLink.tsx",
+                                          "sha256":  "ADA33F27ACAF0DC9605EA1AC98236E6A4AA2AACE03064273ED192E6FE37DC5AA"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopPlayerPreferenceBridge.tsx",
+                                          "sha256":  "4B5587591899D5C186B30275BC76896B879C0E9046428D896FC8B06750676657"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopProgressBridge.tsx",
+                                          "sha256":  "82A9D2EF9E2F9466964E8A432F49D32453732A02E9351134577405C245DC08E6"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopScheduleFallback.tsx",
+                                          "sha256":  "53FA693D4C269DF545BD33D73BDE0EAC76890F52B7336C3470DFD50D1E2C67E4"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopSessionRecovery.tsx",
+                                          "sha256":  "101FCDADC23881BF81D75C2C06AB50A0A301E3D0BFA2EC8330A0C321A10473ED"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopSettingsSearch.tsx",
+                                          "sha256":  "66AE163A3745402C68F2983F64CDF9A13B534FCD1E0D11F670070527D5F744E0"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopShell.tsx",
+                                          "sha256":  "B9F6442A92B3A1FC6CE07F6DFCA853B04B982035D1A0BB9BA4D3057413593995"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopShortcutEditor.tsx",
+                                          "sha256":  "C7049A91EFC4E083269B585D8E586C884C372CCC14EEACCA306C21756A20566C"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopTrailer.tsx",
+                                          "sha256":  "D2C42F15D3864D3E8BC8D69B979D22EA52B042787B66FA3802F662CBE62045A5"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\DesktopWatchDesk.tsx",
+                                          "sha256":  "A8518483BBA2C0B23AAAC7F5A0790248C5DBFEDFB7414760C3029443D6BB1588"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\Layout.tsx",
+                                          "sha256":  "2098C43FF17AB0D7CE9F180310C746F9CAE338AF9837789F2712E794C6D9B970"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\Navbar.tsx",
+                                          "sha256":  "FAC3994D10940432F2EFB01010AFA26C54C90E2D6409973F1448D381F38A91FA"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\RelatedBlogArticles.tsx",
+                                          "sha256":  "A7AD95BC571A0CF22B39AA2DFF15ECF263B1B22EB5E67F9F6FC447EB908CC4D5"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\RouteSeo.tsx",
+                                          "sha256":  "DC597DDEE96FE61C1FC1618DFEC6567785FF89A8E1F6D22155FA4D61FBE6AB22"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\ScrollToTop.tsx",
+                                          "sha256":  "F4472FBB949FAC2481093836EDFE1B0CB821882C11E14CFAC2C8A04742DB946E"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\Seo.tsx",
+                                          "sha256":  "9ACAD684F1AFA30AE446CED9BB2640AFED360A733B424A25F28946452797BBAB"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\SeoDesktop.tsx",
+                                          "sha256":  "426F15B0EBEFFA8678340DB49FD361C71876ACC8ADA80B91B852D80E2409BF07"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\Spotlight.tsx",
+                                          "sha256":  "CC51769C97052E98A3DF778EFC18C244FC275463014DD6CB6AD5E92998D2934C"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\components\\UpcomingNotifyButton.tsx",
+                                          "sha256":  "1C684DF16E86C0483DF4F993CA57E911FEBA826EB01277FA7DE492C8E60011FE"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\context\\AccountSyncContext.tsx",
+                                          "sha256":  "5FAF80C6388F2BA43A85DB9445E9255401B284A3AE9F74E02C1BF92E85B551DF"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\context\\accountSyncShared.ts",
+                                          "sha256":  "955360A3049A2E04A167E158578E0229D0AFA6D0AA5C73D96E7A64CDCA3FDB05"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\context\\AuthContext.tsx",
+                                          "sha256":  "A181B56EC93259A4E4839405E761F9B19B9D32EAD88B11BA5A74ACDC3A1656CF"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\context\\WebAccountSyncContext.tsx",
+                                          "sha256":  "D5B68C1FA98880D687EDCF760EA165832DE1BD9A34234223CD227243898BA852"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\index.css",
+                                          "sha256":  "644989D8A35F8F7B04BCA20239FA83A3FA90E4658C357F2C23226544E39263E4"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\accountApi.ts",
+                                          "sha256":  "283C1AABECBB6E7C46FC314D72C4565F180F6A241B57CFE39424B10A4D1ADEB1"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\accountSync.ts",
+                                          "sha256":  "AB4BBABC79E4EB5B1286ACCBD820DCA3EF63EBCF3D3BC0D9C40F3E3BC3C31400"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\activity.ts",
+                                          "sha256":  "228DD054D413BA80CB416AE14A24843A10C5DBB2BF8719BEAE37B755EE19AA54"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\animeEpisodes.ts",
+                                          "sha256":  "87E67B902E1842ABD840AACF991139D1E3FD22FA193516AE6CC446223FF01113"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\animeIdentity.ts",
+                                          "sha256":  "8B2C54B9968AC1E3D3230CFD9FE8A712752EC8E727770F53D0267F6C42FFB246"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\currentSeason.ts",
+                                          "sha256":  "B0D70C0D29E530FD005CB563490AF192BAAA393A3F812FEA10E1961CB8BBF067"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktop.ts",
+                                          "sha256":  "381DA05761B8BDAEDB6C2A81FF81DC113205CA7D3BFB697502065D4D203851EE"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopAnimeRoute.ts",
+                                          "sha256":  "02507D4F2571873C42698F86225CFBB3301D7244C8D59AA0A111E8761A750B71"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopAppearance.ts",
+                                          "sha256":  "68929C94A6A2E9F9141FC7984AD95600722445ACC42D057E389BE77E0A5F0A57"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopArtwork.ts",
+                                          "sha256":  "26CC9AB5ADE8572FAD7CA58C9F9E769E83D5AE94B209E8F928C88A71AE1329EC"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopAutoRecovery.ts",
+                                          "sha256":  "494CCE9DA9B423D982A21566D42B823C2D107D809997F0D9899E3CCE6BFB1A93"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopAvailability.ts",
+                                          "sha256":  "3831A21290201221F0C7FADDB283B51F31C31790C1ECFDF82A4DDAD61732D013"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopBoot.ts",
+                                          "sha256":  "D4AED3D1247D17B7BF78BDC7786F86B8A4CB9B52865A3E5B77E1C76AFFE21FD9"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopCatalogAvailability.ts",
+                                          "sha256":  "73639877D1FABA4021CD078B2FE3FBE20C4EF9FB5FA0AB7A7C0F8E65D7E49E5E"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopCatalogCache.ts",
+                                          "sha256":  "18B82224835DEDEDB66E18B4F353BF5CBC2A1E4AB6FCA9BB4184D4C9429F5D2B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopCoverage.ts",
+                                          "sha256":  "9B02F4B396DD3C9A0704BAE2D7B5D9E435AD6CC0C5C28D21B3FD9B08B2915F8B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopData.ts",
+                                          "sha256":  "B1EEC99EFB1A02E59234A01730AEE9038538FC77FE231E3A5314C8E9A97D433E"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopDownloads.ts",
+                                          "sha256":  "AE16905412E378EEE8F26EC5AA7727D67604ADD6E875AA3080E41CE76A4EF140"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopDownloadStore.ts",
+                                          "sha256":  "501F6A901C6E48ABA3B13D32641DE7E17D2FB3812E0BDDEABA9CBB28FCF82405"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopEpisodeCache.ts",
+                                          "sha256":  "28556AD1F6B1FBCB220BF0AD11670D3144F230B573C1B1A0259496AD20FC8DD4"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopEpisodeInteraction.ts",
+                                          "sha256":  "2121AB10BE38F57672072E1BBF36666EC7BA393608FE8ACB19EE192B1C5F8413"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopEpisodeStatus.ts",
+                                          "sha256":  "AB74F0021525C3E938DD82E352BC0F12E7508AB4562365B22BB2D7172A67D67B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopExploreCache.ts",
+                                          "sha256":  "C53E224E1BA6CC90F8E95EEF2106B2A6061864853686EADCB7AD79898A04A35C"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopExploreFilters.ts",
+                                          "sha256":  "60A458C3B05B53DF243ED8241CBB85D207CC91411FE4C23654C5D5EA90494DBB"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopExplorePresets.ts",
+                                          "sha256":  "402BFCEE6A0D8550125F3DC16CE2AD9D064AF7D174D6A22097BDF2ED31FEB61B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopHomeLayout.ts",
+                                          "sha256":  "CBD05BDDEC199E3EB0DD6B2AD95BD4E38CE038BEE3D57080890AE2BC39469EF6"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopHomeReadiness.ts",
+                                          "sha256":  "6272D1559677A488D999BC3DD7EC8C043FAB5BF220CA8144F68BF0408B0ADDC3"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopInterruptedSession.ts",
+                                          "sha256":  "D1DC499A123895FDC4135727EDCF03CE3A2E7F1743FCBD0488D3D55749916A08"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopLibraryOrganization.ts",
+                                          "sha256":  "8E82F89DB9E35D7B4E9448F5EE00AC07920997CE50E498E3B46289C983FD807A"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopLoading.ts",
+                                          "sha256":  "8D6F46F4EF2B2CA49D85E774F272F96139644046A6F9B697630E11792331E51B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopNativeProgress.ts",
+                                          "sha256":  "C4D9CD53ECCFF99176B99C54E1CFB4284222ED1E6D8065833E4DA99A88CA0C9F"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopOfflineProgress.ts",
+                                          "sha256":  "F04468628515DAA1E870F3FF37D3CBB9D788B0C98745813C3EFDEE36810888BA"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopOriginFreshness.ts",
+                                          "sha256":  "3E2A06B9E8DFEAB9990C651463A1FF3BEFBD7506287C14171EEA3AD72D953943"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopPersonalBackup.ts",
+                                          "sha256":  "09C1F796076E5AA6FEBAEB323305D5FF6CC789FEFC105D3DD244FD79F02B7292"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopPlayerShortcuts.ts",
+                                          "sha256":  "F09A4E0B80CB336E2F38456BF7DC51436E153F57C0C8AED2553BF6468039817D"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopQueryClient.ts",
+                                          "sha256":  "8966D7A5ED8975C449C7FA38946FD43CFA158DD1C6D4476EBAB8B9B0E7CEECAD"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopQuerySnapshot.ts",
+                                          "sha256":  "F80F6599861895653D2B1170B8D429FA996C6CACEA0D0B447EFB2F745445E219"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopReminders.ts",
+                                          "sha256":  "9A5518A0F7C6F4A6AB08A40291EBAFC05650DFA3E953024E390B8B9A32524721"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopRequests.ts",
+                                          "sha256":  "D3758BAFD1D25C0B73F0BA12D67D8EEB11D2ADE1B2ABF295F02C6B2008625E38"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopRoutePreload.ts",
+                                          "sha256":  "EF927A8352F0ED4F4D42C074D363CEAC06BD91BC6E56F7F8F7FC0CDB8A139378"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopScheduleCache.ts",
+                                          "sha256":  "32D51B14E14BD22E38FCBD3DAB6CF89165D1ADA527291115455DBA8E1C88E784"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopScheduleQuery.ts",
+                                          "sha256":  "35FD3971C674ECD554CBD8D55F02A2858F810C54CD470A85794B5A71373E5035"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopScheduleWatch.ts",
+                                          "sha256":  "6FBCE8072B8B36B54B6D69D56799F9D57994DA21D51AA206E8CDEF70C2E9709C"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopScrollRestore.ts",
+                                          "sha256":  "7621BAAFE64F83C7152D8FA231639A0E1C7109DD993708477A2E4D4170C26A0C"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSearchRoute.ts",
+                                          "sha256":  "10BFDA6AAB3C520C6E27F64D888FEF488FFA3F030CAD9A6EF1047759508A08E4"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSecurity.ts",
+                                          "sha256":  "47208F67F4C6AAA44C6A290E16AF187EA238DCBE43E0FEE5B208DD64AF8C6E9E"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSeriesTimeline.ts",
+                                          "sha256":  "69F307CF36B2E808B84829F7EC3D0638B28E7B6E1EDE6E689BDF422682CF20F0"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopShortcutConfig.ts",
+                                          "sha256":  "9D7B3DA6DCF5B5AEC67468DB9EF185BDA3CE46A5A44F955253ABE23467F9F8D2"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSourceDiscovery.ts",
+                                          "sha256":  "04CFAC2B3C3A99E786E591B571EA7706A83BCB68EB3A06D2507F182FDD871E49"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSourceIdentity.ts",
+                                          "sha256":  "25FA3D7C7CB0C678F100AD949ED3DEB576FD19CAC9567AD6F0CAF916E80BF627"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSourceSelection.ts",
+                                          "sha256":  "7B400FE6B8170D1DF10C770AB389C385A8749082EE9C995B47BED9AD14B9A637"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopSpoilers.ts",
+                                          "sha256":  "189AA4A0811911BA022B204305AEE3209BAED8604D4101AE0D0B3DC32EF94555"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopStoredJsonCache.ts",
+                                          "sha256":  "8A034C0621E1694FA2902865AF562F33824CB43ECF0926BEC3014B82E04FB906"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopWatchDesk.ts",
+                                          "sha256":  "DE75541D89C005C536DCF783528A5E40C69A5AECE7E1750468007D8A155C1D3E"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\desktopWatchSnapshot.ts",
+                                          "sha256":  "60671225414980C5B84ADFEE78A36DC2B44DC4E4B82144513E7C172D75ECAA67"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\queryClient.ts",
+                                          "sha256":  "F2D3746515EEBEBB9017A0E1D576011D53CCE15121A5F641DE45237D245051E2"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\scheduleRevisions.ts",
+                                          "sha256":  "827F23C8EE95CC393ADC6C731191DC8D2883DC57098DF36F2796B770CB2FB0E8"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\seasonalAnime.ts",
+                                          "sha256":  "80A0075E33956B32BD12BBC9338C39E6503B96CA7B69C1BBA5B2F06820753056"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\slug.ts",
+                                          "sha256":  "A67CC61FB0F36F575C8C21352627E649A95C382A58E17F04C7861217FAA65341"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\sourceQuality.ts",
+                                          "sha256":  "73C59375B0571883D47244F285A2F81BACE87712B1190679B3D3296AED14B463"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\supabaseAuth.ts",
+                                          "sha256":  "579C25ECED22C69EEF4A8BDEAB153143878E5D328629C9C4879997EC5D8D6073"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\torrentBadges.ts",
+                                          "sha256":  "A1DB7CB21ADA349A9FD6F45B1FD4A0264D113F49D0BBB42C29931FBDC6F6C95E"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\useDesktopCatalogHealth.ts",
+                                          "sha256":  "7F61F8841520D3D84A8E249340ED76BAB730168642729D3FDAA76261C061E137"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\useDesktopDownloads.ts",
+                                          "sha256":  "E406805C1B5BF11A584282414196CB770F6F8CA61666DEC56FC496980DD85CFA"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\useVisibleCountdown.ts",
+                                          "sha256":  "CAAF15FE549298AE3DE37CDF0CA8147FCEB43521934CA9EDFA61FED18642EDF5"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\lib\\webRecovery.ts",
+                                          "sha256":  "6E666610D072D91FAFA43714E877016511254C91F807F0CA1D712F3FD7D02B55"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\main.desktop.tsx",
+                                          "sha256":  "F7D44CC7A5BD71E9D17A4AE655C20053E3738521A7BB652F683FAC9837D43CAA"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\main.tsx",
+                                          "sha256":  "234BA0709C2FA8C85755E23816542C991D58FCAB4F2739D9C76B0673E3A53902"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AdminDashboard.tsx",
+                                          "sha256":  "B64030CB1704663D0716F9DDBE61B1FA80C256DB6EE6834166ABD22EA36D0813"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AnimeCompare.tsx",
+                                          "sha256":  "BB9E86FB626620A04B7BFD2897A9EBBCB4E89E1735018C27AF66FA5A85597446"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AnimeDetails.tsx",
+                                          "sha256":  "DDC2EE68309313A9FE6700DBD4506B8682FA3BFB6C141C07411E45BDBBF5E583"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AnimeDownloads.tsx",
+                                          "sha256":  "6C63B01B2D68EB1150811DD2CED0AEE9B2190132D60790923E54591B6ABADACE"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\AnimeLanding.tsx",
+                                          "sha256":  "0941015655EEB6E247B811783FA8D70AC1C75E66BB7602DA3C7A4A7902AC6A96"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Blog.tsx",
+                                          "sha256":  "6BCB0BCF2A17328EEA9C4762FDC7A6E7D7F4CD7045B0872A63236E2DF08D06CC"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\BlogPost.tsx",
+                                          "sha256":  "8560701A2F4195D644CD0D075C1B15F2D33336B3902182D0C7B5AF41E0246D3C"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Dashboard.tsx",
+                                          "sha256":  "4B251E40314F7E36B93E112726D4D9C316B0539311A84A5CF241DB05C5D19E43"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopAnimeCompare.tsx",
+                                          "sha256":  "20D8759564D1D653843136A6E600ADB5809629E00548A9DB6FE0F8FFAACC1EF4"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopAnimeDownloads.tsx",
+                                          "sha256":  "143AC9C030A69D9CE851660F2432AA03789D5B2DAA579A2E083E920304475EFB"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopAnimeLanding.tsx",
+                                          "sha256":  "D9C334EC64A567388818A58C6490446B934D7885BAC4FA2E1B1CF440C6C38E19"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopExplore.tsx",
+                                          "sha256":  "15BCBA30513A7F1FD05F3F37E0F42DD5216CE190E192766B9D5205E4E85760D0"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopHistory.tsx",
+                                          "sha256":  "F4C10E8BB3B1BF2CEEBC3AAA369ACA6DBCF69C56A9678CFD8310AA7DFA68E5B1"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopHome.tsx",
+                                          "sha256":  "D619001A29380A9E0A8CC4CFF3BD6A0740D39D789A9BCEE66B7DA982D146AF8A"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopLibrary.tsx",
+                                          "sha256":  "A91773C4A5AD9DB4F517409EAC632B36CC829702C7ED37EDB4342A6A65E3FB5A"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopProfile.tsx",
+                                          "sha256":  "40DF5701ACAE63CF016923F4901C42CCD385E9B78CF6641DF4294DB54183261B"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopSchedule.tsx",
+                                          "sha256":  "64B875CD03436A7E0DABE32D60CA5C4DA1D7347F06C3E45FBA115371D52066FB"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopSettings.tsx",
+                                          "sha256":  "21559707FAC62B622177346891E1E88F0C043AA5B8387CEF113BE8AA26EA1412"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopSources.tsx",
+                                          "sha256":  "5CC9D1088FCA37FBFEF669C88FA4F9BB3BF1DB1ABDCBED1B42FAEF3C53A90BCC"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\DesktopWatch.tsx",
+                                          "sha256":  "34007F4550D2917C62C2E03E818B55B21A5930C51E03FB003EA6570F07A71498"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Home.tsx",
+                                          "sha256":  "9CCED515A52A1258726D5069C2ABB40F2CFE3406C094DE294C0E21F3A7DE52BB"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\InfoPages.tsx",
+                                          "sha256":  "C0E171F75D94DB85F7EE4B27A2FF2626DAF809F270ECED2DC2B27098384CD3CB"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Login.tsx",
+                                          "sha256":  "2F262A295619AE28344B5570EB5F1A4D42FA278DA9E480D5138A54333AC11547"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\MangaDetails.tsx",
+                                          "sha256":  "8FD971798B8ED34FBFA55C5922064EEED6D5AD7F613FFA2BA6A08684AB1307B6"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\MyList.tsx",
+                                          "sha256":  "84C76991EBFC2BCDD1ECDA80878CD969D57CFC98AFAE9E3B561C155ABEA785BA"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\NyaaSearchPage.tsx",
+                                          "sha256":  "383812141CFF3957D53EA4292F06E293CF377C7984397B0E1CE65663CDC6CCD2"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Schedule.tsx",
+                                          "sha256":  "B5F5ED3112225EB346D11BA1DD7563537643A5891A38621B8DBE88C8F494EFB1"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\pages\\Search.tsx",
+                                          "sha256":  "68EAA327B5795CE548732BBA7AF922D8EDC3BF70701184A467FDF1DCF0B87B1A"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\store\\useStore.ts",
+                                          "sha256":  "0B85F40D97CBE1A25B164D9F4B2B8FEAB3F1F687C48E6B560CEAD74AE369A422"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\styles\\desktop-calendar.css",
+                                          "sha256":  "32275EC805BE0D890BABE705978D69662618B2A9545B297F06C9F700B94F5544"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\styles\\desktop-revamp.css",
+                                          "sha256":  "CE712A9FFF69D42C401D38D1364457FFEC489637F406B509693FC8AD5FE8CEB7"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\src\\vite-env.d.ts",
+                                          "sha256":  "FBF5B1214A8657F7FE98C4790B2CA47A8A6EBF3F14A80CFC0075949ECB91E0D4"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\tsconfig.json",
+                                          "sha256":  "FB12937EBAAB14A70518078D0B5C498259328B9354A926D82472E687D84CC7C7"
+                                      },
+                                      {
+                                          "path":  "C:\\Users\\HP\\Documents\\New project 2\\StreamNyaa-main-integration\\vite.config.mjs",
+                                          "sha256":  "A78EA5C29B076A8EF03294D85548668DCE969A0CE5DD5D162B64A26D6343CCF2"
+                                      }
+                                  ],
+                        "Count":  207
+                    },
+    "executableVersion":  "0.1.10",
+    "executableSha256":  "0C2BF8B25B91B503B36254FDCFEE919A653A2CF998CED1D11631B5CD04D67076",
+    "validation":  {
+                       "automatedPassed":  true,
+                       "validatedAt":  "2026-10-13T13:52:46.7748432+05:45",
+                       "sourceCommit":  "22698680f74f51933ab75a717e4a9a199c79182a",
+                       "frontendTests":  435,
+                       "frontendFiles":  73,
+                       "rustPassed":  88,
+                       "rustIgnored":  1,
+                       "playerStateAssertions":  525,
+                       "soakCycles":  100,
+                       "episodeReplacements":  12,
+                       "checks":  [
+                                      {
+                                          "name":  "typescript",
+                                          "passed":  true,
+                                          "log":  "2026-10-13-optimization-typescript.log",
+                                          "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+                                      },
+                                      {
+                                          "name":  "frontend",
+                                          "passed":  true,
+                                          "log":  "2026-10-13-optimization-frontend.log",
+                                          "sha256":  "1D84D08CF3B5AF1EB949A41822C9085223B45E194EF91018E0F94B3BCD919974"
+                                      },
+                                      {
+                                          "name":  "rust",
+                                          "passed":  true,
+                                          "log":  "2026-10-13-optimization-rust.log",
+                                          "sha256":  "FAD2F45148FDF8570D37AF972576C031D075B8E79B169172B0F911006E6C5BC8"
+                                      },
+                                      {
+                                          "name":  "contracts",
+                                          "passed":  true,
+                                          "log":  "2026-10-13-optimization-contracts.log",
+                                          "sha256":  "06F2CA595AAF89A81D00BA8980E0209F29F613270A4E8EC766A9087C0C193FF9"
+                                      },
+                                      {
+                                          "name":  "playerState",
+                                          "passed":  true,
+                                          "log":  "2026-10-13-optimization-player-state.log",
+                                          "sha256":  "2E6340E6AA176E8B0E896B926C7116085A4F290081EB1F4231CC4B54D1687638"
+                                      },
+                                      {
+                                          "name":  "controlsAndSoak",
+                                          "passed":  true,
+                                          "log":  "2026-10-13-optimization-player-controls-soak.log",
+                                          "sha256":  "E2ABDA9FC8F3086C12FB2A068A113201204CED5541F42A4E60FAF15CD4D9F6F6"
+                                      },
+                                      {
+                                          "name":  "stalledStream",
+                                          "passed":  true,
+                                          "log":  "2026-10-13-optimization-player-stall.log",
+                                          "sha256":  "853E13F1C657C96F75467ABCA661A0EABB414972F7632CDAC794089BEF717D2C"
+                                      }
+                                  ],
+                       "nativeSourceAndResourcesUnchanged":  true,
+                       "baseline":  {
+                                        "measuredAt":  "2026-10-13T13:13:20.2659869+05:45",
+                                        "sourceCommit":  "10a3b9373268ebab92ea96e67a3ff4247c037f19",
+                                        "installerBytes":  41828416,
+                                        "installerSha256":  "ECAA46E5A5AE547F7099BC2E761662CE416C497ACABA0B1BD5DAE792175DA7F4",
+                                        "javascriptBytes":  1068653.0,
+                                        "cssBytes":  196208.0,
+                                        "measurementKind":  "Current release artifact sizes; no native CPU/FPS claim"
+                                    },
+                       "performanceEvidence":  [
+                                                   "artifacts/2026-10-13-download-optimization.json",
+                                                   "artifacts/2026-10-13-storage-progress-optimization.json",
+                                                   "artifacts/2026-10-13-rendering-optimization.json",
+                                                   "artifacts/2026-10-13-background-optimization.json"
+                                               ],
+                       "openGates":  [
+                                         "Installed WebView interaction and actual minimized-window acceptance",
+                                         "Installed startup/CPU/memory/FPS performance measurements",
+                                         "Real notification delivery and permissions",
+                                         "Isolated clean install, same-version upgrade and rollback",
+                                         "Live account synchronization",
+                                         "Public torrent endurance and live network latency",
+                                         "Signing material unavailable",
+                                         "Separate Vercel batch-history deployment",
+                                         "Original 0.1.9 rollback missing; archive verified current 0.1.10 instead"
+                                     ],
+                       "notes":  "Controlled work-count reductions only; native/player sources unchanged. User performs final installed interaction testing. No automated installation or deployment.",
+                       "build":  {
+                                     "passed":  true,
+                                     "log":  "2026-10-13-optimization-build.log",
+                                     "sha256":  "A66837F93D6DEA6B3487D7CFD47FE3238623E646D582F6DB4DBE7C0D5A5BEAD9",
+                                     "javascriptBytes":  1073937,
+                                     "cssBytes":  196208,
+                                     "javascriptDeltaBytes":  5284.0,
+                                     "cssDeltaBytes":  0.0,
+                                     "installerBytes":  41837860,
+                                     "installerDeltaBytes":  9444,
+                                     "note":  "Build artifact size comparison only; no installed startup, CPU, memory or FPS claim."
+                                 }
+                   },
+    "payloadVerification":  "Staged resource hashes and exact NSIS inclusions; independent installer extraction not performed"
+}
