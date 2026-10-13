@@ -7,7 +7,11 @@ import {useDesktopDownloads} from '../lib/useDesktopDownloads';
 import {useAuth} from '../context/AuthContext';
 export default function DesktopDownloadManager(){
  const {queue,error:queueError,refresh}=useDesktopDownloads();const {user}=useAuth();const [open,setOpen]=useState(false);const [error,setError]=useState('');const [choose,setChoose]=useState(false);const chooser=useRef<HTMLDialogElement>(null);const previous=useRef(new Map<string,string>());const navigate=useNavigate();
- useEffect(()=>{if(!queue)return;const next=queue;synchronizeOfflineProgress(next);
+ useEffect(()=>{if(!queue)return;let stopped=false,retry:ReturnType<typeof setTimeout>|undefined;
+ const apply=()=>{if(!stopped&&synchronizeOfflineProgress(queue)===false)retry=setTimeout(apply,5000);};apply();
+ return()=>{stopped=true;clearTimeout(retry);};
+ },[queue,user?.id]);
+ useEffect(()=>{if(!queue)return;const next=queue;
  const active=next.items.filter(i=>['downloading','verifying'].includes(i.state)&&(!i.chooseFiles || !!i.selectedFiles?.length));
  if(active.some(i=>!['downloading','verifying'].includes(previous.current.get(i.id)||'')))setOpen(true);
  if(!active.length)setOpen(false);

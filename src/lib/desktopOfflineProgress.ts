@@ -4,12 +4,13 @@ import { saveDesktopWatchProgress, saveLocalPlaybackHistoryItem, findLocalPlayba
 import type { DesktopDownloadQueue } from './desktopDownloads';
 
 // Only an explicit file-to-episode link may enter account/history progress.
-export function synchronizeOfflineProgress(queue: DesktopDownloadQueue) {
+export function synchronizeOfflineProgress(queue: DesktopDownloadQueue): boolean {
   const owner=loadStoredSession()?.user?.id || '';
   const key = `streamnyaa.desktop.offlineProgressSync.v1:${owner}`;
   let applied: Record<string, number> = {};
   try { const saved = JSON.parse(localStorage.getItem(key) || (!owner ? localStorage.getItem('streamnyaa.desktop.offlineProgressSync.v1') : null) || '{}'); if (saved && typeof saved === 'object' && !Array.isArray(saved)) applied = saved; } catch { /* Retry synchronization from durable native data. */ }
   let changed = false;
+  let synchronizedAll = true;
   for (const item of queue.items) for (const [file, progress] of Object.entries(item.progress || {})) {
     if(progress.owner!=null && progress.owner!==owner)continue;
     const link = item.episodeLinks?.[file];
@@ -35,7 +36,8 @@ export function synchronizeOfflineProgress(queue: DesktopDownloadQueue) {
     if (synchronized && loadDesktopWatchProgress().some(value => String(value.animeId) === link.animeId && Number(value.episode) === link.episode && value.updatedAt >= updatedAt)) {
       applied[identity] = updatedAt;
       changed = true;
-    }
+    } else synchronizedAll = false;
   }
-  if (changed) try { localStorage.setItem(key, JSON.stringify(Object.fromEntries(Object.entries(applied).sort((a,b) => b[1]-a[1]).slice(0,5000)))); } catch { /* Native progress remains durable. */ }
+  if (changed) try { localStorage.setItem(key, JSON.stringify(Object.fromEntries(Object.entries(applied).sort((a,b) => b[1]-a[1]).slice(0,5000)))); } catch { return false; /* Native progress remains durable; retry acknowledgement. */ }
+  return synchronizedAll;
 }

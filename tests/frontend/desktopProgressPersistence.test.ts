@@ -65,9 +65,9 @@ describe('synchronous desktop progress persistence', () => {
 
   it('does not rewrite an unchanged offline marker on every queue poll', () => {
     const queue = offlineQueue();
-    synchronizeOfflineProgress(queue);
+    expect(synchronizeOfflineProgress(queue)).toBe(true);
     const { get, set } = countWork();
-    synchronizeOfflineProgress(queue);
+    expect(synchronizeOfflineProgress(queue)).toBe(true);
     expect(get).toHaveBeenCalledTimes(2);
     expect(set).not.toHaveBeenCalled();
     synchronizeOfflineProgress({ version: 1, items: [], limitBps: 0 });
@@ -167,11 +167,11 @@ describe('synchronous desktop progress persistence', () => {
 
   it('leaves offline progress unacknowledged when History cannot be written and retries', () => {
     const fail = failWrites(historyKey);
-    synchronizeOfflineProgress(offlineQueue());
+    expect(synchronizeOfflineProgress(offlineQueue())).toBe(false);
     expect(localStorage.getItem(markerKey)).toBeNull();
     expect(loadDesktopWatchProgress()[0].positionSeconds).toBe(120);
     fail.mockRestore();
-    synchronizeOfflineProgress(offlineQueue());
+    expect(synchronizeOfflineProgress(offlineQueue())).toBe(true);
     expect(loadLocalPlaybackHistory()[0].offlineFile).toBe('01.mkv');
     expect(localStorage.getItem(markerKey)).not.toBeNull();
   });
@@ -181,10 +181,10 @@ describe('synchronous desktop progress persistence', () => {
     const queue = offlineQueue();
     queue.items[0].progress!['01.mkv'].watchedCoverage = coverage([[0, 20]], 1200);
     const fail = failWrites(DESKTOP_WATCH_PROGRESS_KEY);
-    synchronizeOfflineProgress(queue);
+    expect(synchronizeOfflineProgress(queue)).toBe(false);
     expect(localStorage.getItem(markerKey)).toBeNull();
     fail.mockRestore();
-    synchronizeOfflineProgress(queue);
+    expect(synchronizeOfflineProgress(queue)).toBe(true);
     expect(loadDesktopWatchProgress()[0].watchedCoverage?.intervals).toEqual([[0, 20], [100, 200]]);
     expect(localStorage.getItem(markerKey)).not.toBeNull();
   });
@@ -198,14 +198,27 @@ describe('synchronous desktop progress persistence', () => {
 
   it('retries safely after the offline acknowledgement write fails', () => {
     const fail = failWrites(markerKey);
-    synchronizeOfflineProgress(offlineQueue());
+    expect(synchronizeOfflineProgress(offlineQueue())).toBe(false);
     expect(localStorage.getItem(markerKey)).toBeNull();
     fail.mockRestore();
-    synchronizeOfflineProgress(offlineQueue());
+    expect(synchronizeOfflineProgress(offlineQueue())).toBe(true);
     expect(localStorage.getItem(markerKey)).not.toBeNull();
     const { set } = countWork();
     synchronizeOfflineProgress(offlineQueue());
     expect(set).not.toHaveBeenCalled();
+  });
+
+  it('reports success without retrying invalid, unlinked or foreign-owner offline data', () => {
+    const queue = offlineQueue();
+    queue.items[0].progress!['01.mkv'].owner = 'another-owner';
+    expect(synchronizeOfflineProgress(queue)).toBe(true);
+    queue.items[0].progress!['01.mkv'].owner = null;
+    queue.items[0].progress!['01.mkv'].seconds = NaN;
+    expect(synchronizeOfflineProgress(queue)).toBe(true);
+    queue.items[0].progress!['01.mkv'].seconds = 120;
+    queue.items[0].episodeLinks = {};
+    expect(synchronizeOfflineProgress(queue)).toBe(true);
+    expect(localStorage.getItem(markerKey)).toBeNull();
   });
 
   it('keeps per-account offline markers separate from legacy guest acknowledgement data', () => {

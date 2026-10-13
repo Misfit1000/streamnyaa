@@ -61,13 +61,23 @@
     ],
     "durability": "Required writes remain synchronous before return. saveDesktopWatchProgress, saveLocalPlaybackHistoryItem and applyNativeCheckpoint return durable success. The History path skips a repeated progress write only after confirmed persistence and exact agreement of its derived progress fields and coverage. Failed first writes retain the original second attempt. Extra or legacy History coverage, metadata differences and unknown covered-media duration retain the original merge path. Offline acknowledgement advances only after required writes succeed, and unchanged markers are not rewritten.",
     "ownership": "Explicit foreign progress owners remain excluded. Authenticated accounts use their own offline acknowledgement key and do not inherit the legacy guest marker. Native checkpoints remain the durable recovery authority.",
+    "failedOnlyRetry": {
+      "intervalMs": 5000,
+      "offlineSuccessContract": "synchronizeOfflineProgress returns true only when all applicable valid owned progress, required History updates and acknowledgement writes have succeeded or were already applied. Invalid, foreign-owner and unlinked data are not retry candidates.",
+      "unchangedQueueRecovery": "DesktopDownloadManager retries a failed synchronization even when structural sharing preserves the queue reference; successful unchanged queues do not trigger a retry timer or more native queue reads.",
+      "nativeRecovery": "DesktopProgressBridge retains only the latest failed sequence per session, bounded to 1000 sessions, and retries failed progress or acknowledgement writes without requiring another native event. Successful work clears its pending retry. Invalid and other-owner records are excluded.",
+      "cleanup": "Pending timers and records are cleared on unmount and account change; stale callbacks are ignored.",
+      "initialPersistence": "Normal progress writes still run synchronously on the first attempt. The timer retries failures; it does not defer successful durable writes."
+    },
     "workCountRegression": "tests/frontend/desktopProgressPersistence.test.ts",
     "scratchReproduction": "node --import tsx .validation/progress-work-benchmark.ts"
   },
   "verification": {
     "newCacheRegressions": 21,
-    "newProgressRegressions": 20,
-    "focusedProgressAndCoverageTestsPassed": 35,
+    "newProgressRegressions": 21,
+    "nativeBridgePersistenceTests": 7,
+    "offlineRetryIntegrationTests": 2,
+    "focusedRetryAndProgressTestsPassed": 39,
     "typeScript": "passed",
     "diffWhitespaceCheck": "passed",
     "coverage": [
@@ -75,7 +85,9 @@
       "Public result mutation isolation, dynamic validation, expiry and existing size bounds",
       "Quota failures, synchronous persistence, successful retries and acknowledgement failures",
       "Stale checkpoint replay, additional intervals, legacy resume baselines and terminal completion",
-      "Episode/provider separation, incompatible durations, metadata compatibility and owner isolation"
+      "Episode/provider separation, incompatible durations, metadata compatibility and owner isolation",
+      "Failed final native events recover without a new event; latest-sequence replacement, acknowledgement retry and owner/unmount cleanup",
+      "Unchanged shared queue retries offline persistence after failure without another native queue read, then stops retrying after success"
     ]
   },
   "limits": [
