@@ -21,6 +21,6 @@ The unchecked **Show unavailable titles** view still requires a current, safely 
 
 ## Delivery and open gates
 
-The rebuilt 0.1.10 installer belongs in the existing `StreamNyaa-desktop/desktop/releases/v0.1.10` release location. The adjacent revision manifest records source/resource hashes, executable version, checksum, size and signature status. The previous current installer and metadata are archived before replacement; the verified 0.1.9 rollback remains available.
+The rebuilt 0.1.10 installer belongs in the existing `StreamNyaa-desktop/desktop/releases/v0.1.10` release location. The adjacent revision manifest records source/resource hashes, executable version, checksum, size and signature status. The previous current installer and metadata are archived before replacement. The earlier 0.1.9 installer is missing from the release folders, so the verified previous 0.1.10 installer (SHA256 `BE3451DDABCB0EE667302400EBF42F907882B7EDA4FFB52DA232EB3DA11AA623`) is retained as the rollback. The missing 0.1.9 artifact is explicitly recorded rather than reconstructing or relabeling it.
 
 Installed Home population with the user's live catalog/network has not been interactively accepted. External source availability and transfer speed remain provider-dependent. Signing material, installed UI/display scaling and notifications, isolated install/upgrade/rollback, live account sync, public-torrent endurance and separate Vercel deployment acceptance remain open.
