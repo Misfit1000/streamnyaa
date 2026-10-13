@@ -15,7 +15,8 @@ export default function DesktopProgressBridge() {
     const sequences=new Map<string,number>(Object.entries(saved));
     const apply=(record:NativeCheckpoint)=>{
       if(disposed || record.context.owner!==owner || (sequences.get(record.sessionId)||0)>=record.sequence) return;
-      sequences.set(record.sessionId,record.sequence); applyNativeCheckpoint(record,owner);
+      if(!applyNativeCheckpoint(record,owner)) return;
+      sequences.set(record.sessionId,record.sequence);
       try{localStorage.setItem(appliedKey,JSON.stringify(Object.fromEntries([...sequences].slice(-1000))));}catch{/* native checkpoints remain durable */}
     };
     void (async()=>{

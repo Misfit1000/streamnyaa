@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-13",
+  "baselineCommit": "10a3b9373268ebab92ea96e67a3ff4247c037f19",
+  "method": "Actual DesktopDownloadManager, DesktopDownloads and DesktopActivitySummary mounted together in React/jsdom with an empty native queue and fake timers for 60 seconds; native invoke/listen calls counted before and after migration.",
+  "baseline": { "surfaces": 3, "seconds": 60, "nativeQueueReads": 65, "nativeDownloadListeners": 3 },
+  "optimized": { "surfaces": 3, "seconds": 60, "nativeQueueReads": 3, "nativeDownloadListeners": 1 },
+  "policies": { "activeFallbackMs": 2000, "idleFallbackMs": 30000, "idleFallbackWithoutEventsMs": 2000, "eventBurstGapMs": 250, "hiddenUiPolling": false, "nativeTransfersContinue": true },
+  "regressions": [
+    "Concurrent reads coalesce; stale reads cannot overwrite completed actions",
+    "Identical queue snapshots retain identity and do not redraw subscribers",
+    "Events arriving during a read schedule a bounded recheck",
+    "Failures preserve content and recover automatically",
+    "Resume switches to active fallback even when native events are absent",
+    "Hidden observation catches up immediately on visibility resume",
+    "Hidden command snapshots notify on resume even when the subsequent read is identical",
+    "Delayed Pause and Resume mutations preserve user order; rejected mutations do not block later controls",
+    "An open chooser does not block controls; successful selection reconciles with the current queue",
+    "Unsubscribed and delayed native listeners cannot resurrect unmounted stores",
+    "Chooser cancellation and failed UI observers cannot publish a false transfer",
+    "Manual panel dismissal remains suppressed until a new transfer session"
+  ],
+  "evidence": [
+    "tests/frontend/desktopDownloadPerformance.test.tsx",
+    "tests/frontend/desktopDownloadStore.test.ts",
+    "tests/frontend/desktopDownloadPanel.test.tsx"
+  ],
+  "limits": "Deterministic local IPC/work counts, not installed native CPU, memory, FPS or public-network throughput measurements. Native schedulers and download ownership are unchanged."
+}

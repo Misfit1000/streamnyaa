@@ -1,6 +1,9 @@
+import { cloneDesktopStoredJson, createDesktopStoredJsonReader } from './desktopStoredJsonCache';
+
 const DESKTOP_EXPLORE_CACHE_KEY = 'streamnyaa.desktop.explore-catalog.v1';
 const MAX_ENTRIES = 20;
 const MAX_AGE_MS = 1000 * 60 * 60 * 24 * 7;
+const readStoredEntries = createDesktopStoredJsonReader(DESKTOP_EXPLORE_CACHE_KEY);
 
 type ExploreCacheEntry = {
   key: string;
@@ -11,7 +14,7 @@ type ExploreCacheEntry = {
 function readEntries() {
   if (typeof window === 'undefined') return [] as ExploreCacheEntry[];
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(DESKTOP_EXPLORE_CACHE_KEY) || '[]');
+    const parsed = readStoredEntries();
     return Array.isArray(parsed)
       ? parsed.filter((entry) => entry?.key && entry?.savedAt && Array.isArray(entry?.data?.data))
       : [];
@@ -30,7 +33,7 @@ export function exploreCatalogCacheKey(input: Record<string, unknown>) {
 export function readDesktopExploreCatalog(key: string, now = Date.now()) {
   const entry = readEntries().find((candidate) => candidate.key === key);
   if (!entry || now - entry.savedAt > MAX_AGE_MS) return null;
-  return entry;
+  return cloneDesktopStoredJson(entry);
 }
 
 export function writeDesktopExploreCatalog(key: string, data: any, now = Date.now()) {
@@ -50,5 +53,5 @@ export function writeDesktopExploreCatalog(key: string, data: any, now = Date.no
 /** A device-local discovery index; never use these items as a live provider ranking. */
 export function readCachedExploreTitles(now = Date.now()): any[] {
   return readEntries().filter(entry => now - entry.savedAt <= MAX_AGE_MS)
-    .flatMap(entry => entry.data.data).filter(item => item && typeof item.title === 'string');
+    .flatMap(entry => entry.data.data).filter(item => item && typeof item.title === 'string').map(cloneDesktopStoredJson);
 }

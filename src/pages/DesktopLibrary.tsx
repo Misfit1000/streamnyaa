@@ -90,7 +90,7 @@ export default function DesktopLibrary() {
   };
 
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleHistory = historyItems
+  const visibleHistory = useMemo(() => historyItems
     .filter((item) => {
       const progress = Number(item.progressPercent || 0);
       if (category === 'completed' && progress < 92) return false;
@@ -100,7 +100,7 @@ export default function DesktopLibrary() {
         || String(item.title || '').toLowerCase().includes(normalizedQuery)
         || String(item.episode || '').toLowerCase().includes(normalizedQuery);
     })
-    .slice(0, 100);
+    .slice(0, 100), [historyItems, category, normalizedQuery]);
 
   const libraryCategories = [
     { id: 'watching' as const, label: 'Watching', count: historyItems.filter((item) => Number(item.progressPercent || 0) < 92).length, icon: Play },
@@ -112,6 +112,57 @@ export default function DesktopLibrary() {
   ];
 
   const showsHistoryRows = category === 'watching' || category === 'completed' || category === 'history';
+
+  // Preserve the existing DOM, focus and scroll geometry while unrelated dialog
+  // state changes. Each card still receives its own store/subscription updates.
+  const historyRows = useMemo(() => showsHistoryRows ? visibleHistory.map((source) => {
+    const progress = Math.max(0, Math.min(100, Number(source.progressPercent || 0)));
+    const title = source.animeTitle || source.title;
+    const artwork = hideSpoilers ? source.poster : source.image || source.poster || source.banner;
+    const watchPath = desktopWatchPath({ mal_id: source.animeId, id: source.animeId, title }, source.episode ? { ep: String(source.episode) } : undefined);
+    return (
+      <article key={`${source.magnet}-${source.episode || 'recent'}`} className="sn-card-hover sn-glass-card grid gap-4 rounded-xl p-3 sm:grid-cols-[140px_minmax(0,1fr)_auto]">
+        <div className="relative aspect-video overflow-hidden rounded-xl bg-white/[0.055]">
+          {artwork ? (
+            <img src={artwork} alt={title} className="h-full w-full object-cover" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="grid h-full place-items-center bg-[radial-gradient(circle_at_30%_20%,rgba(244,63,94,0.32),transparent_34%),linear-gradient(145deg,#171017,#07070a)] text-xs font-semibold normal-case tracking-normal text-white/52">
+              StreamNyaa
+            </div>
+          )}
+          <span className="absolute left-2 top-2 rounded-full bg-black/58 px-2 py-0.5 text-[10px] font-semibold normal-case text-white/78 backdrop-blur">
+            EP {source.episode || '?'}
+          </span>
+        </div>
+        <div className="min-w-0 py-1">
+          <h2 className="line-clamp-1 text-base font-semibold text-white">{title}</h2>
+          <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/48">{hideSpoilers ? (source.episode ? `Episode ${source.episode}` : 'Saved source') : source.title}</p>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="mt-2 text-xs font-semibold text-white/54">
+            Resume {formatPlaybackTime(source.resumeSeconds)}{source.durationSeconds ? ` / ${formatPlaybackTime(source.durationSeconds)}` : ''} - {Math.round(progress)}%
+          </p>
+        </div>
+        <div className="flex items-center gap-2 sm:flex-col sm:items-stretch sm:justify-center">
+          <DesktopBookmarkButton anime={{mal_id:source.animeId,title,images:{jpg:{image_url:source.poster}}}} />
+          <button
+            type="button"
+            onClick={() => void openLocalSourceNow(source)}
+            className="sn-primary-action h-10 px-4 text-xs"
+          >
+            Resume
+          </button>
+          <Link to={watchPath} className="sn-secondary-action h-10 px-4 text-xs">
+            Open page
+          </Link>
+        </div>
+      </article>
+    );
+  }) : [], [showsHistoryRows, visibleHistory, hideSpoilers]);
+  const bookmarkCards = useMemo(() => !showsHistoryRows && category !== 'offline' && category !== 'collections' ? filteredList.map((anime) => (
+    <AnimeCard key={`desktop-library-${animeIdentity(anime)}`} anime={anime} />
+  )) : [], [showsHistoryRows, category, filteredList]);
 
   return (
     <div className="sn-page py-6">
@@ -257,51 +308,7 @@ export default function DesktopLibrary() {
         {category === 'offline' ? <DesktopDownloads /> : category === 'collections' ? <DesktopLibraryOrganizer anime={combinedList} /> : showsHistoryRows ? (
           visibleHistory.length ? (
             <div className="space-y-3">
-              {visibleHistory.map((source) => {
-                const progress = Math.max(0, Math.min(100, Number(source.progressPercent || 0)));
-                const title = source.animeTitle || source.title;
-                const artwork = hideSpoilers ? source.poster : source.image || source.poster || source.banner;
-                const watchPath = desktopWatchPath({ mal_id: source.animeId, id: source.animeId, title }, source.episode ? { ep: String(source.episode) } : undefined);
-                return (
-                  <article key={`${source.magnet}-${source.episode || 'recent'}`} className="sn-card-hover sn-glass-card grid gap-4 rounded-xl p-3 sm:grid-cols-[140px_minmax(0,1fr)_auto]">
-                    <div className="relative aspect-video overflow-hidden rounded-xl bg-white/[0.055]">
-                      {artwork ? (
-                        <img src={artwork} alt={title} className="h-full w-full object-cover" loading="lazy" decoding="async" referrerPolicy="no-referrer" />
-                      ) : (
-                        <div className="grid h-full place-items-center bg-[radial-gradient(circle_at_30%_20%,rgba(244,63,94,0.32),transparent_34%),linear-gradient(145deg,#171017,#07070a)] text-xs font-semibold normal-case tracking-normal text-white/52">
-                          StreamNyaa
-                        </div>
-                      )}
-                      <span className="absolute left-2 top-2 rounded-full bg-black/58 px-2 py-0.5 text-[10px] font-semibold normal-case text-white/78 backdrop-blur">
-                        EP {source.episode || '?'}
-                      </span>
-                    </div>
-                    <div className="min-w-0 py-1">
-                      <h2 className="line-clamp-1 text-base font-semibold text-white">{title}</h2>
-                      <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/48">{hideSpoilers ? (source.episode ? `Episode ${source.episode}` : 'Saved source') : source.title}</p>
-                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
-                        <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
-                      </div>
-                      <p className="mt-2 text-xs font-semibold text-white/54">
-                        Resume {formatPlaybackTime(source.resumeSeconds)}{source.durationSeconds ? ` / ${formatPlaybackTime(source.durationSeconds)}` : ''} - {Math.round(progress)}%
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 sm:flex-col sm:items-stretch sm:justify-center">
-                      <DesktopBookmarkButton anime={{mal_id:source.animeId,title,images:{jpg:{image_url:source.poster}}}} />
-                      <button
-                        type="button"
-                        onClick={() => void openLocalSourceNow(source)}
-                        className="sn-primary-action h-10 px-4 text-xs"
-                      >
-                        Resume
-                      </button>
-                      <Link to={watchPath} className="sn-secondary-action h-10 px-4 text-xs">
-                        Open page
-                      </Link>
-                    </div>
-                  </article>
-                );
-              })}
+              {historyRows}
             </div>
           ) : (
             <div className="sn-empty-state px-6 py-16 text-center">
@@ -324,9 +331,7 @@ export default function DesktopLibrary() {
           </div>
         ) : filteredList.length ? (
           <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-5">
-            {filteredList.map((anime) => (
-              <AnimeCard key={`desktop-library-${animeIdentity(anime)}`} anime={anime} />
-            ))}
+            {bookmarkCards}
           </div>
         ) : (
           <div className="sn-empty-state px-6 py-16 text-center">

@@ -1,3 +1,5 @@
+import { cloneDesktopStoredJson, createDesktopStoredJsonReader } from './desktopStoredJsonCache';
+
 /** Public source evidence, shared by catalog cards and release reminders. */
 export type DesktopAvailabilityRecord = {
   key: string;
@@ -22,6 +24,7 @@ export type DesktopAvailabilityRecord = {
 export const DESKTOP_AVAILABILITY_KEY = 'streamnyaa.desktop.sourceAvailability.v1';
 const CHANGED = 'streamnyaa.desktop.sourceAvailability.changed';
 const MAX_RECORDS = 1200;
+const readStoredRecords = createDesktopStoredJsonReader(DESKTOP_AVAILABILITY_KEY);
 
 export function desktopCanonicalAnimeId(anime: any): string {
   if (typeof anime === 'string' && /^(anilist|mal):[1-9]\d*$/.test(anime)) return anime;
@@ -52,12 +55,16 @@ function valid(value: any): value is DesktopAvailabilityRecord {
     && typeof value.complete === 'boolean');
 }
 
-export function readDesktopAvailabilityRecords(): DesktopAvailabilityRecord[] {
+function readRecords(): DesktopAvailabilityRecord[] {
   if (typeof window === 'undefined') return [];
   try {
-    const value = JSON.parse(window.localStorage.getItem(DESKTOP_AVAILABILITY_KEY) || '[]');
+    const value = readStoredRecords();
     return Array.isArray(value) ? value.filter(valid).slice(0, MAX_RECORDS) : [];
   } catch { return []; }
+}
+
+export function readDesktopAvailabilityRecords(): DesktopAvailabilityRecord[] {
+  return readRecords().map(cloneDesktopStoredJson);
 }
 
 /** Merge a backup without allowing older evidence to replace a newer local check. */
@@ -73,7 +80,8 @@ export function importDesktopAvailabilityRecords(payload: string) {
 
 export function readDesktopAvailability(anime: any, episode?: number, now = Date.now()) {
   const key = desktopAvailabilityKey(anime, episode);
-  return readDesktopAvailabilityRecords().find(record => record.key === key && record.checkedAt <= now + 60_000 && record.expiresAt > now) || null;
+  const record = readRecords().find(record => record.key === key && record.checkedAt <= now + 60_000 && record.expiresAt > now);
+  return record ? cloneDesktopStoredJson(record) : null;
 }
 
 export function isDesktopTitleUnavailable(anime: any, now = Date.now()) {
@@ -83,7 +91,7 @@ export function isDesktopTitleUnavailable(anime: any, now = Date.now()) {
 
 export function recordDesktopAvailability(record: DesktopAvailabilityRecord, syncNative = true) {
   if (typeof window === 'undefined' || !valid(record)) return;
-  const old = readDesktopAvailabilityRecords();
+  const old = readRecords();
   if (old.some(value => value.key === record.key && value.checkedAt > record.checkedAt)) return;
   // An interrupted refresh cannot erase still-valid positive or complete negative evidence.
   const prior = old.find(value => value.key === record.key);
@@ -101,7 +109,7 @@ export function recordDesktopAvailability(record: DesktopAvailabilityRecord, syn
 }
 
 export function subscribeDesktopAvailability(listener: () => void) {
-  const storage = (event: StorageEvent) => { if (event.key === DESKTOP_AVAILABILITY_KEY) listener(); };
+  const storage = (event: StorageEvent) => { if (event.key === DESKTOP_AVAILABILITY_KEY || event.key === null) listener(); };
   window.addEventListener(CHANGED, listener);
   window.addEventListener('storage', storage);
   return () => { window.removeEventListener(CHANGED, listener); window.removeEventListener('storage', storage); };

@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-13",
+  "baselineCommit": "10a3b9373268ebab92ea96e67a3ff4247c037f19",
+  "method": "Deterministic React/jsdom hooks with fake timers. Original useCatalogHealth loaded directly from baseline Git source. Two surfaces mount, 20 cache updates in one burst, an unrelated rerender, 20 updates while hidden for 60 seconds, then visibility resume. Query GC disabled to isolate cosmetic work.",
+  "baseline": {
+    "subscriptions": 2,
+    "mountScans": 2,
+    "burstScans": 2,
+    "rerenderScans": 2,
+    "hiddenBurstScans": 2,
+    "resumeScans": 0
+  },
+  "optimizedAdministrator": {
+    "subscriptions": 1,
+    "mountScans": 1,
+    "burstScans": 1,
+    "rerenderScans": 0,
+    "hiddenBurstScans": 0,
+    "resumeScans": 1
+  },
+  "optimizedRegularOrUnverified": {
+    "subscriptions": 0,
+    "mountScans": 0,
+    "burstScans": 0,
+    "rerenderScans": 0,
+    "hiddenBurstScans": 0,
+    "resumeScans": 0
+  },
+  "hiddenCountdown60Seconds": {
+    "baselineIntervalCallbacks": 60,
+    "baselineActiveTimers": 1,
+    "optimizedIntervalCallbacks": 0,
+    "optimizedActiveTimers": 0,
+    "resume": "Immediate absolute-clock refresh; no timer remains after deadline."
+  },
+  "verification": {
+    "typescript": "passed",
+    "focusedFrontendFiles": 4,
+    "focusedFrontendTests": 19,
+    "deterministicBaselineComparison": "passed",
+    "scenarios": [
+      "Regular and unverified roles do not access catalog cache monitoring",
+      "Two administrator surfaces share one subscription and event-burst scan",
+      "Role revocation clears privileged snapshot and pending work",
+      "Hidden windows defer scans and cosmetic countdown work",
+      "Visibility resume immediately refreshes absolute retry labels",
+      "Countdown deadline changes and unmount clear timers",
+      "No retry/network operation is triggered by cosmetic visibility refresh"
+    ]
+  },
+  "limits": "Operation counts are deterministic workload evidence, not measured installed-app CPU, memory or visual acceptance. Native downloads, reminders, progress scheduling, catalog requests and Home readiness were not changed by this subtask."
+}

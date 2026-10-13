@@ -8,7 +8,8 @@ export function synchronizeOfflineProgress(queue: DesktopDownloadQueue) {
   const owner=loadStoredSession()?.user?.id || '';
   const key = `streamnyaa.desktop.offlineProgressSync.v1:${owner}`;
   let applied: Record<string, number> = {};
-  try { const saved = JSON.parse(localStorage.getItem(key) || localStorage.getItem('streamnyaa.desktop.offlineProgressSync.v1') || '{}'); if (saved && typeof saved === 'object' && !Array.isArray(saved)) applied = saved; } catch { /* Retry synchronization from durable native data. */ }
+  try { const saved = JSON.parse(localStorage.getItem(key) || (!owner ? localStorage.getItem('streamnyaa.desktop.offlineProgressSync.v1') : null) || '{}'); if (saved && typeof saved === 'object' && !Array.isArray(saved)) applied = saved; } catch { /* Retry synchronization from durable native data. */ }
+  let changed = false;
   for (const item of queue.items) for (const [file, progress] of Object.entries(item.progress || {})) {
     if(progress.owner!=null && progress.owner!==owner)continue;
     const link = item.episodeLinks?.[file];
@@ -22,15 +23,19 @@ export function synchronizeOfflineProgress(queue: DesktopDownloadQueue) {
       watchedCoverage:progress.watchedCoverage, positionSeconds: progress.seconds, durationSeconds: progress.duration,
       progressPercent: progress.watchedCoverage ? coveragePercent(progress.watchedCoverage,progress.duration) : Math.min(100, progress.seconds / progress.duration * 100), completed: progress.completed,
       updatedAt };
-    saveDesktopWatchProgress(record);
+    const progressSaved = saveDesktopWatchProgress(record);
     const existing = findLocalPlaybackHistoryItem({ animeId:link.animeId, episode:link.episode });
+    let synchronized = progressSaved;
     if (item.magnet && (!existing || Number(existing.progressUpdatedAt || existing.savedAt || 0) < updatedAt)) {
-      saveLocalPlaybackHistoryItem({ magnet:item.magnet, infoHash:item.id, title:link.title, animeTitle:link.title,
+      synchronized = saveLocalPlaybackHistoryItem({ magnet:item.magnet, infoHash:item.id, title:link.title, animeTitle:link.title,
         animeId:link.animeId, episode:link.episode, poster:link.poster, image:link.poster,
         watchedCoverage:progress.watchedCoverage, offlineDownloadId:item.id, offlineFile:file, resumeSeconds:progress.seconds, durationSeconds:progress.duration,
-        progressPercent:record.progressPercent, completed:progress.completed, savedAt:updatedAt, progressUpdatedAt:updatedAt });
+        progressPercent:record.progressPercent, completed:progress.completed, savedAt:updatedAt, progressUpdatedAt:updatedAt }, progressSaved ? record : undefined);
     }
-    if (loadDesktopWatchProgress().some(value => String(value.animeId) === link.animeId && Number(value.episode) === link.episode && value.updatedAt >= updatedAt)) applied[identity] = updatedAt;
+    if (synchronized && loadDesktopWatchProgress().some(value => String(value.animeId) === link.animeId && Number(value.episode) === link.episode && value.updatedAt >= updatedAt)) {
+      applied[identity] = updatedAt;
+      changed = true;
+    }
   }
-  try { localStorage.setItem(key, JSON.stringify(Object.fromEntries(Object.entries(applied).sort((a,b) => b[1]-a[1]).slice(0,5000)))); } catch { /* Native progress remains durable. */ }
+  if (changed) try { localStorage.setItem(key, JSON.stringify(Object.fromEntries(Object.entries(applied).sort((a,b) => b[1]-a[1]).slice(0,5000)))); } catch { /* Native progress remains durable. */ }
 }

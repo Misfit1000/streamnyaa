@@ -594,7 +594,7 @@ export function loadDesktopWatchProgress(): DesktopWatchProgressRecord[] {
   }
 }
 
-export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
+export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord): boolean {
   try {
     const normalized: DesktopWatchProgressRecord = {
       ...record,
@@ -619,7 +619,7 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
       normalized.progressPercent=coveragePercent(normalized.watchedCoverage,normalized.durationSeconds || existing?.durationSeconds || 0);
       normalized.completed=normalized.progressPercent>=92;
       normalized.updatedAt=Math.max(normalized.updatedAt,existing?.updatedAt || 0);
-    } else if (existing && existing.updatedAt>normalized.updatedAt) return;
+    } else if (existing && existing.updatedAt>normalized.updatedAt) return true;
     const next = [
       normalized,
       ...current.filter((item) => watchProgressKey(item) !== key),
@@ -628,8 +628,10 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord) {
     const watchedSeries = watchedSeriesFromProgress(normalized);
     if (watchedSeries) upsertWatchedSeries(watchedSeries);
     emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
+    return true;
   } catch {
     // Progress is convenience data. Playback must never depend on it.
+    return false;
   }
 }
 
@@ -771,11 +773,12 @@ export function removeLocalPlaybackHistoryItem(source: Partial<LocalPlaybackSour
   }
 }
 
-export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
+export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource, persistedProgress?: DesktopWatchProgressRecord): boolean {
   try {
     const normalized = { ...source, savedAt: source.savedAt || Date.now() };
     const key = playbackHistoryKey(normalized);
-    const previous=loadLocalPlaybackHistory().find(item=>playbackHistoryKey(item)===key);
+    const history = loadLocalPlaybackHistory();
+    const previous=history.find(item=>playbackHistoryKey(item)===key);
     if(previous?.watchedCoverage || normalized.watchedCoverage){
       normalized.watchedCoverage=mergeCoverage(previous?.watchedCoverage,normalized.watchedCoverage,normalized.durationSeconds || previous?.durationSeconds || 0,previous?.watchedCoverage?0:previous?.resumeSeconds || 0);
       normalized.resumeSeconds=normalized.watchedCoverage.furthest;
@@ -784,14 +787,24 @@ export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource) {
     }
     const next = [
       normalized,
-      ...loadLocalPlaybackHistory().filter((item) => playbackHistoryKey(item) !== key),
+      ...history.filter((item) => playbackHistoryKey(item) !== key),
     ].slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
     localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
     const progress = watchProgressFromSource(normalized);
-    if (progress) saveDesktopWatchProgress(progress);
+    // Native/offline bridges have already persisted their authoritative record.
+    // Skip only an identical second update. Extra history coverage, legacy
+    // baselines and metadata differences still use the original merge path.
+    const samePersistedProgress = progress && persistedProgress
+      && (!progress.watchedCoverage || Number(progress.durationSeconds) > 0)
+      && (['animeId', 'title', 'poster', 'episode', 'positionSeconds', 'durationSeconds', 'progressPercent', 'updatedAt', 'completed'] as const)
+        .every(field => Object.is(progress[field], persistedProgress[field]))
+      && JSON.stringify(progress.watchedCoverage) === JSON.stringify(persistedProgress.watchedCoverage);
+    const progressSaved = !progress || Boolean(samePersistedProgress) || saveDesktopWatchProgress(progress);
     emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
+    return progressSaved;
   } catch {
     // Playback history is a convenience feature. Failing to persist it should not block playback.
+    return false;
   }
 }
 

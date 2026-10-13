@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "date": "2026-10-13",
+  "timezone": "Asia/Katmandu",
+  "baselineCommit": "10a3b9373268ebab92ea96e67a3ff4247c037f19",
+  "method": "Instrumented the actual desktop functions with Storage.prototype.getItem/setItem and JSON.parse counters in a local jsdom runtime. Captured baseline before editing and repeated identical fixture workloads after editing. Fixture initialization and post-operation assertions are excluded from counts.",
+  "cache": {
+    "workload": "60 selected lookups in each of Home catalog, Explore catalog, episode pages and source availability; 240 lookups total.",
+    "fixtures": {
+      "homeEntries": 24,
+      "exploreEntries": 20,
+      "titlesPerCatalogEntry": 40,
+      "episodePages": 60,
+      "episodesPerPage": 20,
+      "availabilityRecords": 100
+    },
+    "before": {
+      "storageReads": 240,
+      "storageWrites": 0,
+      "jsonParses": 240,
+      "parsedCharacters": 12715260,
+      "explicitSelectedResultClones": 0
+    },
+    "after": {
+      "storageReads": 240,
+      "storageWrites": 0,
+      "jsonParses": 4,
+      "parsedCharacters": 211921,
+      "explicitSelectedResultClones": 240
+    },
+    "parseWorkReductionPercent": 98.33,
+    "invalidation": "Each lookup synchronously reads the current raw storage string. A changed value or Storage object invalidates decoded reuse; direct setItem, removeItem, clear, imports and external updates do not require wrapped browser methods or a synthetic same-window event.",
+    "mutationIsolation": "Only the selected public result is cloned for ordinary lookups. Before optimization each parse provided isolated objects; after optimization structuredClone, with a JSON-value compatibility path, preserves that guarantee. Explicit APIs returning all availability records or cached titles clone their returned result collection. Private write paths do not mutate cached decoded values.",
+    "workCountRegression": "tests/frontend/desktopCachePersistence.test.ts",
+    "scratchReproduction": "node --import tsx .validation/storage-work-benchmark.ts"
+  },
+  "progress": {
+    "workloads": [
+      {
+        "name": "Native checkpoint with existing History, matching metadata and coverage containing prior History coverage",
+        "before": { "storageReads": 8, "storageWrites": 6 },
+        "after": { "storageReads": 5, "storageWrites": 4 },
+        "beforeProgressAndSeriesWrites": 4,
+        "afterProgressAndSeriesWrites": 2
+      },
+      {
+        "name": "Native checkpoint without History",
+        "before": { "storageReads": 4, "storageWrites": 2 },
+        "after": { "storageReads": 4, "storageWrites": 2 }
+      },
+      {
+        "name": "New offline checkpoint with explicit episode link and no prior marker",
+        "before": { "storageReads": 11, "storageWrites": 6 },
+        "after": { "storageReads": 8, "storageWrites": 4 }
+      },
+      {
+        "name": "Repeated unchanged offline queue poll after successful synchronization",
+        "before": { "storageReads": 2, "storageWrites": 1 },
+        "after": { "storageReads": 2, "storageWrites": 0 }
+      }
+    ],
+    "durability": "Required writes remain synchronous before return. saveDesktopWatchProgress, saveLocalPlaybackHistoryItem and applyNativeCheckpoint return durable success. The History path skips a repeated progress write only after confirmed persistence and exact agreement of its derived progress fields and coverage. Failed first writes retain the original second attempt. Extra or legacy History coverage, metadata differences and unknown covered-media duration retain the original merge path. Offline acknowledgement advances only after required writes succeed, and unchanged markers are not rewritten.",
+    "ownership": "Explicit foreign progress owners remain excluded. Authenticated accounts use their own offline acknowledgement key and do not inherit the legacy guest marker. Native checkpoints remain the durable recovery authority.",
+    "workCountRegression": "tests/frontend/desktopProgressPersistence.test.ts",
+    "scratchReproduction": "node --import tsx .validation/progress-work-benchmark.ts"
+  },
+  "verification": {
+    "newCacheRegressions": 21,
+    "newProgressRegressions": 20,
+    "focusedProgressAndCoverageTestsPassed": 35,
+    "typeScript": "passed",
+    "diffWhitespaceCheck": "passed",
+    "coverage": [
+      "Direct writes, removal, clear, external storage updates, imports, repaired corruption and storage replacement",
+      "Public result mutation isolation, dynamic validation, expiry and existing size bounds",
+      "Quota failures, synchronous persistence, successful retries and acknowledgement failures",
+      "Stale checkpoint replay, additional intervals, legacy resume baselines and terminal completion",
+      "Episode/provider separation, incompatible durations, metadata compatibility and owner isolation"
+    ]
+  },
+  "limits": [
+    "Counts establish reduced repeated work for controlled fixtures; they are not UI latency, CPU, memory or public-torrent benchmarks.",
+    "Raw getItem counts are deliberately unchanged in the cache benchmark to retain immediate storage invalidation semantics.",
+    "Cloning costs are represented by invocation count; elapsed clone time was not measured independently.",
+    "Progress counts measure applyNativeCheckpoint and synchronizeOfflineProgress themselves and exclude DesktopProgressBridge sequence-marker writes and subscriber-triggered application work.",
+    "Extra History coverage and other nonidentical progress records intentionally keep the second merge/write, so the measured reduction is not universal.",
+    "Ignored .validation reproduction scripts are scratch evidence; tracked regression tests enforce the final work counts."
+  ]
+}

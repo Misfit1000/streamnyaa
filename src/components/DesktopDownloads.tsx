@@ -1,8 +1,9 @@
 import {forgetDownload,openDownloadDestination,chooseDownloadDirectory} from '../lib/desktopDownloads';
 import DesktopOfflineEpisodeLink from './DesktopOfflineEpisodeLink';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
-import { useEffect, useState } from 'react';
-import { selectDownloadFiles, relinkOfflineFolder, controlDownloads, listenDownloadsChanged, getDownloadQueue, getOfflineFiles, playOfflineFile, removeDownload, setDownloadLimit, type DesktopDownloadQueue } from '../lib/desktopDownloads';
+import { useState } from 'react';
+import { selectDownloadFiles, relinkOfflineFolder, controlDownloads, getOfflineFiles, playOfflineFile, removeDownload, setDownloadLimit } from '../lib/desktopDownloads';
+import { useDesktopDownloads } from '../lib/useDesktopDownloads';
 
 export default function DesktopDownloads({selectionOnly=false}:{selectionOnly?:boolean}) {
   const hideSpoilers = useHideEpisodeSpoilers();
@@ -11,30 +12,17 @@ export default function DesktopDownloads({selectionOnly=false}:{selectionOnly?:b
   const [directory,setDirectory] = useState('');
   const [filter,setFilter] = useState('all');
   const [search,setSearch] = useState('');
-  const [queue, setQueue] = useState<DesktopDownloadQueue>();
-  const [error, setError] = useState('');
+  const {queue,error:queueError} = useDesktopDownloads();
+  const [actionError, setError] = useState('');
+  const error = actionError || queueError;
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [files, setFiles] = useState<Record<string, string[]>>({});
   const [removing, setRemoving] = useState('');
-  useEffect(() => {
-    let disposed = false, pending = false;
-    const refresh = async () => {
-      if (pending || document.visibilityState === 'hidden') return;
-      pending = true;
-      try { const value = await getDownloadQueue(); if (!disposed) { setQueue(value); setError(''); } }
-      catch (issue) { if (!disposed) setError(String(issue instanceof Error ? issue.message : issue)); }
-      finally { pending = false; }
-    };
-    void refresh(); const timer = window.setInterval(refresh, 3000);
-    let unlisten: (() => void) | undefined;
-    void listenDownloadsChanged(() => void refresh()).then(stop => { if (disposed) stop(); else unlisten = stop; }).catch(() => {});
-    return () => { disposed = true; unlisten?.(); window.clearInterval(timer); };
-  }, []);
   const act = async (operation: () => Promise<unknown>) => {
     if (busy) return;
     setBusy(true); setError('');
-    try { await operation(); setQueue(await getDownloadQueue()); }
+    try { await operation(); }
     catch (issue) { setError(String(issue instanceof Error ? issue.message : issue)); }
     finally { setBusy(false); }
   };

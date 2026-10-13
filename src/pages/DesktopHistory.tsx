@@ -1,7 +1,7 @@
 import {coveragePercent} from '../lib/desktopCoverage';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Clock, ExternalLink, Grid2X2, List, Play, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import Seo from '../components/Seo';
@@ -190,7 +190,7 @@ export default function DesktopHistory() {
     { id: 'recent', label: 'Recent', count: recentCount },
   ];
 
-  const openSource = async (source: LocalPlaybackSource) => {
+  const openSource = useCallback(async (source: LocalPlaybackSource) => {
     setStatus(`Opening ${source.animeTitle || source.title}...`);
     try {
       const result = await openLocalSourceNow(source);
@@ -198,7 +198,7 @@ export default function DesktopHistory() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Playback could not start.');
     }
-  };
+  }, []);
 
   const clearAll = () => {
     clearLocalPlaybackHistory();
@@ -214,11 +214,104 @@ export default function DesktopHistory() {
     setStatus('Completed watch history cleared.');
   };
 
-  const removeOne = (source: LocalPlaybackSource) => {
+  const removeOne = useCallback((source: LocalPlaybackSource) => {
     removeLocalPlaybackHistoryItem(source);
     setHistory(loadLocalPlaybackHistory());
     setStatus('History item removed.');
-  };
+  }, []);
+
+  // Keep unchanged rows mounted without repeating their render work for status
+  // messages and confirmation state. Data, layout and spoiler changes still render.
+  // Refresh relative labels on the next user/data render after a minute changes,
+  // without introducing another background clock or invalidating every render.
+  const relativeTimeBucket = Math.floor(Date.now() / 60_000);
+  const historyRows = useMemo(() => filteredHistory.map((source) => {
+    const progress = progressPercent(source);
+    const complete = isComplete(source);
+    const watchPath = watchPathForHistory(source);
+    return view === 'grid' ? (
+      <article key={historyKey(source)} className="sn-card-hover sn-glass-card overflow-hidden">
+        <div className="relative aspect-video bg-black/35">
+          <HistoryImage source={source} />
+          <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.82),rgba(7,8,12,0.12)_58%,transparent)]" />
+          <DesktopBookmarkButton anime={{mal_id:source.animeId,title:source.animeTitle || source.title,images:{jpg:{image_url:source.poster}}}} className="absolute left-3 top-3" />
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
+            <div className="h-full bg-primary" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+        <div className="p-4">
+          <h2 className="line-clamp-1 text-base font-semibold text-white">{source.animeTitle || source.title}</h2>
+          <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/42">{hideSpoilers ? (source.episode ? `Episode ${source.episode}` : 'Saved source') : source.title}</p>
+          <div className="mt-3 flex items-center justify-between gap-2 text-xs font-semibold text-white/45">
+            <span>{resumeLabel(source)}</span>
+            <span>{formatLastWatched(source)}</span>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button type="button" onClick={() => void openSource(source)} className="sn-primary-action min-h-0 flex-1 rounded-xl px-3 py-2 text-xs">
+              <RotateCcw className="h-3.5 w-3.5" />
+              Resume
+            </button>
+            <button type="button" onClick={() => removeOne(source)} className="sn-icon-action h-9 min-h-0 w-9 min-w-0 rounded-lg p-0 hover:text-primary" aria-label="Remove history item">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </article>
+    ) : (
+      <article key={historyKey(source)} className="sn-card-hover sn-glass-card overflow-hidden">
+        <div className="grid gap-4 p-3 sm:grid-cols-[156px_minmax(0,1fr)_auto] sm:items-center">
+          <button
+            type="button"
+            onClick={() => void openSource(source)}
+            className="group relative aspect-video overflow-hidden rounded-xl bg-black/35 text-left"
+            aria-label={`Resume ${source.animeTitle || source.title}`}
+          >
+            <HistoryImage source={source} />
+            <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.72),transparent_60%)]" />
+
+            <span className="absolute bottom-2 left-3 rounded-lg bg-black/62 px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/72">
+              {complete ? 'Completed' : 'Resume'}
+            </span>
+          </button>
+
+          <div className="min-w-0">
+            <DesktopBookmarkButton anime={{mal_id:source.animeId,title:source.animeTitle || source.title,images:{jpg:{image_url:source.poster}}}} />
+            <div className="flex flex-wrap items-center gap-2">
+              {source.episode ? <span className="rounded-lg bg-primary/15 px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-primary">Episode {source.episode}</span> : null}
+              <span className="rounded-lg bg-white/[0.055] px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/42">{formatLastWatched(source)}</span>
+            </div>
+            <h2 className="mt-2 line-clamp-1 text-base font-semibold text-white">{source.animeTitle || source.title}</h2>
+            <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/42">{hideSpoilers ? (source.episode ? `Episode ${source.episode}` : 'Saved source') : source.title}</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/48">
+              <span className="inline-flex items-center gap-2">
+                <Clock className="h-4 w-4 text-primary" />
+                {resumeLabel(source)}
+              </span>
+              {source.size ? <span className="rounded-full bg-white/[0.045] px-2.5 py-1">{source.size}</span> : null}
+              {source.seeders ? <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-300">{source.seeders} seeders</span> : null}
+            </div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+
+          <div className="flex shrink-0 flex-wrap gap-2 sm:w-[230px] sm:justify-end">
+            <button type="button" onClick={() => void openSource(source)} className="sn-primary-action h-10 px-4 text-xs">
+              <RotateCcw className="h-3.5 w-3.5" />
+              Resume
+            </button>
+            <Link to={watchPath} className="sn-secondary-action h-10 px-3 text-xs">
+              <ExternalLink className="h-3.5 w-3.5" />
+              Watch page
+            </Link>
+            <button type="button" onClick={() => removeOne(source)} className="sn-icon-action h-10 min-h-0 w-10 min-w-0 rounded-xl p-0 hover:text-primary" aria-label="Remove history item">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </article>
+    );
+  }), [filteredHistory, hideSpoilers, view, openSource, removeOne, relativeTimeBucket]);
 
   return (
     <div className="sn-page py-6">
@@ -378,93 +471,7 @@ export default function DesktopHistory() {
 
             {filteredHistory.length ? (
               <div className={view === 'grid' ? 'grid gap-4 md:grid-cols-2 xl:grid-cols-3' : 'space-y-3'}>
-                {filteredHistory.map((source) => {
-                  const progress = progressPercent(source);
-                  const complete = isComplete(source);
-                  const watchPath = watchPathForHistory(source);
-                  return view === 'grid' ? (
-                    <article key={historyKey(source)} className="sn-card-hover sn-glass-card overflow-hidden">
-                      <div className="relative aspect-video bg-black/35">
-                        <HistoryImage source={source} />
-                        <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.82),rgba(7,8,12,0.12)_58%,transparent)]" />
-                        <DesktopBookmarkButton anime={{mal_id:source.animeId,title:source.animeTitle || source.title,images:{jpg:{image_url:source.poster}}}} className="absolute left-3 top-3" />
-                        <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10">
-                          <div className="h-full bg-primary" style={{ width: `${progress}%` }} />
-                        </div>
-                      </div>
-                      <div className="p-4">
-                        <h2 className="line-clamp-1 text-base font-semibold text-white">{source.animeTitle || source.title}</h2>
-                        <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/42">{hideSpoilers ? (source.episode ? `Episode ${source.episode}` : 'Saved source') : source.title}</p>
-                        <div className="mt-3 flex items-center justify-between gap-2 text-xs font-semibold text-white/45">
-                          <span>{resumeLabel(source)}</span>
-                          <span>{formatLastWatched(source)}</span>
-                        </div>
-                        <div className="mt-4 flex gap-2">
-                          <button type="button" onClick={() => void openSource(source)} className="sn-primary-action min-h-0 flex-1 rounded-xl px-3 py-2 text-xs">
-                            <RotateCcw className="h-3.5 w-3.5" />
-                            Resume
-                          </button>
-                          <button type="button" onClick={() => removeOne(source)} className="sn-icon-action h-9 min-h-0 w-9 min-w-0 rounded-lg p-0 hover:text-primary" aria-label="Remove history item">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ) : (
-                    <article key={historyKey(source)} className="sn-card-hover sn-glass-card overflow-hidden">
-                      <div className="grid gap-4 p-3 sm:grid-cols-[156px_minmax(0,1fr)_auto] sm:items-center">
-                        <button
-                          type="button"
-                          onClick={() => void openSource(source)}
-                          className="group relative aspect-video overflow-hidden rounded-xl bg-black/35 text-left"
-                          aria-label={`Resume ${source.animeTitle || source.title}`}
-                        >
-                          <HistoryImage source={source} />
-                          <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,8,12,0.72),transparent_60%)]" />
-
-                          <span className="absolute bottom-2 left-3 rounded-lg bg-black/62 px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/72">
-                            {complete ? 'Completed' : 'Resume'}
-                          </span>
-                        </button>
-
-                        <div className="min-w-0">
-                          <DesktopBookmarkButton anime={{mal_id:source.animeId,title:source.animeTitle || source.title,images:{jpg:{image_url:source.poster}}}} />
-                          <div className="flex flex-wrap items-center gap-2">
-                            {source.episode ? <span className="rounded-lg bg-primary/15 px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-primary">Episode {source.episode}</span> : null}
-                            <span className="rounded-lg bg-white/[0.055] px-2 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/42">{formatLastWatched(source)}</span>
-                          </div>
-                          <h2 className="mt-2 line-clamp-1 text-base font-semibold text-white">{source.animeTitle || source.title}</h2>
-                          <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/42">{hideSpoilers ? (source.episode ? `Episode ${source.episode}` : 'Saved source') : source.title}</p>
-                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/48">
-                            <span className="inline-flex items-center gap-2">
-                              <Clock className="h-4 w-4 text-primary" />
-                              {resumeLabel(source)}
-                            </span>
-                            {source.size ? <span className="rounded-full bg-white/[0.045] px-2.5 py-1">{source.size}</span> : null}
-                            {source.seeders ? <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-300">{source.seeders} seeders</span> : null}
-                          </div>
-                          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
-                            <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 flex-wrap gap-2 sm:w-[230px] sm:justify-end">
-                          <button type="button" onClick={() => void openSource(source)} className="sn-primary-action h-10 px-4 text-xs">
-                            <RotateCcw className="h-3.5 w-3.5" />
-                            Resume
-                          </button>
-                          <Link to={watchPath} className="sn-secondary-action h-10 px-3 text-xs">
-                            <ExternalLink className="h-3.5 w-3.5" />
-                            Watch page
-                          </Link>
-                          <button type="button" onClick={() => removeOne(source)} className="sn-icon-action h-10 min-h-0 w-10 min-w-0 rounded-xl p-0 hover:text-primary" aria-label="Remove history item">
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
+                {historyRows}
               </div>
             ) : (
               <div className="sn-empty-state px-6 py-14 text-center">

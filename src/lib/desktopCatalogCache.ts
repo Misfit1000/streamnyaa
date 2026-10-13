@@ -1,8 +1,11 @@
+import { cloneDesktopStoredJson, createDesktopStoredJsonReader } from './desktopStoredJsonCache';
+
 const DESKTOP_CATALOG_CACHE_KEY = 'streamnyaa.desktop.catalogs.v1';
 const MAX_ENTRIES = 24;
 const MAX_ITEMS_PER_ENTRY = 80;
 const MAX_AGE_MS = 1000 * 60 * 60 * 24 * 14;
 const MAX_SERIALIZED_BYTES = 2_000_000;
+const readStoredEntries = createDesktopStoredJsonReader(DESKTOP_CATALOG_CACHE_KEY, MAX_SERIALIZED_BYTES);
 
 export type DesktopCatalogPayload = {
   data: any[];
@@ -28,15 +31,10 @@ function validEntry(entry: any): entry is DesktopCatalogCacheEntry {
 function readEntries() {
   if (typeof window === 'undefined') return [] as DesktopCatalogCacheEntry[];
   try {
-    const raw = window.localStorage.getItem(DESKTOP_CATALOG_CACHE_KEY) || '[]';
-    if (raw.length > MAX_SERIALIZED_BYTES) {
-      window.localStorage.removeItem(DESKTOP_CATALOG_CACHE_KEY);
-      return [];
-    }
-    const parsed = JSON.parse(raw);
+    const parsed = readStoredEntries();
     return Array.isArray(parsed) ? parsed.filter(validEntry) : [];
   } catch {
-    window.localStorage.removeItem(DESKTOP_CATALOG_CACHE_KEY);
+    try { window.localStorage.removeItem(DESKTOP_CATALOG_CACHE_KEY); } catch { /* Storage may be unavailable. */ }
     return [];
   }
 }
@@ -44,7 +42,7 @@ function readEntries() {
 export function readDesktopCatalog(key: string, now = Date.now()) {
   const entry = readEntries().find((candidate) => candidate.key === key);
   if (!entry || now - entry.savedAt > MAX_AGE_MS) return null;
-  return entry;
+  return cloneDesktopStoredJson(entry);
 }
 
 export function writeDesktopCatalog(key: string, data: DesktopCatalogPayload, now = Date.now()) {

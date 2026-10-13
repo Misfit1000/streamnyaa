@@ -1,0 +1,61 @@
+{
+  "date": "2026-10-13",
+  "timezone": "Asia/Katmandu",
+  "baselineCommit": "10a3b9373268ebab92ea96e67a3ff4247c037f19",
+  "environment": "Vitest 3.2.7, React 19, jsdom 26.1.0",
+  "harness": "tests/frontend/desktopListRendering.test.tsx",
+  "method": {
+    "fixtureSize": 400,
+    "interaction": "Render the page, record descendant render counters, open the clear confirmation, then cancel it without changing list data.",
+    "historyCounter": "Render calls of a mocked DesktopBookmarkButton descendant, one per mounted History article.",
+    "libraryCounter": "Render calls of a mocked AnimeCard descendant, one per saved Library item.",
+    "baseline": "Run the initial two fixture tests before modifying DesktopHistory.tsx or DesktopLibrary.tsx. Both assertions expected 800 extra descendant renders and passed.",
+    "optimized": "Run the same 400-item interactions after memoizing unchanged result elements and stabilizing History action callbacks. Assertions expect zero extra descendant renders.",
+    "clock": "Final regression fixtures freeze Date.now within a minute. A separate test explicitly advances it to verify relative-label refresh on the next render without introducing polling.",
+    "command": "npx vitest run --config vitest.config.ts tests/frontend/desktopListRendering.test.tsx tests/frontend/DesktopExplore.test.tsx"
+  },
+  "results": [
+    {
+      "page": "History",
+      "mountedItemsBefore": 400,
+      "mountedItemsAfter": 400,
+      "baselineExtraDescendantRenders": 800,
+      "optimizedExtraDescendantRenders": 0,
+      "domNodeIdentityPreserved": true,
+      "focusedResumeButtonPreserved": true
+    },
+    {
+      "page": "Library bookmarks",
+      "mountedItemsBefore": 400,
+      "mountedItemsAfter": 400,
+      "baselineExtraDescendantRenders": 800,
+      "optimizedExtraDescendantRenders": 0,
+      "domNodeIdentityPreserved": true
+    }
+  ],
+  "behaviorVerification": {
+    "renderingTestsPassed": 6,
+    "existingExploreTestsPassed": 3,
+    "typescriptPassed": true,
+    "cases": [
+      "All 400 History and Library entries remain mounted in their original order through unrelated confirmation state.",
+      "History Resume dispatches the current source and status updates do not rerender unchanged rows.",
+      "History progress updates, search, layout and spoiler changes refresh their affected content.",
+      "History relative labels refresh after the minute changes on a subsequent render; same-minute confirmation toggles retain the render reduction.",
+      "Library renders only its selected category and refreshes current history progress, bookmark membership, search and sort order."
+    ]
+  },
+  "baselineArtifacts": {
+    "ignoredHarnessesUsed": [],
+    "ignoredLogsUsed": [],
+    "baselineLogPersisted": false,
+    "capture": "Baseline counts were captured in the successful Vitest command output during this session. The tracked fixture test was then updated to assert the optimized counts and expanded with compatibility cases; no separate baseline log or ignored harness was created."
+  },
+  "limitations": [
+    "These measurements quantify repeated React descendant render work in jsdom using mocked card components; they do not measure native WebView2 frame rate, paint time, memory use or startup latency.",
+    "No browser layout engine runs in jsdom. Scroll geometry is preserved structurally by retaining the same markup and mounted DOM nodes; native visual and scrolling acceptance remains separate.",
+    "Wall-clock test duration is intentionally not treated as performance evidence because selectors, concurrency and test overhead were not controlled as a browser benchmark.",
+    "All rows remain mounted. No virtualization, offscreen CSS containment or reduction in mounted DOM size is claimed.",
+    "Explore already memoizes its poster cards; no speculative rendering change was made there."
+  ]
+}

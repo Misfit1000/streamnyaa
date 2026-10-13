@@ -21,6 +21,7 @@ import { exploreYear, isYearScope, rememberExploreYear, switchExploreMode } from
 import { recentFeedBound } from '../api/desktopRecentSchedule';
 import { desktopOriginStaleTime } from '../lib/desktopOriginFreshness';
 import { useDesktopCatalogAvailability } from '../lib/desktopCatalogAvailability';
+import { useVisibleCountdown } from '../lib/useVisibleCountdown';
 
 type ExploreMode = 'new' | 'trending' | 'popular' | 'top' | 'airing' | 'seasonal' | 'upcoming' | 'year' | 'ranking';
 type ExploreDensity = 'poster' | 'compact' | 'list';
@@ -264,15 +265,9 @@ export default function DesktopExplore() {
     refetchInterval: false, // The shared recovery coordinator owns provider recovery.
   });
 
-  const [retryClock, setRetryClock] = useState(Date.now());
   const retryAt = Number((catalogQuery.error as {retryAt?:number} | null)?.retryAt) || catalogQuery.errorUpdatedAt + Number((catalogQuery.error as {retryAfterMs?:number} | null)?.retryAfterMs || 0);
+  const retryClock = useVisibleCountdown(retryAt, catalogQuery.isError);
   const retrySeconds = Math.max(0, Math.ceil((retryAt - retryClock)/1000));
-  useEffect(() => {
-    if (!catalogQuery.isError || retryAt <= Date.now()) return;
-    setRetryClock(Date.now());
-    const timer = setInterval(() => setRetryClock(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [catalogQuery.isError, retryAt]);
 
   useEffect(() => {
     if (!catalogQuery.data) return;
