@@ -1,3 +1,5 @@
+October 13, 2026: [Home browsing repair](2026-10-13-home-browsing.md) supersedes the strict positive-source requirement for Home. Ordinary titles display immediately; known Chinese-origin catalog titles are hidden by default behind a separate preference. Source validation and personal Continue Watching remain intact. Target remains **0.1.10**; installed acceptance and signing gates remain open.
+
 October 13, 2026: [Measured optimization pass](2026-10-13-optimization.md) reduces duplicate download observation, JSON decoding, progress writes, cosmetic background work and unchanged list renders. Durable replay now survives failed frontend persistence. Target remains **0.1.10**; native UI/performance, signing and external acceptance gates remain open.
 
 October 13, 2026: [Home source-verification coverage repair](2026-10-13-home-readiness.md) fixes the permanent first-eight-candidate restriction, verification cancellation on shelf changes, metadata mismatches between Home and Watch, and Calendar overwriting source proof. Target remains **0.1.10**; installed Home population acceptance remains open.

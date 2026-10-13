@@ -1,0 +1,57 @@
+{
+  "observedAt": "2026-10-13T20:58:59.9296161+05:45",
+  "provider": "anilist",
+  "countryFieldAccepted": true,
+  "chinese": [
+    {
+      "id": 126403,
+      "countryOfOrigin": "CN",
+      "title": {
+        "romaji": "Shiguang Dailiren",
+        "english": "Link Click"
+      }
+    },
+    {
+      "id": 114121,
+      "countryOfOrigin": "CN",
+      "title": {
+        "romaji": "Xian Wang De Richang Shenghuo",
+        "english": "The Daily Life of the Immortal King"
+      }
+    },
+    {
+      "id": 156092,
+      "countryOfOrigin": "CN",
+      "title": {
+        "romaji": "Tu Bian Yingxiong X",
+        "english": "To Be Hero X"
+      }
+    }
+  ],
+  "japanese": [
+    {
+      "id": 16498,
+      "countryOfOrigin": "JP",
+      "title": {
+        "romaji": "Shingeki no Kyojin",
+        "english": "Attack on Titan"
+      }
+    },
+    {
+      "id": 101922,
+      "countryOfOrigin": "JP",
+      "title": {
+        "romaji": "Kimetsu no Yaiba",
+        "english": "Demon Slayer: Kimetsu no Yaiba"
+      }
+    },
+    {
+      "id": 113415,
+      "countryOfOrigin": "JP",
+      "title": {
+        "romaji": "Jujutsu Kaisen",
+        "english": "JUJUTSU KAISEN"
+      }
+    }
+  ]
+}

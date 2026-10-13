@@ -28,6 +28,7 @@ export function recentHomeQuery(limit: number, before: number) {
           media {
             id
             idMal
+            countryOfOrigin
             title { romaji english native }
             description
             episodes

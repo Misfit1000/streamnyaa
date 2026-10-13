@@ -1,7 +1,7 @@
 import { exportDesktopSettingsBackup, importDesktopSettingsBackup } from './desktop';
 import { useStore } from '../store/useStore';
 import { validateShortcutConfig } from './desktopShortcutConfig';
-const extraKeys = ['streamnyaa.desktop.libraryOrganization.v1','streamnyaa-desktop-explore-presets-v1','streamnyaa-desktop-explore-presets-v2','streamnyaa.desktop.interfaceScale','streamnyaa.desktop.design.v1','streamnyaa.desktop.homeLayout.v1','streamnyaa.desktop.hideEpisodeSpoilers'] as const;
+const extraKeys = ['streamnyaa.desktop.libraryOrganization.v1','streamnyaa-desktop-explore-presets-v1','streamnyaa-desktop-explore-presets-v2','streamnyaa.desktop.interfaceScale','streamnyaa.desktop.design.v1','streamnyaa.desktop.homeLayout.v1','streamnyaa.desktop.homeShowChineseAnimation.v1','streamnyaa.desktop.hideEpisodeSpoilers'] as const;
 function bridge() { const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke; if (!invoke) throw new Error('Personal backup requires the desktop app.'); return invoke; }
 export async function exportPersonalBackup() {
   const state = useStore.getState();
@@ -32,7 +32,7 @@ export async function importPersonalBackup(text: string) {
     if (extras['streamnyaa-desktop-explore-presets-v1'] && !extras['streamnyaa-desktop-explore-presets-v2']) localStorage.removeItem('streamnyaa-desktop-explore-presets-v2');
     for (const key of extraKeys) if (typeof extras[key] === 'string') localStorage.setItem(key,extras[key]);
     useStore.setState({ myList:value.library.myList, likedAnimes:value.library.likedAnimes, likes:value.library.likes });
-    for (const name of ['streamnyaa-library-organization','streamnyaa-interface-scale-changed','streamnyaa-design-changed','streamnyaa-spoilers-changed']) window.dispatchEvent(new Event(name));
+    for (const name of ['streamnyaa-library-organization','streamnyaa-interface-scale-changed','streamnyaa-design-changed','streamnyaa-spoilers-changed','streamnyaa:home-browsing-preference']) window.dispatchEvent(new Event(name));
     return imported + 3 + Object.keys(extras).filter(key => (extraKeys as readonly string[]).includes(key)).length;
   } catch (error) {
     let rollbackFailed = false;

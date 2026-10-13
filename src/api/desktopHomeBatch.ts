@@ -5,7 +5,7 @@ import type { DesktopRequestOptions } from '../lib/desktopRequests';
 import { useStore } from '../store/useStore';
 
 type ShelfRequest = { key: string; options: DesktopRequestOptions; resolve: (value: any) => void; reject: (error: unknown) => void };
-const fields = `id idMal title { romaji english native } synonyms description episodes status format season seasonYear source coverImage { extraLarge large color } bannerImage genres averageScore popularity nextAiringEpisode { episode airingAt } isAdult`;
+const fields = `id idMal countryOfOrigin title { romaji english native } synonyms description episodes status format season seasonYear source coverImage { extraLarge large color } bannerImage genres averageScore popularity nextAiringEpisode { episode airingAt } isAdult`;
 let waiting: ShelfRequest[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 // Larger alias sets exceeded the native eight-second HTTP deadline in live

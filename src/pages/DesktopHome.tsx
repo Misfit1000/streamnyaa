@@ -35,7 +35,8 @@ import { airedEpisodeCount, episodeAvailabilityLabel } from '../lib/animeEpisode
 import { readDesktopCatalog, writeDesktopCatalog } from '../lib/desktopCatalogCache';
 import { withDesktopCatalogFallback } from '../api/desktopCatalogFallback';
 import { getCurrentAnimeSeason } from '../lib/currentSeason';
-import { chooseReadyEpisode, useDesktopHomeReadiness, homeHistoryAnime } from '../lib/desktopHomeReadiness';
+import { useDesktopHomeReadiness, homeHistoryAnime } from '../lib/desktopHomeReadiness';
+import { homeBrowseItems, homeBrowseVisible, useHomeBrowsingPreference } from '../lib/desktopHomeBrowsing';
 import { jikanAdultTitle } from '../api/desktopExplore';
 import { desktopOriginStaleTime } from '../lib/desktopOriginFreshness';
 
@@ -570,13 +571,13 @@ function useHomeCatalogQuery(
   const cached = readDesktopCatalog(scopedCacheKey) || readDesktopCatalog(cacheKey);
   const saved = cacheKey !== 'home:recent' || cached?.data.data.every((item:any) => !item.catalogAlternative && ['aired','listed'].includes(item.recentFeedKind)) ? cached : null;
   const query = useQuery({
-    queryKey: [...queryKey, adult],
+    queryKey: [...queryKey, adult, 'home-origin-v1'],
     queryFn: async ({ signal }) => {
       const mode = cacheKey.startsWith('home:year:') ? 'year' : ({ 'home:top-airing': 'airing', 'home:recent': 'new' } as Record<string, string>)[cacheKey] || cacheKey.split(':')[1];
       const response = await withDesktopCatalogFallback(() => queryFn({ signal, priority: secondaryPriority(cacheKey) }),
         { mode, ...(mode === 'year' ? { year: Number(cacheKey.split(':')[2]) } : {}), ...(mode === 'airing' ? { sort: 'score' } : {}), ...(mode === 'seasonal' ? { season: getCurrentAnimeSeason().season, year: getCurrentAnimeSeason().year } : {}) }, signal);
       if (!Array.isArray(response?.data)) throw new Error('Invalid home response.');
-      const normalized = { ...response, fetchedAt: response.fetchedAt ?? response.streamnyaa?.fetchedAt ?? Date.now(), stale: response.stale || response.streamnyaa?.status === 'stale', data: uniqueAnimeById(response?.data || []).filter(item => adult || !jikanAdultTitle(item)).slice(0, 18) };
+      const normalized = { ...response, homeOriginMetadataVersion: 1, fetchedAt: response.fetchedAt ?? response.streamnyaa?.fetchedAt ?? Date.now(), stale: response.stale || response.streamnyaa?.status === 'stale', data: uniqueAnimeById(response?.data || []).filter(item => adult || !jikanAdultTitle(item)).slice(0, 18) };
       if (normalized.fetchedAt > 0) writeDesktopCatalog(scopedCacheKey, normalized, normalized.fetchedAt);
       return normalized;
     },
@@ -589,7 +590,7 @@ function useHomeCatalogQuery(
     refetchOnReconnect: true,
     refetchInterval: false, // Provider recovery is coordinated once for the app.
     initialData: saved ? { ...saved.data, data: saved.data.data.filter(item => adult || !jikanAdultTitle(item)) } : undefined,
-    initialDataUpdatedAt: saved ? Math.min(saved.savedAt, Number(saved.data.fetchedAt) || saved.savedAt) : undefined,
+    initialDataUpdatedAt: saved ? saved.data.homeOriginMetadataVersion === 1 ? Math.min(saved.savedAt, Number(saved.data.fetchedAt) || saved.savedAt) : 0 : undefined,
   });
   return { ...query, enabled };
 }
@@ -599,6 +600,7 @@ export default function DesktopHome() {
   const bookmarks = useStore(state => state.myList);
   const design = useDesktopDesign();
   const preferences = useHomeLayout();
+  const browsing = useHomeBrowsingPreference();
   const shelfStyle = (id: ShelfId, pending = false) => ({ minHeight: pending ? 330 : undefined, ...(design === 'revamped' ? { order: preferences.layout.order.indexOf(id) + 3, display: preferences.layout.hidden.includes(id) ? 'none' : undefined } : {}) });
   const [history, setHistory] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
@@ -659,22 +661,18 @@ export default function DesktopHome() {
     ...(activeShelves.has('airing') ? topAiringData?.data || [] : []),
     ...(activeShelves.has('yearly') ? yearlyTopData?.data || [] : []),
   ], [activeShelves, history, seasonalData, recentEpisodeData, trendingData, popularData, topAiringData, yearlyTopData]);
-  const availability = useDesktopHomeReadiness(readinessCandidates, audioPreference);
-  const readyItems = (items: any[], recent = false) => items.flatMap(anime => {
-    const episodes = availability.episodesFor(anime);
-    const requested = recent ? Number(anime.listedEpisode || anime.latestEpisode || 1) : watchEpisodeFor(anime, history);
-    const episode = recent ? episodes.includes(requested) ? requested : undefined : chooseReadyEpisode(episodes, requested);
-    return availability.showUnavailable || episode ? [{ ...anime, homeReadyEpisode: episode,
-      homeAvailabilityLabel: availability.showUnavailable ? episode ? `Episode ${episode} source found` : isUpcomingAnime(anime) ? 'Upcoming' : 'Availability not confirmed' : undefined }] : [];
-  });
-  const recentSources = uniqueRecentSources(history).filter(source => availability.showUnavailable ||
-    availability.episodesFor(historyAnime(source)).includes(Number(source.episode) || 1)).slice(0, 6);
+  const sourceCandidates = useMemo(() => readinessCandidates.filter(anime => homeBrowseVisible(anime, browsing.showChineseAnimation)), [readinessCandidates, browsing.showChineseAnimation]);
+  const availability = useDesktopHomeReadiness(sourceCandidates, audioPreference);
+  const readyItems = (items: any[], recent = false) => homeBrowseItems(items, browsing.showChineseAnimation, availability.episodesFor, anime => watchEpisodeFor(anime, history), recent);
+  // Personal resume entries keep their actual episode; fresh source proof is not
+  // required to retain the user's history or to open discovery on the Watch page.
+  const recentSources = uniqueRecentSources(history).slice(0, 6);
   const seasonalItems = readyItems(seasonalData?.data || []);
   const trendingItems = readyItems(trendingData?.data || []);
   const recentEpisodeItems = readyItems(recentEpisodeData?.data || [], true);
   const popularItems = readyItems(popularData?.data || []);
   const topAiringItems = readyItems(topAiringData?.data || []);
-  const upcomingItems = availability.showUnavailable ? upcomingData?.data || [] : [];
+  const upcomingItems = (upcomingData?.data || []).filter((anime: any) => homeBrowseVisible(anime, browsing.showChineseAnimation));
   const yearlyTopItems = readyItems(yearlyTopData?.data || []);
   const homeQueries = [seasonalQuery, trendingQuery, recentEpisodeQuery, popularQuery, topAiringQuery, upcomingQuery, yearlyTopQuery];
   const homeRefreshFailed = homeQueries.some((query) => query.isError);
@@ -759,9 +757,7 @@ export default function DesktopHome() {
     <div ref={homeRoot} className="desktop-home-cinema sn-page pb-9 pt-4" style={design === 'revamped' ? {display:'flex',flexDirection:'column'} : undefined}>
       <Seo title="StreamNyaa Desktop Cinema" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
       <DesktopWatchDesk sources={uniqueRecentSources(history)} history={history} upcoming={watchDeskReleases(bookmarks, history, [...seasonalItems, ...topAiringItems])} />
-      <label className="mb-3 flex items-center gap-2 self-end text-xs text-white/60" style={{order:2}} title="Includes titles that have not been checked yet; this does not mean they have no sources."><input type="checkbox" checked={availability.showUnavailable} onChange={event => availability.setShowUnavailable(event.target.checked)} />Show unavailable titles</label>
-      {availability.showUnavailable && <p role="status" className="mb-3 text-xs text-white/55" style={{order:2}}>Showing all titles, including unverified availability. Source checks continue in the background.</p>}
-      {!availability.showUnavailable && <p role="status" className="mb-3 text-xs text-white/55" style={{order:2}}>{availability.checking ? 'Checking ready-to-watch titles…' : 'Home shows titles with matching episode sources or verified offline files.'} {availability.pendingTitles > 0 && `${availability.pendingTitles} titles still need source verification; they are not confirmed unavailable. `}{!seasonalItems.length && !popularItems.length && !recentEpisodeItems.length && <button type="button" onClick={() => availability.setShowUnavailable(true)} className="text-primary underline">Browse all titles while checks continue</button>}</p>}
+      <label className="mb-3 flex items-center gap-2 self-end text-xs text-white/60" style={{order:2}} title="Home uses catalog country-of-origin metadata. Sources are checked in the background and when you open an anime."><input type="checkbox" checked={browsing.showChineseAnimation} onChange={event => browsing.setShowChineseAnimation(event.target.checked)} />Show Chinese animation</label>
       {isAdmin && (homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <details className="mb-3 text-sm text-white/60" style={{order:2}}><summary className="cursor-pointer py-2">Catalog status · some shelves use saved or fallback data</summary><p className="mt-2">Exact airing times and trending require AniList. Recent MAL additions are shown when available. MyAnimeList shelves keep their own provider identity. <button className="underline" onClick={retryHome}>Retry affected shelves</button></p></details>}
 
       {!isAdmin && (homeRefreshFailed || homeQueries.some(query => query.data?.fallback)) && <p className="mb-3 text-sm text-white/60" style={{order:2}}>Some shelves could not update. Previously saved results remain available. <button className="underline" onClick={retryHome}>Retry updates</button></p>}
@@ -775,7 +771,7 @@ export default function DesktopHome() {
           <p className="mt-3 text-sm text-white/70">{heroMetadata(hero).slice(0, 4).join(' · ')}</p>
           <p className="mt-3 line-clamp-2 text-sm leading-6 text-white/70">{hero ? heroDescription(hero) : 'Your anime collection is getting ready.'}</p>
           <div className="mt-5 flex items-center gap-3">
-            {hero ? <Link to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))} className="sn-primary-action"><Play className="h-4 w-4 fill-current" />Watch now</Link>
+            {hero ? <Link to={watchPathFor(hero, history, audioPreference, preferredEpisodeFor(hero))} className="sn-primary-action"><Play className="h-4 w-4 fill-current" />{hero.homeReadyEpisode ? 'Watch now' : 'Open anime'}</Link>
               : <button type="button" onClick={retryHome} className="sn-secondary-action"><RefreshCw className="h-4 w-4" />{homeRefreshFailed ? 'Try again' : 'Refresh Home'}</button>}
             {heroCount > 1 ? <div className="flex items-center gap-1">
               <button type="button" onClick={() => moveHero(-1)} className="sn-icon-action h-11 w-11" aria-label="Previous seasonal pick"><ChevronLeft className="h-5 w-5" /></button>
@@ -802,7 +798,7 @@ export default function DesktopHome() {
             <PosterAnimeCard
               key={`latest-${anime.mal_id || anime.id || index}`}
               anime={anime}
-              to={anime.recentFeedKind === 'listed' ? desktopWatchPath(anime, {ep: anime.listedEpisode || 1}) : watchPathFor(anime, history, audioPreference, preferredEpisodeFor(anime, index + 1))}
+              to={desktopWatchPath(anime, {ep: anime.listedEpisode || anime.latestEpisode || 1, type: watchTypeForAudioPreference(audioPreference)})}
               episode={anime.recentFeedKind === 'listed' ? anime.listedEpisode || 'Listed' : anime?.latestEpisode || watchEpisodeFor(anime, history, index + 1)}
               showNew={!anime.catalogAlternative && anime.recentFeedKind !== 'listed'}
             />

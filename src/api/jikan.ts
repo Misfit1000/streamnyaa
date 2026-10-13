@@ -544,6 +544,7 @@ export const mapAnilistToJikan = (m: any) => ({
   id: m.id,
   mal_id: m.idMal || null,
   anilist_id: m.id,
+  ...(m.countryOfOrigin ? { countryOfOrigin: m.countryOfOrigin } : {}),
   title: m.title.english || m.title.romaji || m.title.native,
   title_romaji: m.title.romaji,
   title_english: m.title.english,
