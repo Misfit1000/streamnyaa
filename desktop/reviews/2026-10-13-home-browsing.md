@@ -23,4 +23,6 @@ Native/player sources and binaries are unchanged from the preceding verified opt
 
 Rebuild version **0.1.10** into `StreamNyaa-desktop/desktop/releases/v0.1.10`, archive the verified current installer and metadata before replacement, verify resource hashes/version/checksum/size/signature, and push the completed changes normally to `main`. The adjacent installer manifest records exact delivery evidence.
 
+Delivered from `9d7d746`: installer 41,836,783 bytes; executable version `0.1.10`; signature `NotSigned`. All five native resource hashes and NSIS inclusions match source. Thirty unchanged native build inputs were compared with the preceding full-suite baseline, and all 208 captured build inputs were rechecked before replacement. The staged Home bundle contains the new preference and excludes the former verification banner. [Installer evidence](2026-10-13-home-browsing-installer.json) records the checksum and verified previous-installer archive.
+
 Installed Home interaction, native display scaling, real torrent startup, notification delivery, isolated install/upgrade/rollback and live account sync remain separate acceptance gates. Signing material and the original 0.1.9 rollback remain unavailable; the verified previous 0.1.10 is retained as rollback. This revision does not install itself or guarantee source availability by country.
