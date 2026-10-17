@@ -816,6 +816,7 @@ export default function DesktopSchedule() {
         )}
       </section>
 
+      {trackState.tracks.length > 0 && <p className="mt-5 text-right text-xs text-white/45">Release-track metadata by <a href="https://animeschedule.net/" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-white/75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">AnimeSchedule.net</a></p>}
     </div>
   );
 }

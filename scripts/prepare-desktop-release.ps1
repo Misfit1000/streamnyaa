@@ -27,12 +27,19 @@ $checksPath = Join-Path $repoRoot $ValidationRecord
 $checks = Get-Content -Raw $checksPath | ConvertFrom-Json
 if (!$checks.automatedPassed) { throw 'Final checks have not passed.' }
 $inputs = Get-Content -Raw (Join-Path $repoRoot $BuildInputs) | ConvertFrom-Json
-foreach ($inputFile in $inputs) { if ((Get-FileHash -LiteralPath $inputFile.path -Algorithm SHA256).Hash -ne $inputFile.sha256) { throw "Validated source changed: $($inputFile.path)" } }
-$resources = foreach ($resource in Get-ChildItem -LiteralPath (Join-Path $repoRoot 'desktop/src-tauri/bin') -File) {
+# Rebuild JSON records instead of serializing the extended array wrapper added
+# by Windows PowerShell's ConvertFrom-Json (which otherwise emits value/Count).
+$sourceEvidence = @(foreach ($inputFile in $inputs) {
+  if ((Get-FileHash -LiteralPath $inputFile.path -Algorithm SHA256).Hash -ne $inputFile.sha256) { throw "Validated source changed: $($inputFile.path)" }
+  [ordered]@{path=[string]$inputFile.path;sha256=[string]$inputFile.sha256}
+})
+$resourceRoot = Join-Path $repoRoot 'desktop/src-tauri/bin'
+$resources = foreach ($resource in Get-ChildItem -LiteralPath $resourceRoot -Recurse -File) {
+  $relativeName = $resource.FullName.Substring($resourceRoot.Length + 1).Replace('\','/')
   $hash = (Get-FileHash -LiteralPath $resource.FullName -Algorithm SHA256).Hash
-  $stage = Join-Path $target "bin/$($resource.Name)"
+  $stage = Join-Path $target "bin/$relativeName"
   if ($hash -ne (Get-FileHash -LiteralPath $stage -Algorithm SHA256).Hash -or !$nsi.Contains($resource.FullName)) { throw "Resource mismatch: $($resource.Name)" }
-  [ordered]@{ name=$resource.Name; bytes=$resource.Length; sha256=$hash; stagedMatches=$true; nsisInclusionVerified=$true }
+  [ordered]@{ name=$relativeName; bytes=$resource.Length; sha256=$hash; stagedMatches=$true; nsisInclusionVerified=$true }
 }
 $release = Join-Path $ReleaseTree "v$version"
 $destination = Join-Path $release $installer.Name
@@ -65,7 +72,7 @@ if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $hash) {
 $manifest = [ordered]@{
   product='StreamNyaa Desktop'; version=$version; identifier=$config.identifier; releaseRevision=$ReleaseRevision; builtAt=(Get-Date).ToString('o'); sourceCommit=(git -C $repoRoot rev-parse HEAD);
   installer=$destination; bytes=$installer.Length; sha256=$hash; signature=(Get-AuthenticodeSignature -LiteralPath $destination).Status.ToString();
-  rollback=@{installer=$rollback;sha256=$rollbackHash;version=$rollbackManifest.version;requestedVersion='0.1.9';requestedVersionAvailable=$requestedRollbackAvailable}; resources=$resources; sourceFiles=$inputs;
+  rollback=@{installer=$rollback;sha256=$rollbackHash;version=$rollbackManifest.version;requestedVersion='0.1.9';requestedVersionAvailable=$requestedRollbackAvailable}; resources=@($resources); sourceFiles=$sourceEvidence;
   executableVersion=$exe.VersionInfo.ProductVersion; executableSha256=(Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash;
   validation=$checks; payloadVerification='Staged resource hashes and exact NSIS inclusions; independent installer extraction not performed'
 }
