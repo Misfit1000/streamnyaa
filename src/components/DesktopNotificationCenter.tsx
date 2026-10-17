@@ -1,3 +1,4 @@
+import { scheduleUpdateIsPersonal } from '../lib/desktopScheduleAlerts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CalendarClock, CheckCheck, ChevronRight, Globe2, UserRound, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -36,15 +37,7 @@ function formatUpdateTime(value: number) {
 }
 
 function updateMatchesLibrary(update: DesktopScheduleUpdate, myList: any[], watchedSeries: ReturnType<typeof loadDesktopWatchedSeries>) {
-  const ids = new Set([update.animeId, update.anilistId, update.malId].filter(Boolean).map(String));
-  const saved = myList.some((anime) => ids.has(String(anime?.mal_id || anime?.id || '')));
-  if (saved) return true;
-  return watchedSeries.some((record) => desktopWatchedSeriesMatchesAnime(record, {
-    id: update.anilistId || update.animeId,
-    anilist_id: update.anilistId,
-    mal_id: update.malId,
-    title: update.title,
-  }));
+  return scheduleUpdateIsPersonal(update, myList, watchedSeries);
 }
 
 export default function DesktopNotificationCenter() {
@@ -194,14 +187,14 @@ export default function DesktopNotificationCenter() {
                         <span className="shrink-0 text-[10px] font-semibold text-white/38">{personal ? 'Personal' : 'Global'}</span>
                       </span>
                       <span className="mt-1 block text-xs leading-5 text-white/54">
-                        Episode {update.episode} {update.kind === 'cancelled' ? 'was cancelled' : `was delayed to ${formatUpdateTime(update.airingAt)}`}
+                        Episode {update.episode} · {update.releaseTrack || 'original'} · {update.kind}{update.airingAt ? ` · ${formatUpdateTime(update.airingAt)}` : ' · Awaiting new date'}
                       </span>
                     </span>
                   </Link>
                 ))}
               </div>
             ) : (
-              <p className="rounded-lg bg-white/[0.035] px-3 py-4 text-sm text-white/48">No delay or cancellation alerts.</p>
+              <p className="rounded-lg bg-white/[0.035] px-3 py-4 text-sm text-white/48">No schedule change alerts.</p>
             )}
 
             <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/[0.07] px-1 pb-2 pt-4">

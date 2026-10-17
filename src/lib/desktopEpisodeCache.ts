@@ -1,3 +1,4 @@
+import { episodeImageCandidates } from './desktopEpisodeArtwork';
 // Separate episode pages from discovery-cache eviction. Keys always use MAL IDs.
 import { cloneDesktopStoredJson, createDesktopStoredJsonReader } from './desktopStoredJsonCache';
 
@@ -20,7 +21,16 @@ export function saveEpisodePage(id: string, page: number, value: any, fetchedAt 
   if (!/^[1-9]\d*$/.test(id) || !Array.isArray(value.data) || !value.data.length) return;
   try {
     const pages = { ...read() };
-    pages[`${id}:${page}`] = { savedAt: Math.min(Date.now(), fetchedAt), data: value.data.map((item: any) => ({ mal_id: item.mal_id, title: item.title, title_english: item.title_english, title_romanji: item.title_romanji, aired: item.aired, filler: item.filler, recap: item.recap })), pagination: value.pagination };
+    const previous = new Map((pages[`${id}:${page}`]?.data || []).map((item: any) => [item.mal_id, item]));
+    pages[`${id}:${page}`] = { savedAt: Math.min(Date.now(), fetchedAt), data: value.data.map((item: any) => {
+      const prior: any = previous.get(item.mal_id);
+      const images = episodeImageCandidates(item);
+      const image = images[0] || episodeImageCandidates(prior)[0];
+      return { mal_id: item.mal_id, title: item.title, title_english: item.title_english, title_romanji: item.title_romanji,
+        aired: item.aired, filler: item.filler, recap: item.recap, ...(image ? { image, thumbnail: image,
+          artworkProvider: images.length ? item.artworkProvider : prior?.artworkProvider,
+          imageFetchedAt: images.length ? Math.min(Date.now(), fetchedAt) : prior?.imageFetchedAt } : {}) };
+    }), pagination: value.pagination };
     const entries = Object.entries(pages).sort((a,b) => b[1].savedAt - a[1].savedAt).slice(0, 60);
     let json = JSON.stringify({ version: 1, pages: Object.fromEntries(entries) });
     while (json.length > 1_500_000 && entries.length > 1) { entries.pop(); json = JSON.stringify({ version: 1, pages: Object.fromEntries(entries) }); }

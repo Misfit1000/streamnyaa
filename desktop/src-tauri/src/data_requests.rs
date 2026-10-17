@@ -553,8 +553,9 @@ async fn metadata(
             url.to_string()
         }
         "animeschedule" => {
-            bearer = env_value(&["ANIMESCHEDULE_TOKEN", "ANIMESCHEDULE_API_TOKEN"]);
-            format!("https://animeschedule.net/api/v3{}", path()?)
+            // Application credentials remain on our authenticated metadata gateway.
+            format!("https://www.streamnyaa.xyz/api/stream-sources?provider=animeschedule&ttl={}&path={}",
+                request.ttl_seconds.unwrap_or(900).clamp(60,86400), percent_encode(&path()?))
         }
         "anidb" => {
             let path = path()?;

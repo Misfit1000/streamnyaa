@@ -879,6 +879,9 @@ const SAFE_DESKTOP_BACKUP_KEYS = [
   'streamnyaa.desktop.upcomingWatches.v1',
   'streamnyaa.desktop.releaseSubscriptions.v2',
   'streamnyaa.desktop.releaseEpisodes.v2',
+  'streamnyaa.desktop.schedule-alert-state.v1',
+  'streamnyaa.desktop.schedule-revisions.v1',
+  'streamnyaa.desktop.schedule-updates.v1',
   DESKTOP_AVAILABILITY_KEY,
 ] as const;
 

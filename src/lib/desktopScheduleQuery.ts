@@ -3,6 +3,7 @@ import { fetchCompleteSchedule, type CompleteScheduleResult } from '../api/jikan
 import { desktopScheduleCacheKey, readDesktopSchedule, writeDesktopSchedule } from './desktopScheduleCache';
 import { useStore } from '../store/useStore';
 import { desktopOriginStaleTime } from './desktopOriginFreshness';
+import { scheduleRevisionKey } from './scheduleRevisions';
 
 export function desktopWeekRange(now = new Date()) {
   const start = new Date(now); start.setHours(0, 0, 0, 0);
@@ -18,10 +19,15 @@ function savedSchedule(entry: ReturnType<typeof readDesktopSchedule>): CompleteS
 }
 
 export function mergeDesktopWeekSchedule(response: CompleteScheduleResult, previous?: CompleteScheduleResult): CompleteScheduleResult {
-  if (response.complete || !previous?.data.length) return response;
+  if (!previous?.data.length) return response;
+  if (response.complete) {
+    const incoming = new Set(response.data.map(scheduleRevisionKey));
+    const retained = previous.data.filter(item => /delay|postpon|cancel|hiatus|break/i.test(String(item.scheduleStatus || '')) && !incoming.has(scheduleRevisionKey(item)));
+    return retained.length ? { ...response, data: [...response.data, ...retained], streamnyaa: { ...response.streamnyaa, status: 'stale', fetchedAt: Math.min(response.streamnyaa.fetchedAt, previous.streamnyaa.fetchedAt) } } : response;
+  }
   // A revised airing time replaces the same episode's older record. Keeping
   // both times would make one episode appear twice and revive old reminders.
-  const identity = (item: any) => `${item.anilist_id || item.mal_id || item.id}:${item.airingEpisode}`;
+  const identity = scheduleRevisionKey;
   const items = new Map(previous.data.map(item => [identity(item), item]));
   response.data.forEach(item => items.set(identity(item), item));
   return { ...response, data: [...items.values()], streamnyaa: { ...response.streamnyaa, status: 'stale',

@@ -22,7 +22,7 @@ function schedule(airingAt: number, overrides: Record<string, unknown> = {}) {
 
 describe('desktop schedule revision tracking', () => {
   it('uses anime and episode identity rather than the schedule row id', () => {
-    expect(scheduleRevisionKey(schedule(1_800_000_000))).toBe('154587:episode-8');
+    expect(scheduleRevisionKey(schedule(1_800_000_000))).toBe('anilist:154587:episode-8:original');
   });
 
   it('does not label a first observation as delayed or rescheduled', () => {
@@ -83,6 +83,33 @@ describe('desktop schedule revision tracking', () => {
     const first = reconcileScheduleRevisions([schedule(1_800_000_000)], [], 1_700_000_000_000);
     const noisy = reconcileScheduleRevisions([schedule(1_800_000_030)], first.records, 1_700_000_030_000);
     expect(noisy.items[0].scheduleStatus).toBeUndefined();
+  });
+
+  it('retains an undated explicit postponement and its original slot through an omitted feed', () => {
+    const initial = reconcileScheduleRevisions([schedule(1_800_000_000)], [], 1_700_000_000_000);
+    const delayed = reconcileScheduleRevisions([schedule(0, { scheduleStatus: 'postponed' })], initial.records, 1_700_000_010_000);
+    expect(delayed.updates[0]).toMatchObject({ kind: 'postponed', airingAt: 0, previousAiringAt: 1_800_000_000_000 });
+    const omitted = reconcileScheduleRevisions([], delayed.records, 1_700_000_020_000);
+    expect(omitted.items[0]).toMatchObject({ scheduleStatus: 'postponed', airingAt: 0, previousAiringAt: 1_800_000_000_000 });
+    expect(omitted.updates).toEqual([]);
+  });
+
+  it('separates tracks and never labels a time change as an explicit delay', () => {
+    const first = reconcileScheduleRevisions([schedule(1_800_000_000), schedule(1_800_100_000, { releaseTrack: 'dub', scheduleStatus: 'on break' })], [], 1_700_000_000_000);
+    expect(first.records).toHaveLength(2);
+    expect(first.updates[0]).toMatchObject({ kind: 'on break', releaseTrack: 'dub' });
+    const moved = reconcileScheduleRevisions([schedule(1_800_007_200)], first.records, 1_700_000_060_000);
+    expect(moved.updates).toEqual([]);
+    expect(moved.items.find(item => !item.releaseTrack)?.scheduleStatus).toBe('rescheduled');
+  });
+
+  it('does not reset detection time or unread status when the same delay is refreshed', () => {
+    const entries = new Map<string, string>();
+    const storage = { getItem: (key: string) => entries.get(key) || null, setItem: (key: string, value: string) => { entries.set(key, value); } };
+    enrichDesktopScheduleRevisions([schedule(0, { scheduleStatus: 'delayed', releaseTrack: 'dub' })], storage, 1_700_000_000_000);
+    enrichDesktopScheduleRevisions([schedule(0, { scheduleStatus: 'delayed', releaseTrack: 'dub' })], storage, 1_700_000_060_000);
+    expect(readDesktopScheduleUpdates(storage)).toHaveLength(1);
+    expect(readDesktopScheduleUpdates(storage)[0].detectedAt).toBe(1_700_000_000_000);
   });
 
   it('survives corrupted or unavailable storage without hiding the schedule', () => {

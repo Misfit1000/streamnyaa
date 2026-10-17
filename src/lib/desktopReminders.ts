@@ -106,6 +106,9 @@ export async function reconcileDesktopReminderSchedule(items: any[]) {
   }
   if (migrated.size) await writeDesktopReleaseSubscriptions(current);
   const schedule: Array<{animeId:string;episode:number;airingAt:number;blocked:boolean;reminderOffsetMinutes?:number}> = items.flatMap(anime => {
+    // Existing release bells follow the original broadcast. Dub/Sub revisions
+    // have their own track-qualified schedule-change alerts.
+    if (anime.releaseTrack && anime.releaseTrack !== 'original') return [];
     const id = desktopCanonicalAnimeId(anime);
     const sub = current.find(value => value.id === id);
     const episode = Number(anime.airingEpisode || anime.episode || anime.nextAiringEpisode?.episode);

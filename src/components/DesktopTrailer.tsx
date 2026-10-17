@@ -1,10 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Maximize2, Minimize2, X } from 'lucide-react';
+import { loadTrailerApi, trailerEmbedUrl, trailerErrorMessage } from '../lib/desktopTrailerPlayer';
 
 export default function DesktopTrailer({ title, url, onClose }: { title: string; url: string; onClose: () => void }) {
   const root = useRef<HTMLDivElement>(null);
   const close = useRef<HTMLButtonElement>(null);
+  const iframe = useRef<HTMLIFrameElement>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [error, setError] = useState('');
+  const [playing, setPlaying] = useState(false);
+  const embedUrl = trailerEmbedUrl(url);
+  useEffect(() => {
+    let disposed = false;
+    let player: { destroy: () => void } | undefined;
+    setError(''); setPlaying(false);
+    void loadTrailerApi().then(api => {
+      if (disposed || !iframe.current) return;
+      player = new api.Player(iframe.current, { events: {
+        onError: event => { if (!disposed) setError(trailerErrorMessage(event.data)); },
+        onStateChange: event => { if (!disposed && event.data === 1) { setPlaying(true); setError(''); } },
+      } });
+    }).catch(() => { /* The ordinary embed remains usable if the optional API cannot load. */ });
+    return () => { disposed = true; try { player?.destroy(); } catch { /* Frame may already be detached. */ } };
+  }, [embedUrl, attempt]);
   const [expanded, setExpanded] = useState(false);
   const expandedRef = useRef(expanded); expandedRef.current = expanded;
   useEffect(() => {
@@ -41,7 +60,8 @@ export default function DesktopTrailer({ title, url, onClose }: { title: string;
         <button type="button" className="sn-icon-action h-10 w-10" onClick={() => void toggle()} aria-label={expanded ? 'Exit trailer fullscreen' : 'Fullscreen trailer'}>{expanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>
         <button ref={close} type="button" className="sn-icon-action h-10 w-10" onClick={onClose} aria-label="Close trailer"><X size={18} /></button>
       </div></header>
-      <iframe title={`${title} trailer`} src={url} className={`${expanded ? 'min-h-0 flex-1' : 'aspect-video min-h-[200px]'} w-full bg-black`} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen />
+      <iframe key={`${embedUrl}:${attempt}`} ref={iframe} title={`${title} trailer`} src={embedUrl} referrerPolicy="strict-origin-when-cross-origin" className={`${expanded ? 'min-h-0 flex-1' : 'aspect-video min-h-[200px]'} w-full bg-black`} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen onError={() => setError('The trailer could not load. Check your connection, then retry.')} />
+      <footer className="flex shrink-0 items-center justify-between gap-3 bg-[#101014] px-4 py-2 text-xs text-white/60"><span role="status">{error || (playing ? 'Playing on YouTube' : 'If YouTube asks for verification, follow its instructions in the player.')}</span><button type="button" className="sn-secondary-action shrink-0 px-3 py-2" onClick={() => setAttempt(value => value + 1)}>Retry trailer</button></footer>
     </div>
   </div>, document.body);
 }

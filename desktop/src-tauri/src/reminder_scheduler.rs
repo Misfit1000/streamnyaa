@@ -412,6 +412,7 @@ enum Kind {
     Available,
 }
 fn due_kind(episode: &Episode, sub: &Subscription, state: &State, now: u64) -> Option<Kind> {
+    if crate::schedule_updates::blocked(&episode.anime_id, episode.episode) { return None; }
     if sub
         .one_shot_episode
         .is_some_and(|value| value != episode.episode)
@@ -530,19 +531,16 @@ fn deliver() {
     }
 }
 
-async fn execute(
+pub(super) async fn execute(
     job: data_requests::Job,
     suffix: &str,
 ) -> Result<data_requests::DataResponse, data_requests::DataError> {
+    let deadline = if matches!(job, data_requests::Job::Metadata(_)) { 80_000 } else { 30_000 };
+    execute_bounded(job, suffix, deadline).await
+}
+pub(super) async fn execute_bounded(job: data_requests::Job, suffix: &str, deadline: u64) -> Result<data_requests::DataResponse, data_requests::DataError> {
     let id = format!("reminder-{}-{suffix}", now_ms());
-    if let Ok(mut active) = ACTIVE_REQUEST.lock() {
-        *active = Some(id.clone());
-    }
-    let deadline = if matches!(job, data_requests::Job::Metadata(_)) {
-        80_000
-    } else {
-        30_000
-    };
+    if let Ok(mut active) = ACTIVE_REQUEST.lock() { *active = Some(id.clone()); }
     let result = data_requests::execute(
         job,
         Some(id.clone()),
@@ -707,6 +705,7 @@ fn next_source_check(state: &State, now: u64) -> Option<(Episode, Subscription)>
         .iter()
         .filter(|episode| {
             !episode.blocked
+                && !crate::schedule_updates::blocked(&episode.anime_id, episode.episode)
                 && episode.available_notified_at.is_none()
                 && episode.airing_at <= now
                 && now <= episode.airing_at.saturating_add(7 * DAY)
@@ -843,6 +842,8 @@ pub fn start() {
     let _ = store();
     tauri::async_runtime::spawn(async {
         while RUNNING.load(Ordering::SeqCst) {
+            if !get_desktop_playback_busy() { crate::schedule_updates::tick().await; }
+            crate::schedule_updates::deliver(PERMISSION.load(Ordering::SeqCst));
             deliver();
             if PERMISSION.load(Ordering::SeqCst) {
                 refresh_schedule().await;
@@ -853,6 +854,7 @@ pub fn start() {
         }
     });
 }
+pub(super) fn running() -> bool { RUNNING.load(Ordering::SeqCst) }
 pub fn shutdown() {
     RUNNING.store(false, Ordering::SeqCst);
     PERMISSION.store(false, Ordering::SeqCst);

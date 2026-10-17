@@ -1,6 +1,9 @@
 import { mergeScheduleWatchEvidence } from '../lib/desktopScheduleWatch';
 import DesktopEpisodeStatus from '../components/DesktopEpisodeStatus';
 import DesktopTrailer from '../components/DesktopTrailer';
+import DesktopAnimeCast from '../components/DesktopAnimeCast';
+import DesktopEpisodeThumbnail from '../components/DesktopEpisodeThumbnail';
+import { episodeNumberFromTitle, resolveEpisodeArtwork } from '../lib/desktopEpisodeArtwork';
 import { selectSourceMode } from '../lib/desktopSourceSelection';
 import { sourceAvailabilityEvidence } from '../lib/desktopHomeReadiness';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -1070,11 +1073,6 @@ function knownAiredEpisodeCount(anime: any, episodeItems: any[] = []) {
   return verifiedAiredEpisodeCount(anime, episodeItems);
 }
 
-function episodeNumberFromTitle(value = '') {
-  const match = value.match(/\bepisode\s+(\d{1,4})\b/i) || value.match(/(?:^|[\s._-])(\d{1,4})(?:[\s._-]|$)/);
-  const number = Number(match?.[1] || 0);
-  return number > 0 ? number : null;
-}
 
 function sourceScore(source: NyaaItem, audioPreference: DesktopAudioPreference, audioMode: AudioMode) {
   let score = 0;
@@ -1918,24 +1916,9 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   };
   const episodeSearchTerm = episodeSearch.trim().toLowerCase();
   const longEpisodeRun = airedCount > EPISODE_WINDOW_SIZE;
-  const pageEpisodeMap = useMemo<Map<number, EpisodeMetaEntry>>(() => {
-    const entries = pageItems
-      .map((episode: any) => {
-        const number = Number(episode?.mal_id || 0);
-        return number > 0 ? [number, episode as EpisodeMetaEntry] as const : null;
-      })
-      .filter((entry): entry is readonly [number, EpisodeMetaEntry] => Boolean(entry));
-    return new Map(entries);
-  }, [pageItems]);
-  const streamingEpisodeMap = useMemo<Map<number, EpisodeMetaEntry>>(() => {
-    const entries = (Array.isArray(anime?.streamingEpisodes) ? anime.streamingEpisodes : [])
-      .map((episode: any) => {
-        const number = episodeNumberFromTitle(episode?.title || '');
-        return number ? [number, episode as EpisodeMetaEntry] as const : null;
-      })
-      .filter((entry): entry is readonly [number, EpisodeMetaEntry] => Boolean(entry));
-    return new Map(entries);
-  }, [anime?.streamingEpisodes]);
+  const episodeArtwork = useMemo(() => resolveEpisodeArtwork(anime, pageItems), [anime, pageItems]);
+  const pageEpisodeMap = episodeArtwork.pages as Map<number, EpisodeMetaEntry>;
+  const streamingEpisodeMap = episodeArtwork.streaming as Map<number, EpisodeMetaEntry>;
   const allEpisodes = useMemo(() => {
     const count = animeNotYetAired ? 0 : Math.min(100000, Math.max(airedCount ?? Math.max(selectedEpisode, 12), 0));
     return Array.from({ length: count }, (_, index) => {
@@ -1945,10 +1928,11 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       return {
         number,
         title: pageEpisode?.title || pageEpisode?.title_english || pageEpisode?.title_romanji || streamingEpisode?.title || `Episode ${number}`,
-        image: streamingEpisode?.thumbnail || pageEpisode?.image || wideImageFor(anime),
+        image: episodeArtwork.forEpisode(number).candidates[0],
+        artwork: episodeArtwork.forEpisode(number, hideEpisodeSpoilers),
       };
     });
-  }, [airedCount, anime, animeNotYetAired, pageEpisodeMap, pageItems.length, selectedEpisode, streamingEpisodeMap]);
+  }, [airedCount, anime, animeNotYetAired, pageEpisodeMap, pageItems.length, selectedEpisode, streamingEpisodeMap, episodeArtwork, hideEpisodeSpoilers]);
   const episodeRanges = useMemo(() => {
     const count = Math.max(allEpisodes.length, 1);
     return Array.from({ length: Math.ceil(count / EPISODE_GRID_PAGE_SIZE) }, (_, index) => {
@@ -3048,7 +3032,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         setTrailerOpen(true);
                         return;
                       }
-                      window.open(leftPanelInfo.trailerUrl, '_blank', 'noopener,noreferrer');
+                      setTrailerOpen(true);
                     }}
                     className="group relative block h-28 w-full overflow-hidden text-left"
                   >
@@ -3061,12 +3045,13 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       <span className="min-w-0">
                         <span className="block line-clamp-1 text-xs font-semibold text-white">{anime.title}</span>
                         <span className="mt-0.5 block text-[10px] font-semibold normal-case tracking-normal text-white/48">
-                          {trailerEmbedUrl ? 'Play trailer' : 'Open trailer'}
+                          {trailerEmbedUrl ? 'Play trailer' : 'View trailer'}
                         </span>
                       </span>
                     </span>
                   </button>
                 )}
+                {trailerOpen && !trailerEmbedUrl && <p role="status" className="px-3 py-3 text-xs text-white/65">This trailer link cannot be played inside StreamNyaa.</p>}
               </div>
             ) : null}
           </>
@@ -3229,6 +3214,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 ) : null}
               </div>
             </div>
+
+            <DesktopAnimeCast key={id} identity={{ anilistId: resolvedAnime?.anilist_id || routeAniListId, malId: resolvedAnime?.mal_id || routeMalId }} />
 
             <div className="sn-glass-card sticky top-3 z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-xl px-3 py-3">
               <div className="flex items-center gap-2">
@@ -3494,7 +3481,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       className="absolute inset-0 cursor-pointer text-left outline-none focus-visible:ring-1 focus-visible:ring-primary/45"
                       aria-label={`Watch episode ${episode.number}`}
                     >
-                      <SafeImage candidates={uniqueImageCandidates([...(hideEpisodeSpoilers ? [] : [episode.image]), wideImageFor(anime), posterFor(anime)])} alt={hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
+                      <DesktopEpisodeThumbnail artwork={episode.artwork} title={hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title} />
                       <div className={`absolute inset-0 ${episode.number === selectedEpisode ? 'bg-[linear-gradient(0deg,rgba(48,8,16,0.90),rgba(0,0,0,0.06)_62%)]' : 'bg-[linear-gradient(0deg,rgba(0,0,0,0.80),rgba(0,0,0,0.08)_62%)]'}`} />
                       <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-semibold shadow-md shadow-black/25 ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/72 text-white'}`}>{episode.number}</span>
                       <EpisodeWatchIndicator state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} />

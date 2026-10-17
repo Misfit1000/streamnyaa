@@ -3546,6 +3546,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 name = "streamnyaa_desktop"
 version = "0.1.10"
 dependencies = [
+ "chrono",
  "httpdate",
  "image",
  "reqwest 0.12.28",
@@ -3558,6 +3559,8 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tokio",
+ "webview2-com",
+ "windows",
  "windows-sys 0.61.2",
 ]
 

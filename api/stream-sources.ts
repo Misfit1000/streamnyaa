@@ -80,14 +80,14 @@ function queryValue(req: any, key: string) {
 async function cachedJson(cacheKey: string, ttlSeconds: number, fetcher: () => Promise<unknown>) {
   const now = Date.now();
   const cached = metadataCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return { value: cached.value, state: 'HIT' };
+  if (cached && cached.expiresAt > now) return { value: cached.value, state: 'HIT', fetchedAt: cached.savedAt };
   const stale = cached && now - cached.savedAt <= STALE_TTL_MS ? cached : null;
   const inFlight = inFlightMetadataCache.get(cacheKey);
   if (inFlight) {
     try {
-      return { value: await inFlight, state: 'COALESCED' };
+      return { value: await inFlight, state: 'COALESCED', fetchedAt: metadataCache.get(cacheKey)?.savedAt || now };
     } catch (error) {
-      if (stale) return { value: stale.value, state: 'STALE' };
+      if (stale) return { value: stale.value, state: 'STALE', fetchedAt: stale.savedAt };
       throw error;
     }
   }
@@ -103,9 +103,9 @@ async function cachedJson(cacheKey: string, ttlSeconds: number, fetcher: () => P
         .slice(0, metadataCache.size - MAX_METADATA_CACHE_ENTRIES)
         .forEach(([key]) => metadataCache.delete(key));
     }
-    return { value, state: 'MISS' };
+    return { value, state: 'MISS', fetchedAt: now };
   } catch (error) {
-    if (stale) return { value: stale.value, state: 'STALE' };
+    if (stale) return { value: stale.value, state: 'STALE', fetchedAt: stale.savedAt };
     throw error;
   } finally {
     if (inFlightMetadataCache.get(cacheKey) === nextRequest) {
@@ -182,21 +182,24 @@ async function fetchTmdb(req: any, ttlSeconds: number) {
 
 async function fetchAnimeSchedule(req: any, ttlSeconds: number) {
   const path = safeProviderPath(queryValue(req, 'path'));
-  if (!path) throw new Error('Valid AnimeSchedule path is required.');
+  if (!path || !/^\/(?:anime(?:\/[a-z0-9-]+)?|timetables\/(?:all|raw|sub|dub))(?:\?|$)/i.test(path)) throw new Error('Valid public AnimeSchedule metadata path is required.');
 
   return cachedJson(`animeschedule:${path}`, ttlSeconds, async () => {
     const token = envValue('ANIMESCHEDULE_TOKEN', 'ANIMESCHEDULE_API_TOKEN');
+    if (!token) throw new Error('AnimeSchedule application token is not configured on the metadata server.');
     const response = await fetch(`${ANIME_SCHEDULE_URL}${path}`, {
+      signal: AbortSignal.timeout(15000),
       headers: {
         Accept: 'application/json',
         'User-Agent': 'StreamNyaa Metadata Cache/1.0',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data?.message || `AnimeSchedule returned ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`AnimeSchedule returned HTTP ${response.status}.`);
+    const text = await response.text();
+    if (!text.trim()) throw new Error('AnimeSchedule returned an empty response.');
+    let data: unknown;
+    try { data = JSON.parse(text); } catch { throw new Error('AnimeSchedule returned invalid JSON.'); }
     return data;
   });
 }
@@ -307,7 +310,7 @@ export default async function handler(req: any, res: any) {
     if (provider === 'animeschedule') {
       if (req.method !== 'GET') return res.status(405).json({ error: 'AnimeSchedule cache requires GET.' });
       const result = await fetchAnimeSchedule(req, ttlSeconds);
-      return sendCached(res, result.value, ttlSeconds, result.state);
+      return sendCached(res, { data: result.value, streamnyaa: { fetchedAt: result.fetchedAt, stale: result.state === 'STALE' } }, ttlSeconds, result.state);
     }
 
     if (provider === 'anidb') {

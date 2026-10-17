@@ -456,7 +456,7 @@ export default function DesktopSettings() {
               icon={<BellRing className="h-5 w-5" />}
               eyebrow="Notifications"
               title="Updates and reminders"
-              description="Choose which confirmed delays and cancellations appear in the notification center. Airing reminders remain controlled from Calendar."
+              description="Choose which confirmed schedule changes appear in the Bell and Windows notifications when permission is granted. Airing reminders remain controlled from Calendar."
             />
             <div className="mt-5 grid gap-3 lg:grid-cols-2">
               <PreferenceCard

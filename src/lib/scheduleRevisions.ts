@@ -1,3 +1,4 @@
+import { desktopCanonicalAnimeId } from './desktopAvailability';
 const SCHEDULE_REVISION_STORAGE_KEY = 'streamnyaa.desktop.schedule-revisions.v1';
 export const DESKTOP_SCHEDULE_UPDATES_KEY = 'streamnyaa.desktop.schedule-updates.v1';
 export const DESKTOP_SCHEDULE_UPDATE_PREFERENCES_KEY = 'streamnyaa.desktop.schedule-update-preferences.v1';
@@ -15,6 +16,8 @@ export type DesktopScheduleRevisionRecord = {
   firstSeenAt: number;
   lastSeenAt: number;
   changedAt?: number;
+  snapshot?: any;
+  releaseTrack?: string;
 };
 
 type ScheduleRevisionSnapshot = {
@@ -33,7 +36,8 @@ export type DesktopScheduleUpdate = {
   previousAiringAt: number;
   airingAt: number;
   detectedAt: number;
-  kind: 'delayed' | 'cancelled';
+  kind: 'delayed' | 'cancelled' | 'postponed' | 'on break' | 'rescheduled';
+  releaseTrack?: string;
 };
 
 export type DesktopScheduleUpdatePreferences = {
@@ -86,14 +90,16 @@ function explicitScheduleAlertKind(anime: any): DesktopScheduleUpdate['kind'] | 
     || anime?.isCanceled
     || /\b(cancelled|canceled|cancelation|cancellation)\b/.test(statusText)
   ) return 'cancelled';
-  if (anime?.delayed || anime?.isDelayed || /\b(delayed|delay)\b/.test(statusText)) return 'delayed';
+  if (anime?.postponed || anime?.isPostponed || /\bpostponed\b/.test(statusText)) return 'postponed';
+  if (/\b(hiatus|break)\b/.test(statusText)) return 'on break';
+  if (anime?.delayed || anime?.isDelayed || /\b(delayed|delay|delayed-air)\b/.test(statusText)) return 'delayed';
   return null;
 }
 
 export function scheduleRevisionKey(anime: any) {
-  const animeId = String(anime?.anilist_id || anime?.mal_id || anime?.id || '').trim();
+  const animeId = desktopCanonicalAnimeId(anime);
   const episode = Math.floor(finitePositiveNumber(anime?.airingEpisode || anime?.episode));
-  return animeId && episode ? `${animeId}:episode-${episode}` : '';
+  return animeId && episode ? `${animeId}:episode-${episode}:${anime?.releaseTrack || 'original'}` : '';
 }
 
 function validRecord(record: unknown): record is DesktopScheduleRevisionRecord {
@@ -105,7 +111,7 @@ function validRecord(record: unknown): record is DesktopScheduleRevisionRecord {
     && Number.isFinite(candidate.episode)
     && candidate.episode > 0
     && Number.isFinite(candidate.airingAt)
-    && candidate.airingAt > 0
+    && candidate.airingAt >= 0
     && Number.isFinite(candidate.firstSeenAt)
     && Number.isFinite(candidate.lastSeenAt),
   );
@@ -137,17 +143,19 @@ export function reconcileScheduleRevisions(
   const enrichedItems = items.map((anime) => {
     const key = scheduleRevisionKey(anime);
     const airingAt = normalizedAiringAtMs(anime?.airingAt);
-    if (!key || !airingAt) return anime;
+    if (!key || (!airingAt && !explicitScheduleAlertKind(anime))) return anime;
 
     const [animeId] = key.split(':episode-');
     const episode = Math.floor(finitePositiveNumber(anime?.airingEpisode || anime?.episode));
-    const previous = recordsByKey.get(key);
+    const legacyKey = `${anime?.anilist_id || anime?.mal_id || anime?.id}:episode-${episode}`;
+    const previous = recordsByKey.get(key) || (!anime.releaseTrack || anime.releaseTrack === 'original' ? recordsByKey.get(legacyKey) : undefined);
+    if (previous && previous.key !== key) recordsByKey.delete(previous.key);
     const explicitAlert = explicitScheduleAlertKind(anime);
     const changed = Boolean(
-      previous
+      previous && previous.airingAt > 0 && airingAt > 0
       && Math.abs(previous.airingAt - airingAt) >= MINIMUM_TIME_CHANGE_MS,
     );
-    const previousAiringAt = changed ? previous?.airingAt : previous?.previousAiringAt;
+    const previousAiringAt = normalizedAiringAtMs(anime.previousAiringAt) || (changed || !airingAt ? previous?.airingAt || previous?.previousAiringAt : previous?.previousAiringAt);
 
     if (explicitAlert) {
       const anilistId = String(anime?.anilist_id || anime?.id || '').trim() || undefined;
@@ -160,7 +168,8 @@ export function reconcileScheduleRevisions(
         malId,
         title: String(anime?.title_english || anime?.title || anime?.title_japanese || 'Anime').trim(),
         episode,
-        previousAiringAt: previous?.airingAt || airingAt,
+        previousAiringAt: previousAiringAt || previous?.airingAt || airingAt,
+        releaseTrack: anime.releaseTrack || 'original',
         airingAt,
         detectedAt: now,
         kind: explicitAlert,
@@ -176,8 +185,10 @@ export function reconcileScheduleRevisions(
       firstSeenAt: previous?.firstSeenAt || now,
       lastSeenAt: now,
       changedAt: changed ? now : previous?.changedAt,
+      snapshot: { ...anime, previousAiringAt }, releaseTrack: anime.releaseTrack || 'original',
     });
 
+    if (explicitAlert) return { ...anime, previousAiringAt };
     if (!previousAiringAt || previousAiringAt === airingAt) return anime;
     return {
       ...anime,
@@ -194,6 +205,10 @@ export function reconcileScheduleRevisions(
     .sort((left, right) => right.lastSeenAt - left.lastSeenAt)
     .slice(0, MAX_SCHEDULE_RECORDS);
 
+  const visibleKeys = new Set(enrichedItems.map(scheduleRevisionKey));
+  for (const record of records) if (record.snapshot && explicitScheduleAlertKind(record.snapshot) && !visibleKeys.has(record.key)) {
+    enrichedItems.push({ ...record.snapshot, scheduleLastReportedAt: record.lastSeenAt });
+  }
   return { items: enrichedItems, records, updates };
 }
 
@@ -207,8 +222,8 @@ function normalizeScheduleUpdate(value: any): DesktopScheduleUpdate | null {
   const previousAiringAt = normalizedAiringAtMs(value.previousAiringAt);
   const airingAt = normalizedAiringAtMs(value.airingAt);
   const detectedAt = finitePositiveNumber(value.detectedAt);
-  if (!id || !key || !animeId || !title || !episode || !previousAiringAt || !airingAt || !detectedAt) return null;
-  const kind = value.kind === 'cancelled' ? 'cancelled' : value.kind === 'delayed' ? 'delayed' : null;
+  if (!id || !key || !animeId || !title || !episode || !detectedAt) return null;
+  const kind: DesktopScheduleUpdate['kind'] | null = ['cancelled','delayed','postponed','on break','rescheduled'].includes(value.kind) ? value.kind : null;
   if (!kind) return null;
   return {
     id,
@@ -221,6 +236,7 @@ function normalizeScheduleUpdate(value: any): DesktopScheduleUpdate | null {
     previousAiringAt,
     airingAt,
     detectedAt,
+    releaseTrack: ['original','sub','dub'].includes(value.releaseTrack) ? value.releaseTrack : 'original',
     kind,
   };
 }
@@ -311,7 +327,7 @@ export function enrichDesktopScheduleRevisions(
       const snapshot: ScheduleRevisionSnapshot = { version: 1, records: result.records };
       storage.setItem(SCHEDULE_REVISION_STORAGE_KEY, JSON.stringify(snapshot));
       if (result.updates.length) {
-        const mergedUpdates = [...result.updates, ...readDesktopScheduleUpdates(storage)]
+        const mergedUpdates = [...readDesktopScheduleUpdates(storage), ...result.updates]
           .filter((update, index, all) => index === all.findIndex((candidate) => candidate.id === update.id))
           .filter((update) => update.detectedAt >= now - RECORD_RETENTION_MS)
           .sort((left, right) => right.detectedAt - left.detectedAt)
@@ -326,4 +342,14 @@ export function enrichDesktopScheduleRevisions(
     }
   }
   return result.items;
+}
+
+/** Native and frontend observations share Bell identity and never reset first-detection timestamps. */
+export function mergeDesktopScheduleUpdates(updates: DesktopScheduleUpdate[]) {
+  const merged = [...readDesktopScheduleUpdates(), ...updates].map(normalizeScheduleUpdate)
+    .filter((item): item is DesktopScheduleUpdate => Boolean(item))
+    .filter((item, index, all) => all.findIndex(other => other.id === item.id) === index)
+    .sort((a,b) => b.detectedAt-a.detectedAt).slice(0,1200);
+  localStorage.setItem(DESKTOP_SCHEDULE_UPDATES_KEY, JSON.stringify(merged));
+  window.dispatchEvent(new CustomEvent(DESKTOP_SCHEDULE_UPDATES_EVENT));
 }

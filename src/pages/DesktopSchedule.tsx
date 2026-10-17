@@ -1,3 +1,5 @@
+import { mergeScheduleTracks, readScheduleAlertState, scheduleDisplayTime, subscribeScheduleTracks } from '../lib/desktopScheduleAlerts';
+import { scheduleRevisionKey } from '../lib/scheduleRevisions';
 import { useAuth } from '../context/AuthContext';
 import DesktopDragRail from '../components/DesktopDragRail';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
@@ -118,10 +120,10 @@ function scheduleBroadcastState(anime: any, airingMs = airingAtMs(anime)): Sched
     };
   }
 
-  if (/\b(hiatus|on hiatus)\b/.test(statusText)) {
+  if (/\b(hiatus|on hiatus|on break|break)\b/.test(statusText)) {
     return {
       kind: 'hiatus',
-      label: 'On hiatus',
+      label: /break/.test(statusText) ? 'On break' : 'On hiatus',
       headline: 'ON HIATUS',
       detail: 'Broadcast is paused until a new date is announced.',
       prominent: true,
@@ -283,6 +285,9 @@ export default function DesktopSchedule() {
   const active = days[selectedDay];
   const hasWatchHistory = watchedSeries.length > 0;
   const scheduleQuery = useQuery(desktopWeekQuery());
+  const [trackState, setTrackState] = useState(readScheduleAlertState);
+  useEffect(() => subscribeScheduleTracks(() => setTrackState(readScheduleAlertState())), []);
+  const completeSchedule = useMemo(() => mergeScheduleTracks(scheduleQuery.data?.data || [], trackState.tracks), [scheduleQuery.data?.data, trackState.tracks]);
   const foregroundContinuation = useRef<string>('');
   useEffect(() => {
     if (scheduleQuery.isFetching || scheduleQuery.isError || scheduleQuery.data?.partialReason !== 'background-budget') return;
@@ -291,7 +296,13 @@ export default function DesktopSchedule() {
     foregroundContinuation.current = attempt;
     void scheduleQuery.refetch();
   }, [todayKey, nsfwMode, scheduleQuery.data, scheduleQuery.isFetching, scheduleQuery.isError, scheduleQuery.refetch]);
-  const items = (scheduleQuery.data?.data || []).filter((item: any) => Number(item.airingAt) >= active.start && Number(item.airingAt) <= active.end);
+  const items = completeSchedule.filter((item: any) => {
+    const at = scheduleDisplayTime(item);
+    const changed = scheduleBroadcastState(item).prominent;
+    const prior = scheduleDisplayTime({ airingAt: 0, previousAiringAt: item.previousAiringAt });
+    return at >= active.start && at <= active.end || changed && prior >= active.start && prior <= active.end
+      || selectedDay === 0 && changed && (!at || at < days[0].start);
+  });
   const watchedWeekQuery = scheduleQuery;
   const watchedWeekItems = useMemo(
     () => (watchedWeekQuery.data?.data || [])
@@ -315,9 +326,12 @@ export default function DesktopSchedule() {
     if (!visibleItems.length) return [];
     if (selectedDay !== 0) return [{ title: active.label, items: visibleItems }];
     const now = clock;
-    const upcoming = visibleItems.filter((anime: any) => airingAtMs(anime) > now);
-    const aired = visibleItems.filter((anime: any) => airingAtMs(anime) <= now);
+    const changed = visibleItems.filter((anime: any) => scheduleBroadcastState(anime).prominent);
+    const ordinary = visibleItems.filter((anime: any) => !scheduleBroadcastState(anime).prominent);
+    const upcoming = ordinary.filter((anime: any) => airingAtMs(anime) > now);
+    const aired = ordinary.filter((anime: any) => airingAtMs(anime) <= now);
     return [
+      { title: 'Schedule changes', items: changed },
       { title: 'Airing Soon', items: upcoming },
       { title: 'Already Aired', items: aired },
     ].filter((group) => group.items.length);
@@ -528,8 +542,8 @@ export default function DesktopSchedule() {
                 <TriangleAlert className="h-4 w-4" />
               </span>
               <div>
-                <h2 id="recent-schedule-alerts" className="text-sm font-semibold text-white">Recent delay and cancellation alerts</h2>
-                <p className="mt-0.5 text-xs text-white/46">Confirmed delays and cancellations appear here; changed times are labeled separately as rescheduled.</p>
+                <h2 id="recent-schedule-alerts" className="text-sm font-semibold text-white">Recent schedule changes</h2>
+                <p className="mt-0.5 text-xs text-white/46">Confirmed updates for each episode and release track.</p>
               </div>
             </div>
             <span className="text-xs font-semibold text-white/42">{scheduleUpdates.length} update{scheduleUpdates.length === 1 ? '' : 's'}</span>
@@ -540,11 +554,11 @@ export default function DesktopSchedule() {
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-semibold text-white">{update.title}</span>
                   <span className={`shrink-0 text-[10px] font-semibold ${update.kind === 'cancelled' ? 'text-red-200' : 'text-amber-200'}`}>
-                    {update.kind === 'cancelled' ? 'Cancelled' : 'Delayed'}
+                    {update.kind.charAt(0).toUpperCase() + update.kind.slice(1)}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-white/50">
-                  Episode {update.episode}{update.kind === 'delayed' ? ` · ${formatAiringTime(update.airingAt)}` : ''}
+                  Episode {update.episode} · {update.releaseTrack || 'original'} · {update.airingAt ? formatAiringTime(update.airingAt) : 'Awaiting new date'}
                 </p>
               </div>
             ))}
@@ -563,6 +577,7 @@ export default function DesktopSchedule() {
 
       <div className="mt-4 flex flex-wrap items-center gap-3"><input aria-label="Search this broadcast day" className="sn-input min-w-0 flex-1 px-4 py-3" value={daySearch} onChange={event=>setDaySearch(event.target.value)} placeholder="Find an anime on this day…" /><button className="sn-secondary-action" aria-pressed={trackedOnly} onClick={()=>setTrackedOnly(value=>!value)}>{trackedOnly ? 'My week · tracked shows' : 'All broadcasts'}</button><button className="sn-secondary-action" onClick={()=>{setSelectedDay(0);setDaySearch('');}}>Today</button></div>
       <section id="broadcast-agenda" role="tabpanel" aria-labelledby={`broadcast-day-${selectedDay}`} className="mt-7">
+        {trackState.error && <p role="status" className="mb-4 text-sm text-white/60">Additional release-track updates are temporarily unavailable. Previously reported changes remain visible.{isAdmin && <span className="block text-xs">{trackState.error}</span>}</p>}
         {scheduleQuery.isError ? <DesktopScheduleFallback isAdmin={isAdmin} key={active.start} favoritesOnly={favoritesOnly} search={daySearch} matchesTracked={trackedOnly ? (anime: any) => isInMyList(animeIdentity(anime)) || watchedSeries.some(record => desktopWatchedSeriesMatchesAnime(record, anime)) : undefined} selectedWeekday={new Date(active.start * 1000).toLocaleDateString('en-US', { weekday: 'long' }) + 's'} /> : null}
         {scheduleQuery.isError && scheduleQuery.data ? (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300/15 bg-amber-300/[0.06] px-4 py-3" role="status">
@@ -621,9 +636,10 @@ export default function DesktopSchedule() {
                         ? 'This episode has already aired'
                         : 'Reminder unavailable until release time is known';
                     return (
-                      <div key={anime.scheduleId || `${anime.mal_id}-${anime.airingEpisode}`} className="broadcast-ticket">
-                        <div className="broadcast-time"><strong>{time}</strong><span>{broadcastState.label}</span></div>
-                        <Link className="broadcast-title" to={scheduleWatchPath(anime)} onClick={() => primeScheduleWatch(anime)}><img src={scheduleArtwork(anime)} alt="" loading="lazy" /><span><small>EPISODE {anime.airingEpisode || 'TBA'}</small><strong>{safeReminderTitle(anime)}</strong><span>{broadcastState.detail || `Scheduled in ${timezone}`}</span></span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
+                      <div key={scheduleRevisionKey(anime)} className="broadcast-ticket" data-schedule-state={broadcastState.prominent ? broadcastState.kind : undefined}>
+                        <div className="broadcast-time">{anime.previousAiringAt && broadcastState.prominent ? <del className="text-xs text-white/45">{formatAiringTime(Number(anime.previousAiringAt))}</del> : null}<strong>{time}</strong><span className={broadcastState.prominent ? 'font-semibold text-amber-200' : ''}>{broadcastState.label}</span></div>
+                        <Link className="broadcast-title" to={scheduleWatchPath(anime)} onClick={() => primeScheduleWatch(anime)}><img src={scheduleArtwork(anime)} alt="" loading="lazy" /><span><small>EPISODE {anime.airingEpisode || 'TBA'} · {anime.releaseTrack === 'dub' ? 'DUB' : anime.releaseTrack === 'sub' ? 'SUB' : 'ORIGINAL'}</small><strong>{safeReminderTitle(anime)}</strong><span>{broadcastState.detail || `Scheduled in ${timezone}`}</span></span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
+                        {broadcastState.prominent && <details className="col-span-full px-4 pb-3 text-xs text-white/65"><summary className="cursor-pointer py-2">Schedule details</summary><p className="mt-2">{anime.scheduleReason || broadcastState.detail}{!airingMs && ' Awaiting new date.'}</p>{anime.scheduleFetchedAt && <p className="mt-2 text-white/45">Last reported {new Date(anime.scheduleFetchedAt).toLocaleString()}</p>}</details>}
                         <div className="broadcast-actions flex gap-2">
                           <button
                             type="button"

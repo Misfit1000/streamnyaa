@@ -2,6 +2,8 @@
 mod data_requests;
 mod source_identity;
 mod reminder_scheduler;
+mod schedule_updates;
+mod trailer_webview;
 #[cfg(test)]
 mod player_download;
 mod player_shortcuts;
@@ -6345,7 +6347,11 @@ fn install_system_tray(app: &tauri::App) -> tauri::Result<()> {
 }
 
 fn main() {
-    tauri::Builder::default()
+    // An opt-in debug validation profile must not attach to the user's installed app.
+    // Release builds always retain normal single-instance ownership.
+    let isolated = cfg!(debug_assertions) && env::var("STREAMNYAA_ISOLATED_VALIDATION").as_deref() == Ok("1");
+    let builder = tauri::Builder::default();
+    let builder = if isolated { builder } else { builder
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             for argument in argv {
                 if let Ok(url) = tauri::Url::parse(&argument) {
@@ -6353,7 +6359,8 @@ fn main() {
                 }
             }
             show_main_window(app);
-        }))
+        })) };
+    builder
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -6381,6 +6388,7 @@ fn main() {
             ) {
                 let _ = window.set_icon(icon);
             }
+            trailer_webview::install(app.handle());
             install_system_tray(app)?;
             spawn_player_watchdog();
             download_queue::start();
@@ -6400,6 +6408,8 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             classify_desktop_sources,
+            schedule_updates::get_desktop_schedule_alerts,
+            schedule_updates::configure_desktop_schedule_alerts,
             reminder_scheduler::get_desktop_reminder_state,
             reminder_scheduler::set_desktop_reminder_permission,
             reminder_scheduler::sync_desktop_reminder_subscriptions,

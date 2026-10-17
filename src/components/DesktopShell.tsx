@@ -1,3 +1,4 @@
+import { startScheduleAlertBridge } from '../lib/desktopScheduleAlerts';
 import DesktopProgressBridge from './DesktopProgressBridge';
 import DesktopDownloadManager from './DesktopDownloadManager';
 import DesktopActivityCenter from './DesktopActivityCenter';
@@ -348,7 +349,9 @@ export default function DesktopShell() {
     let disposed = false;
     let cleanup: (() => void) | undefined;
     void startDesktopReminderBridge().then(value => { if (disposed) value(); else cleanup = value; }).catch(() => undefined);
-    return () => { disposed = true; cleanup?.(); };
+    let cleanupAlerts: (() => void) | undefined;
+    void startScheduleAlertBridge().then(value => { if (disposed) value(); else cleanupAlerts = value; }).catch(() => undefined);
+    return () => { disposed = true; cleanup?.(); cleanupAlerts?.(); };
   }, []);
 
   useEffect(() => {
