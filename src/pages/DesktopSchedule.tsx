@@ -1,3 +1,5 @@
+import DesktopScheduleArtwork from '../components/DesktopScheduleArtwork';
+import { groupScheduleEpisodes, scheduleArtworkCandidates, scheduleTrackLabel } from '../lib/desktopSchedulePresentation';
 import { DesktopScheduleReminders, DesktopScheduleStatus } from '../components/DesktopScheduleControls';
 import { mergeScheduleTracks, readScheduleAlertState, scheduleDisplayTime, subscribeScheduleTracks } from '../lib/desktopScheduleAlerts';
 import { scheduleRevisionKey } from '../lib/scheduleRevisions';
@@ -237,15 +239,7 @@ function formatAiringTime(ms: number) {
   });
 }
 
-function scheduleArtwork(anime: any) {
-  return anime?.images?.webp?.large_image_url
-    || anime?.images?.jpg?.large_image_url
-    || anime?.cover_image
-    || anime?.coverImage?.extraLarge
-    || anime?.coverImage?.large
-    || anime?.image
-    || '';
-}
+function scheduleArtwork(anime: any) { return scheduleArtworkCandidates(anime)[0] || ''; }
 
 export default function DesktopSchedule() {
   const { isAdmin } = useAuth();
@@ -480,7 +474,7 @@ export default function DesktopSchedule() {
         </div>
       </section>
 
-      {trackState.persistenceError && <div role="status" className="sn-calendar-storage-notice">Calendar updates are available, but could not be saved on this device. Check free space and folder access; saving will retry automatically.</div>}
+      {trackState.persistenceError && <div role="status" className="sn-calendar-storage-notice">Calendar updates are visible, but the native schedule cache could not be saved. Saving will retry automatically. {trackState.persistenceError}</div>}
 
       {notice ? (
         <div
@@ -579,10 +573,10 @@ export default function DesktopSchedule() {
               <div key={group.title}>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-xl font-semibold tracking-[-0.01em] text-white">{group.title}</h2>
-                  <span className="sn-category-chip px-3 py-1.5 text-xs">{group.items.length} titles</span>
+                  <span className="sn-category-chip px-3 py-1.5 text-xs">{new Set(group.items.map((item: any) => desktopCanonicalAnimeId(item))).size} titles</span>
                 </div>
                 <div className="broadcast-agenda-list">
-                  {[...group.items].sort((a: any, b: any) => airingAtMs(a) - airingAtMs(b)).map((anime: any) => {
+                  {groupScheduleEpisodes([...group.items].sort((a: any, b: any) => airingAtMs(a) - airingAtMs(b))).map(({ key, anime, tracks }) => {
                     const airingMs = airingAtMs(anime);
                     const date = new Date(airingMs);
                     const time = airingMs ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : 'TBA';
@@ -596,13 +590,22 @@ export default function DesktopSchedule() {
                     const reminderPending = pendingReminderId === desktopCanonicalAnimeId(anime);
                     const reminderUnavailableTitle = 'A verified anime identity is required to follow this title';
                     return (
-                      <div key={scheduleRevisionKey(anime)} className="broadcast-ticket" data-schedule-state={broadcastState.prominent ? broadcastState.kind : undefined}>
+                      <div key={key} className="broadcast-ticket" data-schedule-state={broadcastState.prominent ? broadcastState.kind : undefined}>
                         <div className="broadcast-time"><strong>{broadcastState.prominent ? <CalendarDays className="h-5 w-5" aria-hidden="true" /> : time}</strong>{!broadcastState.prominent && <span>{broadcastState.label}</span>}</div>
-                        <Link className="broadcast-title" to={scheduleWatchPath(anime)} onClick={() => primeScheduleWatch(anime)}><img src={scheduleArtwork(anime)} alt="" loading="lazy" /><span><small>EPISODE {anime.airingEpisode || 'TBA'} · {anime.releaseTrack === 'dub' ? 'DUB' : anime.releaseTrack === 'sub' ? 'SUB' : 'ORIGINAL'}</small><strong>{safeReminderTitle(anime)}</strong>{!broadcastState.prominent && <span>{`Scheduled in ${timezone}`}</span>}</span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
-                        {broadcastState.prominent && <DesktopScheduleStatus kind={broadcastState.kind} label={broadcastState.label}
-                          previousAt={airingAtMs({airingAt:anime.previousAiringAt})} revisedAt={airingMs}
-                          reason={anime.scheduleReason || broadcastState.detail} fetchedAt={Number(anime.scheduleFetchedAt) || undefined}
-                          stale={Boolean(trackState.error) || Boolean(anime.scheduleFetchedAt && clock - Number(anime.scheduleFetchedAt) > 30*60_000)} />}
+                        <Link className="broadcast-title" to={scheduleWatchPath(anime)} onClick={() => primeScheduleWatch(anime)}><DesktopScheduleArtwork anime={anime} /><span><small>EPISODE {anime.airingEpisode || 'TBA'}</small><strong>{safeReminderTitle(anime)}</strong></span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
+                        <div className="sn-schedule-tracks" aria-label="Release tracks">
+                          {tracks.map(track => {
+                            const state = scheduleBroadcastState(track, airingAtMs(track));
+                            return <div className="sn-schedule-track" key={scheduleRevisionKey(track)}>
+                              <span className="sn-schedule-track-label">{scheduleTrackLabel(track)}</span>
+                              {state.prominent ? <DesktopScheduleStatus kind={state.kind} label={state.label}
+                                previousAt={airingAtMs({airingAt:track.previousAiringAt})} revisedAt={airingAtMs(track)}
+                                reason={track.scheduleReason || state.detail} fetchedAt={Number(track.scheduleFetchedAt) || undefined}
+                                stale={Boolean(trackState.error) || Boolean(track.scheduleFetchedAt && clock - Number(track.scheduleFetchedAt) > 30*60_000)} />
+                                : <span className="sn-schedule-track-time">{airingAtMs(track) ? new Date(airingAtMs(track)).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Time to be announced'} · {state.label}</span>}
+                            </div>;
+                          })}
+                        </div>
                         <div className="broadcast-actions flex gap-2">
                           <button
                             type="button"

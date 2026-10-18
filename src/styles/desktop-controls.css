@@ -12,3 +12,5 @@
 .sn-action-menu-up>.sn-action-menu-items{top:auto;bottom:calc(100% + 6px)}.sn-action-menu-items>button{display:block;width:100%;min-height:42px;padding:10px 12px;border-radius:5px;text-align:left;font-size:13px;line-height:1.4;color:#f4f4f6}.sn-action-menu-items>button:disabled{opacity:.4;cursor:not-allowed}.sn-action-menu-items>button:is(:hover,:focus-visible):not(:disabled){background:#ffffff10}
 @media(min-width:1600px){.sn-drawer-docked{background:transparent}.sn-drawer-docked .sn-drawer-panel{width:350px;box-shadow:none}}
 @media(prefers-reduced-motion:reduce){.sn-drawer-layer *,.sn-action-menu *{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
+
+.sn-drawer-heading h2{display:flex;align-items:center;gap:14px}

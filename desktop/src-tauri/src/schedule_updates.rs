@@ -141,6 +141,7 @@ fn load_from(path: &std::path::Path) -> State {
             return None;
         }
         s.version = 1;
+        restore_schedule_artwork(&mut s);
         Some(s)
     };
     if let Some(s) = read(path, false) {
@@ -296,6 +297,21 @@ fn kind(row: &Value) -> Option<&'static str> {
         None
     }
 }
+fn schedule_artwork(row: &Value) -> Option<String> {
+    let route = row["imageVersionRoute"].as_str()?;
+    if !route.starts_with("anime/") || route.len() > 500 || route.contains("..")
+        || !route.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.')) { return None; }
+    Some(format!("https://img.animeschedule.net/production/assets/public/img/{route}"))
+}
+fn restore_schedule_artwork(state: &mut State) {
+    for track in &mut state.tracks {
+        if track["image"].as_str().is_some_and(|s| !s.is_empty()) { continue; }
+        if let Some(row) = state.feed.iter().find(|row| row["route"].as_str().is_some()
+            && row["route"] == track["sourceRoute"]) {
+            if let Some(image) = schedule_artwork(row) { track["image"] = json!(image); }
+        }
+    }
+}
 pub fn normalize(row: &Value, detail: &Value, fetched: u64) -> Option<Value> {
     let (anilist, mal) = ids(detail);
     let anime_id = anilist
@@ -336,6 +352,7 @@ pub fn normalize(row: &Value, detail: &Value, fetched: u64) -> Option<Value> {
     };
     Some(
         json!({"id":anilist,"anilist_id":anilist,"mal_id":mal,"canonicalId":anime_id,
+        "image":schedule_artwork(row),
         "title":row["english"].as_str().or(row["romaji"].as_str()).or(row["title"].as_str()).unwrap_or("Anime"),
         "airingEpisode":episode,"airingAt":revised/1000,"previousAiringAt":previous,
         "releaseTrack":track,"scheduleStatus":status.unwrap_or("scheduled"),"scheduleReason":row["delayedText"].as_str().unwrap_or(""),
@@ -378,6 +395,11 @@ fn reconcile(state: &mut State, mut row: Value, now: u64) {
         } else {
             retained
         });
+    }
+    if row["image"].as_str().is_none_or(|s| s.is_empty()) {
+        if let Some(image) = prior.as_ref().and_then(|v| v["image"].as_str()).filter(|s| !s.is_empty()) {
+            row["image"] = json!(image);
+        }
     }
     let status = row["scheduleStatus"].as_str().unwrap_or("scheduled");
     if matches!(
@@ -836,6 +858,21 @@ mod tests {
         ));
         fs::create_dir(&root).unwrap();
         root
+    }
+    #[test]
+    fn artwork_survives_normalization_refresh_and_legacy_cache_hydration() {
+        let detail=json!({"websites":{"anilist":"https://anilist.co/anime/1"}});
+        let row=json!({"airType":"dub","route":"chiikawa","episodeNumber":383,"airingStatus":"delayed-air","imageVersionRoute":"anime/jpg/default/chiikawa-c656267c1a.jpg"});
+        let mut track=normalize(&row,&detail,1000).unwrap();
+        assert_eq!(track["image"],"https://img.animeschedule.net/production/assets/public/img/anime/jpg/default/chiikawa-c656267c1a.jpg");
+        let mut state=State::default();
+        reconcile(&mut state,track.clone(),1000);
+        track["image"]=Value::Null; reconcile(&mut state,track,2000);
+        assert!(state.tracks[0]["image"].as_str().is_some());
+        state.tracks[0]["image"]=Value::Null;state.feed=vec![row];restore_schedule_artwork(&mut state);
+        assert!(state.tracks[0]["image"].as_str().is_some());
+        assert!(schedule_artwork(&json!({"imageVersionRoute":"anime/../../private"})).is_none());
+        assert!(schedule_artwork(&json!({"imageVersionRoute":"https://other.test/a"})).is_none());
     }
     #[test]
     fn windows_atomic_save_replaces_and_reopens_schema_one() {

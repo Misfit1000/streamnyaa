@@ -304,7 +304,7 @@ fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(2))
+            .connect_timeout(Duration::from_secs(6))
             .timeout(Duration::from_secs(8))
             .pool_idle_timeout(Duration::from_secs(90))
             .pool_max_idle_per_host(4)
@@ -377,6 +377,7 @@ async fn fetch_bytes_with_attempts(
     }
     let admission_deadline = Instant::now() + Duration::from_secs(60);
     let max_attempts = max_attempts.clamp(1, 2);
+    let mut connection_relay = None;
     for attempt in 0..max_attempts {
         let permit = slot_until(provider, priority.clone(), admission_deadline).await?;
         let mut request = if let Some(body) = body {
@@ -387,6 +388,10 @@ async fn fetch_bytes_with_attempts(
         if let Some(token) = bearer {
             request = request.bearer_auth(token);
         }
+        // Retry a failed connection through the existing same-provider relay,
+        // within the original two-attempt budget. Never route around HTTP denial
+        // or throttling, and never change the requested identity/page.
+        if let Some(relay) = &connection_relay { request = client().get(relay); }
         let result = request.send().await;
         match result {
             Ok(mut response) => {
@@ -467,6 +472,8 @@ async fn fetch_bytes_with_attempts(
                     if response.content_length().unwrap_or(0) > MAX_REMOTE_RESPONSE_BYTES {
                         return Err(DataError::new(provider, "invalid"));
                     }
+                    let relay_cache = response.headers().get("X-StreamNyaa-Metadata-Cache").and_then(|v| v.to_str().ok()).unwrap_or("MISS").to_string();
+                    let relay_fetched_at = response.headers().get("X-StreamNyaa-Fetched-At").and_then(|v| v.to_str().ok()).and_then(|s| s.parse::<u128>().ok());
                     let mut bytes = Vec::new();
                     while let Some(chunk) = response
                         .chunk()
@@ -477,6 +484,19 @@ async fn fetch_bytes_with_attempts(
                             return Err(DataError::new(provider, "invalid"));
                         }
                         bytes.extend_from_slice(&chunk);
+                    }
+                    if provider == "jikan" && connection_relay.is_some() {
+                        if let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                            if let Some(object) = value.as_object_mut() {
+                                // Older gateways expose cache status but no retrieval time.
+                                // Their cached replies remain usable, never newly fresh.
+                                object.entry("streamnyaa").or_insert_with(|| serde_json::json!({
+                                    "fetchedAt":relay_fetched_at.unwrap_or(if relay_cache == "MISS" {now_millis()} else {0}),
+                                    "stale":relay_cache == "STALE" || relay_cache != "MISS" && relay_fetched_at.is_none()
+                                }));
+                                return serde_json::to_vec(&value).map_err(|_| DataError::new(provider,"invalid"));
+                            }
+                        }
                     }
                     return Ok(bytes);
                 }
@@ -496,6 +516,9 @@ async fn fetch_bytes_with_attempts(
                 }
             }
             Err(error) => {
+                if error.is_connect() && provider == "jikan" && body.is_none() && attempt == 0 {
+                    connection_relay = jikan_connection_relay(url);
+                }
                 log_info(format!(
                     "Data transport provider={} attempt={} timeout={} connect={} body={} decode={}",
                     provider,
@@ -521,6 +544,13 @@ async fn fetch_bytes_with_attempts(
         tokio::time::sleep(Duration::from_millis(350 + (now_millis() % 250) as u64)).await;
     }
     Err(DataError::new(provider, "error"))
+}
+fn jikan_connection_relay(url: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(url).ok()?;
+    if parsed.host_str() != Some("api.jikan.moe") || !allowed_url(url) { return None; }
+    let mut path = parsed.path().strip_prefix("/v4")?.to_string();
+    if let Some(query) = parsed.query() { path.push('?'); path.push_str(query); }
+    Some(format!("https://www.streamnyaa.xyz/api/stream-sources?provider=jikan&ttl=600&path={}", percent_encode(&path)))
 }
 async fn metadata(
     request: &MetadataApiRequest,
@@ -794,8 +824,9 @@ async fn run(job: Job, priority: Arc<AtomicU8>, timeout: Duration) -> Outcome {
             .await?
         }
     };
-    let fetched_at = now_millis();
-    if complete {
+    let stale = provider == "jikan" && data["streamnyaa"]["stale"] == true;
+    let fetched_at = if provider == "jikan" { data["streamnyaa"]["fetchedAt"].as_u64().map(u128::from).unwrap_or_else(now_millis) } else { now_millis() };
+    if complete && !stale {
         if let Ok(mut cache) = cache.lock() {
             cache.insert(
                 key,
@@ -818,7 +849,7 @@ async fn run(job: Job, priority: Arc<AtomicU8>, timeout: Duration) -> Outcome {
     Ok(DataResponse {
         data,
         fetched_at,
-        cache_status: "network",
+        cache_status: if stale { "stale" } else { "network" },
         complete,
         provider,
         duration_ms: started.elapsed().as_millis(),
@@ -922,6 +953,20 @@ pub async fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn connection_relay_keeps_exact_jikan_identity_and_page() {
+        assert_eq!(jikan_connection_relay("https://api.jikan.moe/v4/anime/52991/episodes?page=2"),
+            Some("https://www.streamnyaa.xyz/api/stream-sources?provider=jikan&ttl=600&path=%2Fanime%2F52991%2Fepisodes%3Fpage%3D2".into()));
+        assert!(jikan_connection_relay("https://api.jikan.moe.evil.test/v4/anime/1").is_none());
+        assert!(jikan_connection_relay("https://api.jikan.moe/not-v4/anime/1").is_none());
+    }
+    #[tokio::test]
+    #[ignore = "explicit live public metadata probe"]
+    async fn live_jikan_episode_connection_probe() {
+        let request = MetadataApiRequest {provider:"jikan".into(), path:Some("/anime/52991/episodes".into()),body:None,ttl_seconds:Some(600)};
+        let result = metadata(&request, Arc::new(AtomicU8::new(0))).await.expect("Jikan direct/connection recovery must return real episode metadata");
+        assert!(result["data"].as_array().is_some_and(|entries| !entries.is_empty()));
+    }
     #[tokio::test]
     async fn denied_endpoint_is_not_retried_by_other_consumers() {
         let provider = "test-denied";

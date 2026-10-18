@@ -1210,7 +1210,7 @@ export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: 
     const saved = isDesktopApp() && !json.data.length ? readEpisodePage(id, page) : undefined;
     if (saved?.data.length) return { data: saved.data, pagination: saved.pagination,
       streamnyaa: { status: 'stale', provider: 'jikan', savedAt: saved.savedAt } };
-    const fetchedAt = Number(res.headers.get('X-StreamNyaa-Fetched-At')) || Date.now();
+    const fetchedAt = Number(res.headers.get('X-StreamNyaa-Fetched-At')) || (stale ? undefined : Date.now());
     if (!stale) saveEpisodePage(id, page, json, fetchedAt);
     return {
       ...json,
@@ -1233,6 +1233,15 @@ export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: 
   }
 };
 
+/** Hydrate the requested page before its refresh starts, retaining its real age. */
+export function cachedAnimeEpisodeWindow(id: string, page = 1) {
+  const saved = readEpisodePage(id, page);
+  if (!saved) return undefined;
+  const last = saved.pagination.last_visible_page;
+  const fresh = Date.now() - saved.savedAt < 600_000;
+  return {data:saved.data,pagination:saved.pagination,latestPage:last,latestPageResolved:fresh && (last === page || last === 1),
+    complete:fresh && (last === page || last === 1),streamnyaa:{status:fresh ? 'authoritative' : 'stale',provider:'jikan',fetchedAt:saved.savedAt,savedAt:saved.savedAt}};
+}
 /** Requested episodes are usable without waiting for an optional latest-page request. */
 export async function fetchAnimeEpisodeWindow(id: string, page = 1, options: DesktopRequestOptions = {}) {
   const current = await fetchAnimeEpisodes(id, page, options);

@@ -1,3 +1,4 @@
+import { SCHEDULE_ALERT_STATE_KEY, scheduleStateForBackup } from './desktopScheduleState';
 import { loadStoredSession } from './supabaseAuth';
 import {mergeCoverage,coveragePercent,type WatchedCoverage} from './desktopCoverage';
 import { animeIdentity, animeTitleKey } from './animeIdentity';
@@ -889,7 +890,7 @@ export function exportDesktopSettingsBackup() {
   const entries: Record<string, string> = {};
   if (typeof window !== 'undefined') {
     SAFE_DESKTOP_BACKUP_KEYS.forEach((key) => {
-      const value = localStorage.getItem(key);
+      const value = key === SCHEDULE_ALERT_STATE_KEY ? scheduleStateForBackup() : localStorage.getItem(key);
       if (typeof value === 'string') entries[key] = value;
     });
   }

@@ -23,6 +23,13 @@ it('keeps saved episode titles after an empty upstream response',async()=>{
   const result=await api.fetchAnimeEpisodes('1001');
   expect(result.data[0].title).toBe('Title 1');expect(result.streamnyaa.status).toBe('stale');
 });
+it('hydrates a saved requested page immediately without changing its timestamp or issuing a request',async()=>{
+  invoke.mockResolvedValueOnce(response(page(101,3)));
+  await api.fetchAnimeEpisodes('1010',2);
+  const fetchedAt=Date.now();vi.setSystemTime(fetchedAt+601_000);invoke.mockClear();
+  expect(api.cachedAnimeEpisodeWindow('1010',2)).toMatchObject({data:[{mal_id:101}],latestPage:3,latestPageResolved:false,streamnyaa:{status:'stale',fetchedAt}});
+  expect(api.cachedAnimeEpisodeWindow('1010',1)).toBeUndefined();expect(invoke).not.toHaveBeenCalled();
+});
 it('retains the requested page when only the final page fails',async()=>{
   invoke.mockResolvedValueOnce(response(page(1,3))).mockRejectedValueOnce({code:'error',provider:'jikan',message:'Unavailable',statusCode:504,retryable:true});
   const result=await api.fetchAnimeEpisodeWindow('1002');

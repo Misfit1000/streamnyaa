@@ -138,6 +138,9 @@ async function fetchJikan(req: any, ttlSeconds: number) {
 
   return cachedJson(`jikan:${path}`, ttlSeconds, async () => {
     const response = await fetch(`${JIKAN_URL}${path}`, {
+      // Leave room for the desktop's eight-second HTTP bound to receive a
+      // cached response or an actionable error instead of another silent timeout.
+      signal: AbortSignal.timeout(5000),
       headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa Metadata Cache/1.0' },
     });
     const data = await response.json();
@@ -298,7 +301,8 @@ export default async function handler(req: any, res: any) {
     if (provider === 'jikan') {
       if (req.method !== 'GET') return res.status(405).json({ error: 'Jikan cache requires GET.' });
       const result = await fetchJikan(req, ttlSeconds);
-      return sendCached(res, result.value, ttlSeconds, result.state);
+      res.setHeader('X-StreamNyaa-Fetched-At', String(result.fetchedAt));
+      return sendCached(res, { ...result.value as Record<string, unknown>, streamnyaa: { fetchedAt: result.fetchedAt, stale: result.state === 'STALE' } }, ttlSeconds, result.state);
     }
 
     if (provider === 'tmdb') {

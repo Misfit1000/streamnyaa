@@ -54,9 +54,13 @@ function CastContents({ identity }: { identity: CastIdentity }) {
 }
 export default function DesktopAnimeCast({ identity }: { identity: CastIdentity }) {
   const [open, setOpen] = useState(false); const region = useId();
+  const cached = useInfiniteQuery({queryKey:['desktop-cast',castIdentityKey(identity),1], initialPageParam:1,
+    queryFn:({signal})=>fetchAnimeCast(identity,1,{signal}),getNextPageParam:()=>undefined,enabled:false,staleTime:86400_000,gcTime:86400_000});
+  const previews = cached.data?.pages.flatMap(page=>page.data).filter(record=>record.image).slice(0,3) || [];
+
   return <section className="sn-glass-panel mb-5 overflow-hidden rounded-xl" aria-label="Cast and characters">
     <button type="button" aria-expanded={open} aria-controls={region} onClick={() => setOpen(value => !value)} className="flex min-h-16 w-full items-center gap-3 p-5 text-left hover:bg-white/[0.025] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-      <Users className="h-5 w-5 shrink-0 text-primary" /><span className="min-w-0 flex-1"><span className="block font-semibold">Cast &amp; characters</span><span className="mt-1 block text-xs text-white/50">Characters and voice actors</span></span><ChevronDown className={`h-5 w-5 text-white/60 motion-safe:transition-transform ${open ? 'rotate-180' : ''}`} />
+      <Users className="h-5 w-5 shrink-0 text-primary" /><span className="min-w-0 flex-1"><span className="block font-semibold">Cast &amp; characters</span><span className="mt-1 block text-xs text-white/50">Characters and voice actors</span></span><span className="sn-watch-cast-previews" aria-hidden="true">{previews.map(record=><img key={record.id} src={record.image} alt="" referrerPolicy="no-referrer" onError={event=>{event.currentTarget.style.visibility='hidden';}} />)}</span><ChevronDown className={`h-5 w-5 text-white/60 motion-safe:transition-transform ${open ? 'rotate-180' : ''}`} />
     </button>
     <div id={region} hidden={!open}>{open && <CastContents key={castIdentityKey(identity)} identity={identity} />}</div>
   </section>;

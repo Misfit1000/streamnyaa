@@ -5,7 +5,7 @@ import DesktopActivityCenter from './DesktopActivityCenter';
 import { memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { Bookmark, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
-import desktopLogo from '../assets/desktop-logo.png';
+import DesktopBrand from './DesktopBrand';
 import DesktopCommandPalette from './DesktopCommandPalette';
 import DesktopNotificationCenter from './DesktopNotificationCenter';
 import DesktopSessionRecovery from './DesktopSessionRecovery';
@@ -184,7 +184,6 @@ export default function DesktopShell() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isWatch = location.pathname.startsWith('/watch/');
-  const [logoFailed, setLogoFailed] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [topSearchValue, setTopSearchValue] = useState('');
@@ -420,24 +419,7 @@ export default function DesktopShell() {
       <div className={`relative grid min-h-screen w-screen overflow-hidden bg-black/20 shadow-none shadow-black/40 transition-[grid-template-columns] duration-300 ${sidebarCollapsed ? 'grid-cols-[86px_minmax(0,1fr)]' : 'grid-cols-[258px_minmax(0,1fr)]'}`}>
         <aside className={`sn-sidebar-panel flex h-screen flex-col py-6 transition-[padding] duration-300 ${sidebarCollapsed ? 'px-3' : 'px-5'}`}>
           <Link to="/" className={`flex h-[58px] items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-1'}`}>
-            {logoFailed ? (
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary text-[21px] font-semibold text-white">S</span>
-            ) : (
-              <img
-                src={desktopLogo}
-                alt="StreamNyaa"
-                className="h-11 w-11 shrink-0 rounded-xl object-contain drop-shadow-[0_10px_24px_rgba(244,63,94,0.18)]"
-                loading="eager"
-                decoding="async"
-                onError={() => setLogoFailed(true)}
-              />
-            )}
-            {!sidebarCollapsed ? <span className="flex min-w-0 flex-col justify-center">
-              <span className="block text-[23px] font-semibold leading-none tracking-[-0.052em] text-white">
-                Stream<span className="text-primary">Nyaa</span>
-              </span>
-              <span className="mt-1.5 block text-[11px] font-semibold normal-case leading-[1.1] tracking-normal text-white/42">Desktop Cinema</span>
-            </span> : null}
+            <DesktopBrand collapsed={sidebarCollapsed} />
           </Link>
 
           <nav className="mt-7 space-y-2">

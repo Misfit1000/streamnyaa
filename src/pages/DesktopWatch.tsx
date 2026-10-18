@@ -1,4 +1,4 @@
-import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
+import DesktopWatchEpisodeCard from '../components/DesktopWatchEpisodeCard';
 import { mergeScheduleWatchEvidence } from '../lib/desktopScheduleWatch';
 import DesktopDrawer from '../components/DesktopDrawer';
 import DesktopActionMenu from '../components/DesktopActionMenu';
@@ -17,11 +17,11 @@ import { clearInterruptedPlayback } from '../lib/desktopInterruptedSession';
 import { enqueueDownload, enqueueDownloadSelection } from '../lib/desktopDownloads';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2, Database, Info } from 'lucide-react';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
-import { fetchAnimeDetails, fetchAnimeEpisodeWindow, fetchAnimeEpisodeTail, mergeAnimeEpisodeTail, fetchAnimeInstallments } from '../api/jikan';
+import { fetchAnimeDetails, cachedAnimeEpisodeWindow, fetchAnimeEpisodeWindow, fetchAnimeEpisodeTail, mergeAnimeEpisodeTail, fetchAnimeInstallments } from '../api/jikan';
 import { loadSeriesTimeline, type TimelineResult } from '../lib/desktopSeriesTimeline';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
@@ -1865,6 +1865,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
   const episodeQuery = useQuery({
     queryKey: ['episodes', episodeLookupId, episodePage, 3],
+    initialData: () => cachedAnimeEpisodeWindow(episodeLookupId, episodePage),
+    initialDataUpdatedAt: () => cachedAnimeEpisodeWindow(episodeLookupId, episodePage)?.streamnyaa.fetchedAt,
     queryFn: ({ signal }) => fetchAnimeEpisodeWindow(episodeLookupId, episodePage, { signal }),
     enabled: canFetchEpisodeMetadata,
     retry: false,
@@ -2002,7 +2004,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     const duration = String(animeInfo?.duration || '').replace(/\s+per\s+ep(?:isode)?\.?/i, '').trim();
     const studios = animeStudiosFor(animeInfo);
     const synopsis = String(animeInfo?.synopsis || '').trim();
-    const maxSynopsisChars = 430;
+    const maxSynopsisChars = 235;
     const canExpandSynopsis = synopsis.length > maxSynopsisChars;
     const visibleSynopsis = canExpandSynopsis && !synopsisExpanded
       ? `${synopsis.slice(0, maxSynopsisChars).trim()}...`
@@ -2952,7 +2954,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             {leftPanelInfo.genres.length ? (
               <div className="mt-4 flex flex-wrap gap-2">
                 {leftPanelInfo.genres.map((genre: any) => (
-                  <span key={genre.name} className="rounded-full bg-white/[0.07] px-3 py-1.5 text-xs font-semibold text-white/82 shadow-sm shadow-black/20">{genre.name}</span>
+                  <span key={genre.name} className="sn-genre-pill rounded-full text-white/82">{genre.name}</span>
                 ))}
                 {leftPanelInfo.extraGenreCount > 0 ? (
                   <span className="rounded-full bg-white/[0.045] px-3 py-1.5 text-xs font-semibold text-white/46">+{leftPanelInfo.extraGenreCount} more</span>
@@ -2975,65 +2977,14 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 ) : null}
               </div>
             ) : null}
-            <DesktopBookmarkButton anime={anime} label className="sn-secondary-action sn-watch-bookmark mt-4" />
             {leftPanelInfo.trailerUrl ? (
-              <div className="sn-glass-card mt-5 overflow-hidden rounded-xl">
-                <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] px-3.5 py-2.5">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-primary/30 bg-primary/16 text-primary">
-                      <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-semibold normal-case tracking-normal text-primary">Trailer</p>
-                      <p className="mt-0.5 line-clamp-1 text-xs font-semibold text-white/48">{anime.title}</p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {leftPanelInfo.trailerYear ? (
-                      <span className="rounded-full border border-white/[0.10] bg-black/30 px-2 py-1 text-[10px] font-semibold text-white/56">
-                        {leftPanelInfo.trailerYear}
-                      </span>
-                    ) : null}
-                    {trailerOpen ? (
-                      <button
-                        type="button"
-                        onClick={() => setTrailerOpen(false)}
-                        className="rounded-full border border-white/[0.10] bg-white/[0.045] px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/58 transition-colors hover:border-white/18 hover:text-white"
-                      >
-                        Close
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
+              <div className="sn-watch-trailer">
+                <button type="button" onClick={() => setTrailerOpen(true)} aria-label={`Play ${anime.title} trailer`}>
+                  <span className="sn-watch-trailer-preview"><SafeImage candidates={trailerPreviewImages} alt="" className="h-full w-full object-cover" /><span><Play size={18} fill="currentColor" /></span></span>
+                  <span><strong>Trailer</strong><small>{anime.title}</small></span>
+                </button>
                 {trailerOpen && trailerEmbedUrl && <DesktopTrailer title={anime.title} url={trailerEmbedUrl} onClose={closeTrailer} />}
-                {(
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (trailerEmbedUrl) {
-                        setTrailerOpen(true);
-                        return;
-                      }
-                      setTrailerOpen(true);
-                    }}
-                    className="group relative block h-28 w-full overflow-hidden text-left"
-                  >
-                    <SafeImage candidates={trailerPreviewImages} alt={`${anime.title} trailer`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.035]" />
-                    <div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(0,0,0,0.76),rgba(0,0,0,0.22)_62%),radial-gradient(circle_at_50%_50%,rgba(244,63,94,0.22),transparent_36%)]" />
-                    <span className="absolute left-1/2 top-1/2 grid h-10 w-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/16 bg-black/48 text-white shadow-none shadow-black/30 transition-all group-hover:border-primary/45 group-hover:bg-primary group-hover:shadow-primary/24">
-                      <Play className="ml-0.5 h-4 w-4 fill-current" />
-                    </span>
-                    <span className="absolute bottom-2.5 left-3 right-3 flex items-end justify-between gap-3">
-                      <span className="min-w-0">
-                        <span className="block line-clamp-1 text-xs font-semibold text-white">{anime.title}</span>
-                        <span className="mt-0.5 block text-[10px] font-semibold normal-case tracking-normal text-white/48">
-                          {trailerEmbedUrl ? 'Play trailer' : 'View trailer'}
-                        </span>
-                      </span>
-                    </span>
-                  </button>
-                )}
-                {trailerOpen && !trailerEmbedUrl && <p role="status" className="px-3 py-3 text-xs text-white/65">This trailer link cannot be played inside StreamNyaa.</p>}
+                {trailerOpen && !trailerEmbedUrl && <p role="status">This trailer cannot be played inside StreamNyaa. <button type="button" onClick={closeTrailer}>Close</button></p>}
               </div>
             ) : null}
           </>
@@ -3061,10 +3012,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     <SlidersHorizontal className="h-4 w-4" />
                     Series Timeline
                   </p>
-                  <p className="mt-2 text-xs font-semibold text-white/38">
-                    Chronological related entries for this anime line.
-                    <span className="ml-2 text-white/50">{installmentGraphQuery.data?.complete ? `${seasonItems.length} entries` : 'Updating related seasons…'}</span>
-                  </p>
+
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
                 <div className="hidden items-center gap-2 md:flex">
@@ -3100,44 +3048,12 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       ? 'border-primary/72 bg-primary/[0.13] shadow-primary/22 ring-1 ring-primary/35'
                       : 'border-white/[0.095] bg-white/[0.035] shadow-black/20 hover:border-primary/45 hover:bg-primary/[0.065] hover:ring-1 hover:ring-primary/20'
                   }`;
-                  const content = (
-                    <>
-                      <SafeImage
-                        candidates={installmentCardImageCandidates(season, anime)}
-                        alt={season.name}
-                        className="absolute inset-0 h-full w-full object-cover object-center opacity-60 transition-transform duration-500 group-hover:scale-[1.035]"
-                        fallbackClassName="absolute inset-0 h-full w-full"
-                      />
-                      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,5,8,0.95),rgba(5,5,8,0.70)_49%,rgba(5,5,8,0.36)),radial-gradient(circle_at_86%_0%,rgba(244,63,94,0.22),transparent_46%)]" />
-                      <div className="relative flex h-full gap-4 p-4">
-                        <div className={`grid h-14 w-14 shrink-0 place-items-center rounded-xl border text-sm font-semibold normal-case tracking-[-0.02em] ${
-                          season.current
-                            ? 'border-primary/45 bg-primary text-white shadow-none shadow-primary/32'
-                            : 'border-white/[0.13] bg-black/46 text-white/86 group-hover:border-primary/45 group-hover:text-white'
-                        }`}>
-                          {installmentSequenceBadge(season)}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="line-clamp-1 text-lg font-semibold tracking-[-0.025em] text-white drop-shadow">{installmentPrimaryLabel(season)}</p>
-                            {season.current ? (
-                              <span className="rounded-full bg-primary/18 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-primary">Now</span>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 line-clamp-1 text-xs font-semibold text-white/62">{season.name}</p>
-                          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-semibold normal-case tracking-normal text-white/50">
-                            {installmentMetaParts(season).map((part, index) => (
-                              <Fragment key={`${season.mal_id}-${part}`}>
-                                {index > 0 ? <span className="text-white/20">-</span> : null}
-                                <span className={index === 0 && season.current ? 'text-primary' : ''}>{part}</span>
-                              </Fragment>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      {season.current ? <span className="absolute inset-x-0 bottom-0 h-1 bg-primary" /> : null}
-                    </>
-                  );
+                  const content = <>
+                    <span className="sn-watch-timeline-image"><SafeImage candidates={installmentCardImageCandidates(season, anime)} alt="" className="h-full w-full object-cover" /></span>
+                    <span className="sn-watch-timeline-copy"><strong>{installmentPrimaryLabel(season)}</strong><span title={season.name}>{season.name}</span><small>{installmentMetaParts(season).filter(part => part !== 'Current').join(' · ')}</small></span>
+                    <ChevronRight size={19} aria-hidden="true" />
+                    {season.current && <span className="sn-watch-timeline-current" aria-label="Current installment" />}
+                  </>;
                   return season.current ? (
                     <button
                       key={`current-${season.mal_id}`}
@@ -3176,7 +3092,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             <DesktopAnimeCast key={id} identity={{ anilistId: resolvedAnime?.anilist_id || routeAniListId, malId: resolvedAnime?.mal_id || routeMalId }} />
 
             <div className="sn-watch-episode-toolbar">
-              <div><h2>Episodes</h2><span>{airedCount == null ? 'Count unavailable' : `${episodeCountLabel} ${airedCount}`} · Total {totalEpisodeCount(anime) ?? '?'}</span></div>
+              <div><h2><Play size={24} />Episodes</h2><span>{airedCount == null ? 'Count unavailable' : `${episodeCountLabel} ${airedCount}`} · Total {totalEpisodeCount(anime) ?? '?'}</span></div>
               <form onSubmit={event => { event.preventDefault(); submitEpisodeSearch(); }}><Search className="h-4 w-4" /><input aria-label="Search or jump to episode" value={episodeSearch} onChange={event => setEpisodeSearch(event.target.value.slice(0,48))} placeholder="Search or jump to episode…" /></form>
               {longEpisodeRun && <select aria-label="Episode view" value={episodeViewMode} onChange={event => setEpisodeViewMode(event.target.value as EpisodeViewMode)}><option value="cards">Cards</option><option value="grid">Compact</option></select>}
               {longEpisodeRun && episodeViewMode === 'grid' && episodeRanges.length > 1 && <select aria-label="Episode range" value={episodeGridStart} onChange={event => setEpisodeGridStart(Number(event.target.value) || 1)}>{episodeRanges.map(range => <option key={range.start} value={range.start}>{range.label}</option>)}</select>}
@@ -3266,54 +3182,15 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   <div
                     key={episode.number}
                     ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
-                    className={`sn-watch-episode-card group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-xl border text-left shadow-none shadow-black/18 transition-all focus-within:ring-1 focus-within:ring-primary/42 ${
+                    className={`sn-watch-episode-card group relative shrink-0 text-left shadow-none shadow-black/18 transition-all focus-within:ring-1 focus-within:ring-primary/42 ${
                       episode.number === selectedEpisode
                         ? 'border-primary/70 bg-primary/[0.10] ring-1 ring-primary/32'
                         : 'border-white/[0.10] hover:-translate-y-0.5 hover:border-primary/42'
                     }`}
                   >
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        chooseEpisodeFromRail(episode.number);
-                      }}
-                      onDoubleClick={(event) => {
-                        event.preventDefault();
-                        chooseEpisodeFromRail(episode.number);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key !== 'Enter' && event.key !== ' ') return;
-                        event.preventDefault();
-                        chooseEpisodeFromRail(episode.number);
-                      }}
-                      className="absolute inset-0 cursor-pointer text-left outline-none focus-visible:ring-1 focus-visible:ring-primary/45"
-                      aria-label={`Watch episode ${episode.number}`}
-                    >
-                      <DesktopEpisodeThumbnail artwork={episode.artwork} title={hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title} />
-                      <div className={`absolute inset-0 ${episode.number === selectedEpisode ? 'bg-[linear-gradient(0deg,rgba(48,8,16,0.90),rgba(0,0,0,0.06)_62%)]' : 'bg-[linear-gradient(0deg,rgba(0,0,0,0.80),rgba(0,0,0,0.08)_62%)]'}`} />
-                      <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-xs font-semibold shadow-md shadow-black/25 ${episode.number === selectedEpisode ? 'bg-primary text-white' : 'bg-black/72 text-white'}`}>{episode.number}</span>
-                      <EpisodeWatchIndicator state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} />
-                      <p className="absolute bottom-3 left-3 right-14 line-clamp-1 text-sm font-semibold">{hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title}</p>
-                    </button>
-                    <button
-                      type="button"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        playEpisodeNumber(episode.number);
-                      }}
-                      onDoubleClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                      className="absolute bottom-2.5 right-2.5 grid h-9 w-9 place-items-center rounded-full border border-white/[0.14] bg-black/62 text-white shadow-none shadow-black/30 backdrop-blur transition-all hover:border-primary/55 hover:bg-primary hover:shadow-primary/24 active:scale-[0.94]"
-                      aria-label={`Play episode ${episode.number}`}
-                    >
-                      <Play className="h-3.5 w-3.5 fill-current" />
-                    </button>
+                    <DesktopWatchEpisodeCard number={episode.number} title={hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title} artwork={episode.artwork}
+                      state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} selected={episode.number === selectedEpisode}
+                      onSelect={() => chooseEpisodeFromRail(episode.number)} onPlay={() => playEpisodeNumber(episode.number)} />
                   </div>
                 ))}
               </div>
@@ -3621,12 +3498,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 <span>Sources</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} shown · ${playableSources.length} verified${sourceSearchInProgress ? ' · finding more' : ''}` : 'No matches in this view'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
               </summary>
               <div className="p-4">
-            {!!sources?.items.length && <p className="mb-3 text-xs text-white/50">{sources.items.length} retrieved · {sortedSources.length} shown · {excludedSourceCount} incompatible sources excluded</p>}
             {sourceSearchInProgress && !sourcesBusy && <p role="status" className="mb-3 text-sm text-white/60">{playableSources.length ? 'Verified sources are ready to play.' : 'Source identity checks are in progress.'} Additional options are still being checked.</p>}
-            {!sourcesFetching && sources?.complete === false && <div role="status" className="mb-3 flex flex-wrap items-center gap-3 text-sm text-white/60">
-              <span>{sources.stale ? 'Saved sources are shown while the provider recovers.' : 'More source spellings and pages remain to be checked.'}</span>
-              <button type="button" onClick={findMoreSources} className="sn-secondary-action px-3 py-2">Find more sources</button>
-            </div>}
+            {sources?.stale && <p role="status" className="mb-3 text-sm text-white/60">Saved sources are shown while the provider recovers.</p>}
             {!sourcesFetching && !sourcesBusy && !playableSources.length && <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-white/60">
               <span>{titleSourcesQuery.isFetching ? 'Checking releases for this title…' : titleSourcesQuery.data?.complete ? 'Title source check finished.' : 'This episode may be missing while other episodes are available.'}</span>
               <button type="button" disabled={titleSourcesQuery.isFetching} className="sn-secondary-action px-3 py-2" onClick={() => { if (checkTitleSources) void titleSourcesQuery.refetch(); else setCheckTitleSources(true); }}>
@@ -3661,20 +3534,12 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   const previousTier = sortedSources[index - 1]?.matchTier;
                   return (
                     <Fragment key={sourceId}>
-                    {index === 0 || source.matchTier !== previousTier ? (
-                      <div className={`${index === 0 ? '' : 'mt-2'} flex items-center justify-between border-t border-white/[0.08] pt-4`}>
-                        <div>
-                          <p className="text-[11px] font-semibold normal-case tracking-normal text-white/58">{sourceTierLabel(source.matchTier)}</p>
-                          <p className="mt-1 text-xs font-semibold text-white/38">{sourceTierDescription(source.matchTier)}</p>
-                        </div>
-                        <p className="text-xs font-semibold text-white/42">
-                          {source.matchTier === 'exact' ? visibleTierCounts.exact : source.matchTier === 'likely' ? visibleTierCounts.likely : visibleTierCounts.broad} source
-                          {(source.matchTier === 'exact' ? visibleTierCounts.exact : source.matchTier === 'likely' ? visibleTierCounts.likely : visibleTierCounts.broad) === 1 ? '' : 's'}
-                        </p>
-                      </div>
-                    ) : null}
+                    {(source.matchTier !== 'exact' || sortedSources.some(item=>item.matchTier !== 'exact')) && (index === 0 || source.matchTier !== previousTier) ? <div className="sn-watch-source-group" title={sourceTierDescription(source.matchTier)}>{sourceTierLabel(source.matchTier)}</div> : null}
                     <div className={`sn-watch-source-row ${selectedSafeSource && sourceKey(selectedSafeSource) === sourceId ? 'is-selected' : ''}`}>
-                      <div className="sn-watch-source-copy"><strong title={source.title}>{source.title}</strong><p>{quality} · {audioLabel} · {codec} · {source.size} · {source.seeders} seeders</p><span className={sourceConfidenceClassName(confidence.band)}>{source.manualOnly ? 'Uncertain identity · manual review' : source.playable ? confidence.label : source.playableLabel}</span></div>
+                      <span className="sn-watch-source-rank">#{index + 1}</span>
+                      <div className="sn-watch-source-copy"><strong title={source.title}>{source.title.match(/^\[([^\]]+)\]/)?.[0] || source.title}</strong><p title={source.title}>{source.title}</p></div>
+                      <div className="sn-watch-source-meta"><span>{quality} · {audioLabel} · {codec}</span><small>{source.size} · {source.seeders} seeders</small></div>
+                      <span className={`sn-watch-source-confidence ${sourceConfidenceClassName(confidence.band)}`}>{source.manualOnly ? 'Uncertain identity' : source.playable ? confidence.label : source.playableLabel}</span>
                       <button type="button" className="sn-secondary-action" disabled={!playableSources.some(item => sourceKey(item) === sourceId)} aria-pressed={selectedSafeSource ? sourceKey(selectedSafeSource) === sourceId : false} onClick={() => setSourceSelection({scope:sourceSelectionScope,id:sourceId})}>Use</button>
                       <DesktopActionMenu label={`Actions for ${source.title}`} actions={[
                         {label:source.manualOnly ? 'Review & play' : 'Play this source',disabled:Boolean(active) || (!source.playable && !(source.manualOnly && source.rawSeeders > 0)),action:()=>{ if (!source.manualOnly || window.confirm('This release has not been verified for the selected installment and episode. Inspect its title carefully. Open this release manually?')) void playSource(source,undefined,source.manualOnly); }},
@@ -3725,15 +3590,15 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
           </section>
         </main>
       </div>
-      <DesktopDrawer open={optionsOpen} onClose={() => setOptionsOpen(false)} title="Playback options" subtitle={`Episode ${selectedEpisode}`} docked>
+      <DesktopDrawer open={optionsOpen} onClose={() => setOptionsOpen(false)} title="Playback options" subtitle={`Episode ${selectedEpisode}`} docked icon={<SlidersHorizontal size={22} />}>
         <div className="sn-watch-option-fields">
-          <label>Audio<select value={audioPreference} onChange={event=>setSourceAudioPreference(event.target.value as DesktopAudioPreference)}><option value="sub-preferred">Sub</option><option value="dub-only">Dub</option><option value="dual-preferred">Dual / Dub</option></select></label>
-          <label>Quality<select value={sourceQuality} onChange={event=>setSourceQuality(event.target.value as SourceQualityFilter)}>{sourceQualityOptions.map(quality=><option key={quality} value={quality}>{sourceQualityLabel(quality)}{qualityCounts.get(quality) ? ` · ${qualityCounts.get(quality)} sources` : ''}</option>)}</select></label>
-          <label>Match mode<select value={sourceMode} onChange={event=>setSourceMode(event.target.value as SourceFilterMode)}><option value="strict">Strict</option><option value="balanced">Balanced</option><option value="broad">Broad · includes uncertain releases</option></select></label>
-          <label>Source order<select value={sortBy} onChange={event=>setSortBy(event.target.value as SourceSort)}><option value="best">Best match</option><option value="seeders">Seeders</option><option value="size">Smaller files</option></select></label>
+          <label>Audio<select aria-label="Audio" value={audioPreference} onChange={event=>setSourceAudioPreference(event.target.value as DesktopAudioPreference)}><option value="sub-preferred">Sub</option><option value="dub-only">Dub</option><option value="dual-preferred">Dual / Dub</option></select><span className="sn-option-info" tabIndex={0} role="img" aria-label="Choose preferred subtitle or dubbed releases." title="Choose preferred subtitle or dubbed releases."><Info size={15} /></span></label>
+          <label>Quality<select aria-label="Quality" value={sourceQuality} onChange={event=>setSourceQuality(event.target.value as SourceQualityFilter)}>{sourceQualityOptions.map(quality=><option key={quality} value={quality}>{sourceQualityLabel(quality)}{qualityCounts.get(quality) ? ` · ${qualityCounts.get(quality)} sources` : ''}</option>)}</select><span className="sn-option-info" tabIndex={0} role="img" aria-label="Filter existing sources without repeating discovery." title="Filter existing sources without repeating discovery."><Info size={15} /></span></label>
+          <label>Match mode<select aria-label="Match mode" value={sourceMode} onChange={event=>setSourceMode(event.target.value as SourceFilterMode)}><option value="strict">Strict</option><option value="balanced">Balanced</option><option value="broad">Broad · includes uncertain releases</option></select><span className="sn-option-info" tabIndex={0} role="img" aria-label="Strict requires exact matches. Balanced adds safe candidates. Broad includes uncertain releases for manual review." title="Strict requires exact matches. Balanced adds safe candidates. Broad includes uncertain releases for manual review."><Info size={15} /></span></label>
+          <label>Source order<select aria-label="Source order" value={sortBy} onChange={event=>setSortBy(event.target.value as SourceSort)}><option value="best">Best match</option><option value="seeders">Seeders</option><option value="size">Smaller files</option></select><span className="sn-option-info" tabIndex={0} role="img" aria-label="Choose the order of the matching releases." title="Choose the order of the matching releases."><Info size={15} /></span></label>
         </div>
-        <details className="sn-drawer-section" open><summary>Episode actions</summary><button type="button" onClick={toggleSelectedEpisodeWatched}>{selectedEpisodeWatchState.completed ? 'Mark unwatched' : 'Mark watched'}</button><button type="button" disabled={!primarySource || Boolean(activeSourceId)} onClick={()=>{if(primarySource)void playSource(primarySource,0);}}>Restart episode</button><label className="sn-watch-toggle">Open best source automatically<input type="checkbox" checked={autoOpenBestSource} onChange={event=>{const next=event.target.checked;try{saveDesktopAutoOpenBestSource(next);setAutoOpenBestSource(next);}catch{setPlaybackNotice({tone:'error',text:'Could not save automatic playback preference.'});}}} /></label></details>
-        <details className="sn-drawer-section"><summary>Source tools</summary><p className="text-xs text-white/65">{sourceMatchSummary}</p><button type="button" onClick={()=>{setOptionsOpen(false);if(playbackOptionsRef.current){playbackOptionsRef.current.open=true;playbackOptionsRef.current.scrollIntoView({block:'nearest'});}}}>View matching sources</button><button type="button" disabled={sourcesFetching || sources?.complete === true} onClick={findMoreSources}>Find more sources</button><button type="button" disabled={titleSourcesQuery.isFetching} onClick={()=>{if(checkTitleSources)void titleSourcesQuery.refetch();else setCheckTitleSources(true);}}>Check title sources</button><button type="button" disabled={sourcesFetching} onClick={()=>void refetchSources()}>Refresh sources</button></details>
+        <details className="sn-drawer-section" open><summary><SlidersHorizontal size={19} />Episode actions</summary><button type="button" onClick={toggleSelectedEpisodeWatched}><Check size={21} />{selectedEpisodeWatchState.completed ? 'Mark unwatched' : 'Mark watched'}</button><button type="button" disabled={!primarySource || Boolean(activeSourceId)} onClick={()=>{if(primarySource)void playSource(primarySource,0);}}><RotateCcw size={21} />Restart episode</button><label className="sn-watch-toggle">Open best source automatically<input type="checkbox" checked={autoOpenBestSource} onChange={event=>{const next=event.target.checked;try{saveDesktopAutoOpenBestSource(next);setAutoOpenBestSource(next);}catch{setPlaybackNotice({tone:'error',text:'Could not save automatic playback preference.'});}}} /></label></details>
+        <details className="sn-drawer-section"><summary><Database size={19} />Source tools</summary><p>{sources?.items.length || 0} retrieved · {sortedSources.length} shown · {excludedSourceCount} incompatible sources excluded{sources?.complete === false ? " · More queries remain" : ""}</p><p className="text-xs text-white/65">{sourceMatchSummary}</p><button type="button" onClick={()=>{setOptionsOpen(false);if(playbackOptionsRef.current){playbackOptionsRef.current.open=true;playbackOptionsRef.current.scrollIntoView({block:'nearest'});}}}>View matching sources</button><button type="button" disabled={sourcesFetching || sources?.complete === true} onClick={findMoreSources}>Find more sources</button><button type="button" disabled={titleSourcesQuery.isFetching} onClick={()=>{if(checkTitleSources)void titleSourcesQuery.refetch();else setCheckTitleSources(true);}}>Check title sources</button><button type="button" disabled={sourcesFetching} onClick={()=>void refetchSources()}>Refresh sources</button></details>
       </DesktopDrawer>
     </div>
   );

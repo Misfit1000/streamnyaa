@@ -6,11 +6,22 @@ import DesktopActionMenu from '../../src/components/DesktopActionMenu';
 import { DesktopWatchNavigation, DesktopWatchPlaybackCard } from '../../src/components/DesktopWatchControls';
 import { manualEpisodeTarget } from '../../src/lib/desktopEpisodeInteraction';
 import { selectedEligibleSource, selectSourceMode } from '../../src/lib/desktopSourceSelection';
+import DesktopWatchEpisodeCard from '../../src/components/DesktopWatchEpisodeCard';
 afterEach(cleanup);
 describe('Watch presentation without controller duplication',()=>{
   it('keeps the three compact destinations',()=>{
     render(<MemoryRouter><DesktopWatchNavigation /></MemoryRouter>);
     for(const [name,path] of [['Home','/'],['Browse','/search'],['My List','/my-list']]) expect(screen.getByRole('link',{name}).getAttribute('href')).toBe(path);
+    expect(screen.getByRole('link',{name:'StreamNyaa'}).querySelector('img')?.getAttribute('src')).toContain('desktop-logo');
+  });
+  it('keeps artwork and caption separate and dispatches episode actions once',()=>{
+    const select=vi.fn(),play=vi.fn();
+    const view=render(<DesktopWatchEpisodeCard number={1} title="Episode 1" artwork={{candidates:[],specific:false,specificCount:0,label:'Series artwork'}} state={{started:true,completed:false,positionSeconds:300,progressPercent:12,updatedAt:1}} selected onSelect={select} onPlay={play}/>);
+    expect(screen.getByText('1. Episode 1').closest('.sn-watch-episode-image')).toBeNull();
+    expect(screen.getByText('Resume')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button',{name:'Play episode 1'}));expect(play).toHaveBeenCalledOnce();expect(select).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button',{name:'Watch episode 1'}));expect(select).toHaveBeenCalledOnce();
+    expect(view.container.querySelector('.sn-watch-episode-progress')?.getAttribute('style')).toBeNull();
   });
   it('separates Resume from watched coverage and retains both download actions',()=>{
     const play=vi.fn(),release=vi.fn(),files=vi.fn(),options=vi.fn();

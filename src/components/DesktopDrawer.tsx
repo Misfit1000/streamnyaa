@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import '../styles/desktop-controls.css';
 
-export default function DesktopDrawer({ open, title, subtitle, onClose, children, docked = false }: {
-  open: boolean; title: string; subtitle?: string; onClose: () => void; children: ReactNode; docked?: boolean;
+export default function DesktopDrawer({ open, title, subtitle, onClose, children, docked = false, icon }: {
+  open: boolean; title: string; subtitle?: string; onClose: () => void; children: ReactNode; docked?: boolean; icon?: ReactNode;
 }) {
   const heading = useId();
   const panel = useRef<HTMLElement>(null);
@@ -48,7 +48,7 @@ export default function DesktopDrawer({ open, title, subtitle, onClose, children
   if (!open) return null;
   return createPortal(<div className={`sn-drawer-layer ${docked ? 'sn-drawer-docked' : ''}`}>
     <aside ref={panel} role="dialog" aria-modal="true" aria-labelledby={heading} className="sn-drawer-panel">
-      <header className="sn-drawer-heading"><div><h2 id={heading}>{title}</h2>{subtitle && <p>{subtitle}</p>}</div><button ref={close} type="button" onClick={onClose} className="sn-icon-action" aria-label={`Close ${title}`}><X className="h-5 w-5" /></button></header>
+      <header className="sn-drawer-heading"><div><h2 id={heading}>{icon}{title}</h2>{subtitle && <p>{subtitle}</p>}</div><button ref={close} type="button" onClick={onClose} className="sn-icon-action" aria-label={`Close ${title}`}><X className="h-5 w-5" /></button></header>
       <div className="sn-drawer-content">{children}</div>
     </aside>
   </div>, document.body);
