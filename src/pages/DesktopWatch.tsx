@@ -1,3 +1,4 @@
+import { desktopSeriesArtwork } from '../lib/desktopArtwork';
 import DesktopWatchEpisodeCard from '../components/DesktopWatchEpisodeCard';
 import { mergeScheduleWatchEvidence } from '../lib/desktopScheduleWatch';
 import DesktopDrawer from '../components/DesktopDrawer';
@@ -159,7 +160,7 @@ type SourceFailureRecord = {
 };
 
 function posterFor(anime: any) {
-  const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
+  const fallbackId = Number(anime?.anilist_id || 0);
   const fallbackCover = fallbackId > 0 ? `https://img.anili.st/media/${fallbackId}` : '';
   return anime?.coverImage?.extraLarge
     || anime?.coverImage?.large
@@ -1918,8 +1919,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       return {
         number,
         title: pageEpisode?.title || pageEpisode?.title_english || pageEpisode?.title_romanji || streamingEpisode?.title || `Episode ${number}`,
-        image: episodeArtwork.forEpisode(number).candidates[0],
-        artwork: episodeArtwork.forEpisode(number, hideEpisodeSpoilers),
+        image: episodeArtwork.forEpisode(number, true).candidates[0],
+        artwork: episodeArtwork.forEpisode(number, hideEpisodeSpoilers, true),
       };
     });
   }, [airedCount, anime, animeNotYetAired, pageEpisodeMap, pageItems.length, selectedEpisode, streamingEpisodeMap, episodeArtwork, hideEpisodeSpoilers]);
@@ -2391,10 +2392,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   }, [anime.status, anime.episodes, episodeSearch, searchedEpisodes, selectEpisode]);
 
   const sourcePayloadFor = useCallback((source: NyaaItem, resumeOverride?: number): LocalPlaybackSource => {
-    const bannerCandidates = playerLandscapeCandidates(
-      anime,
-      hideEpisodeSpoilers ? undefined : streamingEpisodeMap.get(selectedEpisode)?.thumbnail || selectedEpisodeInfo?.image,
-    );
+    const artwork = desktopSeriesArtwork(anime);
+    const bannerCandidates = artwork.candidates.filter(item => item.role === 'banner').map(item => item.url);
     const baseSource: LocalPlaybackSource = {
       magnet: source.magnet,
       torrentUrl: torrentUrlFor(source),
@@ -2409,6 +2408,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       poster: posterFor(anime),
       banner: bannerCandidates[0] || '',
       bannerCandidates,
+      artwork,
     };
     const checkpoint = resolveDesktopPlaybackCheckpoint(baseSource);
     const hasResumeOverride = Number.isFinite(resumeOverride);

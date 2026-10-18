@@ -158,11 +158,11 @@ fn minute_limit(provider: &str, lane: &Lane) -> usize {
 fn request_gap(provider: &str, lane: &Lane) -> Duration {
     let gap = match provider {
         "anilist" => 2100,
-        "jikan" => 1000,
+        "tenrai" => 1000,
         "nyaa" => 600,
         _ => 350,
     };
-    Duration::from_millis(if matches!(provider, "anilist" | "jikan") {
+    Duration::from_millis(if matches!(provider, "anilist" | "tenrai") {
         gap.max(60_000 / minute_limit(provider, lane) as u64 + 1)
     } else {
         gap
@@ -325,7 +325,7 @@ fn allowed_url(url: &str) -> bool {
                 u.host_str(),
                 Some(
                     "graphql.anilist.co"
-                        | "api.jikan.moe"
+                        | "api.tenrai.org"
                         | "nyaa.si"
                         | "www.streamnyaa.xyz"
                         | "api.themoviedb.org"
@@ -485,7 +485,7 @@ async fn fetch_bytes_with_attempts(
                         }
                         bytes.extend_from_slice(&chunk);
                     }
-                    if provider == "jikan" && connection_relay.is_some() {
+                    if provider == "tenrai" && connection_relay.is_some() {
                         if let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
                             if let Some(object) = value.as_object_mut() {
                                 // Older gateways expose cache status but no retrieval time.
@@ -500,10 +500,10 @@ async fn fetch_bytes_with_attempts(
                     }
                     return Ok(bytes);
                 }
-                if !status.is_server_error() || attempt + 1 == max_attempts {
+                if status.as_u16() == 501 || !status.is_server_error() || attempt + 1 == max_attempts {
                     let mut error = DataError::new(
                         provider,
-                        if status.is_redirection() {
+                        if status.is_redirection() || [400,404,501].contains(&status.as_u16()) {
                             "invalid"
                         } else {
                             "error"
@@ -511,13 +511,13 @@ async fn fetch_bytes_with_attempts(
                     );
                     error.status_code = Some(status.as_u16());
                     error.origin = "provider";
-                    error.retryable = status.is_server_error();
+                    error.retryable = status.is_server_error() && status.as_u16() != 501;
                     return Err(error);
                 }
             }
             Err(error) => {
-                if error.is_connect() && provider == "jikan" && body.is_none() && attempt == 0 {
-                    connection_relay = jikan_connection_relay(url);
+                if error.is_connect() && provider == "tenrai" && body.is_none() && attempt == 0 {
+                    connection_relay = tenrai_connection_relay(url);
                 }
                 log_info(format!(
                     "Data transport provider={} attempt={} timeout={} connect={} body={} decode={}",
@@ -545,12 +545,12 @@ async fn fetch_bytes_with_attempts(
     }
     Err(DataError::new(provider, "error"))
 }
-fn jikan_connection_relay(url: &str) -> Option<String> {
+fn tenrai_connection_relay(url: &str) -> Option<String> {
     let parsed = reqwest::Url::parse(url).ok()?;
-    if parsed.host_str() != Some("api.jikan.moe") || !allowed_url(url) { return None; }
-    let mut path = parsed.path().strip_prefix("/v4")?.to_string();
+    if parsed.host_str() != Some("api.tenrai.org") || !allowed_url(url) { return None; }
+    let mut path = parsed.path().strip_prefix("/v1")?.to_string();
     if let Some(query) = parsed.query() { path.push('?'); path.push_str(query); }
-    Some(format!("https://www.streamnyaa.xyz/api/stream-sources?provider=jikan&ttl=600&path={}", percent_encode(&path)))
+    Some(format!("https://www.streamnyaa.xyz/api/stream-sources?provider=tenrai&ttl=600&path={}", percent_encode(&path)))
 }
 async fn metadata(
     request: &MetadataApiRequest,
@@ -564,7 +564,22 @@ async fn metadata(
     let mut bearer = None;
     let url = match provider {
         "anilist" => "https://graphql.anilist.co".to_string(),
-        "jikan" => format!("https://api.jikan.moe/v4{}", path()?),
+        "tenrai" => {
+            let path = path()?;
+            let route = path.split('?').next().unwrap_or("");
+            let parts: Vec<_> = route.trim_start_matches('/').split('/').collect();
+            let positive = |id: &str| !id.starts_with('0') && id.parse::<u64>().is_ok_and(|v|v>0);
+            let supported = match parts.as_slice() {
+                ["anime"] | ["schedules"] | ["top","anime"] | ["seasons","now" | "upcoming"] => true,
+                ["anime",id] => positive(id),
+                ["anime",id,"full" | "characters" | "news" | "episodes"] => positive(id),
+                ["anime",id,"episodes",episode] => positive(id) && positive(episode),
+                ["seasons",year,"winter" | "spring" | "summer" | "fall"] => year.len()==4 && year.parse::<u16>().is_ok(),
+                _ => false,
+            };
+            if !supported { return Err(DataError::new(provider,"invalid")); }
+            format!("https://api.tenrai.org/v1{}",path)
+        },
         "tmdb" => {
             bearer = env_value(&["TMDB_BEARER_TOKEN", "TMDB_READ_ACCESS_TOKEN"]);
             let key = env_value(&["TMDB_API_KEY"]);
@@ -824,8 +839,8 @@ async fn run(job: Job, priority: Arc<AtomicU8>, timeout: Duration) -> Outcome {
             .await?
         }
     };
-    let stale = provider == "jikan" && data["streamnyaa"]["stale"] == true;
-    let fetched_at = if provider == "jikan" { data["streamnyaa"]["fetchedAt"].as_u64().map(u128::from).unwrap_or_else(now_millis) } else { now_millis() };
+    let stale = provider == "tenrai" && data["streamnyaa"]["stale"] == true;
+    let fetched_at = if provider == "tenrai" { data["streamnyaa"]["fetchedAt"].as_u64().map(u128::from).unwrap_or_else(now_millis) } else { now_millis() };
     if complete && !stale {
         if let Ok(mut cache) = cache.lock() {
             cache.insert(
@@ -856,11 +871,12 @@ async fn run(job: Job, priority: Arc<AtomicU8>, timeout: Duration) -> Outcome {
     })
 }
 pub async fn execute(
-    job: Job,
+    mut job: Job,
     request_id: Option<String>,
     priority: Option<String>,
     deadline_ms: Option<u64>,
 ) -> Outcome {
+    if let Job::Metadata(ref mut request) = job { if request.provider == "jikan" { request.provider = "tenrai".into(); } }
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let id =
         request_id.unwrap_or_else(|| format!("native-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
@@ -871,7 +887,7 @@ pub async fn execute(
     let provider = job.provider().to_string();
     if !matches!(
         provider.as_str(),
-        "nyaa" | "anilist" | "jikan" | "tmdb" | "animeschedule" | "anidb"
+        "nyaa" | "anilist" | "tenrai" | "tmdb" | "animeschedule" | "anidb"
     ) {
         return Err(DataError::new("desktop", "invalid"));
     }
@@ -954,17 +970,17 @@ pub async fn execute(
 mod tests {
     use super::*;
     #[test]
-    fn connection_relay_keeps_exact_jikan_identity_and_page() {
-        assert_eq!(jikan_connection_relay("https://api.jikan.moe/v4/anime/52991/episodes?page=2"),
-            Some("https://www.streamnyaa.xyz/api/stream-sources?provider=jikan&ttl=600&path=%2Fanime%2F52991%2Fepisodes%3Fpage%3D2".into()));
-        assert!(jikan_connection_relay("https://api.jikan.moe.evil.test/v4/anime/1").is_none());
-        assert!(jikan_connection_relay("https://api.jikan.moe/not-v4/anime/1").is_none());
+    fn connection_relay_keeps_exact_tenrai_identity_and_page() {
+        assert_eq!(tenrai_connection_relay("https://api.tenrai.org/v1/anime/52991/episodes?page=2"),
+            Some("https://www.streamnyaa.xyz/api/stream-sources?provider=tenrai&ttl=600&path=%2Fanime%2F52991%2Fepisodes%3Fpage%3D2".into()));
+        assert!(tenrai_connection_relay("https://api.tenrai.org.evil.test/v4/anime/1").is_none());
+        assert!(tenrai_connection_relay("https://api.tenrai.org/not-v4/anime/1").is_none());
     }
     #[tokio::test]
     #[ignore = "explicit live public metadata probe"]
-    async fn live_jikan_episode_connection_probe() {
-        let request = MetadataApiRequest {provider:"jikan".into(), path:Some("/anime/52991/episodes".into()),body:None,ttl_seconds:Some(600)};
-        let result = metadata(&request, Arc::new(AtomicU8::new(0))).await.expect("Jikan direct/connection recovery must return real episode metadata");
+    async fn live_tenrai_episode_connection_probe() {
+        let request = MetadataApiRequest {provider:"tenrai".into(), path:Some("/anime/52991/episodes".into()),body:None,ttl_seconds:Some(600)};
+        let result = metadata(&request, Arc::new(AtomicU8::new(0))).await.expect("Tenrai direct/connection recovery must return real episode metadata");
         assert!(result["data"].as_array().is_some_and(|entries| !entries.is_empty()));
     }
     #[tokio::test]
@@ -1105,10 +1121,10 @@ mod tests {
     }
     #[test]
     fn restricts_transport_destinations() {
-        assert!(allowed_url("https://api.jikan.moe/v4/anime/1"));
+        assert!(allowed_url("https://api.tenrai.org/v1/anime/1"));
         for url in [
-            "http://api.jikan.moe/v4",
-            "https://api.jikan.moe.evil.test",
+            "http://api.tenrai.org/v4",
+            "https://api.tenrai.org.evil.test",
             "https://user@nyaa.si",
             "https://127.0.0.1/",
         ] {

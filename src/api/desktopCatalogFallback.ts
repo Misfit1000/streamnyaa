@@ -10,6 +10,6 @@ export async function withDesktopCatalogFallback(
     if (signal?.aborted || isDesktopAdmissionWait(error) || desktopDataError('anilist', error).code === 'cancelled') throw error;
     const fallback = await fetchExplorePage({ query: '', genre: 'Any', format: 'Any', status: 'Any', sort: 'best',
       adult: useStore.getState().nsfwMode, ...request, service: 'mal', allowFallback: false }, 1, signal);
-    return { ...fallback, provider: 'jikan', fallback: true, retryAt: desktopDataError('anilist', error).retryAt };
+    return { ...fallback, provider: 'tenrai', fallback: true, retryAt: desktopDataError('anilist', error).retryAt };
   }
 }

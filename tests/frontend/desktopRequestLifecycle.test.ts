@@ -121,7 +121,7 @@ describe('active-screen recovery', () => {
     const account = new QueryObserver(client, { queryKey: ['account-profile'], queryFn: unrelated, initialData: 'account', staleTime: Infinity });
     const unsubscribe = observer.subscribe(() => {}), unsubscribeAccount = account.subscribe(() => {});
     const stop = installDesktopAutoRecovery(client);
-    await vi.advanceTimersByTimeAsync(6001);
+    await vi.advanceTimersByTimeAsync(31001);
     expect(timeline).toHaveBeenCalledTimes(1);
     expect(unrelated).not.toHaveBeenCalled();
     expect(observer.getCurrentResult().data?.items).toEqual([{ id: 2 }]);

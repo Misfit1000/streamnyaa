@@ -35,8 +35,8 @@ export default function DesktopScheduleFallback({ favoritesOnly, selectedWeekday
           return { ...result, endpoint, seasonal: endpoint === '/seasons/now' } as { data: any[]; endpoint: string; seasonal: boolean; cached?: boolean; pagination: { has_next_page: boolean } };
         } catch (error) {
           lastError = error;
-          if (signal.aborted || desktopDataError('jikan', error).code === 'cancelled') throw error;
-          if (['access-denied', 'rate-limited'].includes(desktopDataError('jikan', error).code)) break;
+          if (signal.aborted || desktopDataError('tenrai', error).code === 'cancelled') throw error;
+          if (['access-denied', 'rate-limited'].includes(desktopDataError('tenrai', error).code)) break;
         }
       }
       const stored = [...useStore.getState().myList, ...(useStore.getState().likedAnimes || []), ...readCachedWatchTitles(), ...readCachedExploreTitles()]

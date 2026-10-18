@@ -14,7 +14,7 @@ describe('authenticated Calendar metadata gateway', () => {
     const {default:handler}=await import('../../api/stream-sources');
     const request={method:'GET',query:{provider:'jikan',ttl:'60',path:'/anime/52991/episodes'}};
     const first=recorder();await handler(request,first.response);
-    expect(first.state.body.streamnyaa).toEqual({fetchedAt:1700000000000,stale:false});
+    expect(first.state.body.streamnyaa).toEqual({provider:'tenrai',adapterVersion:1,fetchedAt:1700000000000,stale:false});
     expect(fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
     vi.setSystemTime(1700000030000);const hit=recorder();await handler(request,hit.response);
     expect(hit.state.headers['X-StreamNyaa-Fetched-At']).toBe('1700000000000');expect(fetch).toHaveBeenCalledOnce();

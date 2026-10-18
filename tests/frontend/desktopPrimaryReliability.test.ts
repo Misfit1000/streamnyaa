@@ -50,7 +50,7 @@ describe('desktop primary-path reliability', () => {
   });
 
   it('classifies offline and timeout failures without losing their retryability', () => {
-    expect(desktopDataError('jikan', new Error('request timed out'))).toMatchObject({ code: 'timeout', retryable: true });
+    expect(desktopDataError('tenrai', new Error('request timed out'))).toMatchObject({ code: 'timeout', retryable: true });
   });
 });
 

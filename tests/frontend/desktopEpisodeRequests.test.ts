@@ -31,7 +31,7 @@ it('hydrates a saved requested page immediately without changing its timestamp o
   expect(api.cachedAnimeEpisodeWindow('1010',1)).toBeUndefined();expect(invoke).not.toHaveBeenCalled();
 });
 it('retains the requested page when only the final page fails',async()=>{
-  invoke.mockResolvedValueOnce(response(page(1,3))).mockRejectedValueOnce({code:'error',provider:'jikan',message:'Unavailable',statusCode:504,retryable:true});
+  invoke.mockResolvedValueOnce(response(page(1,3))).mockRejectedValueOnce({code:'error',provider:'tenrai',message:'Unavailable',statusCode:504,retryable:true});
   const result=await api.fetchAnimeEpisodeWindow('1002');
   expect(result.data[0].mal_id).toBe(1);expect(result.latestPageResolved).toBe(false);
   expect(invoke).toHaveBeenCalledTimes(1);
@@ -42,7 +42,7 @@ it('does not mark a stale tail as fresh or lose its original retrieval time',asy
   const first=await api.fetchAnimeEpisodeWindow('1006');
   const tail=await api.fetchAnimeEpisodeTail('1006',3);
   vi.setSystemTime(Date.now()+601_000);
-  invoke.mockRejectedValueOnce({code:'error',provider:'jikan',message:'Unavailable',statusCode:504,retryable:true});
+  invoke.mockRejectedValueOnce({code:'error',provider:'tenrai',message:'Unavailable',statusCode:504,retryable:true});
   const savedTail=await api.fetchAnimeEpisodeTail('1006',3);
   expect(savedTail.latestPageResolved).toBe(false);
   expect(savedTail.streamnyaa.status).toBe('stale');
@@ -52,13 +52,13 @@ it('does not mark a stale tail as fresh or lose its original retrieval time',asy
   expect(merged.streamnyaa.fetchedAt).toBe(tail.streamnyaa.fetchedAt);
 });
 it('respects throttling without trying alternate page URLs',async()=>{
-  invoke.mockRejectedValue({code:'rate-limited',provider:'jikan',message:'Wait',statusCode:429,retryAfterMs:60_000,retryable:true});
+  invoke.mockRejectedValue({code:'rate-limited',provider:'tenrai',message:'Wait',statusCode:429,retryAfterMs:60_000,retryable:true});
   await expect(api.fetchAnimeEpisodes('1003')).rejects.toMatchObject({code:'rate-limited',retryAfterMs:60_000});
   await expect(api.fetchAnimeEpisodes('1003')).rejects.toMatchObject({code:'rate-limited'});
   expect(invoke).toHaveBeenCalledTimes(1);
 });
 it('does not multiply the native retry budget by trying equivalent page-one URLs',async()=>{
-  invoke.mockRejectedValue({code:'timeout',provider:'jikan',message:'Timed out',retryable:true});
+  invoke.mockRejectedValue({code:'timeout',provider:'tenrai',message:'Timed out',retryable:true});
   await expect(api.fetchAnimeEpisodes('1007')).rejects.toMatchObject({code:'timeout'});
   expect(invoke).toHaveBeenCalledTimes(1);
 });

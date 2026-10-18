@@ -1,3 +1,4 @@
+import { desktopSeriesArtwork } from './desktopArtwork';
 /** Episode images never acquire identity from array order or arbitrary story-title numbers. */
 export function episodeNumberFromTitle(value = '') {
   const match = value.match(/\b(?:episode|ep\.?)\s*#?\s*(\d{1,5})\b/i);
@@ -37,11 +38,9 @@ export function resolveEpisodeArtwork(anime: any, pageItems: any[] = []) {
     const previous = streaming.get(number);
     streaming.set(number, { ...previous, ...entry, thumbnail: episodeImageCandidates(entry)[0] || previous?.thumbnail });
   }
-  const fallback = [...new Set([anime?.banner_image, anime?.bannerImage, anime?.backdrop,
-    anime?.images?.webp?.large_image_url, anime?.images?.jpg?.large_image_url, anime?.images?.jpg?.image_url,
-    anime?.coverImage?.extraLarge, anime?.coverImage?.large].map(episodeImageUrl).filter((value): value is string => Boolean(value)))];
-  return { pages, streaming, forEpisode(number: number, hideSpoilers = false) {
-    const specific = hideSpoilers ? [] : [...new Set([...episodeImageCandidates(streaming.get(number)), ...episodeImageCandidates(pages.get(number))])];
+  const fallback = desktopSeriesArtwork(anime).candidates.map(item => item.url);
+  return { pages, streaming, forEpisode(number: number, hideSpoilers = false, seriesOnly = false) {
+    const specific = hideSpoilers || seriesOnly ? [] : [...new Set([...episodeImageCandidates(streaming.get(number)), ...episodeImageCandidates(pages.get(number))])];
     return { candidates: [...new Set([...specific, ...fallback])], specific: specific.length > 0, specificCount: specific.length,
       label: hideSpoilers ? 'Series artwork · spoilers hidden' : specific.length ? `Episode ${number} artwork` : 'Series artwork' };
   } };

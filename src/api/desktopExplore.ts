@@ -1,7 +1,7 @@
 import { recentFeedBound, validRecentSchedules } from './desktopRecentSchedule';
 import { fetchAniList, fetchJikanPath, mapAnilistToJikan } from './jikan';
 import { desktopDataError, DesktopDataError, isDesktopAdmissionWait } from '../lib/desktopData';
-import { fetchRecentEpisodeListings } from './desktopRecentEpisodes';
+
 import { readCachedExploreTitles } from '../lib/desktopExploreCache';
 import { readCachedWatchTitles } from '../lib/desktopWatchSnapshot';
 import { useStore } from '../store/useStore';
@@ -37,7 +37,7 @@ export function exploreOrder(request: ExploreRequest) {
   return 'trending';
 }
 export function malExplorePath(request: ExploreRequest, page: number) {
-  // Standard MAL catalog pages are available even when Jikan's upstream
+  // Standard MAL catalog pages are available even when Tenrai's upstream
   // advanced-search combinations time out. Do not turn plain shelves into searches.
   if (['ranking', 'top'].includes(request.mode) && !request.query && request.genre === 'Any'
     && !request.year && !request.releasedAfter && ['best', 'score', 'popular'].includes(request.sort)
@@ -154,6 +154,7 @@ export async function fetchExplorePage(request: ExploreRequest, page: number, si
   } catch (error) {
     const failure = desktopDataError(request.service, error);
     if (signal?.aborted || failure.code === 'cancelled' || isDesktopAdmissionWait(failure)) throw error;
+    if (request.mode === 'new' && !request.query) throw error;
     if (request.service === 'mal' && page === 1 && request.mode !== 'ranking') {
       const saved = savedExploreAlternative(request); if (saved) return saved;
     }
@@ -164,13 +165,13 @@ export async function fetchExplorePage(request: ExploreRequest, page: number, si
       const result = await fetchSelectedExplorePage({ ...request, service: 'mal' }, page, signal);
       return { ...result, fallback: true, retryAt: failure.retryAt };
     } catch (secondaryError) {
-      if (signal?.aborted || isDesktopAdmissionWait(secondaryError) || desktopDataError('jikan', secondaryError).code === 'cancelled') throw secondaryError;
+      if (signal?.aborted || isDesktopAdmissionWait(secondaryError) || desktopDataError('tenrai', secondaryError).code === 'cancelled') throw secondaryError;
       const saved = savedExploreAlternative(request); if (saved) return saved;
-      const secondaryFailure = desktopDataError('jikan', secondaryError);
+      const secondaryFailure = desktopDataError('tenrai', secondaryError);
       const retryAt = Math.max(failure.retryAt ?? Date.now() + (failure.retryAfterMs || (failure.code === 'access-denied' ? 300_000 : 30_000)),
         secondaryFailure.retryAt ?? Date.now() + (secondaryFailure.retryAfterMs || 30_000));
       throw new DesktopDataError({code:failure.code, provider:'anilist', origin:failure.origin, retryable:true, retryAt, retryAfterMs:Math.max(0,retryAt-Date.now()),
-        message:`AniList unavailable (${failure.code}). Jikan fallback unavailable (${secondaryFailure.code}). Retry after the provider cooldown or check your connection.`});
+        message:`AniList unavailable (${failure.code}). Tenrai fallback unavailable (${secondaryFailure.code}). Retry after the provider cooldown or check your connection.`});
     }
   }
 }
@@ -183,18 +184,7 @@ async function fetchSelectedExplorePage(request: ExploreRequest, page: number, s
       const result = await fetchSelectedExplorePage({ ...request, mode:'popular', sort:request.sort === 'best' ? 'popular' : request.sort }, page, signal);
       return { ...result, fallback:true, catalogKind: result.catalogKind || 'popular-alternative', fallbackLabel:'Popular on MyAnimeList · an alternative while live Trending is unavailable.' };
     }
-    if (request.mode === 'new' && !request.query) {
-      if (page !== 1) throw new Error('The recent-additions feed has one page.');
-      if (request.releasedAfter) throw new Error('Exact episode airing dates are temporarily unavailable.');
-      const feed = await fetchRecentEpisodeListings(signal);
-      const data = feed.data.filter((item: any) => (request.adult || !jikanAdultTitle(item))
-        && (request.genre === 'Any' || item.genres?.some((g:any) => (g.name || g) === request.genre))
-        && (request.format === 'Any' || String(item.type || item.format).toLowerCase() === request.format.toLowerCase())
-        && (!request.year || Number(item.year || item.seasonYear) === request.year)
-        && (request.status === 'Any' || item.status === ({Airing:'Currently Airing',Completed:'Finished Airing',Upcoming:'Not yet aired'} as Record<string,string>)[request.status]));
-      if (request.sort === 'title') data.sort((a: any,b: any) => a.title.localeCompare(b.title));
-      return { data, page:1, hasNextPage:false, service:'mal', paginationVersion:2, fetchedAt:feed.fetchedAt, stale:feed.stale, recentFeedKind:'listed' };
-    }
+    if (request.mode === 'new' && !request.query) throw new DesktopDataError({provider:'tenrai',code:'invalid',retryable:false,message:'Recent episode broadcasts require the airing schedule. Saved episode results remain available.'});
     if (request.format === 'TV Short') throw new Error('Choose All formats or TV for MAL rankings.');
     const response = await fetchJikanPath(malExplorePath(request, page), 900, { signal });
     if (!response.ok) throw new Error('MAL rankings are temporarily unavailable.');

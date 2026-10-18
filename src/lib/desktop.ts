@@ -1,3 +1,4 @@
+import type { SeriesArtworkDescriptor } from './desktopArtwork';
 import { SCHEDULE_ALERT_STATE_KEY, scheduleStateForBackup } from './desktopScheduleState';
 import { loadStoredSession } from './supabaseAuth';
 import {mergeCoverage,coveragePercent,type WatchedCoverage} from './desktopCoverage';
@@ -24,6 +25,7 @@ export type LocalPlaybackSource = {
   poster?: string;
   banner?: string;
   bannerCandidates?: string[];
+  artwork?: SeriesArtworkDescriptor;
   savedAt?: number;
   progressPercent?: number;
   progressUpdatedAt?: number;
@@ -155,7 +157,7 @@ export type DesktopSourceApiResponse = {
 };
 
 export type DesktopMetadataApiRequest = {
-  provider: 'anilist' | 'jikan' | 'anidb' | 'animeschedule' | 'tmdb';
+  provider: 'anilist' | 'tenrai' | 'anidb' | 'animeschedule' | 'tmdb';
   path?: string;
   body?: Record<string, unknown>;
   ttl_seconds?: number;
@@ -1216,8 +1218,9 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
         episode: source.episode ? String(source.episode) : '',
         size: source.size || '',
         poster: source.poster || source.image || '',
-        banner: readHideEpisodeSpoilers() ? '' : source.banner || '',
-        banner_candidates: readHideEpisodeSpoilers() ? [] : Array.isArray(source.bannerCandidates) ? source.bannerCandidates : [],
+        banner: !source.artwork && readHideEpisodeSpoilers() ? '' : source.banner || '',
+        banner_candidates: !source.artwork && readHideEpisodeSpoilers() ? [] : Array.isArray(source.bannerCandidates) ? source.bannerCandidates : [],
+        artwork: source.artwork || null,
         resume_seconds: Number(source.resumeSeconds || 0),
         settings,
       },

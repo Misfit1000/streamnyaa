@@ -330,6 +330,10 @@ struct DesktopSettings {
 }
 
 #[derive(Clone, Deserialize)]
+struct SeriesArtworkCandidate { url: String, role: String }
+#[derive(Clone, Deserialize)]
+struct SeriesArtworkDescriptor { version: u32, identity: String, candidates: Vec<SeriesArtworkCandidate> }
+#[derive(Clone, Deserialize)]
 struct PlaybackRequest {
     #[serde(default)]
     progress_context: Option<playback_progress::Context>,
@@ -342,6 +346,8 @@ struct PlaybackRequest {
     poster: Option<String>,
     banner: Option<String>,
     banner_candidates: Option<Vec<String>>,
+    #[serde(default)]
+    artwork: Option<SeriesArtworkDescriptor>,
     resume_seconds: Option<f64>,
     settings: Option<DesktopSettings>,
 }
@@ -1787,6 +1793,13 @@ fn playback_cover_source(request: &PlaybackRequest) -> Option<String> {
 }
 
 fn playback_cover_sources(request: &PlaybackRequest) -> Vec<(String, &'static str)> {
+    if let Some(artwork) = request.artwork.as_ref().filter(|a| a.version == 1 && !a.identity.trim().is_empty()) {
+        return artwork.candidates.iter().take(10).filter_map(|candidate| {
+            let url = reqwest::Url::parse(&candidate.url).ok()?;
+            if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() { return None; }
+            Some((url.to_string(), if candidate.role == "poster" {"poster"} else {"landscape"}))
+        }).collect();
+    }
     let mut sources = Vec::new();
     let mut candidates = Vec::new();
     candidates.push(request.banner.as_deref());
@@ -1806,7 +1819,7 @@ fn playback_cover_sources(request: &PlaybackRequest) -> Vec<(String, &'static st
             *kind = "poster";
         } else {
             // Reserve a slot for poster-only catalogs even with many banners.
-            sources.truncate(2);
+            sources.truncate(7);
             sources.push((poster.to_string(), "poster"));
         }
     }
@@ -1829,11 +1842,12 @@ fn cover_local_path(value: &str) -> PathBuf {
 
 fn read_cover_bytes(source: &str) -> Result<Vec<u8>, String> {
     if is_remote_url(source) {
-        let client = reqwest::blocking::Client::builder()
+        static COVER_CLIENT: OnceLock<Result<reqwest::blocking::Client, String>> = OnceLock::new();
+        let client = COVER_CLIENT.get_or_init(|| reqwest::blocking::Client::builder()
             .connect_timeout(Duration::from_secs(1))
             .timeout(Duration::from_secs(2))
             .build()
-            .map_err(|error| format!("Could not prepare cover downloader: {}", error))?;
+            .map_err(|error| format!("Could not prepare cover downloader: {}", error))).as_ref().map_err(Clone::clone)?;
         let response = client
             .get(source)
             .send()
@@ -1843,9 +1857,8 @@ fn read_cover_bytes(source: &str) -> Result<Vec<u8>, String> {
         if response.content_length().unwrap_or(0) > PLAYER_COVER_MAX_BYTES {
             return Err("Cover image is too large.".to_string());
         }
-        let bytes = response
-            .bytes()
-            .map_err(|error| format!("Could not read cover image: {}", error))?;
+        let mut bytes = Vec::new();
+        response.take(PLAYER_COVER_MAX_BYTES + 1).read_to_end(&mut bytes).map_err(|error| format!("Could not read cover image: {}", error))?;
         if bytes.len() as u64 > PLAYER_COVER_MAX_BYTES {
             return Err("Cover image is too large.".to_string());
         }
@@ -1895,16 +1908,14 @@ fn cover_fill(
     target_height: u32,
 ) -> image::RgbaImage {
     let (source_width, source_height) = decoded.dimensions();
-    let scale = (target_width as f64 / source_width as f64)
-        .max(target_height as f64 / source_height as f64)
-        .max(0.01);
-    let resized_width = ((source_width as f64 * scale).round() as u32).max(target_width);
-    let resized_height = ((source_height as f64 * scale).round() as u32).max(target_height);
-    let resized =
-        image::imageops::resize(decoded, resized_width, resized_height, FilterType::Lanczos3);
-    let crop_x = resized_width.saturating_sub(target_width) / 2;
-    let crop_y = resized_height.saturating_sub(target_height) / 2;
-    image::imageops::crop_imm(&resized, crop_x, crop_y, target_width, target_height).to_image()
+    // Crop before resizing so extreme aspect ratios cannot allocate an enormous intermediate bitmap.
+    let target_ratio = target_width as f64 / target_height.max(1) as f64;
+    let source_ratio = source_width as f64 / source_height.max(1) as f64;
+    let crop_width = if source_ratio > target_ratio { (source_height as f64 * target_ratio).round().max(1.0) as u32 } else { source_width }.min(source_width);
+    let crop_height = if source_ratio < target_ratio { (source_width as f64 / target_ratio).round().max(1.0) as u32 } else { source_height }.min(source_height);
+    let crop=image::imageops::crop_imm(decoded,(source_width-crop_width)/2,(source_height-crop_height)/2,crop_width,crop_height);
+    image::imageops::resize(&crop.to_image(),target_width,target_height,FilterType::Lanczos3)
+
 }
 
 fn compose_full_landscape_art(
@@ -1912,10 +1923,15 @@ fn compose_full_landscape_art(
     target_width: u32,
     target_height: u32,
 ) -> image::RgbaImage {
-    // A cinematic loading frame must fill the player. The previous contain
-    // layout created large blurred letterbox bands for ultrawide artwork.
-    // Center-crop with Lanczos instead, preserving the source color balance.
-    cover_fill(decoded, target_width, target_height)
+    let fill_scale = (target_width as f64 / decoded.width() as f64).max(target_height as f64 / decoded.height() as f64);
+    let contain_scale = (target_width as f64 / decoded.width() as f64).min(target_height as f64 / decoded.height() as f64).min(1.25);
+    if fill_scale / contain_scale <= 1.35 && fill_scale <= 1.25 { return cover_fill(decoded,target_width,target_height); }
+    let mut matte = image::imageops::blur(&cover_fill(decoded,target_width,target_height), 28.0);
+    let width = (decoded.width() as f64 * contain_scale).round().max(1.0) as u32;
+    let height = (decoded.height() as f64 * contain_scale).round().max(1.0) as u32;
+    let foreground = image::imageops::resize(decoded,width,height,FilterType::Lanczos3);
+    image::imageops::overlay(&mut matte,&foreground,((target_width-width)/2) as i64,((target_height-height)/2) as i64);
+    matte
 }
 
 fn apply_loading_readability_gradient(image: &mut image::RgbaImage) {
@@ -1934,18 +1950,9 @@ fn apply_loading_readability_gradient(image: &mut image::RgbaImage) {
 }
 
 fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage, &'static str) {
-    let target_width = PLAYER_COVER_BACKGROUND_WIDTH;
-    let target_height = PLAYER_COVER_BACKGROUND_HEIGHT;
+    let target_width = decoded.width().clamp(PLAYER_COVER_BACKGROUND_WIDTH, 3840);
+    let target_height = target_width * PLAYER_COVER_BACKGROUND_HEIGHT / PLAYER_COVER_BACKGROUND_WIDTH;
     let mut composition = compose_full_landscape_art(decoded, target_width, target_height);
-    if decoded.width() < decoded.height() {
-        composition = image::imageops::blur(&composition, 28.0);
-        let height = target_height * 9 / 10;
-        let width = ((decoded.width() as u64 * height as u64) / decoded.height() as u64) as u32;
-        let poster = image::imageops::resize(decoded, width, height, FilterType::Lanczos3);
-        image::imageops::overlay(&mut composition, &poster,
-            (target_width.saturating_sub(width + target_width / 16)) as i64,
-            ((target_height - height) / 2) as i64);
-    }
     apply_loading_readability_gradient(&mut composition);
     (composition, "landscape")
 }
@@ -1957,6 +1964,29 @@ fn is_quality_landscape_art(decoded: &image::RgbaImage) -> bool {
     width >= 640 && height >= 320 && width as f64 / height.max(1) as f64 >= 1.35
 }
 
+fn decode_cover(bytes: &[u8]) -> Result<image::DynamicImage,String> {
+    let reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().map_err(|e| e.to_string())?;
+    let (width,height) = reader.into_dimensions().map_err(|e| e.to_string())?;
+    if width == 0 || height == 0 || width as u64 * height as u64 > 16_777_216 { return Err("Artwork dimensions exceed the safe decode limit".into()); }
+    image::load_from_memory(bytes).map_err(|e| e.to_string())
+}
+fn artwork_cache_path(identity: &str, source: &str) -> PathBuf {
+    let mut hash = DefaultHasher::new(); ("series-v1",identity,source).hash(&mut hash);
+    player_preferences_path().parent().unwrap_or(Path::new(".")).join("artwork-v1").join(format!("{:016x}.image",hash.finish()))
+}
+fn store_artwork_cache(path: &Path, bytes: &[u8]) {
+    let Some(parent) = path.parent() else { return; };
+    if fs::create_dir_all(parent).is_err() { return; }
+    let mut entries: Vec<_> = fs::read_dir(parent).into_iter().flatten().flatten().filter_map(|e| {
+        let p = e.path(); let m = e.metadata().ok()?; if !m.is_file() || p.extension()?.to_str()? != "image" { return None; }
+        Some((p,m.len(),m.modified().ok()?))
+    }).collect();
+    entries.sort_by_key(|(_,_,time)| *time);
+    let mut total: u64 = entries.iter().map(|(_,size,_)| *size).sum();
+    for (p,size,_) in entries { if total + bytes.len() as u64 <= 128 * 1024 * 1024 { break; } if fs::remove_file(p).is_ok() { total=total.saturating_sub(size); } }
+    let temp=path.with_extension(format!("{}.tmp",now_millis()));
+    if fs::write(&temp,bytes).is_ok() { let _=fs::rename(&temp,path); let _=fs::remove_file(temp); }
+}
 fn prepare_player_cover(
     cache_dir: &Path,
     request: &PlaybackRequest,
@@ -1967,36 +1997,26 @@ fn prepare_player_cover(
     }
 
     let mut decoded_cover = None;
+    let mut best_score = (0_u8, 0_u64);
     let mut last_error = None;
     let artwork_started = Instant::now();
+    let identity = request.artwork.as_ref().map(|a| a.identity.as_str()).unwrap_or(request.anime_title.as_str());
     for (source, source_kind) in sources.into_iter().take(8) {
-        if artwork_started.elapsed() >= Duration::from_secs(6) {
-            break;
-        }
-        match read_cover_bytes(&source).and_then(|bytes| {
-            image::load_from_memory(&bytes)
-                .map_err(|error| format!("Could not decode cover image: {}", error))
-        }) {
-            Ok(image) if image.width() > 0 && image.height() > 0 => {
-                let decoded = image.to_rgba8();
-                if is_quality_landscape_art(&decoded)
-                    || (source_kind == "poster" && decoded.width() >= 100 && decoded.height() >= 150) {
-                    decoded_cover = Some((decoded, source, source_kind));
-                    break;
-                }
-                log_info(format!(
-                    "Player artwork candidate skipped: expected quality landscape art, received {}x{}",
-                    decoded.width(),
-                    decoded.height()
-                ));
-                last_error = Some("No quality landscape player artwork was available.".to_string());
+        if artwork_started.elapsed() >= Duration::from_secs(6) { break; }
+        let cached_path = artwork_cache_path(identity,&source);
+        let cached = if is_remote_url(&source) { fs::metadata(&cached_path).ok().filter(|m|m.len() <= PLAYER_COVER_MAX_BYTES).and_then(|_|fs::read(&cached_path).ok()) } else { None };
+        let fresh = file_modified_ms(&cached_path) + 7 * 86_400_000 > now_millis();
+        let downloaded = if cached.is_none() || !fresh { read_cover_bytes(&source).ok().filter(|b| decode_cover(b).is_ok()) } else { None };
+        let chosen = [cached.as_deref(),downloaded.as_deref()].into_iter().flatten().filter_map(|bytes|decode_cover(bytes).ok().map(|image|(image,bytes))).max_by_key(|(image,_)|image.width() as u64 * image.height() as u64);
+        if let Some((image,bytes)) = chosen {
+            let pixels=image.width() as u64 * image.height() as u64;
+            let quality = if source_kind == "landscape" && image.width() >= 1280 && image.height() >= 320 {2}
+                else if source_kind == "poster" && image.width() >= 320 && image.height() >= 480 {1} else {0};
+            if is_quality_landscape_art(&image.to_rgba8()) || source_kind == "poster" && image.width() >= 100 && image.height() >= 150 {
+                if is_remote_url(&source) && downloaded.as_deref() == Some(bytes) { store_artwork_cache(&cached_path,bytes); }
+                if decoded_cover.is_none() || (quality,pixels) > best_score { best_score=(quality,pixels); decoded_cover=Some((image.to_rgba8(),source,source_kind)); }
             }
-            Ok(_) => last_error = Some("Artwork dimensions were empty.".to_string()),
-            Err(error) => {
-                log_info(format!("Player artwork candidate skipped: {}", error));
-                last_error = Some(error);
-            }
-        }
+        } else { last_error=Some("Series artwork was unavailable; preserving the loading fallback".to_string()); }
     }
     let Some((decoded, _source, source_kind)) = decoded_cover else {
         if let Some(error) = last_error {
@@ -2032,7 +2052,10 @@ fn prepare_player_cover(
     fs::create_dir_all(&metadata_dir)
         .map_err(|error| format!("Could not prepare player metadata folder: {}", error))?;
     let loading_image_path = metadata_dir.join("loading-cover.jpg");
-    let loading_image_rgb = image::DynamicImage::ImageRgba8(background.clone()).to_rgb8();
+    let overlay_bytes = loading_overlay_bgra(&background);
+    let mut loading_rgb = image::RgbImage::new(background.width(),background.height());
+    for (pixel, bgra) in loading_rgb.pixels_mut().zip(overlay_bytes.chunks_exact(4)) { *pixel=image::Rgb([bgra[2],bgra[1],bgra[0]]); }
+    let loading_image_rgb = loading_rgb;
     let loading_image_file = fs::File::create(&loading_image_path)
         .map_err(|error| format!("Could not create cover loading image: {}", error))?;
     image::codecs::jpeg::JpegEncoder::new_with_quality(loading_image_file, 90)
@@ -2199,7 +2222,7 @@ fn prepare_player_metadata_for_launch(
     };
 
     let (tx, rx) = mpsc::channel();
-    let cache_dir_for_cover = cache_dir.to_path_buf();
+    let cache_dir_for_cover = cache_dir.join("artwork-jobs").join(format!("{}-{}", now_millis(), PLAYBACK_SWITCH_GENERATION.load(Ordering::SeqCst)));
     let request_for_cover = request.clone();
     let title_for_cover = title.to_string();
     let started_at = Instant::now();
@@ -2270,6 +2293,7 @@ fn prepare_player_metadata_for_launch(
 fn spawn_player_cover_metadata_update(
     ipc: String,
     pending_cover: mpsc::Receiver<Result<PlayerMetadataWrite, String>>,
+    generation: u64,
 ) {
     thread::spawn(move || {
         let started_at = Instant::now();
@@ -2281,7 +2305,7 @@ fn spawn_player_cover_metadata_update(
                     .and_then(|guard| guard.player_ipc.clone())
                     .map(|active_ipc| active_ipc == ipc)
                     .unwrap_or(false);
-                if still_active && write.has_cover {
+                if still_active && playback_generation_current(generation) && write.has_cover {
                     if let Some(loading_image_path) = write.loading_image_path.as_ref() {
                         maybe_replace_generic_loading_frame(&ipc, loading_image_path);
                     }
@@ -4538,6 +4562,7 @@ fn launch_or_reuse_player(
     title: &str,
 ) -> Result<String, String> {
     let started_at = Instant::now();
+    let artwork_generation = PLAYBACK_SWITCH_GENERATION.load(Ordering::SeqCst);
     let mut metadata_launch = prepare_player_metadata_for_launch(cache_dir, request, title);
     let metadata_file = metadata_launch.path.clone();
     let subtitle_request_file = match prepare_player_subtitle_import_request(cache_dir) {
@@ -4593,7 +4618,7 @@ fn launch_or_reuse_player(
                 log_info("MPV playback-ready message sent while reusing player");
                 show_player_text_with_title(&ipc, Some(title), "Switching episode...");
                 if let Some(pending_cover) = metadata_launch.pending_cover.take() {
-                    spawn_player_cover_metadata_update(ipc.clone(), pending_cover);
+                    spawn_player_cover_metadata_update(ipc.clone(), pending_cover, artwork_generation);
                 }
                 log_info(format!(
                     "Playback perf: reused MPV in {} ms{}",
@@ -4774,7 +4799,7 @@ fn launch_or_reuse_player(
         log_info("MPV playback-ready message sent after IPC listener attach");
         show_player_text_with_title(&ipc, Some(title), "Preparing torrent session...");
         if let Some(pending_cover) = metadata_launch.pending_cover.take() {
-            spawn_player_cover_metadata_update(ipc.clone(), pending_cover);
+            spawn_player_cover_metadata_update(ipc.clone(), pending_cover, artwork_generation);
         }
         log_info(format!(
             "Playback perf: opened MPV in {} ms{}",
@@ -6134,7 +6159,7 @@ fn metadata_cache_key(request: &MetadataApiRequest) -> String {
         .unwrap_or_default();
     format!(
         "{}|{}|{}",
-        request.provider.trim().to_ascii_lowercase(),
+        if request.provider.trim().eq_ignore_ascii_case("tenrai") { "tenrai:v1".to_string() } else { request.provider.trim().to_ascii_lowercase() },
         request.path.clone().unwrap_or_default(),
         body
     )
@@ -6193,7 +6218,7 @@ fn valid_desktop_metadata_payload(provider: &str, data: &serde_json::Value) -> b
                     .map(|errors| errors.is_empty())
                     .unwrap_or(true)
         }
-        "jikan" => object
+        "tenrai" | "jikan" => object
             .get("data")
             .map(|value| value.is_array() || value.is_object())
             .unwrap_or(false),
@@ -6811,6 +6836,48 @@ mod tests {
     }
 
     #[test]
+    fn series_artwork_selection_keeps_better_candidates_and_aspect() {
+        let root=env::temp_dir().join(format!("streamnyaa-series-quality-{}",now_millis()));
+        fs::create_dir_all(&root).unwrap();
+        let low=root.join("low.png"); let high=root.join("high.png");
+        image::RgbaImage::from_pixel(640,360,image::Rgba([220,0,0,255])).save(&low).unwrap();
+        image::RgbaImage::from_pixel(1280,720,image::Rgba([0,0,220,255])).save(&high).unwrap();
+        let mut request=playback_request_for_episode("1");
+        request.banner=Some(low.to_string_lossy().into()); request.banner_candidates=Some(vec![high.to_string_lossy().into()]);request.poster=None;
+        let cover=prepare_player_cover(&root,&request).unwrap().unwrap();
+        let image=image::open(cover.loading_image_path).unwrap().to_rgb8();
+        let pixel=image.get_pixel(image.width()/2,40);
+        assert!(pixel[2]>pixel[0]+50,"low-resolution first response must not win");
+        let wide=image::RgbaImage::from_pixel(1900,400,image::Rgba([10,80,140,255]));
+        let composed=compose_full_landscape_art(&wide,1920,1080);
+        assert_eq!(composed.get_pixel(960,540).0,[10,80,140,255]);
+        assert!(decode_cover(b"invalid image").is_err());
+        assert_ne!(artwork_cache_path("anilist:1","https://images.test/a"),artwork_cache_path("anilist:2","https://images.test/a"));
+        let _=fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    #[ignore = "live public metadata through the native command, no mocked transport"]
+    async fn live_tenrai_native_bridge_acceptance() {
+        async fn get(path:&str)->data_requests::DataResponse {
+            fetch_desktop_metadata_api(MetadataApiRequest{provider:"tenrai".into(),path:Some(path.into()),body:None,ttl_seconds:Some(30)},None,Some("foreground".into()),Some(79_000)).await.expect("live native metadata request")
+        }
+        for path in ["/anime/52991/episodes","/anime/21/episodes?page=2"] {
+            let result=get(path).await;
+            assert_eq!(result.provider,"tenrai"); assert_eq!(result.cache_status,"network");
+            let entries=result.data["data"].as_array().expect("episode array");
+            assert!(!entries.is_empty()); assert!(entries.iter().any(|e|e["title"].as_str().is_some_and(|s|!s.is_empty())));
+            println!("live bridge path={} entries={} first_episode={} last_page={} ms={}",path,entries.len(),entries[0]["mal_id"],result.data["pagination"]["last_visible_page"],result.duration_ms);
+        }
+        let current=get("/seasons/now?limit=25").await;
+        let candidates=current.data["data"].as_array().expect("current season catalogue");
+        let anime=candidates.iter().find(|a|a["airing"]==true && a["episodes"].as_u64().unwrap_or(0)>0).expect("published airing title");
+        let id=anime["mal_id"].as_u64().unwrap(); let result=get(&format!("/anime/{}/episodes",id)).await;
+        assert!(result.data["data"].as_array().is_some_and(|v|!v.is_empty()));
+        println!("live bridge ongoing MAL={} title={} entries={} ms={}",id,anime["title"],result.data["data"].as_array().unwrap().len(),result.duration_ms);
+    }
+
+    #[test]
     fn playback_source_uses_valid_magnet() {
         let hash = "0123456789abcdef0123456789abcdef01234567";
         let request = PlaybackRequest {
@@ -6824,6 +6891,7 @@ mod tests {
             poster: None,
             banner: None,
             banner_candidates: None,
+            artwork: None,
             resume_seconds: None,
             settings: None,
         };
@@ -6994,6 +7062,7 @@ mod tests {
             poster: None,
             banner: None,
             banner_candidates: None,
+            artwork: None,
             resume_seconds: None,
             settings: None,
         };
@@ -7016,6 +7085,7 @@ mod tests {
             poster: None,
             banner: None,
             banner_candidates: None,
+            artwork: None,
             resume_seconds: None,
             settings: None,
         }
@@ -7123,6 +7193,7 @@ mod tests {
             poster: None,
             banner: None,
             banner_candidates: None,
+            artwork: None,
             resume_seconds: None,
             settings: None,
         };

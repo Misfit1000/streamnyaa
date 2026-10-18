@@ -1,7 +1,7 @@
 import { archiveBlogPost, listArchivedBlogPosts } from './blogArchive.js';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
-const JIKAN_URL = 'https://api.jikan.moe/v4';
+const JIKAN_URL = 'https://api.tenrai.org/v1';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24;
 const FALLBACK_CACHE_TTL_MS = 1000 * 60 * 15;

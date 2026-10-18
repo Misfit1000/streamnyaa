@@ -1,3 +1,4 @@
+import { MAL_METADATA_BASE_URL, MAL_METADATA_ADAPTER_VERSION, supportedMalMetadataPath } from '../lib/malMetadataProvider';
 import { recentFeedBound, recentHomeQuery, validRecentSchedules } from './desktopRecentSchedule';
 import { useStore } from '../store/useStore';
 import { enrichDesktopScheduleRevisions } from '../lib/scheduleRevisions';
@@ -14,7 +15,7 @@ const LOCAL_METADATA_LIMIT = 90;
 const LOCAL_METADATA_MAX_STALE_MS = 1000 * 60 * 60 * 24 * 7;
 const PROVIDER_COOLDOWN_FALLBACK_MS = 1000 * 60;
 
-type MetadataProvider = 'anilist' | 'jikan' | 'anidb' | 'animeschedule' | 'tmdb';
+type MetadataProvider = 'anilist' | 'tenrai' | 'anidb' | 'animeschedule' | 'tmdb';
 
 type MetadataCacheEntry = {
   value: unknown;
@@ -66,7 +67,7 @@ export const isValidDesktopMetadataPayload = (provider: MetadataProvider, value:
     return Boolean(record.data && typeof record.data === 'object' && !Array.isArray(record.data))
       && (!Array.isArray(record.errors) || record.errors.length === 0);
   }
-  if (provider === 'jikan') {
+  if (provider === 'tenrai') {
     return Object.prototype.hasOwnProperty.call(record, 'data')
       && (Array.isArray(record.data) || Boolean(record.data && typeof record.data === 'object'));
   }
@@ -420,15 +421,17 @@ export const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 2
   });
 };
 
-const fetchJikanPathDirect = (path: string) => fetch(`https://api.jikan.moe/v4${path}`);
+const fetchJikanPathDirect = (path: string, signal?: AbortSignal) => fetch(`${MAL_METADATA_BASE_URL}${path}`, { signal });
 
 export const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: DesktopRequestOptions = {}) => {
-  if (options.signal?.aborted) throw desktopDataError('jikan', new DOMException('Cancelled', 'AbortError'));
-  const cacheKey = cacheKeyFor('jikan', path);
-  return fetchWithLocalMetadataCache('jikan', cacheKey, ttlSeconds, async () => {
+  if (options.signal?.aborted) throw desktopDataError('tenrai', new DOMException('Cancelled', 'AbortError'));
+  const validPath = supportedMalMetadataPath(path);
+  if (!validPath) throw new DesktopDataError({provider:'tenrai', code:'invalid', retryable:false, statusCode:501, message:'This metadata endpoint is unsupported.'});
+  const cacheKey = cacheKeyFor('tenrai', `v${MAL_METADATA_ADAPTER_VERSION}:${validPath}`);
+  return fetchWithLocalMetadataCache('tenrai', cacheKey, ttlSeconds, async () => {
     if (isDesktopApp()) {
       const desktopResponse = await fetchDesktopMetadataApi({
-        provider: 'jikan',
+        provider: 'tenrai',
         path,
         ttl_seconds: ttlSeconds,
       }, options);
@@ -442,11 +445,14 @@ export const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: 
       });
     }
 
-    const gatewayResponse = await fetch(`/api/stream-sources?provider=jikan&ttl=${ttlSeconds}&path=${encodeURIComponent(path)}`).catch(() => null);
-    if (gatewayResponse?.ok) return gatewayResponse;
-    return fetchJikanPathDirect(path);
+    const gatewayResponse = await fetch(`/api/stream-sources?provider=tenrai&ttl=${ttlSeconds}&path=${encodeURIComponent(validPath)}`, { signal: options.signal }).catch(() => null);
+    if (gatewayResponse && (gatewayResponse.ok || [400,401,403,404,429,501].includes(gatewayResponse.status))) return gatewayResponse;
+    return fetchJikanPathDirect(validPath, options.signal);
   });
 };
+
+/** Explicit transport name; fetchJikanPath remains a source-compatible wrapper. */
+export const fetchTenraiPath = fetchJikanPath;
 
 export const fetchMetadataProviderPath = async (
   provider: 'tmdb' | 'animeschedule',
@@ -1047,7 +1053,7 @@ const jikanRes = await fetchJikanPath(detailPath, 21600, options);
         }
       } catch (error) {
         if (error instanceof Error && error.message.includes('NSFW')) throw error;
-        const failure = desktopDataError('jikan', error);
+        const failure = desktopDataError('tenrai', error);
         if (options.signal?.aborted || ['cancelled', 'queued', 'access-denied', 'rate-limited'].includes(failure.code)) throw error;
       }
       }
@@ -1181,16 +1187,16 @@ export const fetchMangaDetails = async (id: string) => {
 };
 
 export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: DesktopRequestOptions = {}) => {
-  if (!/^[1-9]\d*$/.test(id)) throw desktopDataError('jikan', new Error('Invalid MAL episode identity.'));
-  if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw desktopDataError('jikan', new Error('Invalid episode page.'));
+  if (!/^[1-9]\d*$/.test(id)) throw desktopDataError('tenrai', new Error('Invalid MAL episode identity.'));
+  if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw desktopDataError('tenrai', new Error('Invalid episode page.'));
   try {
     const path = page === 1 ? `/anime/${id}/episodes` : `/anime/${id}/episodes?page=${page}`;
     let res: Response;
     try {
       res = await fetchJikanPath(path, 600, options);
-      if (!res.ok) throw desktopDataError('jikan', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
+      if (!res.ok) throw desktopDataError('tenrai', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
     } catch (error) {
-      const failure = desktopDataError('jikan', error);
+      const failure = desktopDataError('tenrai', error);
       // Both are documented forms of page one. Try the explicit form once for
       // an upstream timeout/server failure, never after denial or throttling.
       // Desktop transport already performs its bounded network retry. Retrying
@@ -1198,37 +1204,37 @@ export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: 
       if (isDesktopApp() || page !== 1 || options.signal?.aborted || !(['timeout'].includes(failure.code) || (failure.statusCode || 0) >= 500)) throw error;
       res = await fetchJikanPath(`/anime/${id}/episodes?page=1`, 600, options);
     }
-    if (!res.ok) throw desktopDataError('jikan', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
+    if (!res.ok) throw desktopDataError('tenrai', new Error(`Episode metadata failed with status ${res.status}.`), res.status);
     const json = await res.json().catch((error) => {
-      throw desktopDataError('jikan', error);
+      throw desktopDataError('tenrai', error);
     });
     if (!json || !Array.isArray(json.data)) {
-      throw desktopDataError('jikan', new Error('Episode metadata response was invalid.'));
+      throw desktopDataError('tenrai', new Error('Episode metadata response was invalid.'));
     }
     const stale = res.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' || res.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale';
     // An empty upstream response during an outage must not erase known titles.
     const saved = isDesktopApp() && !json.data.length ? readEpisodePage(id, page) : undefined;
     if (saved?.data.length) return { data: saved.data, pagination: saved.pagination,
-      streamnyaa: { status: 'stale', provider: 'jikan', savedAt: saved.savedAt } };
+      streamnyaa: { status: 'stale', provider: saved.provider || 'jikan', savedAt: saved.savedAt } };
     const fetchedAt = Number(res.headers.get('X-StreamNyaa-Fetched-At')) || (stale ? undefined : Date.now());
-    if (!stale) saveEpisodePage(id, page, json, fetchedAt);
+    if (!stale) saveEpisodePage(id, page, {...json,provider:'tenrai'}, fetchedAt);
     return {
       ...json,
       streamnyaa: {
         status: stale ? 'stale' : 'authoritative',
-        provider: 'jikan',
+        provider: 'tenrai',
         fetchedAt,
         retryAt: Number(res.headers.get('X-StreamNyaa-Retry-At')) || undefined,
         cached: Boolean(res.headers.get('X-StreamNyaa-Local-Cache')) || ['memory','disk','stale'].includes(res.headers.get('X-StreamNyaa-Desktop-Cache') || ''),
       },
     };
   } catch (error) {
-    const failure = desktopDataError('jikan', error);
+    const failure = desktopDataError('tenrai', error);
     if (options.signal?.aborted || failure.code === 'cancelled') throw error;
     const saved = isDesktopApp() ? readEpisodePage(id, page) : undefined;
-    if (saved) return { data: saved.data, pagination: saved.pagination, streamnyaa: { status: 'stale', provider: 'jikan', savedAt: saved.savedAt, fetchedAt:saved.savedAt, retryAt:failure.retryAt } };
+    if (saved) return { data: saved.data, pagination: saved.pagination, streamnyaa: { status: 'stale', provider: saved.provider || 'jikan', savedAt: saved.savedAt, fetchedAt:saved.savedAt, retryAt:failure.retryAt } };
     if (isDesktopApp()) throw error;
-    console.error('Failed to fetch episodes from Jikan', error);
+    console.error('Failed to fetch episodes from Tenrai', error);
     return { data: [], pagination: { last_visible_page: 1 } };
   }
 };
@@ -1240,7 +1246,7 @@ export function cachedAnimeEpisodeWindow(id: string, page = 1) {
   const last = saved.pagination.last_visible_page;
   const fresh = Date.now() - saved.savedAt < 600_000;
   return {data:saved.data,pagination:saved.pagination,latestPage:last,latestPageResolved:fresh && (last === page || last === 1),
-    complete:fresh && (last === page || last === 1),streamnyaa:{status:fresh ? 'authoritative' : 'stale',provider:'jikan',fetchedAt:saved.savedAt,savedAt:saved.savedAt}};
+    complete:fresh && (last === page || last === 1),streamnyaa:{status:fresh ? 'authoritative' : 'stale',provider:saved.provider || 'jikan',fetchedAt:saved.savedAt,savedAt:saved.savedAt}};
 }
 /** Requested episodes are usable without waiting for an optional latest-page request. */
 export async function fetchAnimeEpisodeWindow(id: string, page = 1, options: DesktopRequestOptions = {}) {

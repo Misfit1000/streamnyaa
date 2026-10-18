@@ -18,7 +18,7 @@ export default function DesktopDiagnosticCheck() {
       const runtime = await getDesktopRuntimeStatus();
       record({ label: 'Native playback tools', status: runtime.ready ? 'Ready' : 'Needs attention', action: runtime.ready ? 'The configured engine and player are available.' : 'Check the bundled binaries and executable overrides below.' });
     } catch { record({ label: 'Native playback tools', status: 'Unavailable', action: 'Restart the desktop app, then run this check again.' }); }
-    for (const check of [{ provider: 'anilist', label: 'Primary catalog', path: '' }, { provider: 'jikan', label: 'Fallback details', path: '/anime/1' }, { provider: 'jikan', label: 'Episode metadata', path: '/anime/1/episodes' }, { provider: 'jikan', label: 'Calendar broadcasts', path: '/schedules' }, { provider: 'jikan', label: 'MAL rankings', path: '/top/anime' }] as const) {
+    for (const check of [{ provider: 'anilist', label: 'Primary catalog', path: '' }, { provider: 'tenrai', label: 'Fallback details', path: '/anime/1' }, { provider: 'tenrai', label: 'Episode metadata', path: '/anime/1/episodes' }, { provider: 'tenrai', label: 'Calendar broadcasts', path: '/schedules' }, { provider: 'tenrai', label: 'MAL rankings', path: '/top/anime' }] as const) {
       const { provider } = check;
       if (active.signal.aborted) break;
       try {
@@ -41,7 +41,7 @@ export default function DesktopDiagnosticCheck() {
             : failure.code === 'rate-limited' ? 'Allow the provider cooldown to finish before checking again.'
             : failure.code === 'offline' ? 'Windows reports this device offline. Reconnect, then retry.'
             : failure.code === 'invalid' ? 'The provider returned an unreadable response. Retry later; this is not a confirmed connection problem.'
-            : check.label === 'Episode metadata' ? 'Jikan could not return the episode list for the diagnostic sample. This does not mean all anime are unavailable. Open your anime: saved episode titles and numbered navigation remain usable. Retry this endpoint after cooldown.'
+            : check.label === 'Episode metadata' ? 'Tenrai could not return the episode list for the diagnostic sample. This does not mean all anime are unavailable. Open your anime: saved episode titles and numbered navigation remain usable. Retry this endpoint after cooldown.'
             : failure.code === 'timeout' || (failure.statusCode || 0) >= 500 ? 'The provider timed out or returned a server error. Retry later; other features may still work.'
             : 'This endpoint failed. Retry after cooldown or inspect the other checks to see which features still respond.' });
       }

@@ -1065,13 +1065,16 @@ function update_cover_overlay(show, width, height, s)
   if cover_path == "" or cover_w <= 0 or cover_h <= 0 then
     return nil
   end
+  local scale = math.min(width / cover_w, height / cover_h)
+  local display_w, display_h = math.floor(cover_w * scale), math.floor(cover_h * scale)
+  local display_x, display_y = math.floor((width-display_w)/2), math.floor((height-display_h)/2)
   local render_key = tostring(width) .. "x" .. tostring(height)
   if cover_overlay.render_key == render_key then
     return { x = 0, y = 0, w = width, h = height, kind = cover_kind }
   end
   local ok, result, err = pcall(mp.command_native, {
-    "overlay-add", 3, 0, 0, cover_path, 0, "bgra", cover_w, cover_h, cover_w * 4,
-    math.floor(width), math.floor(height)
+    "overlay-add", 3, display_x, display_y, cover_path, 0, "bgra", cover_w, cover_h, cover_w * 4,
+    display_w, display_h
   })
   -- Commands without a return value (including overlay-add) succeed with nil.
   -- Only an exception or the second error return indicates failure.

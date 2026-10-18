@@ -1,5 +1,7 @@
+import { MAL_METADATA_BASE_URL, supportedMalMetadataPath } from '../src/lib/malMetadataProvider';
 const ANILIST_URL = 'https://graphql.anilist.co';
-const JIKAN_URL = 'https://api.jikan.moe/v4';
+const JIKAN_URL = MAL_METADATA_BASE_URL;
+class UpstreamMetadataError extends Error { constructor(message: string, readonly status: number, readonly retryAfter?: string | null) { super(message); } }
 const TMDB_URL = 'https://api.themoviedb.org/3';
 const ANIME_SCHEDULE_URL = 'https://animeschedule.net/api/v3';
 const ANIDB_URL = 'https://api.anidb.net:9001/httpapi';
@@ -133,20 +135,21 @@ async function fetchAniList(req: any, ttlSeconds: number) {
 }
 
 async function fetchJikan(req: any, ttlSeconds: number) {
-  const path = safeJikanPath(Array.isArray(req.query.path) ? req.query.path[0] : req.query.path);
-  if (!path) throw new Error('Valid Jikan path is required.');
+  const path = supportedMalMetadataPath(Array.isArray(req.query.path) ? req.query.path[0] : req.query.path);
+  if (!path) throw new UpstreamMetadataError('Unsupported metadata path.', 501);
 
-  return cachedJson(`jikan:${path}`, ttlSeconds, async () => {
+  return cachedJson(`tenrai:v1:${path}`, ttlSeconds, async () => {
     const response = await fetch(`${JIKAN_URL}${path}`, {
       // Leave room for the desktop's eight-second HTTP bound to receive a
       // cached response or an actionable error instead of another silent timeout.
       signal: AbortSignal.timeout(5000),
       headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa Metadata Cache/1.0' },
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(data?.message || `Jikan returned ${response.status}`);
+      throw new UpstreamMetadataError(data?.message || `Metadata provider returned ${response.status}`, response.status, response.headers.get('Retry-After'));
     }
+    if (!data || !('data' in data)) throw new UpstreamMetadataError('Invalid metadata response.', 502);
     return data;
   });
 }
@@ -298,11 +301,12 @@ export default async function handler(req: any, res: any) {
       return sendCached(res, result.value, ttlSeconds, result.state);
     }
 
-    if (provider === 'jikan') {
+    if (provider === 'tenrai' || provider === 'jikan') {
       if (req.method !== 'GET') return res.status(405).json({ error: 'Jikan cache requires GET.' });
       const result = await fetchJikan(req, ttlSeconds);
       res.setHeader('X-StreamNyaa-Fetched-At', String(result.fetchedAt));
-      return sendCached(res, { ...result.value as Record<string, unknown>, streamnyaa: { fetchedAt: result.fetchedAt, stale: result.state === 'STALE' } }, ttlSeconds, result.state);
+      res.setHeader('X-StreamNyaa-Provider', 'tenrai');
+      return sendCached(res, { ...result.value as Record<string, unknown>, streamnyaa: { provider: 'tenrai', adapterVersion: 1, fetchedAt: result.fetchedAt, stale: result.state === 'STALE' } }, ttlSeconds, result.state);
     }
 
     if (provider === 'tmdb') {
@@ -325,6 +329,10 @@ export default async function handler(req: any, res: any) {
 
     return res.status(400).json({ error: 'Unsupported metadata provider.' });
   } catch (error: any) {
+    if (error instanceof UpstreamMetadataError) {
+      if (error.retryAfter) res.setHeader('Retry-After', error.retryAfter);
+      return res.status(error.status).json({error:error.message, provider:'tenrai', retryable:error.status === 429 || error.status >= 500 && error.status !== 501});
+    }
     return res.status(500).json({ error: error?.message || 'Metadata cache failed.' });
   }
 }

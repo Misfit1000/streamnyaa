@@ -21,7 +21,7 @@ describe('desktop catalog provider cooldown', () => {
   it('retains partial episodes while marking an unavailable final page as unresolved', async () => {
     const { fetchAnimeEpisodeWindow } = await import('../../src/api/jikan');
     bridge.mockResolvedValueOnce({ data: { data: [{ mal_id: 100 }], pagination: { last_visible_page: 12, has_next_page: true } } });
-    bridge.mockRejectedValueOnce({ code: 'error', provider: 'jikan', message: 'Timeout', statusCode: 504 });
+    bridge.mockRejectedValueOnce({ code: 'error', provider: 'tenrai', message: 'Timeout', statusCode: 504 });
     const result = await fetchAnimeEpisodeWindow('21');
     expect(result.data).toHaveLength(1);
     expect(result.latestPageResolved).toBe(false);
@@ -30,7 +30,7 @@ describe('desktop catalog provider cooldown', () => {
   it('loads matching basic details when AniList and full details fail', async () => {
     const { fetchAnimeDetails } = await import('../../src/api/jikan');
     bridge.mockRejectedValueOnce({ code: 'access-denied', provider: 'anilist', message: 'Denied', retryable: false });
-    bridge.mockRejectedValueOnce({ code: 'error', provider: 'jikan', message: 'Upstream 504', statusCode: 504 });
+    bridge.mockRejectedValueOnce({ code: 'error', provider: 'tenrai', message: 'Upstream 504', statusCode: 504 });
     bridge.mockResolvedValueOnce({ data: { data: { mal_id: 52991, title: 'Matching title', episodes: 28, status: 'Finished Airing' } } });
     const result = await fetchAnimeDetails('52991', { malId: 52991 });
     expect(result.data.mal_id).toBe(52991);
@@ -46,7 +46,7 @@ describe('desktop catalog provider cooldown', () => {
   });
   it('keeps a failed search from disabling Calendar while bounding repeated failed requests', async () => {
     const { fetchJikanPath } = await import('../../src/api/jikan');
-    bridge.mockRejectedValueOnce({ code: 'error', provider: 'jikan', message: 'Upstream 504', statusCode: 504, retryable: true });
+    bridge.mockRejectedValueOnce({ code: 'error', provider: 'tenrai', message: 'Upstream 504', statusCode: 504, retryable: true });
     await expect(fetchJikanPath('/anime?q=failed')).rejects.toMatchObject({ statusCode: 504 });
     await expect(fetchJikanPath('/anime?q=failed')).rejects.toMatchObject({ statusCode: 504 });
     expect(bridge).toHaveBeenCalledTimes(1);

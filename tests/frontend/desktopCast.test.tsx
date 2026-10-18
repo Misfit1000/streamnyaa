@@ -36,7 +36,7 @@ describe('lazy Cast section', () => {
   it('falls back only using verified MAL identity and honors cancellation', async () => {
     vi.mocked(fetchAniList).mockRejectedValue(new Error('offline'));
     vi.mocked(fetchJikanPath).mockResolvedValue(new Response(JSON.stringify({ data: [] })));
-    expect(await fetchAnimeCast({ anilistId: 1, malId: 2 })).toMatchObject({ provider: 'jikan', data: [], hasNextPage: false });
+    expect(await fetchAnimeCast({ anilistId: 1, malId: 2 })).toMatchObject({ provider: 'tenrai', data: [], hasNextPage: false });
     expect(fetchJikanPath).toHaveBeenCalledWith('/anime/2/characters', 86400, {});
     vi.mocked(fetchJikanPath).mockClear();
     await expect(fetchAnimeCast({ anilistId: 1 })).rejects.toThrow(); expect(fetchJikanPath).not.toHaveBeenCalled();

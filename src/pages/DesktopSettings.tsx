@@ -1,3 +1,4 @@
+import '../styles/desktop-preferences.css';
 import { useAuth } from '../context/AuthContext';
 import DesktopHomeSettings from '../components/DesktopHomeSettings';
 import DesktopDownloadSettings from '../components/DesktopDownloadSettings';
@@ -85,7 +86,7 @@ function PreferenceCard({
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className="sn-card-hover sn-glass-card group flex w-full items-center justify-between gap-4 rounded-xl p-4 text-left transition-colors"
+      className="sn-preference-row group flex w-full items-center justify-between gap-4 rounded-xl p-4 text-left transition-colors"
       aria-pressed={checked}
     >
       <span className="min-w-0">
@@ -139,6 +140,10 @@ function SupportRow({ label, value }: { label: string; value: React.ReactNode })
 export default function DesktopSettings() {
   const { isAdmin } = useAuth();
   const location = useLocation();
+  const settingsCategories = [['playback','Playback'],['appearance','Appearance'],['downloads','Downloads'],['controls','Controls'],['updates','Notifications'],['storage','Storage'],['privacy','Backup & privacy'],['advanced','Advanced'], ...(isAdmin ? [['diagnostics','Diagnostics']] : [])];
+  const [activeCategory, setActiveCategory] = useState('playback');
+  const showCategory = (id: string) => { setActiveCategory(settingsCategories.some(([key]) => key === id) ? id : 'playback'); };
+  useEffect(() => { showCategory(location.hash.slice(1) || 'playback'); }, [location.hash, isAdmin]);
   useEffect(() => { if (!location.hash) return; const id=location.hash.slice(1); const timer=window.setTimeout(()=>{const section=document.getElementById(id);section?.scrollIntoView({block:'start'});section?.setAttribute('tabindex','-1');section?.focus({preventScroll:true});},100);return ()=>window.clearTimeout(timer);},[location.hash]);
   const hideEpisodeSpoilers = useHideEpisodeSpoilers();
   const [settings, setSettings] = useState<DesktopPlaybackSettings>(() => loadDesktopPlaybackSettings());
@@ -299,31 +304,11 @@ export default function DesktopSettings() {
   const cachePercent = cacheLimit ? Math.min(100, Math.round(((cache?.total_bytes || 0) / cacheLimit) * 100)) : 0;
 
   return (
-    <div className="sn-page mx-auto max-w-7xl py-6">
+    <div className="sn-page sn-preferences mx-auto max-w-7xl py-6">
       <Seo title="Settings | StreamNyaa Desktop" description="StreamNyaa desktop settings." canonicalPath="/desktop-settings" robots="noindex, nofollow" />
 
-      <section className="sn-hero-panel overflow-hidden p-6">
-        <div className="flex flex-wrap items-end justify-between gap-5">
-          <div>
-            <p className="text-sm font-semibold text-primary">Settings</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-[-0.03em] text-white">Desktop preferences</h1>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-white/56">
-              Control playback, notifications, temporary storage, privacy, and app health.
-            </p>
-          </div>
-          <div className={`rounded-xl border px-4 py-3 shadow-none ${statusTone(ready)}`}>
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-5 w-5" />
-              <div>
-                <p className="text-sm font-semibold">{ready ? 'Ready to stream' : 'Needs attention'}</p>
-                <p className="mt-0.5 max-w-[320px] text-xs font-semibold opacity-75">{runtime?.message || 'Checking playback status...'}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <DesktopSettingsSearch />
+      <header className="sn-preferences-heading"><div><h1>Settings</h1><p>Playback, appearance and your local preferences.</p></div><div className="sn-preferences-status"><span className={ready ? 'text-emerald-300' : 'text-amber-300'}>{runtime ? ready ? 'Ready to stream' : 'Needs attention' : 'Checking playback…'}</span><button className="sn-secondary-action px-3 py-2" onClick={() => void refresh(true)} aria-label="Refresh playback status"><RefreshCw className="h-4 w-4" /></button></div></header>
+      <DesktopSettingsSearch onNavigate={showCategory} />
       {message ? (
         <div
           className={`mt-4 rounded-xl border px-4 py-3 text-sm font-semibold shadow-none ${
@@ -340,27 +325,9 @@ export default function DesktopSettings() {
         </div>
       ) : null}
 
-      <nav className="sticky top-2 z-20 mt-5 flex flex-wrap gap-1 rounded-xl border border-white/[0.08] bg-[#101014]/95 p-1.5 shadow-sm" aria-label="Settings sections">
-        {[
-          ['#playback', 'Playback'],
-          ['#controls', 'Controls'],
-          ['#updates', 'Updates'],
-          ['#storage', 'Storage'],
-          ['#privacy', 'Privacy'],
-          ['#advanced', 'Advanced'],
-        ].map(([href, label]) => (
-          <a key={href} href={href} className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white/58 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
-            {label}
-          </a>
-        ))}
-        <span className="ml-auto hidden items-center px-3 text-xs font-semibold text-white/42 lg:flex">
-          {formatBytes(cache?.total_bytes)} temporary · {historyCount} history item{historyCount === 1 ? '' : 's'}
-        </span>
-      </nav>
-
-      <div className="mt-6 grid gap-5 xl:grid-cols-[1fr_380px]">
-        <main className="space-y-5">
-          <section id="playback" className="sn-glass-panel scroll-mt-24 p-5">
+      <div className="sn-preferences-layout"><nav className="sn-preferences-navigation" aria-label="Settings sections">{settingsCategories.map(([id,label]) => <a key={id} href={`#${id}`} aria-current={activeCategory === id ? 'page' : undefined} onClick={() => showCategory(id)}>{label}</a>)}<label className="sn-preferences-mobile">Category<select aria-label="Settings category" value={activeCategory} onChange={event => { showCategory(event.target.value); window.location.hash = event.target.value; }}>{settingsCategories.map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label></nav>
+        <main className="sn-preferences-content">
+          <section id="playback" hidden={activeCategory !== 'playback'} className="sn-glass-panel scroll-mt-24 p-5">
             <SectionHeader
               icon={<PlayCircle className="h-5 w-5" />}
               eyebrow="Watching"
@@ -425,15 +392,15 @@ export default function DesktopSettings() {
             </div>
           </section>
 
-          <div id="appearance" className="scroll-mt-24"><DesktopAppearanceSettings /><DesktopHomeSettings /></div>
-          <section className="sn-glass-panel p-5">
-            <PreferenceCard title="Hide episode spoilers" description="Use episode numbers and series artwork in Watch, Continue Watching, Library and History. Turn off to reveal episode titles and stills. This preference stays on this PC."
+          <div hidden={activeCategory !== 'appearance'} id="appearance" className="scroll-mt-24"><DesktopAppearanceSettings /><DesktopHomeSettings /></div>
+          <section hidden={activeCategory !== 'playback'} className="sn-glass-panel p-5">
+            <PreferenceCard title="Hide episode spoilers" description="Use episode numbers and series artwork in Watch, Continue Watching, Library and History. Turn off to reveal episode titles. Watch artwork remains consistent. This preference stays on this PC."
               checked={hideEpisodeSpoilers} onChange={(enabled) => {
                 try { saveHideEpisodeSpoilers(enabled); }
                 catch { setMessage({ tone: 'error', text: 'The spoiler preference could not be saved.' }); }
               }} enabledLabel="Hidden" disabledLabel="Visible" />
           </section>
-          <section id="controls" className="sn-glass-panel scroll-mt-24 p-5">
+          <section id="controls" hidden={activeCategory !== 'controls'} className="sn-glass-panel scroll-mt-24 p-5">
             <SectionHeader
               icon={<Keyboard className="h-5 w-5" />}
               eyebrow="Player"
@@ -451,7 +418,7 @@ export default function DesktopSettings() {
             <DesktopShortcutEditor />
           </section>
 
-          <section id="updates" className="sn-glass-panel scroll-mt-24 p-5">
+          <section id="updates" hidden={activeCategory !== 'updates'} className="sn-glass-panel scroll-mt-24 p-5">
             <SectionHeader
               icon={<BellRing className="h-5 w-5" />}
               eyebrow="Notifications"
@@ -486,8 +453,8 @@ export default function DesktopSettings() {
             </div>
           </section>
 
-          <DesktopDownloadSettings />
-          <section id="storage" className="sn-glass-panel scroll-mt-24 p-5">
+          <div hidden={activeCategory !== 'downloads'}><DesktopDownloadSettings /></div>
+          <section id="storage" hidden={activeCategory !== 'storage'} className="sn-glass-panel scroll-mt-24 p-5">
             <SectionHeader
               icon={<HardDrive className="h-5 w-5" />}
               eyebrow="Storage"
@@ -522,7 +489,7 @@ export default function DesktopSettings() {
             </div>
           </section>
 
-          <section id="privacy" className="sn-glass-panel scroll-mt-24 p-5">
+          <section id="privacy" hidden={activeCategory !== 'privacy'} className="sn-glass-panel scroll-mt-24 p-5">
             <SectionHeader
               icon={<History className="h-5 w-5" />}
               eyebrow="Privacy"
@@ -570,7 +537,7 @@ export default function DesktopSettings() {
             </div>
           </section>
 
-          <section id="advanced" className="sn-glass-panel scroll-mt-24 p-5">
+          <section id="advanced" hidden={activeCategory !== 'advanced'} className="sn-glass-panel scroll-mt-24 p-5">
             <button
               type="button"
               onClick={() => setAdvancedOpen((value) => !value)}
@@ -620,9 +587,7 @@ export default function DesktopSettings() {
               </div>
             ) : null}
           </section>
-        </main>
-
-        <aside>
+        <section hidden={activeCategory !== (isAdmin ? 'diagnostics' : 'advanced')}>
           <section className="sn-glass-card sticky top-20 rounded-xl p-5">
             <ShieldCheck className="h-5 w-5 text-primary" />
             <p className="mt-3 text-xs font-semibold text-white/42">Streaming status</p>
@@ -663,7 +628,7 @@ export default function DesktopSettings() {
               </pre>
           </details></div>}
           </section>
-        </aside>
+        </section></main>
       </div>
     </div>
   );

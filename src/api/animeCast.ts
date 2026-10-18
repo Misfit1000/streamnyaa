@@ -6,7 +6,7 @@ import { episodeImageUrl } from '../lib/desktopEpisodeArtwork';
 export type CastIdentity = { anilistId?: string | number | null; malId?: string | number | null };
 export type CastCharacter = { id: string; name: string; image?: string; role: string;
   actors: { id: string; name: string; language: string }[] };
-export type CastPage = { data: CastCharacter[]; provider: 'anilist' | 'jikan'; page: number; hasNextPage: boolean; fetchedAt: number; stale: boolean; retryAt?: number };
+export type CastPage = { data: CastCharacter[]; provider: 'anilist' | 'tenrai'; page: number; hasNextPage: boolean; fetchedAt: number; stale: boolean; retryAt?: number };
 const validId = (value: unknown) => /^[1-9]\d*$/.test(String(value || '')) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined;
 export const castIdentityKey = (identity: CastIdentity) => `${validId(identity.anilistId) ? `anilist:${identity.anilistId}` : ''}|${validId(identity.malId) ? `mal:${identity.malId}` : ''}`;
 const state = (response: Response) => ({ fetchedAt: Number(response.headers.get('X-StreamNyaa-Fetched-At')) || Date.now(),
@@ -16,7 +16,7 @@ export async function fetchAnimeCast(identity: CastIdentity, page = 1, options: 
   const anilistId = validId(identity.anilistId), malId = validId(identity.malId);
   if ((!anilistId && !malId) || !Number.isSafeInteger(page) || page < 1) throw desktopDataError('cast', new Error('Invalid cast identity or page.'));
   if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
-  if (provider !== 'jikan') {
+  if (provider !== 'tenrai') {
     try {
       const query = `query($id: Int!, $page: Int!) { Media(${anilistId ? 'id' : 'idMal'}: $id, type: ANIME) {
         id idMal characters(page: $page, perPage: 12, sort: [ROLE, RELEVANCE, ID]) {
@@ -41,12 +41,12 @@ export async function fetchAnimeCast(identity: CastIdentity, page = 1, options: 
       if (provider || page !== 1 || !malId || options.signal?.aborted || failure.code === 'cancelled' || failure.code === 'invalid' || isDesktopAdmissionWait(failure)) throw error;
     }
   }
-  if (!malId || page !== 1) throw desktopDataError('jikan', new Error('Invalid cast identity or page.'));
+  if (!malId || page !== 1) throw desktopDataError('tenrai', new Error('Invalid cast identity or page.'));
   const response = await fetchJikanPath(`/anime/${malId}/characters`, 86400, options);
-  if (!response.ok) throw desktopDataError('jikan', new Error('Cast could not be loaded.'), response.status);
+  if (!response.ok) throw desktopDataError('tenrai', new Error('Cast could not be loaded.'), response.status);
   const json = await response.json();
-  if (!Array.isArray(json?.data)) throw desktopDataError('jikan', new Error('Invalid cast response.'));
-  return { provider: 'jikan', page, hasNextPage: false, ...state(response), data: json.data
+  if (!Array.isArray(json?.data)) throw desktopDataError('tenrai', new Error('Invalid cast response.'));
+  return { provider: 'tenrai', page, hasNextPage: false, ...state(response), data: json.data
     .filter((entry: any) => entry?.character?.mal_id && entry.character.name).map((entry: any) => ({
       id: `mal:${entry.character.mal_id}`, name: entry.character.name, role: entry.role || '',
       image: episodeImageUrl(entry.character.images?.webp?.image_url || entry.character.images?.jpg?.image_url),

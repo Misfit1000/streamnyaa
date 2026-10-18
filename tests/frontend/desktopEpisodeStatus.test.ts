@@ -7,16 +7,16 @@ describe('episode metadata feedback', () => {
     expect(episodeMetadataStatus(base)).toMatchObject({canRetry: false, message: expect.stringContaining('not listed')});
   });
   it('identifies an upstream outage and disables retry during cooldown', () => {
-    const error = desktopDataError('jikan', new Error('unavailable'), 504);
-    expect(episodeMetadataStatus({...base,error})).toMatchObject({canRetry:true,waitingSeconds:30,message:expect.stringContaining('HTTP 504')});
+    const error = desktopDataError('tenrai', new Error('unavailable'), 504);
+    expect(episodeMetadataStatus({...base,error,administrator:true})).toMatchObject({canRetry:true,waitingSeconds:30,message:expect.stringContaining('HTTP 504')});
     expect(episodeMetadataStatus({...base,error,now:40_000}).waitingSeconds).toBe(0);
   });
   it('honors Retry-After and keeps cached titles visible', () => {
-    const error = {code:'rate-limited',provider:'jikan',message:'Wait',retryable:true,retryAfterMs:60_000};
+    const error = {code:'rate-limited',provider:'tenrai',message:'Wait',retryable:true,retryAfterMs:60_000};
     expect(episodeMetadataStatus({...base,error,hasTitles:true})).toMatchObject({waitingSeconds:60,message:expect.stringContaining('Available titles')});
   });
   it('counts down an absolute provider deadline rather than restarting it', () => {
-    const error={code:'rate-limited',provider:'jikan',message:'Wait',retryable:true,retryAfterMs:60_000,retryAt:70_000};
+    const error={code:'rate-limited',provider:'tenrai',message:'Wait',retryable:true,retryAfterMs:60_000,retryAt:70_000};
     expect(episodeMetadataStatus({...base,error,errorAt:60_000,now:65_000}).waitingSeconds).toBe(5);
   });
   it('does not offer a request without a canonical identity', () => {

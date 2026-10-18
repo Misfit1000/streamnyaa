@@ -62,7 +62,7 @@ describe('separate desktop rankings', () => {
   it('identifies both provider failures without presenting an empty result', async () => {
     vi.mocked(fetchAniList).mockRejectedValueOnce({ code: 'access-denied', message: 'Denied', retryable: false });
     vi.mocked(fetchJikanPath).mockRejectedValueOnce({ code: 'timeout', message: 'Timed out', retryable: true });
-    await expect(fetchExplorePage({ ...base, mode: 'popular', allowFallback: true }, 1)).rejects.toThrow('AniList unavailable (access-denied). Jikan fallback unavailable (timeout)');
+    await expect(fetchExplorePage({ ...base, mode: 'popular', allowFallback: true }, 1)).rejects.toThrow('AniList unavailable (access-denied). Tenrai fallback unavailable (timeout)');
   });
   it('does not switch provider halfway through pagination or rankings', async () => {
     vi.mocked(fetchAniList).mockRejectedValue(new Error('Denied'));
@@ -70,14 +70,10 @@ describe('separate desktop rankings', () => {
     await expect(fetchExplorePage({ ...base, allowFallback: true }, 2)).rejects.toThrow('Denied');
     expect(fetchJikanPath).not.toHaveBeenCalled();
   });
-  it('labels secondary recent listings without treating video IDs as episode numbers', async () => {
-    vi.mocked(fetchAniList).mockRejectedValueOnce(new Error('Denied'));
-    vi.mocked(fetchJikanPath).mockResolvedValueOnce(new Response(JSON.stringify({ data: [{entry:{mal_id:7,title:'Example'},episodes:[{mal_id:999,title:'Episode 3'}]}] })));
-    const page = await fetchExplorePage({ ...base, mode: 'new', allowFallback: true }, 1);
-    expect(page.fallback).toBe(true);
-    expect(page.data[0]).toMatchObject({mal_id:7,listedEpisode:3,recentFeedKind:'listed'});
-    expect(page.data[0].latestEpisode).toBeUndefined();
-    expect(fetchJikanPath).toHaveBeenCalledWith('/watch/episodes',600,expect.any(Object));
+  it('never calls unsupported recent-listing routes or substitutes a title shelf', async () => {
+    vi.mocked(fetchAniList).mockRejectedValueOnce(new Error('Unavailable'));
+    await expect(fetchExplorePage({...base,mode:'new',allowFallback:true},1)).rejects.toThrow('Unavailable');
+    expect(fetchJikanPath).not.toHaveBeenCalled();
   });
   it('preserves seasonal, content and airing filters in fallback requests', () => {
     const url = new URL(malExplorePath({ ...base, mode: 'seasonal', year: 2026, season: 'SUMMER', status: 'Airing', genre: 'Fantasy' }, 2), 'https://fixture.test');
@@ -154,9 +150,8 @@ describe('feed continuity', () => {
     expect(result.hasNextPage).toBe(true);
   });
   it('never substitutes series when episode listings fail', async () => {
-    vi.mocked(fetchJikanPath).mockRejectedValueOnce(new Error('timeout'));
     await expect(fetchExplorePage({...base,service:'mal',mode:'new'},1)).rejects.toThrow();
-    expect(fetchJikanPath).toHaveBeenCalledTimes(1);
+    expect(fetchJikanPath).not.toHaveBeenCalled();
   });
 });
 
@@ -180,12 +175,12 @@ describe('active AniList query filters and episode freshness', () => {
     expect(dated.variables.start).toBe(Date.parse('2026-09-10')/1000);
     expect(() => recentExploreQuery({...base,releasedAfter:'bad'},1,1800000000)).toThrow();
   });
-  it('retains original retrieval time and staleness from a cached episode response', async () => {
-    vi.mocked(fetchJikanPath).mockResolvedValueOnce(new Response(JSON.stringify({data:[{entry:{mal_id:1,title:'Example'},episodes:[{title:'Episode 7'}]}]}),{headers:{'X-StreamNyaa-Fetched-At':'1700000000000','X-StreamNyaa-Desktop-Cache':'stale'}}));
-    const result=await fetchExplorePage({...base,service:'mal',mode:'new'},1);
-    expect(result).toMatchObject({fetchedAt:1700000000000,stale:true,recentFeedKind:'listed'});
-    expect(result.data[0].listedEpisode).toBe(7);
-    expect(result.data[0].catalogAlternative).toBeUndefined();
+  it('retains the original airing feed timestamp and staleness', async () => {
+    vi.mocked(fetchAniList).mockResolvedValueOnce(new Response(JSON.stringify({data:{Page:{pageInfo:{hasNextPage:false},airingSchedules:[{episode:7,airingAt:1699999999,media:{id:1,idMal:2,title:{romaji:'Example'}}}]}}}),{headers:{'X-StreamNyaa-Fetched-At':'1700000000000','X-StreamNyaa-Desktop-Cache':'stale'}}));
+    const result=await fetchExplorePage({...base,service:'anilist',mode:'new',before:1700000000},1);
+    expect(result).toMatchObject({fetchedAt:1700000000000,stale:true,recentFeedKind:'aired'});
+    expect(result.data[0].latestEpisode).toBe(7);
+    expect(fetchJikanPath).not.toHaveBeenCalled();
   });
   it('does not fall back after cancellation', async () => {
     const controller=new AbortController();controller.abort();

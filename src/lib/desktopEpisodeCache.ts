@@ -4,7 +4,7 @@ import { cloneDesktopStoredJson, createDesktopStoredJsonReader } from './desktop
 
 const key = 'streamnyaa.desktop.episodePages.v1';
 const readStoredPages = createDesktopStoredJsonReader(key, 1_500_000);
-type Page = { savedAt: number; data: any[]; pagination: { last_visible_page: number; has_next_page?: boolean } };
+type Page = { provider?: 'jikan' | 'tenrai'; savedAt: number; data: any[]; pagination: { last_visible_page: number; has_next_page?: boolean } };
 function read(): Record<string, Page> {
   try {
     const parsed = readStoredPages() as { version?: number; pages?: Record<string, Page> } | null;
@@ -22,7 +22,7 @@ export function saveEpisodePage(id: string, page: number, value: any, fetchedAt 
   try {
     const pages = { ...read() };
     const previous = new Map((pages[`${id}:${page}`]?.data || []).map((item: any) => [item.mal_id, item]));
-    pages[`${id}:${page}`] = { savedAt: Math.min(Date.now(), fetchedAt), data: value.data.map((item: any) => {
+    pages[`${id}:${page}`] = { provider: value.provider || pages[`${id}:${page}`]?.provider || 'jikan', savedAt: Math.min(Date.now(), fetchedAt), data: value.data.map((item: any) => {
       const prior: any = previous.get(item.mal_id);
       const images = episodeImageCandidates(item);
       const image = images[0] || episodeImageCandidates(prior)[0];

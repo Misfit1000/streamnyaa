@@ -122,7 +122,7 @@ describe('visible cosmetic countdowns', () => {
   it('updates episode retry labels immediately after returning from a hidden window', () => {
     const retry=vi.fn();
     render(<DesktopEpisodeStatus retry={retry} enabled fetching={false} hasTitles hasEntries errorAt={100_000}
-      error={{code:'rate-limited',provider:'jikan',message:'Wait',retryable:true,retryAt:130_000}}/>);
+      error={{code:'rate-limited',provider:'tenrai',message:'Wait',retryable:true,retryAt:130_000}}/>);
     expect((screen.getByRole('button',{name:'Retry in 30s'}) as HTMLButtonElement).disabled).toBe(true);
     visibility('hidden');
     act(() => vi.advanceTimersByTime(35_000));
@@ -135,7 +135,7 @@ describe('visible cosmetic countdowns', () => {
   it('keeps a relative error deadline fixed when no error timestamp was provided', () => {
     const retry=vi.fn();
     render(<DesktopEpisodeStatus retry={retry} enabled fetching={false} hasTitles hasEntries
-      error={{code:'rate-limited',provider:'jikan',message:'Wait',retryable:true,retryAfterMs:30_000}}/>);
+      error={{code:'rate-limited',provider:'tenrai',message:'Wait',retryable:true,retryAfterMs:30_000}}/>);
     expect((screen.getByRole('button',{name:'Retry in 30s'}) as HTMLButtonElement).disabled).toBe(true);
     act(() => vi.advanceTimersByTime(10_000));
     expect((screen.getByRole('button',{name:'Retry in 20s'}) as HTMLButtonElement).disabled).toBe(true);

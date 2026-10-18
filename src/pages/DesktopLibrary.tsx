@@ -1,3 +1,4 @@
+import '../styles/desktop-preferences.css';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { useEffect, useMemo, useState } from 'react';
@@ -165,23 +166,12 @@ export default function DesktopLibrary() {
   )) : [], [showsHistoryRows, category, filteredList]);
 
   return (
-    <div className="sn-page py-6">
+    <div className="sn-page sn-library py-6">
       <Seo title="Library | StreamNyaa Desktop" description="Desktop anime library." canonicalPath="/my-list" robots="noindex, nofollow" />
 
 
-      <section className="sn-hero-panel p-6">
-        <div className="flex flex-wrap items-end justify-between gap-5">
-          <div>
-            <p className="text-[11px] font-semibold normal-case tracking-normal text-primary">Library</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-white">Saved anime, cleanly organized.</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/58">
-              All your bookmarked anime in one place. Previous Favorites and Plan to Watch entries are included.
-            </p>
-          </div>
-          <div className="sn-glass-card rounded-xl px-4 py-3 text-center text-xs font-semibold text-white/70"><span className="block text-base text-white">{stats.all}</span>Bookmarks</div>
-        </div>
-
-        <div className="mt-6 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="sn-library-header"><header><h1>My Library</h1><span>{stats.all} bookmarked titles</span></header>
+        <nav className="sn-library-tabs" aria-label="Library categories">
           {libraryCategories.map(({ id, label, count, icon: Icon }) => (
             <button
               key={id}
@@ -206,15 +196,15 @@ export default function DesktopLibrary() {
               </span>
             </button>
           ))}
-        </div>
+        </nav>
 
-        <div className="mt-5 flex flex-wrap items-center gap-3">
+        <div className="sn-library-toolbar">
           <label className="relative min-w-[180px] flex-1">
             <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/36" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search your library..."
+              aria-label="Search your library" placeholder="Search your library..."
               className="sn-input h-12 w-full pl-12 pr-4"
             />
           </label>
@@ -246,7 +236,7 @@ export default function DesktopLibrary() {
           <label className="sn-glass-card inline-flex h-12 items-center gap-2 rounded-xl px-3">
             <SlidersHorizontal className="h-4 w-4 text-white/42" />
             <select
-              value={sortBy}
+              aria-label="Sort library" value={sortBy}
               onChange={(event) => setSortBy(event.target.value as LibrarySort)}
               className="bg-transparent text-sm font-semibold text-white outline-none"
             >
@@ -263,7 +253,7 @@ export default function DesktopLibrary() {
             type="button"
             onClick={() => setConfirmClear(true)}
             disabled={!combinedList.length}
-            className="sn-primary-action h-12 px-4 disabled:cursor-not-allowed disabled:opacity-45"
+            className="sn-secondary-action h-12 px-4 disabled:cursor-not-allowed disabled:opacity-45"
           >
             <Trash2 className="h-4 w-4" />
             Clear
