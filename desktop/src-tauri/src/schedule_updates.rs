@@ -121,9 +121,14 @@ fn load_from(path: &std::path::Path) -> State {
         if !fs::metadata(file).is_ok_and(|m| m.is_file() && m.len() <= 4_000_000) {
             return None;
         }
-        let mut s: State = serde_json::from_slice(&fs::read(file).ok()?).ok()?;
-        if !(s.version == 1 || legacy && s.version == 0)
-            || s.tracks.len() > 5000
+        let value: Value = serde_json::from_slice(&fs::read(file).ok()?).ok()?;
+        // The runtime default is v1; disk input must still declare its schema.
+        let version = value.get("version")?.as_u64()?;
+        if !(version == 1 || legacy && version == 0) {
+            return None;
+        }
+        let mut s: State = serde_json::from_value(value).ok()?;
+        if s.tracks.len() > 5000
             || s.changes.len() > 1200
             || s.feed.len() > 3000
             || s.cursor > s.feed.len()
@@ -865,6 +870,8 @@ mod tests {
         assert_eq!(recovered.cursor, 1);
         assert!(recovered.persistence_error.is_some());
         assert!(!recovered.seeded);
+        fs::write(&file, b"{}").unwrap();
+        assert_eq!(load_from(&file).cursor, 1);
         persist_to(&file, &mut recovered, 1000);
         fs::write(&temp, serde_json::to_vec(&State::default()).unwrap()).unwrap();
         assert_eq!(load_from(&file).cursor, 1);
