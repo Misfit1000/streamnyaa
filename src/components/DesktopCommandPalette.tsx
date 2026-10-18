@@ -16,7 +16,7 @@ export default function DesktopCommandPalette({ onClose }: { onClose: () => void
   useEffect(() => { const element = dialog.current!; element.showModal(); return () => element.close(); }, []);
   const actions = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const routes = [ ['Home', '/'], ['Explore anime', '/search'], ['Calendar · My week', '/schedule?scope=tracked'], ['Library', '/my-list'], ['Downloads & Offline', '/my-list?tab=offline'], ['History & resume', '/dashboard'], ['Settings', '/desktop-settings'], ['Appearance · revert UI', '/desktop-settings#appearance'], ['Diagnostics', '/desktop-settings#diagnostics'], ['Backup & restore', '/desktop-settings#privacy'] ];
+    const routes = [ ['Home', '/'], ['Explore anime', '/search'], ['Calendar · My week', '/schedule?scope=tracked'], ['Library', '/my-list'], ['Downloads & Offline', '/my-list?tab=offline'], ['History & resume', '/dashboard'], ['Settings', '/desktop-settings'], ['Appearance & interface size', '/desktop-settings#appearance'], ['Diagnostics', '/desktop-settings#diagnostics'], ['Backup & restore', '/desktop-settings#privacy'] ];
     const result = routes.filter(([title]) => (title !== 'Diagnostics' || isAdmin) && title.toLowerCase().includes(needle)).map(([title, path]) => ({ title, hint:'Navigate', run: () => navigate(path) }));
     const seen = new Set<string>();
     for (const anime of [...myList, ...likedAnimes]) {

@@ -4,11 +4,21 @@ import { loadDesktopWatchedSeries, subscribeDesktopWatchProgress } from './deskt
 import { loadDesktopScheduleUpdatePreferences, mergeDesktopScheduleUpdates, scheduleRevisionKey, subscribeDesktopScheduleUpdates, type DesktopScheduleUpdate } from './scheduleRevisions';
 export const SCHEDULE_ALERT_STATE_KEY = 'streamnyaa.desktop.schedule-alert-state.v1';
 const eventName = 'streamnyaa-schedule-tracks';
-type AlertState = { version: number; tracks: any[]; changes: DesktopScheduleUpdate[]; error?: string | null };
-export function readScheduleAlertState(): AlertState {
+export type AlertState = { version: number; tracks: any[]; changes: DesktopScheduleUpdate[]; error?: string | null; persistenceError?: string | null };
+let liveSnapshot: AlertState | undefined;
+function readSavedScheduleAlertState(): AlertState {
   try { const state = JSON.parse(localStorage.getItem(SCHEDULE_ALERT_STATE_KEY) || 'null');
     return state?.version === 1 && Array.isArray(state.tracks) && Array.isArray(state.changes) ? state : { version: 1, tracks: [], changes: [] };
   } catch { return { version: 1, tracks: [], changes: [] }; }
+}
+export function readScheduleAlertState(): AlertState { return liveSnapshot || readSavedScheduleAlertState(); }
+export function applyScheduleAlertState(state: AlertState) {
+  if (state?.version !== 1 || !Array.isArray(state.tracks) || !Array.isArray(state.changes)) return;
+  liveSnapshot = { version: 1, tracks: state.tracks, changes: state.changes, error: state.error, persistenceError: state.persistenceError };
+  try { localStorage.setItem(SCHEDULE_ALERT_STATE_KEY, JSON.stringify(liveSnapshot)); }
+  catch { liveSnapshot = { ...liveSnapshot, persistenceError: liveSnapshot.persistenceError || 'Calendar updates could not be saved on this device. Check available storage.' }; }
+  try { mergeDesktopScheduleUpdates(state.changes); } catch { /* The live native snapshot remains readable. */ }
+  window.dispatchEvent(new Event(eventName));
 }
 export function scheduleUpdateIsPersonal(update: DesktopScheduleUpdate, list: any[] = [...useStore.getState().myList, ...useStore.getState().likedAnimes], history = loadDesktopWatchedSeries()) {
   return list.some(item => Boolean(update.anilistId && String(item.anilist_id) === String(update.anilistId)
@@ -47,12 +57,7 @@ export async function startScheduleAlertBridge() {
   let disposed = false; let timer: number | undefined; let lastConfig = '';
   const apply = (state: AlertState) => {
     if (disposed || state?.version !== 1) return;
-    const snapshot = { version: 1, tracks: state.tracks, changes: state.changes, error: state.error };
-    try {
-      localStorage.setItem(SCHEDULE_ALERT_STATE_KEY, JSON.stringify(snapshot));
-      mergeDesktopScheduleUpdates(state.changes);
-    } catch { /* Durable native alerts continue; retain the last usable UI snapshot. */ }
-    window.dispatchEvent(new Event(eventName));
+    applyScheduleAlertState(state);
   };
   const configure = async (imported?: AlertState) => {
     const prefs = loadDesktopScheduleUpdatePreferences(); const store = useStore.getState();
@@ -70,7 +75,7 @@ export async function startScheduleAlertBridge() {
   const schedule = () => { clearTimeout(timer); timer = window.setTimeout(() => void configure().catch(() => undefined), 500); };
   const unlisten = await listen<AlertState>('streamnyaa-schedule-alerts', event => { apply(event.payload); schedule(); });
   const unsubPrefs = subscribeDesktopScheduleUpdates(schedule), unsubStore = useStore.subscribe(schedule), unsubHistory = subscribeDesktopWatchProgress(schedule);
-  const imported = () => { void configure(readScheduleAlertState()).catch(() => undefined); };
+  const imported = () => { void configure(readSavedScheduleAlertState()).catch(() => undefined); };
   window.addEventListener('streamnyaa.desktop.reminders.imported', imported);
   try { apply(await invoke<AlertState>('get_desktop_schedule_alerts', {})); await configure(); }
   catch { /* Existing saved schedule remains usable; ordinary sign-in is independent. */ }

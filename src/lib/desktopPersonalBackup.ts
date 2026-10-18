@@ -1,6 +1,7 @@
 import { exportDesktopSettingsBackup, importDesktopSettingsBackup } from './desktop';
 import { useStore } from '../store/useStore';
 import { validateShortcutConfig } from './desktopShortcutConfig';
+import { initializeDesktopAppearance } from './desktopAppearance';
 const extraKeys = ['streamnyaa.desktop.libraryOrganization.v1','streamnyaa-desktop-explore-presets-v1','streamnyaa-desktop-explore-presets-v2','streamnyaa.desktop.interfaceScale','streamnyaa.desktop.design.v1','streamnyaa.desktop.homeLayout.v1','streamnyaa.desktop.homeShowChineseAnimation.v1','streamnyaa.desktop.hideEpisodeSpoilers'] as const;
 function bridge() { const invoke = window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke; if (!invoke) throw new Error('Personal backup requires the desktop app.'); return invoke; }
 export async function exportPersonalBackup() {
@@ -8,13 +9,13 @@ export async function exportPersonalBackup() {
   const shortcuts = validateShortcutConfig(await bridge()('get_player_shortcuts'));
   return JSON.stringify({ app:'StreamNyaa Desktop', version:2, exportedAt:new Date().toISOString(), settings:JSON.parse(exportDesktopSettingsBackup()),
     library: { myList:state.myList, likedAnimes:state.likedAnimes, likes:state.likes },
-    extras:Object.fromEntries(extraKeys.map(key => [key,localStorage.getItem(key)]).filter(([,value]) => value !== null)), shortcuts }, null, 2);
+    extras:Object.fromEntries(extraKeys.map(key => [key,key === 'streamnyaa.desktop.design.v1' ? 'revamped' : localStorage.getItem(key)]).filter(([,value]) => value !== null)), shortcuts }, null, 2);
 }
 export async function importPersonalBackup(text: string) {
   if (text.length > 10_000_000) throw new Error('Backup exceeds 10 MB.');
   const value = JSON.parse(text);
   if (value.app !== 'StreamNyaa Desktop' || ![1,2].includes(value.version)) throw new Error('Unsupported StreamNyaa backup.');
-  if (value.version === 1) return importDesktopSettingsBackup(text);
+  if (value.version === 1) { const imported = importDesktopSettingsBackup(text); initializeDesktopAppearance(); return imported; }
   const listValid = (items: any) => Array.isArray(items) && items.length <= 10000 && items.every(item => item && typeof item === 'object' && typeof item.title === 'string' && item.title.length <= 1000 && (Number(item.mal_id) > 0 || Number(item.id) > 0 || Number(item.anilist_id) > 0));
   if (!listValid(value.library?.myList) || !listValid(value.library?.likedAnimes) || !Array.isArray(value.library?.likes) || value.library.likes.length > 10000 || !value.library.likes.every((id: unknown) => ['number','string'].includes(typeof id))) throw new Error('Invalid Library in backup.');
   if (!value.settings?.keys || typeof value.settings.keys !== 'object' || Array.isArray(value.settings.keys) || !Object.values(value.settings.keys).every(entry => typeof entry === 'string')) throw new Error('Invalid settings in backup.');
@@ -30,7 +31,8 @@ export async function importPersonalBackup(text: string) {
     await invoke('save_player_shortcuts', {config:shortcuts});
     const imported = importDesktopSettingsBackup(JSON.stringify(value.settings));
     if (extras['streamnyaa-desktop-explore-presets-v1'] && !extras['streamnyaa-desktop-explore-presets-v2']) localStorage.removeItem('streamnyaa-desktop-explore-presets-v2');
-    for (const key of extraKeys) if (typeof extras[key] === 'string') localStorage.setItem(key,extras[key]);
+    for (const key of extraKeys) if (typeof extras[key] === 'string') localStorage.setItem(key,key === 'streamnyaa.desktop.design.v1' ? 'revamped' : extras[key]);
+    initializeDesktopAppearance();
     useStore.setState({ myList:value.library.myList, likedAnimes:value.library.likedAnimes, likes:value.library.likes });
     for (const name of ['streamnyaa-library-organization','streamnyaa-interface-scale-changed','streamnyaa-design-changed','streamnyaa-spoilers-changed','streamnyaa:home-browsing-preference']) window.dispatchEvent(new Event(name));
     return imported + 3 + Object.keys(extras).filter(key => (extraKeys as readonly string[]).includes(key)).length;

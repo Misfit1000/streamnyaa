@@ -1,5 +1,7 @@
 # AnimeSchedule production integration
 
+**Later verification:** the HTTP/parser evidence below did not establish native cache persistence. A Windows write-handle/schema defect was subsequently found and repaired. See [Watch and Calendar polish](2026-10-18-watch-calendar-polish.md) for the durable-cache tests, visible native status evidence and remaining acceptance boundaries.
+
 The user approved accepting AnimeSchedule's API terms, creating the StreamNyaa application and storing its application token only in StreamNyaa's Vercel Production environment. The application requests no anime-list or user-statistics scopes. `ANIMESCHEDULE_TOKEN` was saved as a Vercel Secret; no credential was copied into source, local configuration, release metadata or the installer.
 
 ## Live evidence

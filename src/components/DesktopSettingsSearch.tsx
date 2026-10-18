@@ -2,7 +2,7 @@ import { useAuth } from '../context/AuthContext';
 import { useState } from 'react';
 const sections = [
   { id:'downloads', title:'Downloads & location', words:'folder directory save download manager' },
-  { id:'appearance', title:'Appearance & interface size', words:'classic revamped revert theme text scale' },
+  { id:'appearance', title:'Appearance & interface size', words:'theme text scale home layout' },
   { id:'playback', title:'Playback preferences', words:'audio subtitles autoplay spoiler player' },
   { id:'controls', title:'Keyboard shortcuts', words:'keys bindings controls' },
   { id:'updates', title:'Notifications & reminders', words:'calendar delay cancelled alerts' },

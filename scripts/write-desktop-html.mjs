@@ -57,7 +57,7 @@ body{overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Bli
 `;
 
 const html = `<!doctype html>
-<html lang="en" class="dark">
+<html lang="en" class="dark" data-desktop-design="revamped">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

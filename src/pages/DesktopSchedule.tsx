@@ -1,12 +1,12 @@
+import { DesktopScheduleReminders, DesktopScheduleStatus } from '../components/DesktopScheduleControls';
 import { mergeScheduleTracks, readScheduleAlertState, scheduleDisplayTime, subscribeScheduleTracks } from '../lib/desktopScheduleAlerts';
 import { scheduleRevisionKey } from '../lib/scheduleRevisions';
 import { useAuth } from '../context/AuthContext';
 import DesktopDragRail from '../components/DesktopDragRail';
-import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Bookmark, Bell, CalendarDays, ChevronRight, Heart, History, Loader2, TriangleAlert } from 'lucide-react';
+import { Bookmark, Bell, CalendarDays, ChevronRight, History, Loader2, TriangleAlert } from 'lucide-react';
 import '../styles/desktop-calendar.css';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
@@ -198,19 +198,6 @@ function scheduleBroadcastState(anime: any, airingMs = airingAtMs(anime)): Sched
   };
 }
 
-function scheduleStateAccentClass(kind: ScheduleBroadcastState['kind']) {
-  if (kind === 'cancelled' || kind === 'suspended') return 'border-red-400/70 text-red-100';
-  if (kind === 'rescheduled') return 'border-sky-300/55 text-sky-100';
-  return 'border-primary/70 text-primary';
-}
-
-function scheduleStateBadgeClass(kind: ScheduleBroadcastState['kind']) {
-  if (kind === 'cancelled' || kind === 'suspended') return 'border-red-300/25 bg-red-500/18 text-red-100';
-  if (kind === 'delayed' || kind === 'postponed' || kind === 'hiatus') return 'border-amber-300/25 bg-amber-400/16 text-amber-100';
-  if (kind === 'rescheduled') return 'border-sky-300/20 bg-sky-400/14 text-sky-100';
-  return 'border-white/10 bg-black/60 text-white/72';
-}
-
 function reminderIdForAnime(anime: any) {
   const animeId = animeIdentity(anime) || safeReminderTitle(anime);
   const episode = anime?.airingEpisode || anime?.episode || 'unknown';
@@ -336,15 +323,6 @@ export default function DesktopSchedule() {
       { title: 'Already Aired', items: aired },
     ].filter((group) => group.items.length);
   }, [active.label, selectedDay, visibleItems, clock]);
-  const activeReminders = useMemo(
-    () =>
-      reminders
-        .filter((reminder) => !reminder.firedAt && reminder.airingAt > Date.now())
-        .sort((a, b) => a.airingAt - b.airingAt),
-    [reminders],
-  );
-  const firedReminderCount = useMemo(() => reminders.filter((reminder) => reminder.firedAt).length, [reminders]);
-  const nextReminder = activeReminders[0];
   const notificationStatusMessage = useMemo(
     () => scheduleNotificationStatusMessage(notificationPermission),
     [notificationPermission],
@@ -443,26 +421,15 @@ export default function DesktopSchedule() {
       }
       return;
     }
-    const broadcastState = scheduleBroadcastState(anime);
-    if (broadcastState.blocksReminder) {
-      setNotice({
-        tone: 'error',
-        message: `Reminder unavailable: ${safeReminderTitle(anime)} is marked ${broadcastState.label.toLowerCase()}.`,
-      });
-      return;
-    }
-    const reminder = reminderFromAnime(anime);
-    if (!reminder) {
-      setNotice({ tone: 'error', message: 'This episode does not have a usable airing time yet.' });
-      return;
-    }
-    setPendingReminderId(reminder.id);
+    const canonicalId = desktopCanonicalAnimeId(anime);
+    if (!canonicalId) { setNotice({tone:'error',message:'This title needs a verified identity before it can be followed.'}); return; }
+    setPendingReminderId(canonicalId);
     try {
       const result = await toggleDesktopReleaseSubscription(anime);
       const permission = result.permission;
       setNotificationPermission(permission);
       if (result.saved) {
-        setNotice({ tone: 'success', message: `Notifications enabled for ${reminder.title}: before airing, when aired, and when a matching watch source is found.` });
+        setNotice({ tone: 'success', message: airingAtMs(anime) && !scheduleBroadcastState(anime).blocksReminder ? `Notifications enabled for ${safeReminderTitle(anime)}: before airing, when aired, and when a matching watch source is found.` : `Following ${safeReminderTitle(anime)}. Schedule changes will appear when reported; timed alerts wait for a confirmed date.` });
         return;
       }
       setNotice({
@@ -482,9 +449,8 @@ export default function DesktopSchedule() {
 
   const clearFiredReminders = () => {
     const next = reminders.filter((reminder) => !reminder.firedAt);
-    setReminders(next);
-    writeScheduleReminders(next);
-    setNotice({ tone: 'success', message: 'Expired reminders cleared.' });
+    try { writeScheduleReminders(next); setReminders(next); setNotice({tone:'success',message:'Delivered alerts cleared.'}); }
+    catch { setNotice({tone:'error',message:'Could not clear delivered alerts. Check available storage.'}); }
   };
   const scheduleAlertCount = useMemo(
     () => visibleItems.filter((anime: any) => scheduleBroadcastState(anime).prominent).length,
@@ -507,16 +473,14 @@ export default function DesktopSchedule() {
               <p className="mt-1 text-sm text-white/56">{scheduleQuery.isError ? 'Broadcast references use the provider timezone shown on each entry.' : `Times are shown in ${timezone}.`}</p>
             </div>
           </div>
-          <section className="broadcast-reminder-desk" aria-label="Reminders and preferences">
-            <div className="flex items-start justify-between gap-4"><div><h2 className="font-semibold text-white">Your reminders</h2><p className="mt-1 text-xs text-white/65">{releaseSubscriptions.length ? `${releaseSubscriptions.length} titles with release notifications` : activeReminders.length ? `${activeReminders.length} upcoming alerts` : 'Tap a bell beside an episode to follow its release.'}</p></div><Bell className="h-5 w-5 shrink-0 text-primary" /></div>
-            {nextReminder && <p className="mt-3 rounded-lg bg-white/5 p-3 text-sm"><span className="text-white/60">Next alert · </span>{nextReminder.title}<span className="mt-1 block text-xs text-white/65">{formatAiringTime(nextReminder.airingAt)}</span></p>}
-            <div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setFavoritesOnly(value => !value)} aria-pressed={favoritesOnly} className="sn-secondary-action px-3 py-2 text-xs">{favoritesOnly ? 'Showing bookmarks' : 'Show bookmarks only'}</button>{isAdmin && <button type="button" onClick={testNotification} className="sn-secondary-action px-3 py-2 text-xs">Test an alert</button>}{firedReminderCount > 0 && <button type="button" onClick={clearFiredReminders} className="sn-secondary-action px-3 py-2 text-xs">Clear delivered alerts</button>}</div>
-            <p className="mt-3 text-xs leading-5 text-white/65">{notificationStatusMessage}. Get separate alerts for the broadcast time and when a matching watch source is found. StreamNyaa can stay in the tray; quitting stops checks.</p>
-            {releaseSubscriptions.length > 0 && <details className="mt-3 border-t border-white/10 pt-3 text-sm"><summary className="cursor-pointer">Manage followed titles</summary><ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">{releaseSubscriptions.map(subscription => <li key={subscription.id} className="flex items-center gap-3"><span className="min-w-0 flex-1 truncate">{subscription.title}</span><button className="sn-secondary-action px-2 py-1 text-xs" onClick={() => void writeDesktopReleaseSubscriptions(releaseSubscriptions.filter(value => value.id !== subscription.id)).catch(() => setNotice({tone:'error',message:'Could not remove the reminder. Try again.'}))}>Remove</button></li>)}</ul></details>}
-            {activeReminders.length > 0 && <details className="mt-3 border-t border-white/10 pt-3 text-sm"><summary className="cursor-pointer">Manage scheduled alerts</summary><ul className="mt-2 max-h-48 space-y-2 overflow-y-auto">{activeReminders.map(reminder => <li key={reminder.id} className="flex items-center gap-3"><span className="min-w-0 flex-1 truncate">{reminder.title} · {formatAiringTime(reminder.airingAt)}</span><button className="sn-secondary-action px-2 py-1 text-xs" onClick={() => { const next = reminders.filter(value => value.id !== reminder.id); setReminders(next); writeScheduleReminders(next); }}>Remove</button></li>)}</ul></details>}
-          </section>
+          <DesktopScheduleReminders subscriptions={releaseSubscriptions} reminders={reminders} permissionMessage={notificationStatusMessage} isAdmin={isAdmin}
+            onRemoveTitle={id=>void writeDesktopReleaseSubscriptions(releaseSubscriptions.filter(value=>value.id!==id)).catch(()=>setNotice({tone:'error',message:'Could not remove the reminder. Try again.'}))}
+            onRemoveAlert={id=>{const next=reminders.filter(value=>value.id!==id);try{writeScheduleReminders(next);setReminders(next);}catch{setNotice({tone:'error',message:'Could not remove the scheduled alert.'});}}}
+            onClearDelivered={clearFiredReminders} onTest={testNotification} />
         </div>
       </section>
+
+      {trackState.persistenceError && <div role="status" className="sn-calendar-storage-notice">Calendar updates are available, but could not be saved on this device. Check free space and folder access; saving will retry automatically.</div>}
 
       {notice ? (
         <div
@@ -628,18 +592,17 @@ export default function DesktopSchedule() {
                     const reminderId = reminder?.id || reminderIdForAnime(anime);
                     const activeReminder = reminders.find((item) => item.id === reminderId);
                     const notified = Boolean(activeReminder) || releaseSubscriptions.some(value => value.id === desktopCanonicalAnimeId(anime));
-                    const canAddReminder = Boolean(reminder && desktopCanonicalAnimeId(anime) && !broadcastState.blocksReminder);
-                    const reminderPending = pendingReminderId === reminderId;
-                    const reminderUnavailableTitle = broadcastState.blocksReminder
-                      ? `Reminder unavailable: ${broadcastState.label}`
-                      : reminder && reminder.airingAt <= Date.now()
-                        ? 'This episode has already aired'
-                        : 'Reminder unavailable until release time is known';
+                    const canAddReminder = Boolean(desktopCanonicalAnimeId(anime));
+                    const reminderPending = pendingReminderId === desktopCanonicalAnimeId(anime);
+                    const reminderUnavailableTitle = 'A verified anime identity is required to follow this title';
                     return (
                       <div key={scheduleRevisionKey(anime)} className="broadcast-ticket" data-schedule-state={broadcastState.prominent ? broadcastState.kind : undefined}>
-                        <div className="broadcast-time">{anime.previousAiringAt && broadcastState.prominent ? <del className="text-xs text-white/45">{formatAiringTime(Number(anime.previousAiringAt))}</del> : null}<strong>{time}</strong><span className={broadcastState.prominent ? 'font-semibold text-amber-200' : ''}>{broadcastState.label}</span></div>
-                        <Link className="broadcast-title" to={scheduleWatchPath(anime)} onClick={() => primeScheduleWatch(anime)}><img src={scheduleArtwork(anime)} alt="" loading="lazy" /><span><small>EPISODE {anime.airingEpisode || 'TBA'} · {anime.releaseTrack === 'dub' ? 'DUB' : anime.releaseTrack === 'sub' ? 'SUB' : 'ORIGINAL'}</small><strong>{safeReminderTitle(anime)}</strong><span>{broadcastState.detail || `Scheduled in ${timezone}`}</span></span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
-                        {broadcastState.prominent && <details className="col-span-full px-4 pb-3 text-xs text-white/65"><summary className="cursor-pointer py-2">Schedule details</summary><p className="mt-2">{anime.scheduleReason || broadcastState.detail}{!airingMs && ' Awaiting new date.'}</p>{anime.scheduleFetchedAt && <p className="mt-2 text-white/45">Last reported {new Date(anime.scheduleFetchedAt).toLocaleString()}</p>}</details>}
+                        <div className="broadcast-time"><strong>{broadcastState.prominent ? <CalendarDays className="h-5 w-5" aria-hidden="true" /> : time}</strong>{!broadcastState.prominent && <span>{broadcastState.label}</span>}</div>
+                        <Link className="broadcast-title" to={scheduleWatchPath(anime)} onClick={() => primeScheduleWatch(anime)}><img src={scheduleArtwork(anime)} alt="" loading="lazy" /><span><small>EPISODE {anime.airingEpisode || 'TBA'} · {anime.releaseTrack === 'dub' ? 'DUB' : anime.releaseTrack === 'sub' ? 'SUB' : 'ORIGINAL'}</small><strong>{safeReminderTitle(anime)}</strong>{!broadcastState.prominent && <span>{`Scheduled in ${timezone}`}</span>}</span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
+                        {broadcastState.prominent && <DesktopScheduleStatus kind={broadcastState.kind} label={broadcastState.label}
+                          previousAt={airingAtMs({airingAt:anime.previousAiringAt})} revisedAt={airingMs}
+                          reason={anime.scheduleReason || broadcastState.detail} fetchedAt={Number(anime.scheduleFetchedAt) || undefined}
+                          stale={Boolean(trackState.error) || Boolean(anime.scheduleFetchedAt && clock - Number(anime.scheduleFetchedAt) > 30*60_000)} />}
                         <div className="broadcast-actions flex gap-2">
                           <button
                             type="button"
@@ -682,7 +645,7 @@ export default function DesktopSchedule() {
                               notified
                                 ? 'Broadcast and watch availability notifications enabled'
                                 : canAddReminder
-                                  ? 'Follow broadcast time and watch availability'
+                                  ? 'Follow this title’s broadcast and watch availability'
                                   : reminderUnavailableTitle
                             }
                           >

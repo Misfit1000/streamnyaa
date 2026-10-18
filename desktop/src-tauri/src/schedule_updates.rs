@@ -33,7 +33,7 @@ pub struct Change {
     #[serde(default)]
     pub seeded: bool,
 }
-#[derive(Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct State {
     version: u32,
@@ -47,6 +47,32 @@ pub struct State {
     seeded: bool,
     mappings: HashMap<String, (u64, Value)>,
     pub error: Option<String>,
+    #[serde(skip)]
+    persistence_error: Option<String>,
+    #[serde(skip)]
+    save_attempts: u32,
+    #[serde(skip)]
+    retry_save_at: u64,
+}
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            tracks: vec![],
+            changes: vec![],
+            preferences: Preferences::default(),
+            fetched_at: 0,
+            last_attempt_at: 0,
+            feed: vec![],
+            cursor: 0,
+            seeded: false,
+            mappings: HashMap::new(),
+            error: None,
+            persistence_error: None,
+            save_attempts: 0,
+            retry_save_at: 0,
+        }
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,6 +81,8 @@ pub struct View {
     tracks: Vec<Value>,
     changes: Vec<Change>,
     error: Option<String>,
+    #[serde(default)]
+    persistence_error: Option<String>,
 }
 fn view(state: &State) -> View {
     View {
@@ -62,6 +90,7 @@ fn view(state: &State) -> View {
         tracks: state.tracks.clone(),
         changes: state.changes.clone(),
         error: state.error.clone(),
+        persistence_error: state.persistence_error.clone(),
     }
 }
 fn path() -> PathBuf {
@@ -71,22 +100,55 @@ fn now() -> u64 {
     now_millis().min(u64::MAX as u128) as u64
 }
 fn store() -> &'static Mutex<State> {
-    STORE.get_or_init(|| {
-        Mutex::new(
-            if fs::metadata(path()).is_ok_and(|m| m.len() <= 4_000_000) {
-                fs::read(path())
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<State>(&bytes).ok())
-                    .filter(|s| s.version == 1)
-                    .unwrap_or_default()
-            } else {
-                State::default()
-            },
-        )
-    })
+    STORE.get_or_init(|| Mutex::new(load_from(&path())))
 }
-fn save(state: &State) -> Result<(), String> {
-    let path = path();
+fn valid_change(c: &Change) -> bool {
+    c.episode > 0
+        && c.episode <= 100000
+        && c.title.len() <= 500
+        && c.detected_at <= now().saturating_add(60_000)
+        && valid_id(&c.anime_id)
+        && c.key == format!("{}:episode-{}:{}", c.anime_id, c.episode, c.release_track)
+        && c.id == format!("{}:{}:{}", c.key, c.kind, c.airing_at)
+        && matches!(c.release_track.as_str(), "original" | "sub" | "dub")
+        && matches!(
+            c.kind.as_str(),
+            "delayed" | "postponed" | "cancelled" | "on break" | "rescheduled"
+        )
+}
+fn load_from(path: &std::path::Path) -> State {
+    let read = |file: &std::path::Path, legacy: bool| -> Option<State> {
+        if !fs::metadata(file).is_ok_and(|m| m.is_file() && m.len() <= 4_000_000) {
+            return None;
+        }
+        let mut s: State = serde_json::from_slice(&fs::read(file).ok()?).ok()?;
+        if !(s.version == 1 || legacy && s.version == 0)
+            || s.tracks.len() > 5000
+            || s.changes.len() > 1200
+            || s.feed.len() > 3000
+            || s.cursor > s.feed.len()
+            || s.mappings.len() > 3000
+            || s.preferences.personal_ids.len() > 20000
+            || !s.preferences.personal_ids.iter().all(|id| valid_id(id))
+            || !s.tracks.iter().all(valid_track)
+            || !s.changes.iter().all(valid_change)
+        {
+            return None;
+        }
+        s.version = 1;
+        Some(s)
+    };
+    if let Some(s) = read(path, false) {
+        return s;
+    }
+    if let Some(mut s) = read(&path.with_extension("tmp"), true) {
+        s.persistence_error = Some("Recovered Calendar updates are waiting to be saved.".into());
+        return s;
+    }
+    State::default()
+}
+fn save_to(path: &std::path::Path, state: &State) -> Result<(), String> {
+    use std::io::Write;
     let temp = path.with_extension("tmp");
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|_| "Schedule storage is unavailable.")?;
@@ -95,11 +157,48 @@ fn save(state: &State) -> Result<(), String> {
     if bytes.len() > 4_000_000 {
         return Err("Schedule cache is full.".into());
     }
-    fs::write(&temp, bytes).map_err(|_| "Schedule data could not be saved.")?;
-    fs::File::open(&temp)
-        .and_then(|file| file.sync_all())
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temp)
+        .map_err(|_| "Schedule data could not be saved. Check free space and folder access.")?;
+    file.write_all(&bytes)
+        .map_err(|_| "Schedule data could not be saved. Check free space.")?;
+    file.sync_all()
         .map_err(|_| "Schedule data could not be flushed.")?;
+    drop(file);
     fs::rename(temp, path).map_err(|_| "Schedule data could not be replaced.".into())
+}
+fn persist_to(path: &std::path::Path, state: &mut State, at: u64) {
+    state.version = 1;
+    match save_to(path, state) {
+        Ok(()) => {
+            state.persistence_error = None;
+            state.save_attempts = 0;
+            state.retry_save_at = 0;
+        }
+        Err(error) => {
+            state.persistence_error = Some(error);
+            let delay = [30_000, 60_000, 120_000, 300_000][state.save_attempts.min(3) as usize];
+            state.save_attempts = state.save_attempts.saturating_add(1);
+            state.retry_save_at = at.saturating_add(delay);
+        }
+    }
+}
+fn persist(state: &mut State) {
+    if state.persistence_error.is_some() && now() < state.retry_save_at {
+        return;
+    }
+    persist_to(&path(), state, now());
+}
+fn retry_pending_save() {
+    if let Ok(mut state) = store().lock() {
+        if state.persistence_error.is_some() && now() >= state.retry_save_at {
+            persist(&mut state);
+            publish(&state);
+        }
+    }
 }
 fn publish(state: &State) {
     if let Some(app) = APP_HANDLE.get() {
@@ -399,7 +498,7 @@ pub fn configure_desktop_schedule_alerts(
             }
         }
     }
-    save(&next)?;
+    persist(&mut next);
     *state = next;
     publish(&state);
     Ok(view(&state))
@@ -447,6 +546,7 @@ async fn fetch(path: &str, ttl: u64, deadline: u64) -> Result<(Value, u64, bool)
     ))
 }
 pub async fn tick() {
+    retry_pending_save();
     if get_desktop_playback_busy() || BUSY.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -574,10 +674,11 @@ pub async fn tick() {
                 change.notified_at = old.notified_at;
             }
         }
-        if save(&next).is_ok() {
-            *state = next;
-            publish(&state);
-        }
+        next.version = 1;
+        // Preserve a live working cursor even when disk persistence is unavailable.
+        persist(&mut next);
+        *state = next;
+        publish(&state);
     }
 }
 fn eligible(change: &Change, preferences: &Preferences, now: u64) -> bool {
@@ -607,6 +708,11 @@ pub fn deliver(granted: bool) {
     let Ok(mut state) = store().lock() else {
         return;
     };
+    // Keep Bell updates available, but do not attempt Windows delivery before
+    // its schedule has reached durable storage.
+    if state.persistence_error.is_some() {
+        return;
+    }
     let now = now();
     let due: Vec<usize> = state
         .changes
@@ -649,7 +755,7 @@ pub fn deliver(granted: bool) {
         for index in due {
             next.changes[index].notified_at = Some(now);
         }
-        let _ = save(&next);
+        persist(&mut next);
         *state = next;
         publish(&state);
     }
@@ -657,6 +763,147 @@ pub fn deliver(granted: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    #[ignore = "Opt-in live production gateway and Windows durable-cache probe"]
+    async fn live_gateway_identity_cache_and_frontend_view() {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(25))
+            .build()
+            .unwrap();
+        async fn request(client: &reqwest::Client, path: &str) -> Value {
+            let mut url =
+                reqwest::Url::parse("https://www.streamnyaa.xyz/api/stream-sources").unwrap();
+            url.query_pairs_mut()
+                .append_pair("provider", "animeschedule")
+                .append_pair("ttl", "900")
+                .append_pair("path", path);
+            let response = client
+                .get(url)
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+            let value: Value = response.json().await.unwrap();
+            assert_ne!(value["streamnyaa"]["stale"], true);
+            value.get("data").cloned().unwrap_or(value)
+        }
+        let rows = request(&client, "/timetables/all?year=2026&week=42&tz=UTC").await;
+        let row = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["route"] == "beyblade-x" && row["airType"] == "dub")
+            .expect("Reported Beyblade dub release must be present");
+        let detail = request(&client, "/anime/beyblade-x").await;
+        let track = normalize(row, &detail, now()).unwrap();
+        assert_eq!(track["canonicalId"], "anilist:165159");
+        assert_eq!(track["releaseTrack"], "dub");
+        assert_eq!(track["scheduleStatus"], "on break");
+        let mut state = State::default();
+        reconcile(&mut state, track.clone(), now());
+        assert!(state.changes.iter().all(|change| change.seeded));
+        let root = test_directory();
+        let path = root.join("schedule-alerts-v1.json");
+        persist_to(&path, &mut state, now());
+        assert!(state.persistence_error.is_none());
+        let reloaded = load_from(&path);
+        let published = view(&reloaded);
+        assert_eq!(published.version, 1);
+        assert_eq!(published.tracks[0], track);
+        assert_eq!(published.changes.len(), 1);
+        println!(
+            "Published schedule view: {}",
+            serde_json::to_string(&published).unwrap()
+        );
+        println!("Live gateway -> canonical anilist:165159 -> durable Windows cache -> frontend view: {} tracks, episode {}, {}, initial alerts suppressed", published.tracks.len(), track["airingEpisode"], track["scheduleStatus"]);
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
+    fn test_directory() -> PathBuf {
+        let root = env::temp_dir().join(format!(
+            "streamnyaa-schedule-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        root
+    }
+    #[test]
+    fn windows_atomic_save_replaces_and_reopens_schema_one() {
+        let root = test_directory();
+        let file = root.join("state.json");
+        let mut state = State::default();
+        assert_eq!(view(&state).version, 1);
+        state.feed = vec![json!({"route":"one"})];
+        state.cursor = 1;
+        persist_to(&file, &mut state, 1000);
+        assert!(state.persistence_error.is_none());
+        assert_eq!(load_from(&file).cursor, 1);
+        state.seeded = true;
+        persist_to(&file, &mut state, 2000);
+        assert!(load_from(&file).seeded);
+        assert!(!file.with_extension("tmp").exists());
+        fs::remove_file(file).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
+    #[test]
+    fn orphan_recovery_validates_schema_and_keeps_valid_primary() {
+        let root = test_directory();
+        let file = root.join("state.json");
+        let temp = file.with_extension("tmp");
+        let mut state = State::default();
+        state.version = 0;
+        state.feed = vec![json!({"route":"one"})];
+        state.cursor = 1;
+        fs::write(&temp, serde_json::to_vec(&state).unwrap()).unwrap();
+        let mut recovered = load_from(&file);
+        assert_eq!(recovered.version, 1);
+        assert_eq!(recovered.cursor, 1);
+        assert!(recovered.persistence_error.is_some());
+        assert!(!recovered.seeded);
+        persist_to(&file, &mut recovered, 1000);
+        fs::write(&temp, serde_json::to_vec(&State::default()).unwrap()).unwrap();
+        assert_eq!(load_from(&file).cursor, 1);
+        fs::remove_file(&file).unwrap();
+        state.version = 99;
+        fs::write(&temp, serde_json::to_vec(&state).unwrap()).unwrap();
+        assert_eq!(load_from(&file).cursor, 0);
+        state.version = 0;
+        state.tracks = vec![json!({"canonicalId":"mal:wrong"})];
+        fs::write(&temp, serde_json::to_vec(&state).unwrap()).unwrap();
+        assert!(load_from(&file).tracks.is_empty());
+        fs::remove_file(temp).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
+    #[test]
+    fn failed_save_retains_live_cursor_and_backs_off_without_network_reset() {
+        let root = test_directory();
+        let blocked = root.join("blocked");
+        fs::write(&blocked, b"not a folder").unwrap();
+        let file = blocked.join("state.json");
+        let mut state = State::default();
+        state.feed = vec![json!({"route":"one"})];
+        state.cursor = 1;
+        state.last_attempt_at = 100;
+        persist_to(&file, &mut state, 1000);
+        assert!(view(&state).persistence_error.is_some());
+        assert_eq!(state.retry_save_at, 31000);
+        assert_eq!(state.cursor, 1);
+        assert_eq!(state.last_attempt_at, 100);
+        persist_to(&file, &mut state, 31000);
+        assert_eq!(state.retry_save_at, 91000);
+        fs::remove_file(&blocked).unwrap();
+        persist_to(&file, &mut state, 91000);
+        assert!(state.persistence_error.is_none());
+        assert_eq!(load_from(&file).cursor, 1);
+        fs::remove_file(file).unwrap();
+        fs::remove_dir(blocked).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
     #[test]
     fn tba_and_track_identity_are_preserved() {
         let detail = json!({"websites":{"anilist":"https://anilist.co/anime/1","mal":"https://myanimelist.net/anime/2"}});

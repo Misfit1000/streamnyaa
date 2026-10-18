@@ -1,10 +1,15 @@
+import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { mergeScheduleWatchEvidence } from '../lib/desktopScheduleWatch';
+import DesktopDrawer from '../components/DesktopDrawer';
+import DesktopActionMenu from '../components/DesktopActionMenu';
+import { DesktopWatchNavigation, DesktopWatchPlaybackCard } from '../components/DesktopWatchControls';
+import '../styles/desktop-watch.css';
 import DesktopEpisodeStatus from '../components/DesktopEpisodeStatus';
 import DesktopTrailer from '../components/DesktopTrailer';
 import DesktopAnimeCast from '../components/DesktopAnimeCast';
 import DesktopEpisodeThumbnail from '../components/DesktopEpisodeThumbnail';
 import { episodeNumberFromTitle, resolveEpisodeArtwork } from '../lib/desktopEpisodeArtwork';
-import { selectSourceMode } from '../lib/desktopSourceSelection';
+import { selectedEligibleSource, selectSourceMode } from '../lib/desktopSourceSelection';
 import { sourceAvailabilityEvidence } from '../lib/desktopHomeReadiness';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
@@ -12,7 +17,7 @@ import { clearInterruptedPlayback } from '../lib/desktopInterruptedSession';
 import { enqueueDownload, enqueueDownloadSelection } from '../lib/desktopDownloads';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Maximize2, Pause, Play, RotateCcw, RotateCw, Search, SlidersHorizontal, Star, Volume2 } from 'lucide-react';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
@@ -20,7 +25,7 @@ import { fetchAnimeDetails, fetchAnimeEpisodeWindow, fetchAnimeEpisodeTail, merg
 import { loadSeriesTimeline, type TimelineResult } from '../lib/desktopSeriesTimeline';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
-import { episodeRangeContains, isEpisodeInteractiveTarget, isIntentionalHorizontalDrag } from '../lib/desktopEpisodeInteraction';
+import { manualEpisodeTarget, episodeRangeContains, isEpisodeInteractiveTarget, isIntentionalHorizontalDrag } from '../lib/desktopEpisodeInteraction';
 import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 import { preloadDesktopWatchData } from '../lib/desktopRoutePreload';
 import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
@@ -56,6 +61,7 @@ import {
   subscribeDesktopPlayerPreferences,
   subscribeDesktopWatchProgress,
   saveDesktopAutoOpenBestSource,
+  saveDesktopAutoPlayNextEpisode,
   saveDesktopAudioPreference,
   syncDesktopPlayerPreferencesToPlayer,
   stopDesktopPlayback,
@@ -1192,24 +1198,6 @@ function sourceConfidenceMeta(
   return { score, band: 'failed', label: 'Low confidence' };
 }
 
-function sourceConfidenceBadges(
-  source: RankedNyaaItem,
-  records: Record<string, SourceFailureRecord>,
-  audioPreference: DesktopAudioPreference,
-  audioMode: AudioMode,
-) {
-  const badges: string[] = [];
-  if (source.rawSeeders >= 50) badges.push('Healthy peers');
-  else if (source.rawSeeders > 0) badges.push('Has seeders');
-  if (source.matchReasons.includes('Exact episode') || source.matchReasons.includes('Movie match')) badges.push('Exact episode');
-  if (isBatchSource(source.title)) badges.push('Batch');
-  if (isDualAudioSource(source.title)) badges.push('Dual audio');
-  else if (audioMode === 'sub' && !isDubOnlySource(source.title)) badges.push('Sub-safe');
-  if (isTrustedSource(source)) badges.push('Trusted');
-  if (hasPlayableVideoSignal(source.title)) badges.push('Video file');
-  return badges.filter((badge, index, list) => list.indexOf(badge) === index).slice(0, 4);
-}
-
 function isTrustedSource(source: NyaaItem) {
   return /\btrusted\b/i.test(String(source.trusted || ''));
 }
@@ -1226,9 +1214,7 @@ function sourceQualityReasons(
   else if (isDubOnlySource(source.title)) reasons.push('Dub');
   else if (audioMode === 'sub' || audioPreference === 'sub-preferred') reasons.push('Sub-safe');
   if (isTrustedSource(source)) reasons.push('Trusted');
-  if (source.rawSeeders >= 100) reasons.push('Fast start');
-  else if (source.rawSeeders >= 50) reasons.push('Stable peers');
-  else if (source.rawSeeders >= 15) reasons.push('Usable peers');
+  if (source.rawSeeders > 0) reasons.push(`${source.rawSeeders} seeders`);
   if (/\b(?:2160p|4k|uhd)\b/i.test(source.title)) reasons.push('4K');
   else if (/\b1440p\b/i.test(source.title)) reasons.push('2K');
   else if (/\b1080p\b/i.test(source.title)) reasons.push('1080p');
@@ -1642,7 +1628,8 @@ export default function DesktopWatch() {
   const [sourceQuality, setSourceQuality] = useState<SourceQualityFilter>('auto');
   const [episodeSearch, setEpisodeSearch] = useState('');
   const [episodeViewMode, setEpisodeViewMode] = useState<EpisodeViewMode>('cards');
-  const [episodeJumpValue, setEpisodeJumpValue] = useState('');
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [sourceSelection, setSourceSelection] = useState<{scope:string; id:string} | null>(null);
   const [trailerOpen, setTrailerOpen] = useState(false);
   const closeTrailer = useCallback(() => setTrailerOpen(false), []);
   const [episodeRailDragging, setEpisodeRailDragging] = useState(false);
@@ -1785,8 +1772,9 @@ export default function DesktopWatch() {
   }, [requestedType, id]);
 
   const setSourceAudioPreference = useCallback((preference: DesktopAudioPreference) => {
+    try { saveDesktopAudioPreference(preference); }
+    catch { setPlaybackNotice({tone:'error',text:'Could not save audio preference. Check available storage.'}); return; }
     setAudioPreference(preference);
-    saveDesktopAudioPreference(preference);
     const nextMode = watchTypeForAudioPreference(preference);
     setAudioMode(nextMode);
     const next = new URLSearchParams(searchParams);
@@ -2183,8 +2171,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const modeFilteredSources = useMemo(() => {
     return selectSourceMode(allRankedSources, sourceMode, audioMode,
       source => sourceConfidenceScore(source, failedSourceRecords, audioPreference, audioMode),
-      source => Boolean(sourceFailureFor(source, failedSourceRecords)))
-      .sort((a, b) => sourceConfidenceScore(b, failedSourceRecords, audioPreference, audioMode) - sourceConfidenceScore(a, failedSourceRecords, audioPreference, audioMode));
+      source => Boolean(sourceFailureFor(source, failedSourceRecords)));
   }, [audioMode, audioPreference, allRankedSources, failedSourceRecords, sourceMode]);
   const modeSortedSources = modeFilteredSources;
   const qualityCounts = useMemo(() => {
@@ -2253,6 +2240,13 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     () => playableSources.find((source) => !sourceFailureFor(source, failedSourceRecords)) || playableSources[0] || null,
     [failedSourceRecords, playableSources],
   );
+
+  const sourceSelectionScope = `${sourceContextSignature}:${selectedEpisode}:${audioMode}:${audioPreference}:${sourceMode}:${sourceQuality}`;
+  const sourceKey = (source: RankedNyaaItem) => source.infoHash || source.magnet || source.link || source.title;
+  const selectedSafeSource = selectedEligibleSource(sourceSelection, sourceSelectionScope, playableSources, sourceKey);
+  const primarySource = selectedSafeSource || nextPlayableSource;
+  useEffect(() => { if (sourceSelection && !selectedSafeSource) setSourceSelection(null); }, [sourceSelection, selectedSafeSource]);
+  useEffect(() => { setOptionsOpen(false); }, [id]);
 
   useEffect(() => {
     selectedEpisodeNumberRef.current = selectedEpisode;
@@ -2374,10 +2368,6 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   }, [id, episodeViewMode, selectedEpisode]);
 
   useEffect(() => {
-    setEpisodeJumpValue(String(selectedEpisode));
-  }, [selectedEpisode]);
-
-  useEffect(() => {
     setEpisodeSearch('');
   }, [selectedInstallment?.mal_id]);
 
@@ -2388,22 +2378,15 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     setSearchParams(next);
   }, [audioMode, searchParams, setSearchParams]);
 
-  const submitEpisodeJump = useCallback(() => {
-    const parsed = Number(episodeJumpValue || 0);
-    if (!Number.isFinite(parsed) || parsed <= 0) return;
-    selectEpisode(clampNumber(Math.round(parsed), 1, Math.max(1, /FINISHED|COMPLETED/i.test(String(anime.status)) ? (Number(anime.episodes) || 9999) : 9999)));
-  }, [anime.status, anime.episodes, episodeJumpValue, selectEpisode]);
-
   const submitEpisodeSearch = useCallback(() => {
     const trimmed = episodeSearch.trim();
     if (!trimmed) return;
-    const exactEpisode = Number(trimmed);
-    if (Number.isFinite(exactEpisode) && exactEpisode > 0) {
-      selectEpisode(clampNumber(Math.round(exactEpisode), 1, Math.max(1, airedCount ?? 9999)));
-    } else if (searchedEpisodes[0]) {
-      selectEpisode(searchedEpisodes[0].number);
-    }
-  }, [airedCount, episodeSearch, searchedEpisodes, selectEpisode, selectedEpisode]);
+    const exactEpisode = manualEpisodeTarget(trimmed, anime.status, anime.episodes);
+    if (exactEpisode !== null) {
+      selectEpisode(exactEpisode);
+      setEpisodeSearch('');
+    } else if (searchedEpisodes[0]) selectEpisode(searchedEpisodes[0].number);
+  }, [anime.status, anime.episodes, episodeSearch, searchedEpisodes, selectEpisode]);
 
   const sourcePayloadFor = useCallback((source: NyaaItem, resumeOverride?: number): LocalPlaybackSource => {
     const bannerCandidates = playerLandscapeCandidates(
@@ -2929,7 +2912,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   if (!id) return <div className="py-24 text-center text-white">Select an anime to continue.</div>;
 
   return (
-    <div className="sn-watch-page relative min-h-screen overflow-x-hidden text-white">
+    <div className={`sn-watch-page relative min-h-screen text-white ${optionsOpen ? 'sn-watch-options-open' : ''}`}>
+      <DesktopWatchNavigation />
       <Seo title={`${anime.title} Watch | StreamNyaa Desktop`} description="Desktop watch source screen." canonicalPath={`/watch/${id}`} robots="noindex, nofollow" />
       <div className="sn-watch-layout sn-page relative grid min-h-screen gap-7 py-6">
         <aside className="sn-glass-panel rounded-xl p-5">
@@ -2940,10 +2924,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             </div>
           </div>
           <>
-            {selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? (
-              <p className="mt-7 text-[11px] font-semibold normal-case tracking-normal text-primary">{selectedInstallment.label}</p>
-            ) : null}
-            <h1 className={`${selectedInstallment?.label && selectedInstallment.label !== 'Season 1' ? 'mt-2' : 'mt-7'} break-words text-[31px] font-semibold leading-[1.05] tracking-[-0.04em] text-white drop-shadow-[0_10px_28px_rgba(0,0,0,0.45)]`}>{anime.title}</h1>
+            <h1 className="mt-4 break-words text-[26px] font-semibold leading-tight tracking-[-0.035em] text-white">{anime.title}</h1>
             {metadataLoading && !leftPanelInfo.primaryMeta.length && !leftPanelInfo.secondaryMeta.length && !leftPanelInfo.detailMeta.length ? (
               <DesktopLoadingProgress className="mt-4" variant="inline" label="Loading anime details" percent={detailsQuery.data ? 82 : 44} detail="Identity is available; episode metadata is refreshing." />
             ) : null}
@@ -2994,6 +2975,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 ) : null}
               </div>
             ) : null}
+            <DesktopBookmarkButton anime={anime} label className="sn-secondary-action sn-watch-bookmark mt-4" />
             {leftPanelInfo.trailerUrl ? (
               <div className="sn-glass-card mt-5 overflow-hidden rounded-xl">
                 <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] px-3.5 py-2.5">
@@ -3072,7 +3054,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             </div>
           ) : null}
           <section>
-            <div className="sn-glass-panel mb-5 overflow-hidden rounded-xl p-5">
+            <div className="sn-watch-timeline sn-glass-panel mb-5 overflow-hidden rounded-xl p-5">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 text-[11px] font-semibold normal-case tracking-normal text-primary">
@@ -3085,30 +3067,6 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                <div className="sn-glass-card hidden rounded-full p-1 md:inline-flex">
-                  {(['sub', 'dub'] as AudioMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => {
-                        const nextPreference: DesktopAudioPreference = mode === 'sub'
-                          ? 'sub-preferred'
-                          : audioPreference === 'dub-only'
-                            ? 'dub-only'
-                            : 'dual-preferred';
-                        setAudioPreference(nextPreference);
-                        saveDesktopAudioPreference(nextPreference);
-                        setAudioMode(mode);
-                        const next = new URLSearchParams(searchParams);
-                        next.set('type', mode);
-                        setSearchParams(next);
-                      }}
-                      className={`rounded-full px-5 py-2 text-sm font-semibold transition-all active:scale-[0.98] ${audioMode === mode ? 'bg-primary text-white shadow-none shadow-primary/24' : 'text-white/62 hover:bg-white/[0.06] hover:text-white'}`}
-                    >
-                      {mode === 'dub' ? 'Dual / Dub' : 'Sub'}
-                    </button>
-                  ))}
-                </div>
                 <div className="hidden items-center gap-2 md:flex">
                   <button
                     type="button"
@@ -3137,7 +3095,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 className="grid max-h-[274px] grid-cols-[repeat(auto-fill,minmax(278px,1fr))] gap-3 overflow-y-auto pr-1 custom-scrollbar"
               >
                 {seasonItems.map((season) => {
-                  const sharedClassName = `group relative h-[118px] overflow-hidden rounded-xl border text-left shadow-none transition-all duration-200 hover:-translate-y-0.5 ${
+                  const sharedClassName = `sn-watch-timeline-entry group relative h-[118px] overflow-hidden rounded-xl border text-left shadow-none transition-all duration-200 hover:-translate-y-0.5 ${
                     season.current
                       ? 'border-primary/72 bg-primary/[0.13] shadow-primary/22 ring-1 ring-primary/35'
                       : 'border-white/[0.095] bg-white/[0.035] shadow-black/20 hover:border-primary/45 hover:bg-primary/[0.065] hover:ring-1 hover:ring-primary/20'
@@ -3217,164 +3175,15 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
             <DesktopAnimeCast key={id} identity={{ anilistId: resolvedAnime?.anilist_id || routeAniListId, malId: resolvedAnime?.mal_id || routeMalId }} />
 
-            <div className="sn-glass-card sticky top-3 z-10 -mx-2 mb-4 flex items-center justify-between gap-4 rounded-xl px-3 py-3">
-              <div className="flex items-center gap-2">
-                <Download className="h-4 w-4 text-primary" />
-                <span>
-                  <span className="block text-lg font-semibold">{selectedInstallment?.kind === 'movie' ? 'Movie' : selectedInstallment?.kind === 'ova' ? 'OVA Episodes' : selectedInstallment?.kind === 'ona' ? 'ONA Episodes' : 'Episodes'}</span>
-                  <span className="mt-0.5 block text-xs font-semibold text-white/60">{airedCount == null ? (episodeQuery.isFetching ? 'Checking aired episodes' : 'Episode count unavailable') : episodeCountLabel + ' ' + airedCount} · Total {totalEpisodeCount(anime) ?? '?'}</span>
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-3">
-                <div className="hidden items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 px-3 py-2 shadow-inner shadow-black/20 md:flex">
-                  <Search className="h-4 w-4 text-white/46" />
-                  <input
-                    value={episodeSearch}
-                    onChange={(event) => setEpisodeSearch(event.target.value.slice(0, 48))}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        submitEpisodeSearch();
-                      }
-                    }}
-                    className="w-48 bg-transparent text-sm font-semibold text-white outline-none placeholder:text-white/36"
-                    placeholder="Search episode number or title"
-                  />
-                </div>
-                {longEpisodeRun ? (
-                  <div className="hidden rounded-xl border border-white/[0.10] bg-black/34 p-1 md:flex">
-                    {(['cards', 'grid'] as EpisodeViewMode[]).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => setEpisodeViewMode(mode)}
-                        className={`rounded-lg px-3 py-2 text-xs font-semibold normal-case tracking-normal ${
-                          episodeViewMode === mode
-                            ? 'bg-primary text-white shadow-md shadow-primary/18'
-                            : 'text-white/58 hover:bg-white/[0.06] hover:text-white'
-                        }`}
-                      >
-                        {mode === 'grid' ? 'Compact' : 'Cards'}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                {longEpisodeRun && episodeViewMode === 'grid' && !episodeSearchTerm && episodeRanges.length > 1 ? (
-                  <div className="hidden items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 p-1 md:flex">
-                    <button
-                      type="button"
-                      disabled={currentEpisodeRangeIndex <= 0}
-                      onClick={() => goEpisodeRange(-1)}
-                      className="sn-icon-action h-10 w-10 rounded-lg disabled:cursor-not-allowed disabled:opacity-30"
-                      aria-label="Previous episode range"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <select
-                      value={String(episodeGridStart)}
-                      onChange={(event) => setEpisodeGridStart(Number(event.target.value) || 1)}
-                      className="rounded-xl border border-white/[0.12] bg-black/48 px-4 py-3 text-sm font-semibold text-white outline-none"
-                    >
-                      {episodeRanges.map((range) => (
-                        <option key={range.start} value={range.start}>{range.label}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      disabled={currentEpisodeRangeIndex >= episodeRanges.length - 1}
-                      onClick={() => goEpisodeRange(1)}
-                      className="sn-icon-action h-10 w-10 rounded-lg disabled:cursor-not-allowed disabled:opacity-30"
-                      aria-label="Next episode range"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : null}
-                {!animeNotYetAired ? (
-                  <div className="flex items-center gap-2 rounded-xl border border-white/[0.12] bg-black/38 px-3 py-2">
-                    <span className="text-[11px] font-semibold normal-case tracking-normal text-white/44">Jump</span>
-                    <input
-                      aria-label="Episode number"
-                      value={episodeJumpValue}
-                      onChange={(event) => setEpisodeJumpValue(event.target.value.replace(/[^\d]/g, '').slice(0, 4))}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          submitEpisodeJump();
-                        }
-                      }}
-                      inputMode="numeric"
-                      className="w-20 rounded-lg border border-white/[0.10] bg-white/[0.055] px-3 py-2 text-sm font-semibold text-white outline-none"
-                      placeholder="Episode"
-                    />
-                    <button
-                      type="button"
-                      onClick={submitEpisodeJump}
-                      className="sn-primary-action min-h-0 rounded-lg px-3 py-2 text-xs"
-                    >
-                      Go
-                    </button>
-                  </div>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={animeNotYetAired || Boolean(activeSourceId) || sourcesBusy}
-                  onClick={() => playEpisodeNumber(selectedEpisode)}
-                  className="hidden rounded-xl bg-primary px-4 py-3 text-xs font-semibold normal-case tracking-normal text-white shadow-none shadow-primary/24 transition-all hover:bg-[#ff3345] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
-                  aria-label={`Play episode ${selectedEpisode}`}
-                >
-                  {animeNotYetAired ? 'Not aired yet' : Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : 'Play Episode'}
-                </button>
-                <button
-                  type="button"
-                  onClick={toggleSelectedEpisodeWatched}
-                  aria-pressed={selectedEpisodeWatchState.completed}
-                  aria-label={`${selectedEpisodeWatchState.completed ? 'Mark unwatched' : 'Mark watched'} episode ${selectedEpisode}`}
-                  title={selectedEpisodeWatchState.completed ? 'Mark this episode as unwatched' : 'Mark this episode as watched'}
-                  className={`hidden min-h-11 items-center gap-2 rounded-xl px-4 text-xs font-semibold normal-case tracking-normal transition-all active:scale-[0.98] md:inline-flex ${
-                    selectedEpisodeWatchState.completed
-                      ? 'bg-emerald-400/[0.12] text-emerald-200 shadow-inner shadow-emerald-300/[0.08] hover:bg-emerald-400/[0.18]'
-                      : 'bg-white/[0.065] text-white/66 hover:bg-white/[0.11] hover:text-white'
-                  }`}
-                >
-                  <Check className="h-4 w-4" strokeWidth={2.5} />
-                  {selectedEpisodeWatchState.completed ? 'Watched' : 'Mark watched'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = !autoOpenBestSource;
-                    setAutoOpenBestSource(next);
-                    saveDesktopAutoOpenBestSource(next);
-                  }}
-                  className={`hidden rounded-xl border px-4 py-3 text-xs font-semibold normal-case tracking-normal transition-all active:scale-[0.98] md:inline-flex ${
-                    autoOpenBestSource
-                      ? 'border-primary/45 bg-primary text-white shadow-md shadow-primary/18'
-                      : 'border-white/[0.12] bg-black/38 text-white/56 hover:border-white/20 hover:bg-white/[0.06] hover:text-white'
-                  }`}
-                >
-                  Auto-play {autoOpenBestSource ? 'On' : 'Off'}
-                </button>
-                <div className={`hidden items-center gap-2 md:flex ${longEpisodeRun && episodeViewMode === 'grid' ? 'opacity-40 pointer-events-none' : ''}`}>
-                  <button
-                    type="button"
-                    onClick={() => railScroll(episodesRailRef, 'left', 520)}
-                    className="sn-icon-action h-11 w-11 rounded-full"
-                    aria-label="Scroll episodes left"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => railScroll(episodesRailRef, 'right', 520)}
-                    className="sn-icon-action h-11 w-11 rounded-full"
-                    aria-label="Scroll episodes right"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
+            <div className="sn-watch-episode-toolbar">
+              <div><h2>Episodes</h2><span>{airedCount == null ? 'Count unavailable' : `${episodeCountLabel} ${airedCount}`} · Total {totalEpisodeCount(anime) ?? '?'}</span></div>
+              <form onSubmit={event => { event.preventDefault(); submitEpisodeSearch(); }}><Search className="h-4 w-4" /><input aria-label="Search or jump to episode" value={episodeSearch} onChange={event => setEpisodeSearch(event.target.value.slice(0,48))} placeholder="Search or jump to episode…" /></form>
+              {longEpisodeRun && <select aria-label="Episode view" value={episodeViewMode} onChange={event => setEpisodeViewMode(event.target.value as EpisodeViewMode)}><option value="cards">Cards</option><option value="grid">Compact</option></select>}
+              {longEpisodeRun && episodeViewMode === 'grid' && episodeRanges.length > 1 && <select aria-label="Episode range" value={episodeGridStart} onChange={event => setEpisodeGridStart(Number(event.target.value) || 1)}>{episodeRanges.map(range => <option key={range.start} value={range.start}>{range.label}</option>)}</select>}
+              <label className="sn-watch-toggle">Auto-next<input type="checkbox" checked={autoPlayNextEpisode} onChange={event => { try { const next = event.target.checked; saveDesktopAutoPlayNextEpisode(next); setAutoPlayNextEpisode(next); syncPlayerPreferences('watch-auto-next'); } catch { setPlaybackNotice({tone:'error',text:'Could not save auto-next. Check available storage.'}); } }} /></label>
+              <div className="sn-watch-rail-arrows"><button type="button" className="sn-icon-action" aria-label="Scroll episodes left" onClick={() => longEpisodeRun && episodeViewMode === 'grid' ? goEpisodeRange(-1) : railScroll(episodesRailRef,'left',520)}><ChevronLeft className="h-4 w-4" /></button><button type="button" className="sn-icon-action" aria-label="Scroll episodes right" onClick={() => longEpisodeRun && episodeViewMode === 'grid' ? goEpisodeRange(1) : railScroll(episodesRailRef,'right',520)}><ChevronRight className="h-4 w-4" /></button></div>
             </div>
+
             <DesktopEpisodeStatus enabled={canFetchEpisodeMetadata} fetching={episodeQuery.isFetching}
               error={episodeQuery.error} errorAt={episodeQuery.errorUpdatedAt}
               hasTitles={pageItems.some((entry: any) => Boolean(entry.title || entry.title_english || entry.title_romanji)) || streamingEpisodeMap.size > 0}
@@ -3457,7 +3266,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   <div
                     key={episode.number}
                     ref={episode.number === selectedEpisode ? selectedEpisodeRef : null}
-                    className={`group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-xl border text-left shadow-none shadow-black/18 transition-all focus-within:ring-1 focus-within:ring-primary/42 ${
+                    className={`sn-watch-episode-card group relative h-[156px] w-[230px] shrink-0 overflow-hidden rounded-xl border text-left shadow-none shadow-black/18 transition-all focus-within:ring-1 focus-within:ring-primary/42 ${
                       episode.number === selectedEpisode
                         ? 'border-primary/70 bg-primary/[0.10] ring-1 ring-primary/32'
                         : 'border-white/[0.10] hover:-translate-y-0.5 hover:border-primary/42'
@@ -3521,153 +3330,17 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
           </section>
 
           <section ref={sourceSectionRef} className="mt-8 pb-24">
-            <div className="sn-glass-panel mb-5 rounded-xl p-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold normal-case tracking-normal text-primary">Playback</p>
-                  <h2 className="mt-1 text-2xl font-semibold tracking-[-0.03em] text-white">{sourceSectionTitle}</h2>
-                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/52">{sourceSectionSubtitle}</p>
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-3">
-                  {animeNotYetAired ? (
-                    <>
-                      <UpcomingNotifyButton anime={anime} />
-                      <Link
-                        to="/schedule"
-                        className="sn-secondary-action h-11 rounded-lg px-4 text-sm"
-                      >
-                        View airing schedule
-                      </Link>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        disabled={!playableSources[0] || Boolean(activeSourceId) || sourcesBusy}
-                        onClick={() => playableSources[0] && void playSource(playableSources[0])}
-                        className="sn-primary-action h-12 rounded-xl px-5 text-sm disabled:cursor-not-allowed disabled:opacity-45"
-                        aria-label={`Play episode ${selectedEpisode}`}
-                      >
-                        <Play className="mr-2 h-4 w-4 fill-current" />
-                        {Boolean(activeSourceId) || pendingAutoPlayEpisode === selectedEpisode ? 'Opening...' : sourcesBusy ? 'Preparing...' : 'Play Episode'}
-                      </button>
-                      <button type="button" disabled={!nextPlayableSource || Boolean(activeSourceId)} onClick={()=>{if(nextPlayableSource)void playSource(nextPlayableSource,0);}} className="sn-secondary-action px-3 py-2 disabled:opacity-40">Restart episode</button>
-                      <button
-                        type="button"
-                        onClick={() => { if (playbackOptionsRef.current) { playbackOptionsRef.current.open = true; playbackOptionsRef.current.scrollIntoView({ block: 'nearest' }); } }}
-                        className="sn-secondary-action h-12 rounded-xl px-5 text-sm"
-                        aria-label={`View playback options for episode ${selectedEpisode}`}
-                      >
-                        <SlidersHorizontal className="mr-2 h-4 w-4" />
-                        Playback Options
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {animeNotYetAired ? (
-                <div className="mt-5 rounded-xl bg-black/28 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.035)] ring-1 ring-white/[0.06]">
-                  <p className="text-sm font-semibold text-white">Episodes are not available yet.</p>
-                  <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/48">
-                    This title can be saved now. Playback becomes available after the first episode airs.
-                  </p>
-                </div>
-              ) : (
-                <>
-              <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
-                <div className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
-                  <p className="mb-2 px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Match</p>
-                  <div className="flex rounded-xl bg-black/34 p-1">
-                    {(['strict', 'balanced', 'broad'] as SourceFilterMode[]).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => setSourceMode(mode)}
-                        aria-pressed={sourceMode === mode}
-                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold capitalize transition-all active:scale-[0.98] ${
-                          sourceMode === mode
-                            ? 'bg-primary text-white shadow-md shadow-primary/24'
-                            : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
-                        }`}
-                      >
-                        {mode}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
-                  <p className="mb-2 px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Audio</p>
-                  <div className="flex rounded-xl bg-black/34 p-1">
-                    {([
-                      { label: 'Sub', preference: 'sub-preferred' },
-                      { label: 'Dub', preference: 'dub-only' },
-                      { label: 'Any', preference: 'dual-preferred' },
-                    ] as const).map((option) => (
-                      <button
-                        key={option.preference}
-                        type="button"
-                        onClick={() => setSourceAudioPreference(option.preference)}
-                        aria-pressed={audioPreference === option.preference}
-                        className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-all active:scale-[0.98] ${
-                          audioPreference === option.preference
-                            ? 'bg-primary text-white shadow-md shadow-primary/24'
-                            : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
-                  <p className="mb-2 px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Quality</p>
-                  <div className="flex flex-wrap gap-1 rounded-xl bg-black/34 p-1">
-                    {sourceQualityOptions.map((quality) => {
-                      const active = sourceQuality === quality;
-                      const count = quality === 'auto' ? modeSortedSources.length : qualityCounts.get(quality) || 0;
-                      return (
-                        <button
-                          key={quality}
-                          type="button"
-                          onClick={() => setSourceQuality(quality)}
-                          aria-pressed={active}
-                          className={`rounded-lg px-3 py-2 text-xs font-semibold transition-all active:scale-[0.98] ${
-                            active
-                              ? 'bg-primary text-white shadow-md shadow-primary/24'
-                              : 'text-white/58 hover:bg-white/[0.07] hover:text-white'
-                          }`}
-                        >
-                          {sourceQualityLabel(quality)}
-                          {count > 0 ? <span className={active ? 'ml-1 text-white/70' : 'ml-1 text-white/34'}>{count}</span> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <label className="rounded-xl border border-white/[0.08] bg-black/28 p-2">
-                  <span className="mb-2 block px-2 text-[10px] font-semibold normal-case tracking-normal text-white/36">Order</span>
-                  <span className="flex h-[42px] items-center rounded-xl bg-black/34 px-3">
-                    <select value={sortBy} onChange={(event) => setSortBy(event.target.value as SourceSort)} className="w-full bg-transparent text-sm font-semibold text-white outline-none">
-                      <option value="best">Best Match</option>
-                      <option value="seeders">Seeders</option>
-                      <option value="size">Smaller Files</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none ml-2 h-4 w-4 text-white/42" />
-                  </span>
-                </label>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-4 text-sm">
-                <p className="font-semibold text-white/56">{sourceMatchSummary}</p>
-                <p className="text-xs font-semibold text-white/36">StreamNyaa automatically chooses the fastest compatible option.</p>
-              </div>
-                </>
-              )}
-            </div>
+            {animeNotYetAired ? <div className="sn-watch-playback-card"><h2>Episodes are not available yet</h2><p className="mt-2 text-sm text-white/65">Playback becomes available after the first episode airs.</p><UpcomingNotifyButton anime={anime} /><Link to="/schedule" className="sn-secondary-action mt-3">View airing schedule</Link></div> : <DesktopWatchPlaybackCard
+              episode={selectedEpisode} progress={selectedEpisodeWatchState}
+              duration={resolveDesktopPlaybackCheckpoint({animeId:anime.mal_id || anime.id,animeTitle:anime.title,episode:selectedEpisode})?.durationSeconds}
+              disabled={!primarySource || Boolean(activeSourceId) || sourcesBusy}
+              busy={activeSourceId || pendingAutoPlayEpisode === selectedEpisode ? 'Opening…' : sourcesBusy ? 'Preparing…' : ''}
+              sourceSummary={primarySource ? `${selectedSafeSource ? 'Selected source' : 'Recommended source'} · ${sourceQualityLabel(sourceQualityBucket(primarySource.title))} · ${isDualAudioSource(primarySource.title) ? 'Dual audio' : isDubOnlySource(primarySource.title) ? 'Dub' : 'Sub'} · ${sourceMode}` : sourceSectionTitle}
+              onPlay={() => primarySource && void playSource(primarySource, selectedEpisodeWatchState.completed ? 0 : undefined)}
+              onOptions={() => setOptionsOpen(true)}
+              onDownloadRelease={primarySource?.magnet ? () => { void enqueueDownload(primarySource.title,primarySource.magnet).catch(issue => setPlaybackNotice({tone:'error',text:errorMessage(issue,'Download could not start.')})); } : undefined}
+              onChooseFiles={primarySource?.magnet ? () => { void enqueueDownloadSelection(primarySource.title,primarySource.magnet).catch(issue => setPlaybackNotice({tone:'error',text:errorMessage(issue,'File selection could not open.')})); } : undefined}
+            />}
 
             {playbackNotice ? (
               <div className={`mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm font-semibold shadow-none shadow-black/14 ${
@@ -3945,7 +3618,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
             <details key={`${id}:${selectedEpisode}`} open ref={playbackOptionsRef} className="sn-playback-options">
               <summary className="flex min-h-14 cursor-pointer items-center justify-between gap-4 px-5 py-3 font-semibold">
-                <span>Change playback option</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} shown · ${playableSources.length} verified${sourceSearchInProgress ? ' · finding more' : ''}` : 'View options'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
+                <span>Sources</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} shown · ${playableSources.length} verified${sourceSearchInProgress ? ' · finding more' : ''}` : 'No matches in this view'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
               </summary>
               <div className="p-4">
             {!!sources?.items.length && <p className="mb-3 text-xs text-white/50">{sources.items.length} retrieved · {sortedSources.length} shown · {excludedSourceCount} incompatible sources excluded</p>}
@@ -3981,10 +3654,6 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   ].filter((reason, reasonIndex, list) => list.indexOf(reason) === reasonIndex);
                   const confidence = sourceConfidenceMeta(source, failedSourceRecords, audioPreference, audioMode);
                   const score = confidence.score;
-                  const visibleReasons = [
-                    ...sourceConfidenceBadges(source, failedSourceRecords, audioPreference, audioMode),
-                    ...reasons,
-                  ].filter((reason, reasonIndex, list) => list.indexOf(reason) === reasonIndex).slice(0, 4);
                   const expanded = expandedSourceIds.has(sourceId);
                   const quality = sourceQualityLabel(sourceQualityBucket(source.title));
                   const codec = /\b(hevc|h\.?265|x265)\b/i.test(source.title) ? 'HEVC' : /\b(avc|h\.?264|x264)\b/i.test(source.title) ? 'H.264' : 'Video';
@@ -4004,77 +3673,17 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                         </p>
                       </div>
                     ) : null}
-                    <div
-                      className={`relative overflow-hidden rounded-xl border bg-[#101116]/82 p-4 shadow-none shadow-black/20 transition-all hover:-translate-y-0.5 hover:border-primary/24 hover:bg-[#171923]/82 ${
-                        index === 0 && source.matchTier === 'exact' ? 'border-primary/42 bg-[linear-gradient(135deg,rgba(244,63,94,0.10),rgba(255,255,255,0.040)_52%,rgba(255,255,255,0.030))] shadow-primary/8' : 'border-white/[0.085]'
-                      }`}
-                    >
-                      {index === 0 && source.matchTier === 'exact' ? <div className="absolute inset-y-4 left-0 w-1 rounded-r-full bg-primary shadow-none shadow-primary/40" /> : null}
-                      <div className="flex items-center gap-4">
-                        <span className="grid h-[58px] min-w-[70px] shrink-0 place-items-center rounded-xl border border-white/[0.10] bg-white/[0.065] px-3 text-xs font-semibold text-white shadow-inner shadow-black/20">{quality}</span>
-                        <div className="min-w-0 flex-1">
-                          {index === 0 && source.matchTier === 'exact' ? <p className="mb-1 text-[10px] font-semibold normal-case tracking-normal text-primary">Recommended source</p> : null}
-                          <p className="line-clamp-1 text-sm font-semibold text-white">{source.title}</p>
-                          <p className="mt-1 text-xs font-semibold text-white/52">
-                            {quality} <span className="text-white/24">-</span> {codec} <span className="text-white/24">-</span> {audioLabel} <span className="text-white/24">-</span> {source.size}
-                          </p>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-white/45">
-                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal ${source.playable ? sourceConfidenceClassName(confidence.band) : playableStatusClassName(source.playableStatus)}`}>
-                              {source.playable ? confidence.label : source.playableLabel}
-                            </span>
-                            <span className="text-emerald-400">{sourceHealth(source.rawSeeders)}</span>
-                            <span>{source.seeders} seeders</span>
-                            {visibleReasons.map((reason) => (
-                              <span key={`${sourceId}-${reason}`} className="rounded-full border border-white/8 bg-white/[0.045] px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/54">
-                                {reason}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 flex-wrap items-center gap-2">
-                          <button type="button" disabled={!source.magnet} className="sn-secondary-action h-10 px-3 text-xs" title="Download all files in this release, including all episodes in a batch" onClick={() => {
-                            void enqueueDownload(source.title, source.magnet).then(() => setPlaybackNotice({ tone: 'success', text: 'Release queued in the download manager.' }), issue => setPlaybackNotice({ tone: 'error', text: String(issue instanceof Error ? issue.message : issue) }));
-                          }}><Download className="h-4 w-4" />Download release</button>
-                          <button type="button" disabled={!source.magnet} className="sn-secondary-action h-10 px-3 text-xs" title="Resolve the release file list before choosing episodes to download" onClick={() => {
-                            void enqueueDownloadSelection(source.title, source.magnet).then(() => setPlaybackNotice({ tone: 'success', text: 'Download manager opened. Choose episode files once metadata resolves.' }), issue => setPlaybackNotice({ tone: 'error', text: String(issue instanceof Error ? issue.message : issue) }));
-                          }}><Download className="h-4 w-4" />Choose files</button>
-                          <button
-                            type="button"
-                            onClick={() => toggleSourceDetails(sourceId)}
-                            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/[0.10] bg-white/[0.04] px-3 text-xs font-semibold text-white/62 transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]"
-                          >
-                            Details
-                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                          </button>
-                          <button type="button" onClick={() => navigator.clipboard?.writeText(source.magnet || torrentUrlFor(source))} className="grid h-10 w-10 place-items-center rounded-lg border border-white/[0.10] bg-white/[0.05] text-white/62 transition-all hover:border-white/18 hover:bg-white/[0.08] hover:text-white active:scale-[0.98]" aria-label="Copy source link">
-                            <Copy className="h-4 w-4" />
-                          </button>
-                          <button type="button" disabled={Boolean(active) || (!source.playable && !(source.manualOnly && source.rawSeeders > 0))} onClick={() => {
-                            if (source.manualOnly) {
-                              if (window.confirm('This release has not been verified for the selected installment and episode. Inspect its title carefully. Open this release manually?')) void playSource(source, undefined, true);
-                            } else void playSource(source);
-                          }} className="inline-flex h-10 min-w-[86px] items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-semibold normal-case tracking-normal text-white shadow-none shadow-primary/24 transition-all hover:bg-[#ff3345] hover:shadow-primary/34 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60">
-                            {active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}
-                            {active ? 'Opening' : source.playable ? 'Play' : source.manualOnly ? 'Review & play' : 'Blocked'}
-                          </button>
-                        </div>
-                      </div>
-                      {expanded ? (
-                        <div className="mt-4 rounded-xl border border-white/8 bg-black/24 p-3">
-                          <div className="flex flex-wrap gap-2">
-                            {[...reasons, `Confidence ${score}`, `Rank ${Math.round(sourceScore(source, audioPreference, audioMode))}`, source.category, source.pubDate ? `Updated ${new Date(source.pubDate).toLocaleDateString()}` : '', source.infoHash ? `Hash ${source.infoHash.slice(0, 10)}` : '']
-                              .filter(Boolean)
-                              .map((label) => (
-                                <span key={`${sourceId}-${label}`} className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[10px] font-semibold normal-case tracking-normal text-white/46">
-                                  {label}
-                                </span>
-                              ))}
-                            {getTorrentBadges(source).map((badge) => (
-                              <span key={`${sourceId}-${badge.label}`} className={torrentBadgeClassName(badge.tone)}>{badge.label}</span>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
+                    <div className={`sn-watch-source-row ${selectedSafeSource && sourceKey(selectedSafeSource) === sourceId ? 'is-selected' : ''}`}>
+                      <div className="sn-watch-source-copy"><strong title={source.title}>{source.title}</strong><p>{quality} · {audioLabel} · {codec} · {source.size} · {source.seeders} seeders</p><span className={sourceConfidenceClassName(confidence.band)}>{source.manualOnly ? 'Uncertain identity · manual review' : source.playable ? confidence.label : source.playableLabel}</span></div>
+                      <button type="button" className="sn-secondary-action" disabled={!playableSources.some(item => sourceKey(item) === sourceId)} aria-pressed={selectedSafeSource ? sourceKey(selectedSafeSource) === sourceId : false} onClick={() => setSourceSelection({scope:sourceSelectionScope,id:sourceId})}>Use</button>
+                      <DesktopActionMenu label={`Actions for ${source.title}`} actions={[
+                        {label:source.manualOnly ? 'Review & play' : 'Play this source',disabled:Boolean(active) || (!source.playable && !(source.manualOnly && source.rawSeeders > 0)),action:()=>{ if (!source.manualOnly || window.confirm('This release has not been verified for the selected installment and episode. Inspect its title carefully. Open this release manually?')) void playSource(source,undefined,source.manualOnly); }},
+                        {label:expanded ? 'Hide details' : 'Details',action:()=>toggleSourceDetails(sourceId)},
+                        {label:'Copy source link',action:()=>{ void (navigator.clipboard ? navigator.clipboard.writeText(source.magnet || torrentUrlFor(source)) : Promise.reject(new Error('Clipboard unavailable'))).then(()=>setPlaybackNotice({tone:'success',text:'Source link copied.'}),()=>setPlaybackNotice({tone:'error',text:'Source link could not be copied.'})); }},
+                        {label:'Download release',disabled:!source.magnet,title:'Downloads every file in this release, including batch episodes',action:()=>{ void enqueueDownload(source.title,source.magnet).catch(issue=>setPlaybackNotice({tone:'error',text:errorMessage(issue,'Download could not start.')})); }},
+                        {label:'Choose files',disabled:!source.magnet,action:()=>{ void enqueueDownloadSelection(source.title,source.magnet).catch(issue=>setPlaybackNotice({tone:'error',text:errorMessage(issue,'File selection could not open.')})); }},
+                      ]} />
+                      {expanded && <div className="sn-watch-source-details">{[...reasons,`Confidence ${score}`,source.category,source.pubDate ? `Updated ${new Date(source.pubDate).toLocaleDateString()}` : '',source.infoHash ? `Hash ${source.infoHash.slice(0,10)}` : ''].filter(Boolean).map(label=><span key={label}>{label}</span>)}{getTorrentBadges(source).map(badge=><span key={badge.label} className={torrentBadgeClassName(badge.tone)}>{badge.label}</span>)}</div>}
                     </div>
                     </Fragment>
                   );
@@ -4107,12 +3716,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   >
                     Retry
                   </button>
-                  <Link
-                    to={`/nyaa?q=${encodeURIComponent(anime.title || '')}`}
-                    className="inline-flex h-11 items-center rounded-xl border border-white/10 bg-white/[0.06] px-5 text-sm font-semibold text-white transition-colors hover:border-white/18 hover:bg-white/[0.09]"
-                  >
-                    Playback Options
-                  </Link>
+                  <button type="button" onClick={()=>setOptionsOpen(true)} className="sn-secondary-action px-4 py-2">Options</button>
                 </div>
               </div>
             )}
@@ -4121,15 +3725,18 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
           </section>
         </main>
       </div>
+      <DesktopDrawer open={optionsOpen} onClose={() => setOptionsOpen(false)} title="Playback options" subtitle={`Episode ${selectedEpisode}`} docked>
+        <div className="sn-watch-option-fields">
+          <label>Audio<select value={audioPreference} onChange={event=>setSourceAudioPreference(event.target.value as DesktopAudioPreference)}><option value="sub-preferred">Sub</option><option value="dub-only">Dub</option><option value="dual-preferred">Dual / Dub</option></select></label>
+          <label>Quality<select value={sourceQuality} onChange={event=>setSourceQuality(event.target.value as SourceQualityFilter)}>{sourceQualityOptions.map(quality=><option key={quality} value={quality}>{sourceQualityLabel(quality)}{qualityCounts.get(quality) ? ` · ${qualityCounts.get(quality)} sources` : ''}</option>)}</select></label>
+          <label>Match mode<select value={sourceMode} onChange={event=>setSourceMode(event.target.value as SourceFilterMode)}><option value="strict">Strict</option><option value="balanced">Balanced</option><option value="broad">Broad · includes uncertain releases</option></select></label>
+          <label>Source order<select value={sortBy} onChange={event=>setSortBy(event.target.value as SourceSort)}><option value="best">Best match</option><option value="seeders">Seeders</option><option value="size">Smaller files</option></select></label>
+        </div>
+        <details className="sn-drawer-section" open><summary>Episode actions</summary><button type="button" onClick={toggleSelectedEpisodeWatched}>{selectedEpisodeWatchState.completed ? 'Mark unwatched' : 'Mark watched'}</button><button type="button" disabled={!primarySource || Boolean(activeSourceId)} onClick={()=>{if(primarySource)void playSource(primarySource,0);}}>Restart episode</button><label className="sn-watch-toggle">Open best source automatically<input type="checkbox" checked={autoOpenBestSource} onChange={event=>{const next=event.target.checked;try{saveDesktopAutoOpenBestSource(next);setAutoOpenBestSource(next);}catch{setPlaybackNotice({tone:'error',text:'Could not save automatic playback preference.'});}}} /></label></details>
+        <details className="sn-drawer-section"><summary>Source tools</summary><p className="text-xs text-white/65">{sourceMatchSummary}</p><button type="button" onClick={()=>{setOptionsOpen(false);if(playbackOptionsRef.current){playbackOptionsRef.current.open=true;playbackOptionsRef.current.scrollIntoView({block:'nearest'});}}}>View matching sources</button><button type="button" disabled={sourcesFetching || sources?.complete === true} onClick={findMoreSources}>Find more sources</button><button type="button" disabled={titleSourcesQuery.isFetching} onClick={()=>{if(checkTitleSources)void titleSourcesQuery.refetch();else setCheckTitleSources(true);}}>Check title sources</button><button type="button" disabled={sourcesFetching} onClick={()=>void refetchSources()}>Refresh sources</button></details>
+      </DesktopDrawer>
     </div>
   );
-}
-
-function sourceHealth(seedCount: number) {
-  if (seedCount >= 100) return 'Fast';
-  if (seedCount >= 50) return 'Healthy';
-  if (seedCount >= 15) return 'Usable';
-  return 'Low seed';
 }
 
 function sourceTierLabel(tier: SourceMatchTier) {
@@ -4151,14 +3758,6 @@ function sourceConfidenceClassName(band: SourceConfidenceBand) {
   if (band === 'medium') return 'border-sky-400/20 bg-sky-500/10 text-sky-300';
   if (band === 'low') return 'border-amber-400/20 bg-amber-500/10 text-amber-300';
   return 'border-red-400/20 bg-red-500/10 text-red-200';
-}
-
-function playableStatusClassName(status: SourcePlayableStatus) {
-  if (status === 'verified') return 'border-emerald-400/20 bg-emerald-500/10 text-emerald-300';
-  if (status === 'untested') return 'border-sky-400/20 bg-sky-500/10 text-sky-300';
-  if (status === 'low-seed') return 'border-amber-400/20 bg-amber-500/10 text-amber-300';
-  if (status === 'unsupported') return 'border-red-400/20 bg-red-500/10 text-red-300';
-  return 'border-white/10 bg-white/[0.05] text-white/44';
 }
 
 function clampNumber(value: number, min: number, max: number) {

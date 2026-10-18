@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { mergeScheduleTracks, scheduleDisplayTime, scheduleUpdateIsPersonal } from '../../src/lib/desktopScheduleAlerts';
+import { describe, expect, it, vi } from 'vitest';
+import { applyScheduleAlertState, readScheduleAlertState, mergeScheduleTracks, scheduleDisplayTime, scheduleUpdateIsPersonal, subscribeScheduleTracks } from '../../src/lib/desktopScheduleAlerts';
 import type { DesktopScheduleUpdate } from '../../src/lib/scheduleRevisions';
 describe('track-aware Calendar composition', () => {
   it('keeps dub and original rows separate and shares only canonical artwork', () => {
@@ -16,5 +16,18 @@ describe('track-aware Calendar composition', () => {
     expect(scheduleUpdateIsPersonal(update, [{ mal_id: 1, title: 'Other' }], [])).toBe(false);
     expect(scheduleUpdateIsPersonal(update, [{ mal_id: 2, title: 'A' }], [])).toBe(true);
     expect(scheduleUpdateIsPersonal(update, [{ anilist_id: 1, title: 'A' }], [])).toBe(true);
+  });
+});
+describe('native schedule publication',()=>{
+  it('publishes live updates even when frontend persistence fails',()=>{
+    const listener=vi.fn();const unsubscribe=subscribeScheduleTracks(listener);
+    const storage=vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new Error('Full');});
+    applyScheduleAlertState({version:1,tracks:[{canonicalId:'anilist:1',releaseTrack:'dub'}],changes:[],persistenceError:'Native cache is read-only'});
+    expect(readScheduleAlertState().tracks[0].releaseTrack).toBe('dub');expect(readScheduleAlertState().persistenceError).toBe('Native cache is read-only');expect(listener).toHaveBeenCalledOnce();
+    storage.mockRestore();unsubscribe();
+  });
+  it('rejects version zero and clears an error after successful recovery',()=>{
+    applyScheduleAlertState({version:1,tracks:[{title:'Valid'}],changes:[]});
+    applyScheduleAlertState({version:0,tracks:[],changes:[]});expect(readScheduleAlertState().tracks[0].title).toBe('Valid');expect(readScheduleAlertState().persistenceError).toBeUndefined();
   });
 });

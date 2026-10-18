@@ -1,5 +1,8 @@
 /** Display confidence never establishes anime/episode identity. */
 export type SourceMode = 'strict' | 'balanced' | 'broad';
+export function selectedEligibleSource<T>(selection: {scope:string;id:string} | null, scope: string, eligible: T[], key: (source:T)=>string): T | undefined {
+  return selection?.scope === scope ? eligible.find(source => key(source) === selection.id) : undefined;
+}
 export function sourceAudioCompatible(title: string, audio: 'sub' | 'dub' | 'any') {
   if (audio === 'any') return true;
   const dual = /\b(?:dual[ .-]?audio|multi[ .-]?audio)\b/i.test(title);

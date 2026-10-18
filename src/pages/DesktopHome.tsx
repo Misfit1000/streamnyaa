@@ -6,7 +6,6 @@ import DesktopWatchDesk from '../components/DesktopWatchDesk';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useHomeLayout, type ShelfId } from '../lib/desktopHomeLayout';
-import { useDesktopDesign } from '../lib/desktopAppearance';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -598,10 +597,9 @@ function useHomeCatalogQuery(
 export default function DesktopHome() {
   const { isAdmin } = useAuth();
   const bookmarks = useStore(state => state.myList);
-  const design = useDesktopDesign();
   const preferences = useHomeLayout();
   const browsing = useHomeBrowsingPreference();
-  const shelfStyle = (id: ShelfId, pending = false) => ({ minHeight: pending ? 330 : undefined, ...(design === 'revamped' ? { order: preferences.layout.order.indexOf(id) + 3, display: preferences.layout.hidden.includes(id) ? 'none' : undefined } : {}) });
+  const shelfStyle = (id: ShelfId, pending = false) => ({ minHeight: pending ? 330 : undefined, order: preferences.layout.order.indexOf(id) + 3, display: preferences.layout.hidden.includes(id) ? 'none' : undefined });
   const [history, setHistory] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
   const [audioPreference, setAudioPreference] = useState<DesktopAudioPreference>(() => loadDesktopAudioPreference());
   const [heroIndex, setHeroIndex] = useState(0);
@@ -611,7 +609,7 @@ export default function DesktopHome() {
   const homeRoot = useRef<HTMLDivElement>(null);
   const [visibleShelves, setVisibleShelves] = useState<Set<ShelfId>>(() => new Set(['spotlight']));
   const [activeShelves, setActiveShelves] = useState<Set<ShelfId>>(() => new Set(['spotlight']));
-  const allowed = (id: ShelfId) => design !== 'revamped' || !preferences.layout.hidden.includes(id);
+  const allowed = (id: ShelfId) => !preferences.layout.hidden.includes(id);
   const shelfEnabled = (id: ShelfId) => allowed(id) && visibleShelves.has(id);
   useEffect(() => {
     const nodes = homeRoot.current?.querySelectorAll<HTMLElement>('[data-home-shelf]');
@@ -628,7 +626,7 @@ export default function DesktopHome() {
     }, { rootMargin: '300px' });
     nodes.forEach(node => observer.observe(node));
     return () => observer.disconnect();
-  }, [design, preferences.layout.hidden.join('|'), preferences.layout.order.join('|')]);
+  }, [preferences.layout.hidden.join('|'), preferences.layout.order.join('|')]);
 
   const currentSeason = useCurrentAnimeSeasonInfo();
   const seasonalQuery = useHomeCatalogQuery(`home:seasonal:${currentSeason.key}`, ['desktop-home-seasonal', currentSeason.key], options => fetchHomeShelf('home:seasonal', options), { enabled: shelfEnabled('spotlight') || shelfEnabled('season') });
@@ -754,7 +752,7 @@ export default function DesktopHome() {
   };
 
   return (
-    <div ref={homeRoot} className="desktop-home-cinema sn-page pb-9 pt-4" style={design === 'revamped' ? {display:'flex',flexDirection:'column'} : undefined}>
+    <div ref={homeRoot} className="desktop-home-cinema sn-page pb-9 pt-4" style={{display:'flex',flexDirection:'column'}}>
       <Seo title="StreamNyaa Desktop Cinema" description="StreamNyaa desktop app home." canonicalPath="/" robots="noindex, nofollow" />
       <DesktopWatchDesk sources={uniqueRecentSources(history)} history={history} upcoming={watchDeskReleases(bookmarks, history, [...seasonalItems, ...topAiringItems])} />
       <label className="mb-3 flex items-center gap-2 self-end text-xs text-white/60" style={{order:2}} title="Home uses catalog country-of-origin metadata. Sources are checked in the background and when you open an anime."><input type="checkbox" checked={browsing.showChineseAnimation} onChange={event => browsing.setShowChineseAnimation(event.target.checked)} />Show Chinese animation</label>

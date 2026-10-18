@@ -1,4 +1,4 @@
-/* Every visual override is opt-in. Classic removes this entire layer. */
+/* Desktop appearance. Kept scoped so web and mobile retain their own styles. */
 html[data-desktop-design="revamped"] { --desk-paper: #ffffff; }
 html[data-desktop-design="revamped"] .sn-page h1 { color: var(--desk-paper); letter-spacing: -.045em; }
 html[data-desktop-design="revamped"] .sn-hero-panel { border-radius: 4px 16px 16px 4px; border-left: 3px solid #e11d48; background: linear-gradient(105deg,#180910,#08080b 70%); box-shadow:none; }

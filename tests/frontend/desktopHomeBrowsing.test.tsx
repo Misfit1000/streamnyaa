@@ -67,7 +67,9 @@ describe('Home origin preference',()=>{
    localStorage.setItem(HOME_CHINESE_ANIMATION_KEY,'false');const hook=renderHook(useHomeBrowsingPreference);
    await act(async()=>{await importPersonalBackup(backup);});expect(hook.result.current.showChineseAnimation).toBe(true);
    const legacy=JSON.parse(backup);delete legacy.extras[HOME_CHINESE_ANIMATION_KEY];localStorage.setItem(HOME_CHINESE_ANIMATION_KEY,'false');
+   legacy.extras['streamnyaa.desktop.design.v1']='classic';legacy.extras['streamnyaa.desktop.interfaceScale']='115';
    await act(async()=>{await importPersonalBackup(JSON.stringify(legacy));});expect(hook.result.current.showChineseAnimation).toBe(false);
+   expect(localStorage.getItem('streamnyaa.desktop.design.v1')).toBe('revamped');expect(localStorage.getItem('streamnyaa.desktop.interfaceScale')).toBe('115');
   } finally { Object.defineProperty(window,'__TAURI__',{configurable:true,value:undefined}); }
  });
 });
