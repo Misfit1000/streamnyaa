@@ -63,5 +63,15 @@
     "mal": "myanimelist.net/anime/56566/Beyblade_X",
     "explanation": "Airs once every two weeks."
   },
+  "batchHistoryPreflight": {
+    "observedAt": "2026-10-18T12:32:58.3340222+05:45",
+    "url": "https://www.streamnyaa.xyz/api/download-history",
+    "method": "OPTIONS",
+    "status": 204,
+    "allowOrigin": "*",
+    "allowMethods": "GET,POST,OPTIONS",
+    "maxAgeSeconds": 600,
+    "authenticatedBatchRoundTrip": "Not tested; no account credentials used."
+  },
   "nativeAcceptance": "Not established by HTTP responses or regression fixtures"
 }
