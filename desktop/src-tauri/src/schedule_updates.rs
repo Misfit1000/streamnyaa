@@ -119,7 +119,20 @@ fn ids(value: &Value) -> (Option<u32>, Option<u32>) {
     fn visit(value: &Value, anilist: &mut Option<u32>, mal: &mut Option<u32>) {
         match value {
             Value::String(text) => {
-                if let Ok(url) = reqwest::Url::parse(text) {
+                // AnimeSchedule's website values commonly omit the scheme.
+                // Parse only the resulting host/path; never match IDs by text similarity.
+                let text = text.trim();
+                let qualified = if text.starts_with("//") {
+                    format!("https:{text}")
+                } else if !text.contains("://") {
+                    format!("https://{text}")
+                } else {
+                    text.to_string()
+                };
+                if let Ok(url) = reqwest::Url::parse(&qualified) {
+                    if !matches!(url.scheme(), "http" | "https") {
+                        return;
+                    }
                     let parts: Vec<_> = url.path_segments().into_iter().flatten().collect();
                     if parts.first() == Some(&"anime") {
                         if let Some(id) = parts
@@ -154,10 +167,19 @@ fn ids(value: &Value) -> (Option<u32>, Option<u32>) {
     (anilist, mal)
 }
 fn kind(row: &Value) -> Option<&'static str> {
+    let airing_status = row["airingStatus"].as_str().unwrap_or("").trim();
+    // `status` describes the series, not this release track. For example an
+    // original broadcast can be delayed while the dub episode is already aired.
+    // Keep the legacy status-only cache format readable when no track status exists.
+    let legacy_status = if airing_status.is_empty() {
+        row["status"].as_str().unwrap_or("")
+    } else {
+        ""
+    };
     let text = format!(
         "{} {} {}",
-        row["status"].as_str().unwrap_or(""),
-        row["airingStatus"].as_str().unwrap_or(""),
+        legacy_status,
+        airing_status,
         row["delayedText"].as_str().unwrap_or("")
     )
     .to_lowercase();
@@ -692,6 +714,58 @@ mod tests {
         assert!(normalize(&json!({"episodeNumber":1,"airType":"raw"}), &json!({}), 100).is_none());
         assert_eq!(kind(&json!({"status":"airing"})), None);
         assert_eq!(timestamp(&json!("0001-01-01T00:00:00Z")), 0);
+    }
+    #[test]
+    fn live_website_formats_resolve_only_canonical_hosts() {
+        let detail = json!({"websites":{
+            "aniList":"anilist.co/anime/165159/BEYBLADE-X/",
+            "mal":"myanimelist.net/anime/56566/Beyblade_X"
+        }});
+        assert_eq!(ids(&detail), (Some(165159), Some(56566)));
+        assert_eq!(
+            ids(&json!({"websites":{"aniList":"//www.anilist.co/anime/165159"}})),
+            (Some(165159), None)
+        );
+        for value in [
+            "anilist.co.evil.test/anime/1",
+            "https://anilist.co@evil.test/anime/1",
+            "https://evil.test/anilist.co/anime/1",
+            "ftp://anilist.co/anime/1",
+            "anilist.co/anime/0",
+        ] {
+            assert_eq!(ids(&json!({"websites":{"aniList":value}})), (None, None));
+        }
+    }
+    #[test]
+    fn series_delay_does_not_leak_into_aired_or_upcoming_dub() {
+        let detail = json!({"websites":{"aniList":"anilist.co/anime/1"}});
+        for airing_status in ["aired", "unaired"] {
+            let row = json!({"airType":"dub","episodeNumber":6,"status":"Delayed",
+                "airingStatus":airing_status,"delayedText":null,"episodeDate":"2026-10-13T16:00:00Z"});
+            let track = normalize(&row, &detail, 1000).unwrap();
+            assert_eq!(track["scheduleStatus"], "scheduled");
+            assert_eq!(track["airingAt"], timestamp(&row["episodeDate"]) / 1000);
+            let mut state = State::default();
+            state.seeded = true;
+            reconcile(&mut state, track, 1000);
+            assert!(state.changes.is_empty());
+        }
+    }
+    #[test]
+    fn reported_beyblade_dub_break_keeps_track_and_unknown_revised_date() {
+        let detail = json!({"websites":{"aniList":"anilist.co/anime/165159/BEYBLADE-X/",
+            "mal":"myanimelist.net/anime/56566/Beyblade_X"}});
+        let row = json!({"title":"Beyblade X","route":"beyblade-x","airType":"dub",
+            "episodeNumber":101,"status":"Ongoing","airingStatus":"delayed-air",
+            "delayedText":"Break","delayedFrom":"2026-03-14T00:00:00Z",
+            "delayedUntil":"0001-01-01T00:00:00Z","episodeDate":"2026-10-17T22:45:00Z"});
+        let track = normalize(&row, &detail, 1000).unwrap();
+        assert_eq!(track["canonicalId"], "anilist:165159");
+        assert_eq!(track["mal_id"], 56566);
+        assert_eq!(track["scheduleId"], "anilist:165159:episode-101:dub");
+        assert_eq!(track["scheduleStatus"], "on break");
+        assert_eq!(track["airingAt"], 0);
+        assert!(track["previousAiringAt"].as_u64().unwrap() > 0);
     }
     #[test]
     fn revised_times_have_their_own_revision_and_keep_the_original_slot() {

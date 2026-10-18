@@ -1,0 +1,67 @@
+{
+  "observedAt": "2026-10-18T12:24:42.6554666+05:45",
+  "gateway": "https://www.streamnyaa.xyz/api/stream-sources",
+  "deployment": "https://vercel.com/rabin2071brt-6612s-projects/streamnyaa/7ew1Cx98jBNcmjQ8pVQ9MtHz2QeH",
+  "deploymentSource": "d88e4c23f679298b2e94aa0746c2356d51d8877b",
+  "credential": {
+    "location": "Vercel Production Secret",
+    "name": "ANIMESCHEDULE_TOKEN",
+    "storedLocally": false,
+    "userDataScopes": []
+  },
+  "weeks": [
+    {
+      "isoYear": 2026,
+      "isoWeek": 42,
+      "httpStatus": 200,
+      "records": 271,
+      "fetchedAt": 1792305140035,
+      "stale": false,
+      "tracks": [
+        {
+          "track": "dub",
+          "records": 49
+        },
+        {
+          "track": "raw",
+          "records": 147
+        },
+        {
+          "track": "sub",
+          "records": 75
+        }
+      ]
+    },
+    {
+      "isoYear": 2026,
+      "isoWeek": 43,
+      "httpStatus": 200,
+      "records": 269,
+      "fetchedAt": 1792305143973,
+      "stale": false
+    }
+  ],
+  "reportedEpisode": [
+    {
+      "title": "Beyblade X",
+      "route": "beyblade-x",
+      "airType": "dub",
+      "episodeNumber": 101,
+      "status": "Ongoing",
+      "airingStatus": "delayed-air",
+      "delayedText": "Break",
+      "delayedFrom": "2026-03-14T00:00:00Z",
+      "delayedUntil": "0001-01-01T00:00:00Z",
+      "episodeDate": "2026-10-17T22:45:00Z"
+    }
+  ],
+  "canonicalDetail": {
+    "httpStatus": 200,
+    "fetchedAt": 1792305170093,
+    "stale": false,
+    "anilist": "anilist.co/anime/165159/BEYBLADE-X/",
+    "mal": "myanimelist.net/anime/56566/Beyblade_X",
+    "explanation": "Airs once every two weeks."
+  },
+  "nativeAcceptance": "Not established by HTTP responses or regression fixtures"
+}
