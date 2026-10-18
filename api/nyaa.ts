@@ -1,5 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
-import { parseSourceEpisode } from '../src/lib/desktopSourceIdentity';
+import { parseSourceEpisode } from '../src/lib/desktopSourceIdentity.js';
 
 type SourceItem = {
   title: string;

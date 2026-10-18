@@ -10,11 +10,13 @@ Settings uses compact category navigation and keeps controls mounted while switc
 
 ## Verification
 
-- TypeScript passed. Frontend: 527 tests across 86 files. Web compatibility: 16 tests. Desktop contracts passed.
+- TypeScript passed. Frontend: 527 tests across 86 files. Web compatibility: 17 tests, including direct loading of emitted Node ESM handlers. Desktop contracts passed.
 - Rust: 103 passed, four opt-in/live tests excluded from the ordinary suite. A separate live native-command test verified completed Frieren episodes, One Piece page two (starting at episode 101), and published current-season episodes. These use actual native scheduling/HTTP, not mocked responses.
 - Player state: 525 behavioral assertions. Native controls: 20 cycles plus 12 replacements. Stalled-stream suite passed. Original 100-cycle soak passed in isolation, including 12 replacements. An earlier concurrent soak ended with a broken IPC pipe; its cause is not established and the failure is retained in validation evidence.
 - Actual Settings/Library components rendered at 18 viewport/scaling combinations each (36 renders), including small windows, 1080p, 1440p, 4K and reduced motion. Category and backup navigation worked without horizontal overflow. Native responses were synthetic; this is browser layout evidence, not Windows DPI or installed acceptance.
 - Release metadata separately records build inputs, resource hashes, executable version, installer size, checksum, signature status, rollback and deployment verification.
+
+Production verification caught an extensionless Node ESM import in the new metadata adapter and the pre-existing source gateway. Both server imports now use emitted `.js` paths, with a regression that loads transpiled handlers in plain Node without the test runner's TypeScript resolver. Final deployment probes are recorded in the release manifest.
 
 ## Acceptance limits
 

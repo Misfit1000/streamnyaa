@@ -1,4 +1,4 @@
-import { MAL_METADATA_BASE_URL, supportedMalMetadataPath } from '../src/lib/malMetadataProvider';
+import { MAL_METADATA_BASE_URL, supportedMalMetadataPath } from '../src/lib/malMetadataProvider.js';
 const ANILIST_URL = 'https://graphql.anilist.co';
 const JIKAN_URL = MAL_METADATA_BASE_URL;
 class UpstreamMetadataError extends Error { constructor(message: string, readonly status: number, readonly retryAfter?: string | null) { super(message); } }
