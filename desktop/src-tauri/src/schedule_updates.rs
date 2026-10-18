@@ -170,15 +170,10 @@ fn kind(row: &Value) -> Option<&'static str> {
     let airing_status = row["airingStatus"].as_str().unwrap_or("").trim();
     // `status` describes the series, not this release track. For example an
     // original broadcast can be delayed while the dub episode is already aired.
-    // Keep the legacy status-only cache format readable when no track status exists.
-    let legacy_status = if airing_status.is_empty() {
-        row["status"].as_str().unwrap_or("")
-    } else {
-        ""
-    };
+    // A partial response without track status must not turn a series-wide delay
+    // into an episode delay. Already-normalized persisted tracks retain their status.
     let text = format!(
-        "{} {} {}",
-        legacy_status,
+        "{} {}",
         airing_status,
         row["delayedText"].as_str().unwrap_or("")
     )
@@ -213,6 +208,10 @@ pub fn normalize(row: &Value, detail: &Value, fetched: u64) -> Option<Value> {
         .or_else(|| row["episodeNumber"].as_str().and_then(|s| s.parse().ok()))
         .filter(|v| *v > 0 && *v <= 100000)?;
     let status = kind(row);
+    if status.is_none() && !matches!(row["airingStatus"].as_str(), Some("aired" | "unaired")) {
+        // Missing track evidence cannot create a schedule or resolve a saved delay.
+        return None;
+    }
     let revised = if status.is_some() {
         let delayed = timestamp(&row["delayedUntil"]);
         if delayed == 0 && status == Some("rescheduled") {
@@ -661,7 +660,7 @@ mod tests {
     #[test]
     fn tba_and_track_identity_are_preserved() {
         let detail = json!({"websites":{"anilist":"https://anilist.co/anime/1","mal":"https://myanimelist.net/anime/2"}});
-        let row = json!({"airType":"dub","route":"example","episodeNumber":101,"status":"Delayed","delayedFrom":"2026-10-18T04:30:00Z","delayedUntil":"0001-01-01T00:00:00Z"});
+        let row = json!({"airType":"dub","route":"example","episodeNumber":101,"status":"Delayed","airingStatus":"delayed-air","delayedFrom":"2026-10-18T04:30:00Z","delayedUntil":"0001-01-01T00:00:00Z"});
         let track = normalize(&row, &detail, 1000).unwrap();
         assert_eq!(track["airingAt"], 0);
         assert_eq!(track["releaseTrack"], "dub");
@@ -681,7 +680,7 @@ mod tests {
     #[test]
     fn global_alerts_need_no_bell_and_personal_off_does_not_leak_to_global() {
         let detail = json!({"websites":{"anilist":"https://anilist.co/anime/1"}});
-        let row = json!({"airType":"dub","episodeNumber":101,"status":"Delayed"});
+        let row = json!({"airType":"dub","episodeNumber":101,"status":"Delayed","airingStatus":"delayed-air"});
         let mut state = State::default();
         state.seeded = true;
         reconcile(&mut state, normalize(&row, &detail, 1000).unwrap(), 1000);
@@ -713,6 +712,12 @@ mod tests {
     fn missing_identity_and_absence_do_not_invent_delays() {
         assert!(normalize(&json!({"episodeNumber":1,"airType":"raw"}), &json!({}), 100).is_none());
         assert_eq!(kind(&json!({"status":"airing"})), None);
+        assert_eq!(kind(&json!({"status":"Delayed"})), None);
+        assert!(normalize(
+            &json!({"status":"Delayed","episodeNumber":1,"airType":"dub","episodeDate":"2026-10-18T04:30:00Z"}),
+            &json!({"websites":{"aniList":"anilist.co/anime/1"}}),
+            100,
+        ).is_none());
         assert_eq!(timestamp(&json!("0001-01-01T00:00:00Z")), 0);
     }
     #[test]
@@ -770,8 +775,7 @@ mod tests {
     #[test]
     fn revised_times_have_their_own_revision_and_keep_the_original_slot() {
         let detail = json!({"websites":{"anilist":"https://anilist.co/anime/1"}});
-        let mut row =
-            json!({"airType":"dub","episodeNumber":1,"episodeDate":"2026-10-18T04:30:00Z"});
+        let mut row = json!({"airType":"dub","episodeNumber":1,"airingStatus":"unaired","episodeDate":"2026-10-18T04:30:00Z"});
         let mut state = State::default();
         reconcile(&mut state, normalize(&row, &detail, 1000).unwrap(), 1000);
         assert!(state.changes.is_empty());
@@ -808,7 +812,7 @@ mod tests {
         assert!(valid_id("anilist:1"));
         let detail = json!({"websites":{"anilist":"https://anilist.co/anime/1"}});
         let mut track = normalize(
-            &json!({"airType":"dub","episodeNumber":1,"status":"Delayed"}),
+            &json!({"airType":"dub","episodeNumber":1,"status":"Delayed","airingStatus":"delayed-air"}),
             &detail,
             1000,
         )
