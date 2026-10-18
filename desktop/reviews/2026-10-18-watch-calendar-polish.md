@@ -43,3 +43,11 @@ The live gateway test uses the server-side credential already configured in Prod
 ## Delivery
 
 Version and identifier stay `0.1.10` / `xyz.streamnyaa.desktop`. Build from the committed source, preserve the verified previous 0.1.10 installer and metadata as rollback, and update `StreamNyaa-desktop/desktop/releases/v0.1.10`. The companion installer manifest records source inputs, packaged resource hashes/NSIS inclusion, executable version, checksum, byte size, signature and exact rollback path. Generated previews, binary fixtures, scratch files and credentials are excluded from Git. Push normally to main after fetching current main.
+
+Built and verified from `018df901a51b72670c10c98254d8543432095b6d`. The final schema guard additionally rejects a primary cache with no explicit schema marker, allowing a validated orphan to recover its records. The full Rust suite and explicit live gateway/cache probe passed again after that guard; frontend and player inputs were unchanged. Native UI inspection preceded this final disk-input guard; it is not installed final-binary acceptance.
+
+- Usual installer: `StreamNyaa-desktop/desktop/releases/v0.1.10/StreamNyaa_0.1.10_x64-setup.exe`.
+- Size: **41,892,928 bytes**. SHA256: `580E2540743BC93A940EC312DEB59435A3B713CF8E9A3AE9EF9C68D5C1EBECB6`.
+- Signature: **NotSigned**. Executable version and application identity verified.
+- Independently re-read the manifest and verified all **336 source hashes**, all **six staged resource hashes and NSIS inclusions**, installer/release-copy agreement, validation-log checksums and rollback checksum. Player Lua hash remains `AF75EB23DB44B44F1E068311087BBAD181309EB91BD7CA2CB027FE52C231989D`. Independent installer extraction was not performed.
+- Verified rollback: `releases/archive/v0.1.10-20261018-141218/StreamNyaa_0.1.10_x64-setup.exe`, SHA256 `D41EE9EB86AC05C350D214E35FA98BEC74EE619EF75F32AA9CAD7D5B88A57A77`, with prior metadata/checksum/notes. The current release was not replaced until verification succeeded.
