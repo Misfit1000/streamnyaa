@@ -1,0 +1,23 @@
+# 0.1.10 — Calendar cards, notification retention and episode/artwork repairs
+
+Calendar uses larger series posters, naturally wrapping titles, a vertically centered time block and release tracks aligned at the right on wide windows. Narrow windows stack tracks without clipping controls. Explicit delays have a translucent diagonal band across the complete poster; partial-track delays name the affected track. Readable status, real previous/revised dates and expandable provider details remain alongside each release.
+
+Today’s Schedule changes is scoped to the existing seven-day window. An episode qualifies through its previous or revised date; a current-week postponement stays visible when the revised date is unknown or outside the window. Old retained delays without relevant dated evidence are excluded from presentation. Canonical identities keep tracks grouped and title counts distinct. Saved evidence, subscriptions and delivery records are not removed.
+
+Bell hides read delivered alerts at 24 hours of age and all delivered alerts at seven days, before applying display limits or calculating unread counts. Age uses original delivery/detection time. Read-on-open is preserved without removing the items during that opening. Foreground/minute refreshes expire notifications while future reminders remain independent. Native delivery markers and original revision timestamps remain intact, preventing refreshes from resurrecting hidden notifications or resending alerts.
+
+The reported episode-2 case exposed an episode-grid bound that used a stale aired count even after an explicit jump. The grid now includes manual selections and current, exact, classifier/identity-verified episode-source evidence. Source discovery updates the grid through the existing availability event. The provider’s aired count stays separate from source-found episodes. A provider-confirmed next episode whose timestamp has passed can advance the known count once, without extrapolating later episodes or overriding explicit postponements.
+
+Ultrawide artwork formerly became a thin contained strip. Browser thumbnails prefer another supplied series image and crop a lone panorama. Native selection prefers a valid poster over an ultrawide masthead while retaining normal landscape artwork preference. Loading JPEGs now use the full readability-adjusted composition, rather than premultiplied transparency-mask bytes that made their lower half black. The active-video bitmap mask protects the title region without erasing the whole lower image. Jobs, source identity checks, bounded reads, cache limits and playback ownership remain unchanged.
+
+## Verification
+
+- TypeScript passed. The full frontend run covered 544 tests in 88 files: 543 passed initially; the existing 100-card Explore navigation case exceeded its time budget during concurrent native checks. Its unchanged 16-case file passed in isolation, including the failing case in 828 ms. Original failure and recheck logs are retained; no timeout was relaxed.
+- Rust: 104 passed, four existing opt-in/live tests ignored. Native artwork regressions execute actual cover preparation and verify poster selection, lower JPEG pixels and bitmap-mask output.
+- Desktop contracts and 525 player-state behavioral assertions passed. Bundled-player controls passed 20 cycles and 12 episode replacements; stalled-stream checks and the serial 100-cycle soak with 12 replacements passed.
+- Web/API compatibility: 17 passed. No new provider endpoints, migrations or network requests were introduced for Calendar/Bell cleanup.
+- Actual Calendar and Watch components passed 36 browser renders across 18 viewport/scaling combinations, covering small windows, 1080p, 1440p, 4K and 100/150/200 percent equivalents. Assertions cover centered times, full-poster band bounds, title/track separation, historical-delay exclusion, no horizontal page overflow and episode 2 remaining selectable against an aired count of 1. Provider/native responses and image assets were controlled fixtures; reduced motion was enabled.
+
+## Acceptance limits
+
+Installed WebView interactions, real Windows DPI, real toast delivery and isolated installer upgrade acceptance remain user checks. Browser layout evidence and native fixture tests do not establish live torrent throughput, universal metadata freshness or signing trust. The prior intermittently closed player IPC pipe was not reproduced in this serial run; its earlier root cause remains unestablished. Trusted signing material is unavailable; record the actual installer signature status. Release metadata records final source/resource hashes, checksum, size and the verified rollback before replacing the installer.

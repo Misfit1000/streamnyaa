@@ -1892,8 +1892,11 @@ fn loading_overlay_bgra(image: &image::RgbaImage) -> Vec<u8> {
     // BGRA overlays require premultiplied color channels.
     let mut overlay = image.clone();
     let height = overlay.height().max(1) as f32;
-    for (_, y, pixel) in overlay.enumerate_pixels_mut() {
-        let alpha = (1.0 - ((y as f32 / height - 0.26) / 0.24)).clamp(0.0, 1.0);
+    let width = overlay.width().max(1) as f32;
+    for (x, y, pixel) in overlay.enumerate_pixels_mut() {
+        let text_region = ((y as f32 / height - 0.30) / 0.22).clamp(0.0, 1.0);
+        let right_edge = ((x as f32 / width - 0.81) / 0.12).clamp(0.0, 1.0);
+        let alpha = 1.0 - text_region * (1.0 - right_edge);
         for channel in 0..3 {
             pixel[channel] = (pixel[channel] as f32 * alpha).round() as u8;
         }
@@ -1923,6 +1926,11 @@ fn compose_full_landscape_art(
     target_width: u32,
     target_height: u32,
 ) -> image::RgbaImage {
+    // Panoramic site mastheads otherwise become a thin central strip. A poster
+    // wins candidate ranking when present; crop this last-resort panorama.
+    if decoded.width() as f64 / decoded.height().max(1) as f64 > 2.6 {
+        return cover_fill(decoded, target_width, target_height);
+    }
     let fill_scale = (target_width as f64 / decoded.width() as f64).max(target_height as f64 / decoded.height() as f64);
     let contain_scale = (target_width as f64 / decoded.width() as f64).min(target_height as f64 / decoded.height() as f64).min(1.25);
     if fill_scale / contain_scale <= 1.35 && fill_scale <= 1.25 { return cover_fill(decoded,target_width,target_height); }
@@ -1971,7 +1979,7 @@ fn decode_cover(bytes: &[u8]) -> Result<image::DynamicImage,String> {
     image::load_from_memory(bytes).map_err(|e| e.to_string())
 }
 fn artwork_cache_path(identity: &str, source: &str) -> PathBuf {
-    let mut hash = DefaultHasher::new(); ("series-v1",identity,source).hash(&mut hash);
+    let mut hash = DefaultHasher::new(); ("series-v2",identity,source).hash(&mut hash);
     player_preferences_path().parent().unwrap_or(Path::new(".")).join("artwork-v1").join(format!("{:016x}.image",hash.finish()))
 }
 fn store_artwork_cache(path: &Path, bytes: &[u8]) {
@@ -2010,8 +2018,10 @@ fn prepare_player_cover(
         let chosen = [cached.as_deref(),downloaded.as_deref()].into_iter().flatten().filter_map(|bytes|decode_cover(bytes).ok().map(|image|(image,bytes))).max_by_key(|(image,_)|image.width() as u64 * image.height() as u64);
         if let Some((image,bytes)) = chosen {
             let pixels=image.width() as u64 * image.height() as u64;
-            let quality = if source_kind == "landscape" && image.width() >= 1280 && image.height() >= 320 {2}
-                else if source_kind == "poster" && image.width() >= 320 && image.height() >= 480 {1} else {0};
+            let ratio = image.width() as f64 / image.height().max(1) as f64;
+            let quality = if source_kind == "landscape" && (1.35..=2.6).contains(&ratio) && image.width() >= 960 && image.height() >= 480 {3}
+                else if source_kind == "poster" && image.width() >= 320 && image.height() >= 480 {2}
+                else if source_kind == "landscape" && image.width() >= 1280 && image.height() >= 320 {1} else {0};
             if is_quality_landscape_art(&image.to_rgba8()) || source_kind == "poster" && image.width() >= 100 && image.height() >= 150 {
                 if is_remote_url(&source) && downloaded.as_deref() == Some(bytes) { store_artwork_cache(&cached_path,bytes); }
                 if decoded_cover.is_none() || (quality,pixels) > best_score { best_score=(quality,pixels); decoded_cover=Some((image.to_rgba8(),source,source_kind)); }
@@ -2052,10 +2062,9 @@ fn prepare_player_cover(
     fs::create_dir_all(&metadata_dir)
         .map_err(|error| format!("Could not prepare player metadata folder: {}", error))?;
     let loading_image_path = metadata_dir.join("loading-cover.jpg");
-    let overlay_bytes = loading_overlay_bgra(&background);
-    let mut loading_rgb = image::RgbImage::new(background.width(),background.height());
-    for (pixel, bgra) in loading_rgb.pixels_mut().zip(overlay_bytes.chunks_exact(4)) { *pixel=image::Rgb([bgra[2],bgra[1],bgra[0]]); }
-    let loading_image_rgb = loading_rgb;
+    // The overlay's alpha mask protects ASS text above active video. Baking its
+    // premultiplied RGB into a JPEG instead made the lower half solid black.
+    let loading_image_rgb = image::DynamicImage::ImageRgba8(background.clone()).to_rgb8();
     let loading_image_file = fs::File::create(&loading_image_path)
         .map_err(|error| format!("Could not create cover loading image: {}", error))?;
     image::codecs::jpeg::JpegEncoder::new_with_quality(loading_image_file, 90)
@@ -6810,6 +6819,8 @@ mod tests {
         assert_eq!(&overlay[title_offset..title_offset + 4], &[0, 0, 0, 0]);
         let fade_offset = (16 * 40) * 4;
         assert!(overlay[fade_offset] <= overlay[fade_offset + 3]);
+        let right_offset = (16 * 60 + 15) * 4;
+        assert_eq!(&overlay[right_offset..right_offset + 4], &[120, 100, 80, 255], "artwork must not disappear across the entire lower half");
     }
 
     #[test]
@@ -6853,6 +6864,23 @@ mod tests {
         assert_eq!(composed.get_pixel(960,540).0,[10,80,140,255]);
         assert!(decode_cover(b"invalid image").is_err());
         assert_ne!(artwork_cache_path("anilist:1","https://images.test/a"),artwork_cache_path("anilist:2","https://images.test/a"));
+        let _=fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn loading_jpeg_preserves_lower_artwork_and_prefers_poster_to_thin_masthead() {
+        let root=env::temp_dir().join(format!("streamnyaa-series-panorama-{}",now_millis()));
+        fs::create_dir_all(&root).unwrap();
+        let banner=root.join("banner.png"); let poster=root.join("poster.png");
+        image::RgbaImage::from_pixel(1900,400,image::Rgba([220,10,10,255])).save(&banner).unwrap();
+        image::RgbaImage::from_pixel(720,1080,image::Rgba([10,80,220,255])).save(&poster).unwrap();
+        let mut request=playback_request_for_episode("2");
+        request.banner=Some(banner.to_string_lossy().into()); request.banner_candidates=None; request.poster=Some(poster.to_string_lossy().into());
+        let cover=prepare_player_cover(&root,&request).unwrap().unwrap();
+        let composed=image::open(&cover.loading_image_path).unwrap().to_rgb8();
+        let lower=composed.get_pixel(composed.width()/2,composed.height()*4/5);
+        assert!(lower[2]>lower[0]+30,"a valid poster must beat a letterboxed masthead");
+        assert!(lower[2]>40,"the loading JPEG must retain artwork below the title region");
         let _=fs::remove_dir_all(root);
     }
 

@@ -3,17 +3,20 @@ export function totalEpisodeCount(anime: any): number | null {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
 }
 
-export function airedEpisodeCount(anime: any): number | null {
+export function airedEpisodeCount(anime: any, now = Date.now()): number | null {
   const explicit = Number(anime?.latestEpisode || anime?.latest_episode || 0);
-  if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
-
   const next = Number(anime?.nextAiringEpisode?.episode || 0);
-  if (Number.isFinite(next) && next > 0) return Math.max(0, Math.floor(next) - 1);
+  const rawTime = Number(anime?.nextAiringEpisode?.airingAt || 0);
+  const nextTime = rawTime > 1e12 ? rawTime : rawTime * 1000;
+  const blocked = /delay|postpon|cancel|break|hiatus|suspend/i.test(String(anime?.scheduleStatus || ''));
+  const scheduled = Number.isFinite(next) && next > 0 ? Math.max(0, Math.floor(next) - (nextTime > 0 && nextTime <= now && !blocked ? 0 : 1)) : null;
 
   const streamingNumbers = (Array.isArray(anime?.streamingEpisodes) ? anime.streamingEpisodes : [])
     .map((entry: any) => Number(entry?.episode || String(entry?.title || '').match(/(?:Episode|Ep\.?)[ ]*(\d+)/i)?.[1]))
     .filter((episode: number) => Number.isInteger(episode) && episode > 0);
-  if (streamingNumbers.length > 0) return Math.max(...streamingNumbers);
+  const evidence = [Number.isFinite(explicit) && explicit > 0 ? Math.floor(explicit) : null, scheduled, ...streamingNumbers]
+    .filter((value): value is number => value != null);
+  if (evidence.length) return Math.max(...evidence);
 
   const total = totalEpisodeCount(anime);
   const status = String(anime?.status || '').trim().toUpperCase();
@@ -28,12 +31,18 @@ export function episodeAvailabilityLabel(anime: any) {
   return `${aired ?? '?'}/${total ?? '?'}`;
 }
 
+/** Navigable episodes and confirmed broadcast counts are separate evidence. */
+export function watchEpisodeCatalogSize(aired: number | null, requested: number, sourceEpisodes: number[], upcoming: boolean) {
+  const valid = (value: number) => Number.isSafeInteger(value) && value > 0 ? value : 0;
+  return Math.min(100_000, Math.max(upcoming ? 0 : aired ?? 12, valid(requested), ...sourceEpisodes.map(valid)));
+}
+
 /** Titles are optional. Missing title/date metadata must not manufacture zero aired episodes. */
 export function verifiedAiredEpisodeCount(anime: any, episodes: any[] = [], now = Date.now()): number | null {
   const status = String(anime?.status || '').trim().toUpperCase();
   if (/NOT[_ ]YET|UPCOMING/.test(status)) return 0;
   const finished = /FINISHED|COMPLETED/.test(status);
-  const known = airedEpisodeCount(anime);
+  const known = airedEpisodeCount(anime, now);
   const dated = episodes.filter(e => finished || (Number.isFinite(Date.parse(e?.aired)) && Date.parse(e.aired) <= now))
     .map(e => Number(e?.mal_id)).filter(n => Number.isInteger(n) && n > 0);
   if (!dated.length) return known;

@@ -25,6 +25,7 @@ import {
 } from '../lib/scheduleRevisions';
 import { useStore } from '../store/useStore';
 import { desktopWatchPath } from '../lib/desktopAnimeRoute';
+import { desktopNotificationVisible } from '../lib/desktopNotificationVisibility';
 
 function formatUpdateTime(value: number) {
   return new Date(value).toLocaleString(undefined, {
@@ -46,6 +47,9 @@ export default function DesktopNotificationCenter() {
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [clock, setClock] = useState(Date.now);
+  // Acknowledging this opening must not remove the items the user is reading.
+  const openingReadAt = useRef<number | null>(null);
   const [updates, setUpdates] = useState(() => readDesktopScheduleUpdates());
   const [preferences, setPreferences] = useState(() => loadDesktopScheduleUpdatePreferences());
   const [reminders, setReminders] = useState(() => readDesktopScheduleReminders());
@@ -64,16 +68,31 @@ export default function DesktopNotificationCenter() {
   useEffect(() => subscribeDesktopUpcomingAnimeWatches(() => setUpcomingWatches(readDesktopUpcomingAnimeWatches())), []);
   useEffect(() => subscribeDesktopReleaseSubscriptions(() => { setReleaseEpisodes(readDesktopReleaseEpisodes()); setReleaseSubscriptions(readDesktopReleaseSubscriptions()); }), []);
   useEffect(() => subscribeDesktopWatchProgress(() => setWatchedSeries(loadDesktopWatchedSeries())), []);
-  useEffect(() => setOpen(false), [location.pathname, location.search]);
+  const dismiss = () => { openingReadAt.current = null; setOpen(false); setClock(Date.now()); };
+  useEffect(dismiss, [location.pathname, location.search]);
+
+  useEffect(() => {
+    let timer: number | undefined;
+    const refresh = () => { if (!document.hidden) setClock(Date.now()); };
+    const visibility = () => {
+      window.clearInterval(timer);
+      refresh();
+      if (!document.hidden) timer = window.setInterval(refresh, 60_000);
+    };
+    visibility();
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', visibility);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', visibility); };
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;
     closeRef.current?.focus();
     const closeFromOutside = (event: MouseEvent) => {
-      if (!panelRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!panelRef.current?.contains(event.target as Node)) dismiss();
     };
     const closeFromKeyboard = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setOpen(false); buttonRef.current?.focus(); }
+      if (event.key === 'Escape') { dismiss(); buttonRef.current?.focus(); }
       if (event.key === 'Tab') {
         const items = Array.from(panelRef.current?.querySelectorAll<HTMLElement>('button, a[href]') || []).filter(item => item !== buttonRef.current);
         if (event.shiftKey && document.activeElement === items[0]) { event.preventDefault(); items.at(-1)?.focus(); }
@@ -92,9 +111,11 @@ export default function DesktopNotificationCenter() {
     update,
     personal: updateMatchesLibrary(update, myList, watchedSeries),
   })), [myList, updates, watchedSeries]);
-  const visibleUpdates = useMemo(() => classifiedUpdates.filter(({ personal }) => (
-    personal ? preferences.personal : preferences.global
-  )), [classifiedUpdates, preferences.global, preferences.personal]);
+  const visibleReadAt = open ? openingReadAt.current ?? preferences.lastReadAt : preferences.lastReadAt;
+  const visibleUpdates = useMemo(() => classifiedUpdates.filter(({ personal, update }) => (
+    (personal ? preferences.personal : preferences.global)
+      && desktopNotificationVisible(update.detectedAt, visibleReadAt, clock)
+  )), [classifiedUpdates, preferences.global, preferences.personal, visibleReadAt, clock]);
   const releaseActivity = useMemo(() => releaseEpisodes.flatMap(episode => {
     const subscription = releaseSubscriptions.find(value => value.id === episode.animeId);
     if (!subscription) return [];
@@ -104,26 +125,24 @@ export default function DesktopNotificationCenter() {
       ...(episode.availableNotifiedAt ? [{ key:`${episode.key}:available`, at:episode.availableNotifiedAt, title:subscription.title, episode:episode.episode,
         detail:'Matching watch source found', to:desktopWatchPath({anilist_id:subscription.anilistId,mal_id:subscription.malId,title:subscription.title},{ep:episode.episode}) }] : []),
     ];
-  }).sort((left,right)=>right.at-left.at).slice(0,12), [releaseEpisodes, releaseSubscriptions]);
+  }).filter(activity => desktopNotificationVisible(activity.at, visibleReadAt, clock))
+    .sort((left,right)=>right.at-left.at), [releaseEpisodes, releaseSubscriptions, visibleReadAt, clock]);
   const unreadCount = visibleUpdates.filter(({ update }) => update.detectedAt > preferences.lastReadAt).length
     + releaseActivity.filter(value=>value.at>preferences.lastReadAt).length;
   const upcomingReminders = useMemo(() => [...reminders, ...releaseEpisodes.flatMap(episode => {
     const subscription=releaseSubscriptions.find(value=>value.id===episode.animeId);
     return subscription && !episode.blocked ? [{id:episode.key,title:subscription.title,episode:episode.episode,airingAt:episode.airingAt,firedAt:episode.airedNotifiedAt}] : [];
   })]
-    .filter((reminder) => !reminder.firedAt && reminder.airingAt > Date.now())
+    .filter((reminder) => !reminder.firedAt && reminder.airingAt > clock)
     .sort((left, right) => left.airingAt - right.airingAt)
-    .slice(0, 3), [reminders,releaseEpisodes,releaseSubscriptions]);
+    .slice(0, 3), [reminders,releaseEpisodes,releaseSubscriptions,clock]);
 
   const toggleOpen = () => {
-    setOpen((current) => {
-      const next = !current;
-      if (next && unreadCount) {
-        const saved = markDesktopScheduleUpdatesRead();
-        setPreferences(saved);
-      }
-      return next;
-    });
+    if (open) { dismiss(); return; }
+    openingReadAt.current = preferences.lastReadAt;
+    setClock(Date.now());
+    setOpen(true);
+    if (unreadCount) setPreferences(markDesktopScheduleUpdatesRead());
   };
 
   return (
@@ -158,7 +177,7 @@ export default function DesktopNotificationCenter() {
             </div>
             <div className="flex items-center gap-1">
               <CheckCheck className="h-4 w-4 text-emerald-300" aria-label="Updates read" />
-              <button ref={closeRef} type="button" onClick={() => { setOpen(false); buttonRef.current?.focus(); }} className="sn-icon-action h-9 w-9" aria-label="Close notifications">
+              <button ref={closeRef} type="button" onClick={() => { dismiss(); buttonRef.current?.focus(); }} className="sn-icon-action h-9 w-9" aria-label="Close notifications">
                 <X className="h-4 w-4" />
               </button>
             </div>

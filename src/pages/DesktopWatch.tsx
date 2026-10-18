@@ -11,7 +11,7 @@ import DesktopAnimeCast from '../components/DesktopAnimeCast';
 import DesktopEpisodeThumbnail from '../components/DesktopEpisodeThumbnail';
 import { episodeNumberFromTitle, resolveEpisodeArtwork } from '../lib/desktopEpisodeArtwork';
 import { selectedEligibleSource, selectSourceMode } from '../lib/desktopSourceSelection';
-import { sourceAvailabilityEvidence } from '../lib/desktopHomeReadiness';
+import { homeReadyEpisodes, sourceAvailabilityEvidence } from '../lib/desktopHomeReadiness';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { clearInterruptedPlayback } from '../lib/desktopInterruptedSession';
@@ -31,10 +31,10 @@ import { getTorrentBadges, torrentBadgeClassName } from '../lib/torrentBadges';
 import { preloadDesktopWatchData } from '../lib/desktopRoutePreload';
 import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { desktopAnimeQueryKey } from '../lib/desktopRequests';
-import { verifiedAiredEpisodeCount } from '../lib/animeEpisodes';
+import { verifiedAiredEpisodeCount, watchEpisodeCatalogSize } from '../lib/animeEpisodes';
 import { runSourceSearchPass, sourceSearchPlan, type SourceDiscovery } from '../lib/desktopSourceDiscovery';
 import { buildSourceIdentity, classifySourceIdentity, parseSourceEpisode, sourceIdentitySignature, validateDesktopSourceCandidates } from '../lib/desktopSourceIdentity';
-import { desktopAvailabilityKey, recordDesktopAvailability } from '../lib/desktopAvailability';
+import { desktopAvailabilityKey, readDesktopAvailabilityRecords, recordDesktopAvailability, subscribeDesktopAvailability } from '../lib/desktopAvailability';
 import { totalEpisodeCount } from '../lib/animeEpisodes';
 import { desktopDataError } from '../lib/desktopData';
 import { desktopLandscapeImageCandidates } from '../lib/desktopArtwork';
@@ -1646,6 +1646,8 @@ export default function DesktopWatch() {
   const [failedSourceVersion, setFailedSourceVersion] = useState(0);
   const [sourceSearchProgress, setSourceSearchProgress] = useState(18);
   const [watchProgressRecords, setWatchProgressRecords] = useState(() => loadDesktopWatchProgress());
+  const [sourceAvailability, setSourceAvailability] = useState(readDesktopAvailabilityRecords);
+  useEffect(() => subscribeDesktopAvailability(() => setSourceAvailability(readDesktopAvailabilityRecords())), []);
   const routeAniListId = searchParams.get('aid') || '';
   const routeMalId = searchParams.get('mid') || '';
   const seasonRailRef = useRef<HTMLDivElement | null>(null);
@@ -1889,9 +1891,15 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const episodeData = episodeTailQuery.data && episodeQuery.data ? mergeAnimeEpisodeTail(episodeQuery.data, episodeTailQuery.data) : episodeQuery.data;
 
   const pageItems = episodeData?.data || [];
+  const seasonItems = useMemo(() => buildInstallmentItems(anime, installmentGraphData || []), [anime, installmentGraphData]);
+  const selectedInstallment = seasonItems.find((item) => item.current) || seasonItems[0] || null;
+  const sourceIdentity = useMemo(() => buildSourceIdentity(anime, selectedInstallment || undefined), [anime, selectedInstallment]);
+  const sourceContextSignature = sourceIdentitySignature(sourceIdentity);
   const airedCount = knownAiredEpisodeCount(anime, pageItems);
   const episodeCountLabel = episodeData?.streamnyaa?.status === 'stale' ? 'Last known aired' : episodeData?.latestPageResolved === false && knownAiredEpisodeCount(anime) == null ? 'Loaded through episode' : 'Latest aired';
   const selectedEpisode = requestedEpisode > 0 ? requestedEpisode : 1;
+  const sourceEpisodes = useMemo(() => homeReadyEpisodes(anime, sourceAvailability, 'any', Date.now(), sourceIdentity), [anime, sourceAvailability, sourceIdentity]);
+  const sourceEpisodeCount = sourceEpisodes.at(-1) || 0;
   const episodeCatalogEstimated = !episodeData?.data?.length && !animeNotYetAired;
   const selectedEpisodeWatchState = desktopEpisodeWatchState(anime, selectedEpisode, watchProgressRecords);
   const sourceBrowserPath = useMemo(() => {
@@ -1911,7 +1919,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const pageEpisodeMap = episodeArtwork.pages as Map<number, EpisodeMetaEntry>;
   const streamingEpisodeMap = episodeArtwork.streaming as Map<number, EpisodeMetaEntry>;
   const allEpisodes = useMemo(() => {
-    const count = animeNotYetAired ? 0 : Math.min(100000, Math.max(airedCount ?? Math.max(selectedEpisode, 12), 0));
+    // Provider title pages may lag a safe source or an explicit manual jump.
+    const count = watchEpisodeCatalogSize(airedCount, requestedEpisode, sourceEpisodes, animeNotYetAired);
     return Array.from({ length: count }, (_, index) => {
       const number = index + 1;
       const pageEpisode = pageEpisodeMap.get(number);
@@ -1923,7 +1932,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
         artwork: episodeArtwork.forEpisode(number, hideEpisodeSpoilers, true),
       };
     });
-  }, [airedCount, anime, animeNotYetAired, pageEpisodeMap, pageItems.length, selectedEpisode, streamingEpisodeMap, episodeArtwork, hideEpisodeSpoilers]);
+  }, [airedCount, anime, animeNotYetAired, pageEpisodeMap, pageItems.length, requestedEpisode, sourceEpisodeCount, streamingEpisodeMap, episodeArtwork, hideEpisodeSpoilers]);
   const episodeRanges = useMemo(() => {
     const count = Math.max(allEpisodes.length, 1);
     return Array.from({ length: Math.ceil(count / EPISODE_GRID_PAGE_SIZE) }, (_, index) => {
@@ -1987,8 +1996,6 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   }, [currentEpisodeRangeIndex, episodeRanges]);
 
   const selectedEpisodeInfo = allEpisodes.find((episode) => episode.number === selectedEpisode) || displayedEpisodes[0];
-  const seasonItems = useMemo(() => buildInstallmentItems(anime, installmentGraphData || []), [anime, installmentGraphData]);
-  const selectedInstallment = seasonItems.find((item) => item.current) || seasonItems[0] || null;
   const installmentTitle = useMemo(() => installmentsHeading(seasonItems), [seasonItems]);
   const installmentSubtitle = useMemo(() => installmentHint(seasonItems), [seasonItems]);
   const showTimelineSkeletons = installmentGraphInitialLoading;
@@ -2067,8 +2074,6 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     });
   }, [airedCount, anime, animeNotYetAired, id, selectedEpisode, selectedInstallment]);
 
-  const sourceIdentity = useMemo(() => buildSourceIdentity(anime, selectedInstallment || undefined), [anime, selectedInstallment]);
-  const sourceContextSignature = sourceIdentitySignature(sourceIdentity);
   const sourceQueryKey = useMemo(() => [
     'desktop-watch-sources', sourceContextSignature, selectedEpisode,
   ] as const, [sourceContextSignature, selectedEpisode]);
@@ -3092,7 +3097,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             <DesktopAnimeCast key={id} identity={{ anilistId: resolvedAnime?.anilist_id || routeAniListId, malId: resolvedAnime?.mal_id || routeMalId }} />
 
             <div className="sn-watch-episode-toolbar">
-              <div><h2><Play size={24} />Episodes</h2><span>{airedCount == null ? 'Count unavailable' : `${episodeCountLabel} ${airedCount}`} · Total {totalEpisodeCount(anime) ?? '?'}</span></div>
+              <div><h2><Play size={24} />Episodes</h2><span>{airedCount == null ? 'Count unavailable' : `${episodeCountLabel} ${airedCount}`} · Total {totalEpisodeCount(anime) ?? '?'}{sourceEpisodeCount > (airedCount || 0) && ` · Sources found through ${sourceEpisodeCount}`}</span></div>
               <form onSubmit={event => { event.preventDefault(); submitEpisodeSearch(); }}><Search className="h-4 w-4" /><input aria-label="Search or jump to episode" value={episodeSearch} onChange={event => setEpisodeSearch(event.target.value.slice(0,48))} placeholder="Search or jump to episode…" /></form>
               {longEpisodeRun && <select aria-label="Episode view" value={episodeViewMode} onChange={event => setEpisodeViewMode(event.target.value as EpisodeViewMode)}><option value="cards">Cards</option><option value="grid">Compact</option></select>}
               {longEpisodeRun && episodeViewMode === 'grid' && episodeRanges.length > 1 && <select aria-label="Episode range" value={episodeGridStart} onChange={event => setEpisodeGridStart(Number(event.target.value) || 1)}>{episodeRanges.map(range => <option key={range.start} value={range.start}>{range.label}</option>)}</select>}

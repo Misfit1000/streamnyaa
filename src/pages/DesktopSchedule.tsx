@@ -1,8 +1,7 @@
-import DesktopScheduleArtwork from '../components/DesktopScheduleArtwork';
-import { groupScheduleEpisodes, scheduleArtworkCandidates, scheduleTrackLabel } from '../lib/desktopSchedulePresentation';
-import { DesktopScheduleReminders, DesktopScheduleStatus } from '../components/DesktopScheduleControls';
-import { mergeScheduleTracks, readScheduleAlertState, scheduleDisplayTime, subscribeScheduleTracks } from '../lib/desktopScheduleAlerts';
-import { scheduleRevisionKey } from '../lib/scheduleRevisions';
+import DesktopScheduleCard from '../components/DesktopScheduleCard';
+import { airingAtMs, groupScheduleEpisodes, scheduleArtworkCandidates, scheduleBroadcastState, scheduleSections, scheduleTitleCount } from '../lib/desktopSchedulePresentation';
+import { DesktopScheduleReminders } from '../components/DesktopScheduleControls';
+import { mergeScheduleTracks, readScheduleAlertState, subscribeScheduleTracks } from '../lib/desktopScheduleAlerts';
 import { useAuth } from '../context/AuthContext';
 import DesktopDragRail from '../components/DesktopDragRail';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -47,14 +46,6 @@ type ScheduleNotice = {
   message: string;
 };
 
-type ScheduleBroadcastState = {
-  kind: 'normal' | 'delayed' | 'cancelled' | 'postponed' | 'rescheduled' | 'hiatus' | 'suspended' | 'tba';
-  label: string;
-  headline?: string;
-  detail?: string;
-  prominent: boolean;
-  blocksReminder: boolean;
-};
 
 function scheduleDays() {
   return Array.from({ length: 7 }).map((_, index) => {
@@ -77,128 +68,6 @@ function safeReminderTitle(anime: any) {
   return String(anime?.title_english || anime?.title || anime?.title_japanese || 'This anime').trim();
 }
 
-function airingAtMs(anime: any) {
-  const raw = Number(anime?.airingAt || 0);
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
-  return raw > 1_000_000_000_000 ? raw : raw * 1000;
-}
-
-function scheduleStatusBlob(anime: any) {
-  const candidates = [
-    anime?.scheduleStatus,
-    anime?.airingStatus,
-    anime?.broadcastStatus,
-    anime?.episodeStatus,
-    anime?.releaseStatus,
-    anime?.delayStatus,
-    anime?.status,
-    anime?.airingMessage,
-    anime?.broadcastMessage,
-    anime?.message,
-    anime?.notice,
-    anime?.notes,
-  ];
-  return candidates
-    .filter((value) => typeof value === 'string' && value.trim())
-    .join(' ')
-    .toLowerCase();
-}
-
-function scheduleBroadcastState(anime: any, airingMs = airingAtMs(anime)): ScheduleBroadcastState {
-  const statusText = scheduleStatusBlob(anime);
-  const explicitCancelled = anime?.cancelled || anime?.canceled || anime?.isCancelled || anime?.isCanceled;
-  const explicitDelayed = anime?.delayed || anime?.isDelayed;
-  const explicitPostponed = anime?.postponed || anime?.isPostponed;
-  const explicitRescheduled = anime?.rescheduled || anime?.isRescheduled;
-
-  if (explicitCancelled || /\b(cancelled|canceled|cancelation|cancellation)\b/.test(statusText)) {
-    return {
-      kind: 'cancelled',
-      label: 'Cancelled',
-      headline: 'CANCELLED',
-      detail: 'This airing is not expected to release as scheduled.',
-      prominent: true,
-      blocksReminder: true,
-    };
-  }
-
-  if (/\b(hiatus|on hiatus|on break|break)\b/.test(statusText)) {
-    return {
-      kind: 'hiatus',
-      label: /break/.test(statusText) ? 'On break' : 'On hiatus',
-      headline: 'ON HIATUS',
-      detail: 'Broadcast is paused until a new date is announced.',
-      prominent: true,
-      blocksReminder: true,
-    };
-  }
-
-  if (/\b(suspended|suspension)\b/.test(statusText)) {
-    return {
-      kind: 'suspended',
-      label: 'Suspended',
-      headline: 'SUSPENDED',
-      detail: 'Broadcast is temporarily suspended.',
-      prominent: true,
-      blocksReminder: true,
-    };
-  }
-
-  if (explicitPostponed || /\b(postponed|postpone|pushed back)\b/.test(statusText)) {
-    return {
-      kind: 'postponed',
-      label: 'Postponed',
-      headline: 'POSTPONED',
-      detail: airingMs ? 'A new airing time may replace this slot.' : 'Waiting for a new airing time.',
-      prominent: true,
-      blocksReminder: !airingMs,
-    };
-  }
-
-  if (explicitRescheduled || /\b(rescheduled|reschedule|moved to|new time)\b/.test(statusText)) {
-    const previousAiringMs = airingAtMs({ airingAt: anime?.previousAiringAt });
-    return {
-      kind: 'rescheduled',
-      label: 'Rescheduled',
-      headline: 'RESCHEDULED',
-      detail: previousAiringMs && airingMs
-        ? `Moved from ${formatAiringTime(previousAiringMs)} to ${formatAiringTime(airingMs)}.`
-        : airingMs
-          ? 'Airing time has changed.'
-          : 'Waiting for an updated airing time.',
-      prominent: true,
-      blocksReminder: !airingMs,
-    };
-  }
-
-  if (explicitDelayed || /\b(delayed|delay|late|pushed)\b/.test(statusText)) {
-    return {
-      kind: 'delayed',
-      label: 'Delayed',
-      headline: 'DELAYED',
-      detail: airingMs ? 'This episode is marked delayed; check the updated time.' : 'No reliable airing time yet.',
-      prominent: true,
-      blocksReminder: !airingMs,
-    };
-  }
-
-  if (!airingMs) {
-    return {
-      kind: 'tba',
-      label: 'TBA',
-      detail: 'Airing time has not been announced.',
-      prominent: false,
-      blocksReminder: true,
-    };
-  }
-
-  return {
-    kind: 'normal',
-    label: new Date(airingMs).getTime() > Date.now() ? 'Airing soon' : 'Aired',
-    prominent: false,
-    blocksReminder: false,
-  };
-}
 
 function reminderIdForAnime(anime: any) {
   const animeId = animeIdentity(anime) || safeReminderTitle(anime);
@@ -277,13 +146,6 @@ export default function DesktopSchedule() {
     foregroundContinuation.current = attempt;
     void scheduleQuery.refetch();
   }, [todayKey, nsfwMode, scheduleQuery.data, scheduleQuery.isFetching, scheduleQuery.isError, scheduleQuery.refetch]);
-  const items = completeSchedule.filter((item: any) => {
-    const at = scheduleDisplayTime(item);
-    const changed = scheduleBroadcastState(item).prominent;
-    const prior = scheduleDisplayTime({ airingAt: 0, previousAiringAt: item.previousAiringAt });
-    return at >= active.start && at <= active.end || changed && prior >= active.start && prior <= active.end
-      || selectedDay === 0 && changed && (!at || at < days[0].start);
-  });
   const watchedWeekQuery = scheduleQuery;
   const watchedWeekItems = useMemo(
     () => (watchedWeekQuery.data?.data || [])
@@ -297,26 +159,15 @@ export default function DesktopSchedule() {
     ),
     [watchedSeries, watchedWeekItems],
   );
-  const visibleItems = useMemo(
-    () => items.filter((anime: any) => (!favoritesOnly || isInMyList(animeIdentity(anime)))
-      && (!trackedOnly || isInMyList(animeIdentity(anime)) || watchedSeries.some(record => desktopWatchedSeriesMatchesAnime(record, anime)))
-      && safeReminderTitle(anime).toLowerCase().includes(daySearch.trim().toLowerCase())),
-    [favoritesOnly, isInMyList, items, trackedOnly, watchedSeries, daySearch],
-  );
-  const groupedItems = useMemo(() => {
-    if (!visibleItems.length) return [];
-    if (selectedDay !== 0) return [{ title: active.label, items: visibleItems }];
-    const now = clock;
-    const changed = visibleItems.filter((anime: any) => scheduleBroadcastState(anime).prominent);
-    const ordinary = visibleItems.filter((anime: any) => !scheduleBroadcastState(anime).prominent);
-    const upcoming = ordinary.filter((anime: any) => airingAtMs(anime) > now);
-    const aired = ordinary.filter((anime: any) => airingAtMs(anime) <= now);
-    return [
-      { title: 'Schedule changes', items: changed },
-      { title: 'Airing Soon', items: upcoming },
-      { title: 'Already Aired', items: aired },
-    ].filter((group) => group.items.length);
-  }, [active.label, selectedDay, visibleItems, clock]);
+  const groupedItems = useMemo(() => scheduleSections(completeSchedule, {
+    weekStart: days[0].start * 1000, weekEnd: (days[6].end + 1) * 1000,
+    dayStart: active.start * 1000, dayEnd: (active.end + 1) * 1000,
+    today: selectedDay === 0, dayLabel: active.label, now: clock,
+  }, anime => (!favoritesOnly || isInMyList(animeIdentity(anime)))
+    && (!trackedOnly || isInMyList(animeIdentity(anime)) || watchedSeries.some(record => desktopWatchedSeriesMatchesAnime(record, anime)))
+    && safeReminderTitle(anime).toLowerCase().includes(daySearch.trim().toLowerCase())),
+    [completeSchedule, days, active, selectedDay, clock, favoritesOnly, isInMyList, trackedOnly, watchedSeries, daySearch]);
+  const visibleItems = useMemo(() => groupedItems.flatMap(group => group.items), [groupedItems]);
   const notificationStatusMessage = useMemo(
     () => scheduleNotificationStatusMessage(notificationPermission),
     [notificationPermission],
@@ -573,14 +424,10 @@ export default function DesktopSchedule() {
               <div key={group.title}>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-xl font-semibold tracking-[-0.01em] text-white">{group.title}</h2>
-                  <span className="sn-category-chip px-3 py-1.5 text-xs">{new Set(group.items.map((item: any) => desktopCanonicalAnimeId(item))).size} titles</span>
+                  <span className="sn-category-chip px-3 py-1.5 text-xs">{scheduleTitleCount(group.items)} {scheduleTitleCount(group.items) === 1 ? 'title' : 'titles'}</span>
                 </div>
                 <div className="broadcast-agenda-list">
                   {groupScheduleEpisodes([...group.items].sort((a: any, b: any) => airingAtMs(a) - airingAtMs(b))).map(({ key, anime, tracks }) => {
-                    const airingMs = airingAtMs(anime);
-                    const date = new Date(airingMs);
-                    const time = airingMs ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : 'TBA';
-                    const broadcastState = scheduleBroadcastState(anime, airingMs);
                     const inList = isInMyList(animeIdentity(anime));
                     const reminder = reminderFromAnime(anime);
                     const reminderId = reminder?.id || reminderIdForAnime(anime);
@@ -590,22 +437,7 @@ export default function DesktopSchedule() {
                     const reminderPending = pendingReminderId === desktopCanonicalAnimeId(anime);
                     const reminderUnavailableTitle = 'A verified anime identity is required to follow this title';
                     return (
-                      <div key={key} className="broadcast-ticket" data-schedule-state={broadcastState.prominent ? broadcastState.kind : undefined}>
-                        <div className="broadcast-time"><strong>{broadcastState.prominent ? <CalendarDays className="h-5 w-5" aria-hidden="true" /> : time}</strong>{!broadcastState.prominent && <span>{broadcastState.label}</span>}</div>
-                        <Link className="broadcast-title" to={scheduleWatchPath(anime)} onClick={() => primeScheduleWatch(anime)}><DesktopScheduleArtwork anime={anime} /><span><small>EPISODE {anime.airingEpisode || 'TBA'}</small><strong>{safeReminderTitle(anime)}</strong></span><ChevronRight className="h-5 w-5 shrink-0" /></Link>
-                        <div className="sn-schedule-tracks" aria-label="Release tracks">
-                          {tracks.map(track => {
-                            const state = scheduleBroadcastState(track, airingAtMs(track));
-                            return <div className="sn-schedule-track" key={scheduleRevisionKey(track)}>
-                              <span className="sn-schedule-track-label">{scheduleTrackLabel(track)}</span>
-                              {state.prominent ? <DesktopScheduleStatus kind={state.kind} label={state.label}
-                                previousAt={airingAtMs({airingAt:track.previousAiringAt})} revisedAt={airingAtMs(track)}
-                                reason={track.scheduleReason || state.detail} fetchedAt={Number(track.scheduleFetchedAt) || undefined}
-                                stale={Boolean(trackState.error) || Boolean(track.scheduleFetchedAt && clock - Number(track.scheduleFetchedAt) > 30*60_000)} />
-                                : <span className="sn-schedule-track-time">{airingAtMs(track) ? new Date(airingAtMs(track)).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Time to be announced'} · {state.label}</span>}
-                            </div>;
-                          })}
-                        </div>
+                      <DesktopScheduleCard key={key} anime={anime} tracks={tracks} now={clock} stale={Boolean(trackState.error)}>
                         <div className="broadcast-actions flex gap-2">
                           <button
                             type="button"
@@ -660,7 +492,7 @@ export default function DesktopSchedule() {
                           </button>
                         </div>
 
-                      </div>
+                      </DesktopScheduleCard>
                     );
                   })}
                 </div>

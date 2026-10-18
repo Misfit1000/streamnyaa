@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { searchNyaa, type NyaaItem } from '../api/nyaa';
-import { buildSourceIdentity, parseSourceEpisode, SOURCE_CLASSIFIER_VERSION, sourceIdentitySignature, validateDesktopSourceCandidates } from './desktopSourceIdentity';
+import { buildSourceIdentity, parseSourceEpisode, SOURCE_CLASSIFIER_VERSION, sourceIdentitySignature, validateDesktopSourceCandidates, type SourceIdentity } from './desktopSourceIdentity';
 import { sourceAudioCompatible } from './desktopSourceSelection';
 import { desktopAvailabilityKey, desktopCanonicalAnimeId, readDesktopAvailabilityRecords, recordDesktopAvailability, type DesktopAvailabilityRecord } from './desktopAvailability';
 import { useDesktopCatalogAvailability } from './desktopCatalogAvailability';
@@ -41,9 +41,9 @@ function currentSourceRecord(record: DesktopAvailabilityRecord, now: number) {
     && /^(?:[a-f0-9]{40}|[A-Z2-7]{32})$/i.test(record.sourceHash || '') && Boolean(record.sourceTitle)
     && Number.isInteger(record.playableEpisode) && record.playableEpisode! > 0;
 }
-export function homeReadyEpisodes(anime: any, records: DesktopAvailabilityRecord[], audio: 'sub' | 'dub' | 'any', now = Date.now()) {
+export function homeReadyEpisodes(anime: any, records: DesktopAvailabilityRecord[], audio: 'sub' | 'dub' | 'any', now = Date.now(), identity: SourceIdentity = buildSourceIdentity(anime)) {
   if (isUpcomingAnime(anime)) return [];
-  const signature = sourceIdentitySignature(buildSourceIdentity(anime));
+  const signature = sourceIdentitySignature(identity);
   return [...new Set(records.filter(record => currentSourceRecord(record, now) && sameAnime(anime, record)
     && record.classifierVersion === SOURCE_CLASSIFIER_VERSION && record.identitySignature === signature
     && record.sourceTier === 'exact' && /^(?:[a-f0-9]{40}|[A-Z2-7]{32})$/i.test(record.sourceHash || '')
