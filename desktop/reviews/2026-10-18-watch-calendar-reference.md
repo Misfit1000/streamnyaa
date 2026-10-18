@@ -30,3 +30,12 @@ Version remains **0.1.10**, identifier `xyz.streamnyaa.desktop`.
 ## Delivery
 
 Build from the committed final source; verify source/resource hashes, executable version, installer size and SHA-256. Preserve the current verified 0.1.10 installer and metadata as rollback, then update `StreamNyaa-desktop/desktop/releases/v0.1.10`. Source and release evidence are pushed normally to main. Installer measurements are recorded in the companion JSON after packaging.
+
+### Packaged result
+
+- Built source: `205174c99dfba10ff4590fe9bd5206fbf98db589`.
+- Installer: `C:/Users/HP/Documents/New project 2/StreamNyaa-desktop/desktop/releases/v0.1.10/StreamNyaa_0.1.10_x64-setup.exe`.
+- Size: **41,890,177 bytes**. SHA-256: `F1BA72C3BABA3024ACB0974A51674D482F4A2DF4A92C50ECBF573DC906308544`.
+- Signature: **NotSigned**. Executable version: **0.1.10**. 343 validated source/resource inputs; six staged resource hashes match exact NSIS inclusions. Independent installer extraction/isolated installation was not performed.
+- Verified rollback: `releases/archive/v0.1.10-20261018-180500`, SHA-256 `580E2540743BC93A940EC312DEB59435A3B713CF8E9A3AE9EF9C68D5C1EBECB6`, with installer and previous metadata. The older requested 0.1.9 was absent after earlier cleanup; it was not fabricated.
+- Post-push production episode request returned HTTP 500, `The operation was aborted due to timeout`, in **5.575 seconds**. The gateway now returns a bounded failure, but successful live episode retrieval and new success-response provenance remain unverified. The provider gate is still open.
