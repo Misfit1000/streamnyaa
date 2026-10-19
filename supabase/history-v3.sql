@@ -62,7 +62,8 @@ begin
    end if;
    -- The desktop has committed a raw recovery copy as well as normalized rows.
    for oldrow in select * from public.user_watch_history where user_id=uid and deleted_at is null order by updated_at,history_key loop
-     ident:='legacy:'||coalesce(nullif(oldrow.anime_id,''),nullif(oldrow.anime_title,''),oldrow.history_key);
+     ident:=coalesce(nullif(oldrow.anime_id,''),nullif(oldrow.anime_title,''),oldrow.history_key);
+     if ident !~ '^(mal|anilist|legacy):.+' then ident:='legacy:'||ident; end if;
      ep:=coalesce(oldrow.episode,'1'); at_ms:=(extract(epoch from oldrow.updated_at)*1000)::bigint;
      insert into public.user_anime_tracking(user_id,identity,metadata,last_played)
        values(uid,ident,jsonb_build_object('animeId',oldrow.anime_id,'title',coalesce(oldrow.anime_title,ident),'poster',oldrow.poster_url),at_ms)

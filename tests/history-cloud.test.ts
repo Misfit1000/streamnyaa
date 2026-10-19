@@ -39,6 +39,11 @@ test('real PostgreSQL history migration, retention, resets and account isolation
   assert.equal((await rpc({action:'read'})).resumes.length,19);
   await db.exec(`SET request.jwt.claim.sub='${other}';`);
   assert.deepEqual((await rpc({action:'read'})).tracking,[]);
+  await db.exec('RESET ROLE;');
+  await db.query(`INSERT INTO public.user_watch_history(user_id,history_key,anime_id,anime_title,episode) VALUES($1,'qualified','anilist:154587','Qualified title','1'),($1,'stable-legacy','legacy:saved-title','Legacy title','1')`,[other]);
+  const qualifiedSnapshot=await rpc({action:'read'});
+  const qualifiedMigration=await rpc({action:'migrate',archivedCount:2,archivedFingerprint:qualifiedSnapshot.legacyFingerprint});
+  assert.deepEqual(qualifiedMigration.tracking.map((v:any)=>v.identity).sort(),['anilist:154587','legacy:saved-title']);
   await db.exec(`SET request.jwt.claim.sub='';`);
   await assert.rejects(rpc({action:'read'}),/Sign in required/);
  }finally{await db.close();}
