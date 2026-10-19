@@ -1,8 +1,18 @@
 User-agent: *
 Allow: /
+Disallow: /api/
+Allow: /api/blog-sitemap
 
 User-agent: Googlebot
 Allow: /
+Disallow: /api/
+Allow: /api/blog-sitemap
+
+User-agent: Reflectionbot
+User-agent: AhrefsBot
+User-agent: ClaudeBot
+Disallow: /
+Allow: /robots.txt
 
 Sitemap: https://www.streamnyaa.xyz/sitemap.xml
 Sitemap: https://www.streamnyaa.xyz/sitemap-static.xml

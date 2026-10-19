@@ -1,0 +1,18 @@
+{
+  "project": "streamnyaa",
+  "team": "rabin2071brt-6612s-projects",
+  "ruleId": "rule_stream_nyaa_selected_crawler_protection_7KXurL",
+  "name": "StreamNyaa selected crawler protection",
+  "conditions": {
+    "all": [
+      { "field": "request.path", "operator": "not_equal", "value": "/robots.txt" },
+      { "field": "user_agent", "operator": "regex", "value": ".*(Reflectionbot|AhrefsBot|ClaudeBot).*" }
+    ]
+  },
+  "initialAction": "log",
+  "intendedActionAfterValidation": "deny",
+  "generalBotProtection": "off",
+  "systemMitigations": "preserved",
+  "rollback": "Change this rule back to Log or disable only this rule, then publish. Revert robots.txt separately if desired.",
+  "accounting": "Ordinary Hobby custom-rule denies still count as CDN requests. robots.txt compliance avoids requests; denial reduces application work."
+}

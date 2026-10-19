@@ -53,3 +53,22 @@ test('API routes stay ahead of the SPA rewrites', () => {
   assert.ok(apiIndex >= 0);
   assert.ok(firstSpaIndex > apiIndex);
 });
+
+test('crawler policy keeps public indexing and the sitemap while excluding API crawling', () => {
+  const robots = readFileSync(new URL('../public/robots.txt', import.meta.url), 'utf8');
+  const groups = robots.split(/\r?\n\s*\r?\n/).filter(block => block.startsWith('User-agent:'));
+  const publicGroups = groups.filter(block => /^User-agent: (?:\*|Googlebot)$/m.test(block));
+  assert.equal(publicGroups.length, 2);
+  for (const block of publicGroups) {
+    assert.match(block, /^Allow: \/$/m);
+    assert.match(block, /^Disallow: \/api\/$/m);
+    assert.match(block, /^Allow: \/api\/blog-sitemap$/m);
+  }
+  for (const crawler of ['Reflectionbot', 'AhrefsBot', 'ClaudeBot']) {
+    const group = groups.find(block => block.includes(`User-agent: ${crawler}`));
+    assert.ok(group);
+    assert.match(group, /^Disallow: \/$/m);
+    assert.match(group, /^Allow: \/robots.txt$/m);
+  }
+  assert.match(robots, /Sitemap: https:\/\/www.streamnyaa.xyz\/api\/blog-sitemap/);
+});
