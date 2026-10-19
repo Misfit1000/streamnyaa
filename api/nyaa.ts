@@ -1,5 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
+import { waitUntil } from '@vercel/functions';
 import { parseSourceEpisode } from '../src/lib/desktopSourceIdentity.js';
+import { RequestCache, RequestUsage, publicFreshness } from './_shared/requestReuse.js';
 
 type SourceItem = {
   title: string;
@@ -27,8 +29,8 @@ type SourceItem = {
 type SourceCacheEntry = {
   data: SourceItem[];
   fetchedAt: number;
-  refreshPromise?: Promise<SourceItem[]>;
 };
+type SourceResult = SourceCacheEntry & { complete: boolean };
 
 type SearchIntent = {
   rawQuery: string;
@@ -39,7 +41,10 @@ type SearchIntent = {
   dubSearch: boolean;
 };
 
-const sourceCache = new Map<string, SourceCacheEntry>();
+const sourceCache = new RequestCache({ assembled: 300, rss: 600 }, 32 * 1024 * 1024);
+// Flights belong to the operation, never to a consumer's cancellation signal.
+const sourceFlights = new Map<string, Promise<SourceResult>>();
+const feedFlights = new Map<string, Promise<SourceCacheEntry>>();
 const SOURCE_FRESH_MS = 1000 * 60 * 2;
 const SOURCE_STALE_MS = 1000 * 60 * 10;
 const DEFAULT_ANIME_CATEGORIES = ["1_2", "1_3", "1_4"];
@@ -181,8 +186,26 @@ function nyaaSearchUrl(query: string, category: string, filter: string, page: nu
   return url;
 }
 
-async function fetchSourceResults(url: URL, context: { query: string; category: string; page: number }): Promise<SourceItem[]> {
-  const response = await fetch(url.toString(), {
+async function fetchRawFeed(url: URL, usage: RequestUsage): Promise<SourceCacheEntry> {
+  const key = url.toString();
+  const cached = sourceCache.get<SourceCacheEntry>('rss', key);
+  if (cached) { usage.feedHits++; return cached; }
+  const pending = feedFlights.get(key);
+  if (pending) { usage.coalesced++; return pending; }
+  const flight = loadRawFeed(url, usage);
+  feedFlights.set(key, flight);
+  try {
+    const result = await flight;
+    sourceCache.set('rss', key, result, result.fetchedAt + SOURCE_FRESH_MS);
+    return result;
+  } finally {
+    if (feedFlights.get(key) === flight) feedFlights.delete(key);
+  }
+}
+
+async function loadRawFeed(url: URL, usage: RequestUsage): Promise<SourceCacheEntry> {
+  const fetchedAt = Date.now();
+  const response = await usage.fetch(url.toString(), {
     signal: AbortSignal.timeout(8000),
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
@@ -199,9 +222,10 @@ async function fetchSourceResults(url: URL, context: { query: string; category: 
     attributeNamePrefix: "@_"
   });
   const result = parser.parse(xmlData);
+  if (!result?.rss || !Object.prototype.hasOwnProperty.call(result.rss, 'channel')) throw new Error('Invalid source feed.');
   const items = result.rss?.channel?.item || [];
 
-  return (Array.isArray(items) ? items : [items]).filter(Boolean).map((item) => ({
+  return { fetchedAt, data: (Array.isArray(items) ? items : [items]).filter(Boolean).map((item) => ({
     title: item.title || "",
     link: item.link || "",
     guid: item.guid || "",
@@ -216,10 +240,13 @@ async function fetchSourceResults(url: URL, context: { query: string; category: 
     comments: String(item["nyaa:comments"] || "0"),
     trusted: item["nyaa:trusted"] || "",
     remake: item["nyaa:remake"] || "",
-    matchedQuery: context.query,
-    matchedCategory: context.category,
-    matchedPage: context.page,
-  }));
+  })) };
+}
+
+async function fetchSourceResults(url: URL, context: { query: string; category: string; page: number }, usage: RequestUsage) {
+  const feed = await fetchRawFeed(url, usage);
+  return { fetchedAt: feed.fetchedAt, data: feed.data.map(item => ({ ...item,
+    matchedQuery: context.query, matchedCategory: context.category, matchedPage: context.page })) };
 }
 
 function matchingTitleRatio(title: string, tokens: string[]): number {
@@ -325,21 +352,22 @@ function dedupeAndRank(items: SourceItem[], intent: SearchIntent, sourceQueryCou
   });
 }
 
-async function fetchInChunks(urls: { url: URL; query: string; category: string; page: number }[]) {
+async function fetchInChunks(urls: { url: URL; query: string; category: string; page: number }[], usage: RequestUsage) {
   const results: SourceItem[] = [];
+  let fetchedAt = Date.now();
   let complete = true;
   for (let index = 0; index < urls.length; index += FETCH_CONCURRENCY) {
     const chunk = urls.slice(index, index + FETCH_CONCURRENCY);
-    const settled = await Promise.allSettled(chunk.map((entry) => fetchSourceResults(entry.url, entry)));
+    const settled = await Promise.allSettled(chunk.map((entry) => fetchSourceResults(entry.url, entry, usage)));
     for (const result of settled) {
-      if (result.status === "fulfilled") results.push(...result.value);
+      if (result.status === "fulfilled") { results.push(...result.value.data); fetchedAt = Math.min(fetchedAt, result.value.fetchedAt); }
       else complete = false;
     }
   }
-  return { items: results, complete };
+  return { items: results, complete, fetchedAt };
 }
 
-async function fetchEnhancedResults(options: { query: string; category: string; filter: string; page: number; pages: number; deep: boolean; wide: boolean; scope?: string; episode?: number }) {
+async function fetchEnhancedResults(options: { query: string; category: string; filter: string; page: number; pages: number; deep: boolean; wide: boolean; scope?: string; episode?: number }, usage: RequestUsage) {
   const intent = buildIntent(options.query, options.scope, options.episode);
   const queries = options.deep ? buildQueryVariants(options.query, intent) : [options.query];
   const categories = options.deep ? buildCategoryList(options.category, options.wide) : [options.category || "1_2"];
@@ -356,26 +384,30 @@ async function fetchEnhancedResults(options: { query: string; category: string; 
     }
   }
 
-  const items = await fetchInChunks(urls);
-  return { data: dedupeAndRank(items.items, intent, urls.length), complete: items.complete };
+  const items = await fetchInChunks(urls, usage);
+  return { data: dedupeAndRank(items.items, intent, urls.length), complete: items.complete, fetchedAt: items.fetchedAt };
 }
 
-function refreshCachedSource(cacheKey: string, loader: () => Promise<{ data: SourceItem[]; complete: boolean }>, cached: SourceCacheEntry) {
-  if (cached.refreshPromise) return;
-  cached.refreshPromise = loader()
-    .then((result) => {
-      if (result.complete) sourceCache.set(cacheKey, { data: result.data, fetchedAt: Date.now() });
-      return result.complete ? result.data : cached.data;
-    })
-    .catch(() => cached.data)
-    .finally(() => {
-      const latest = sourceCache.get(cacheKey);
-      if (latest) delete latest.refreshPromise;
-    });
+async function loadSource(cacheKey: string, loader: () => Promise<SourceResult>, usage: RequestUsage): Promise<SourceResult> {
+  const pending = sourceFlights.get(cacheKey);
+  if (pending) { usage.coalesced++; return pending; }
+  const flight = loader(); sourceFlights.set(cacheKey, flight);
+  try {
+    const result = await flight;
+    if (result.complete) sourceCache.set('assembled', cacheKey, result, result.fetchedAt + SOURCE_STALE_MS);
+    return result;
+  } finally {
+    if (sourceFlights.get(cacheKey) === flight) sourceFlights.delete(cacheKey);
+  }
 }
 
 export default async function handler(req: any, res: any) {
+  const usage = new RequestUsage(req, 'nyaa');
+  let status = 200;
+  let background: Promise<unknown> | undefined;
+  res.setHeader('Cache-Control', 'no-store');
   try {
+    if (req.method && req.method !== 'GET') { status = 405; return res.status(status).json({ error: 'Source searches require GET.' }); }
     const q = firstValue(req.query.q);
     const c = firstValue(req.query.c) || "1_2";
     const f = firstValue(req.query.f) || "0";
@@ -385,41 +417,51 @@ export default async function handler(req: any, res: any) {
     const wide = firstValue(req.query.wide) === "1";
     const scope = firstValue(req.query.scope);
     const requestedEpisode = Number(firstValue(req.query.episode));
-    if ((scope && !['title', 'episode'].includes(scope)) || (firstValue(req.query.episode) && (!Number.isInteger(requestedEpisode) || requestedEpisode < 1 || requestedEpisode > 9999))) return res.status(400).json({ error: 'Invalid source intent.' });
+    if ((scope && !['title', 'episode'].includes(scope)) || (firstValue(req.query.episode) && (!Number.isInteger(requestedEpisode) || requestedEpisode < 1 || requestedEpisode > 9999))) { status = 400; return res.status(status).json({ error: 'Invalid source intent.' }); }
     const episode = requestedEpisode || undefined;
-    const loader = () => fetchEnhancedResults({ query: q, category: c, filter: f, page: Number(p) || 1, pages, deep, wide, scope, episode });
-    const cacheKey = JSON.stringify({ q, c, f, p, pages, deep, wide, scope, episode, version: 4 });
-    const cached = sourceCache.get(cacheKey);
+    const loader = () => fetchEnhancedResults({ query: q, category: c, filter: f, page: Number(p) || 1, pages, deep, wide, scope, episode }, usage);
+    const cacheKey = JSON.stringify({ q, c, f, p, pages, deep, wide, scope, episode, version: 5 });
+    const cached = sourceCache.get<SourceCacheEntry>('assembled', cacheKey);
     const age = cached ? Date.now() - cached.fetchedAt : Number.POSITIVE_INFINITY;
-    res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=480");
 
     if (cached && age < SOURCE_FRESH_MS) {
       res.setHeader("X-Source-Cache", "HIT");
+      usage.cache = 'HIT';
+      publicFreshness(res, cached.fetchedAt, SOURCE_FRESH_MS / 1000);
+      res.setHeader('X-Source-Complete', 'true');
       res.setHeader("X-Source-Fetched-At", String(cached.fetchedAt));
       res.setHeader("X-Source-Query-Count", String(cached.data[0]?.sourceQueryCount || 1));
       return res.json(cached.data);
     }
 
     if (cached && age < SOURCE_STALE_MS) {
-      refreshCachedSource(cacheKey, loader, cached);
+      // Register the refresh with the function lifecycle without delaying UI.
+      background = loadSource(cacheKey, loader, usage).catch(() => undefined);
       res.setHeader("X-Source-Cache", "STALE");
+      usage.cache = 'STALE';
+      res.setHeader('X-Source-Complete', 'true');
       res.setHeader("X-Source-Fetched-At", String(cached.fetchedAt));
       res.setHeader("X-Source-Query-Count", String(cached.data[0]?.sourceQueryCount || 1));
       return res.json(cached.data);
     }
 
-    const result = await loader();
+    const wasPending = sourceFlights.has(cacheKey);
+    const result = await loadSource(cacheKey, loader, usage);
     const formattedItems = result.data;
-    const fetchedAt = Date.now();
-    if (result.complete) sourceCache.set(cacheKey, { data: formattedItems, fetchedAt });
-    else res.setHeader('Cache-Control', 'no-store');
+    const fetchedAt = result.fetchedAt;
+    publicFreshness(res, fetchedAt, SOURCE_FRESH_MS / 1000, result.complete);
     res.setHeader('X-Source-Complete', String(result.complete));
-    res.setHeader("X-Source-Cache", "MISS");
+    usage.cache = wasPending ? 'COALESCED' : 'MISS';
+    res.setHeader("X-Source-Cache", usage.cache);
     res.setHeader("X-Source-Fetched-At", String(fetchedAt));
     res.setHeader("X-Source-Query-Count", String(formattedItems[0]?.sourceQueryCount || 1));
     res.json(formattedItems);
   } catch (e: any) {
     console.error(e);
-    res.status(500).json({ error: e.message });
+    status = 500;
+    res.status(status).json({ error: e.message });
+  } finally {
+    if (background) waitUntil(background.finally(() => usage.finish(status)));
+    else usage.finish(status);
   }
 }

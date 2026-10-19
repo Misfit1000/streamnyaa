@@ -276,7 +276,7 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
     if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
     const deduped = dedupeNyaaItems(results);
     // A completed empty response is authoritative for this exact query; failures retain stale data.
-    if (complete) inMemorySearchCache.set(cacheKey, { items: deduped, savedAt: sourceFetchedAt });
+    if (complete && sourceCacheStatus !== 'STALE') inMemorySearchCache.set(cacheKey, { items: deduped, savedAt: sourceFetchedAt });
     while (inMemorySearchCache.size > SEARCH_CACHE_MAX_ENTRIES) {
       const oldestKey = inMemorySearchCache.keys().next().value;
       if (!oldestKey) break;

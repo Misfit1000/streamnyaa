@@ -10,7 +10,8 @@
     ]
   },
   "initialAction": "log",
-  "intendedActionAfterValidation": "deny",
+  "activeAction": "deny",
+  "validation": "Log trial matched Reflectionbot and AhrefsBot only (68 and 17 requests in the inspected snapshot). Small live checks confirmed 403 for all three crawler tokens, 200 for desktop/Googlebot/bingbot, robots.txt and the native callback.",
   "generalBotProtection": "off",
   "systemMitigations": "preserved",
   "rollback": "Change this rule back to Log or disable only this rule, then publish. Revert robots.txt separately if desired.",

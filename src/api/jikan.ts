@@ -45,8 +45,10 @@ const cacheKeyFor = (provider: MetadataProvider, value: unknown) => {
   return `${LOCAL_METADATA_PREFIX}${provider}.${hashCacheKey(serialized)}`;
 };
 
+const staleMetadataResponse = (response: Response) => response.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale'
+  || response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale' || response.headers.get('X-StreamNyaa-Metadata-Cache') === 'STALE';
 const metadataState = (response: Response) => ({
-  status: response.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' || response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale' ? 'stale' : 'authoritative',
+  status: staleMetadataResponse(response) ? 'stale' : 'authoritative',
   fetchedAt: Number(response.headers.get('X-StreamNyaa-Fetched-At')) || Date.now(),
   retryAt: Number(response.headers.get('X-StreamNyaa-Retry-At')) || undefined,
 });
@@ -339,7 +341,7 @@ const fetchWithLocalMetadataCache = async (
     }
 
     const json = await readValidatedMetadataJson(provider, response);
-    if (response.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale') return response;
+    if (staleMetadataResponse(response)) return response;
     const fetchedAt = Number(response.headers.get('X-StreamNyaa-Fetched-At')) || Date.now();
     writeLocalMetadata(key, json, ttlSeconds, Math.min(Date.now(), fetchedAt));
     providerCooldowns.delete(provider);
@@ -1211,7 +1213,7 @@ export const fetchAnimeEpisodes = async (id: string, page: number = 1, options: 
     if (!json || !Array.isArray(json.data)) {
       throw desktopDataError('tenrai', new Error('Episode metadata response was invalid.'));
     }
-    const stale = res.headers.get('X-StreamNyaa-Local-Cache') === 'local-stale' || res.headers.get('X-StreamNyaa-Desktop-Cache') === 'stale';
+    const stale = staleMetadataResponse(res);
     // An empty upstream response during an outage must not erase known titles.
     const saved = isDesktopApp() && !json.data.length ? readEpisodePage(id, page) : undefined;
     if (saved?.data.length) return { data: saved.data, pagination: saved.pagination,
