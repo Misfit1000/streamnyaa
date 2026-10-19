@@ -180,7 +180,7 @@ local ok, error_message = pcall(function()
   reset()
   state.cache_buffering_percent = 50
   draw(true, "test-circle")
-  check(last_ass:find("50%%") ~= nil, "Percentage must render below the circular loader")
+  check(last_ass:find("50%%") ~= nil, "Measured buffer percentage remains available in the compact loader")
   check(not last_ass:find("of 18s ready", 1, true), "Buffering UI must not include the old status card")
   state.cache_buffering_percent, state.demuxer_cache_duration, state.cache_end = nil, nil, 0
   draw(true, "test-unknown")
@@ -215,7 +215,28 @@ local ok, error_message = pcall(function()
   now = now + 1.1
   check(update_cover_overlay(true, 1280, 720, 1) ~= nil, "A temporary video-output error must not permanently remove artwork")
   clear_cover_overlay()
+  ui.settings_open = true
+  check(update_cover_overlay(true, 1280, 720, 1) == nil, "Bitmap artwork must never cover the Settings menu")
+  ui.settings_open, ui.end_overlay = false, true
+  check(update_cover_overlay(true, 1280, 720, 1) == nil, "Bitmap artwork must never cover completion controls")
+  ui.end_overlay = false
   os.remove(fixture)
+
+  reset()
+  meta.artworkLayout, meta.animeTitle, meta.episodeNumber = "cinematic-poster-v1", "A very long anime title with enough words to wrap cleanly beside the poster", "2"
+  for _, dimensions in ipairs({{640,360},{1280,720},{1920,1080},{3840,2160},{800,800}}) do
+    local w,h=dimensions[1],dimensions[2]
+    local stage_w=math.min(w,h*16/9)
+    local layout=loading_title_layout(meta.animeTitle,stage_w,stage_w*9/16,stage_w/1920)
+    check(#layout.lines <= 2, "Long titles stay within two lines")
+    for _,line in ipairs(layout.lines) do check(estimated_spaced_text_width(line,layout.size,0)<=stage_w*.52+1,"Title must not overlap the poster") end
+  end
+  properties["user-data/streamnyaa/loading_percent"] = 96
+  state.path,state.duration,state.has_started_playback,state.cache_buffering_percent,state.demuxer_cache_duration,state.cache_end="",0,false,nil,nil,0
+  draw(true,"test-cinematic-placeholder")
+  check(last_ass:find("PREPARING PLAYBACK",1,true)~=nil,"Startup uses the approved compact heading")
+  check(not last_ass:find("96%%"),"A preparation estimate must not become a media-buffer percentage")
+  meta.animeTitle,meta.episodeNumber,meta.artworkLayout="","",""
 
   reset()
   ui.end_overlay, state.autoplay = true, true

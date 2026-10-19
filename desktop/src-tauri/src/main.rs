@@ -57,8 +57,8 @@ const METADATA_CACHE_MAX_ENTRIES: usize = 64;
 const LOG_FILE_LIMIT_BYTES: u64 = 512 * 1024;
 const LOG_FILE_KEEP_COUNT: usize = 5;
 const PLAYER_COVER_MAX_BYTES: u64 = 8 * 1024 * 1024;
-const PLAYER_COVER_MAX_WIDTH: u32 = 320;
-const PLAYER_COVER_MAX_HEIGHT: u32 = 440;
+const PLAYER_COVER_MAX_WIDTH: u32 = 960;
+const PLAYER_COVER_MAX_HEIGHT: u32 = 1440;
 const PLAYER_COVER_BACKGROUND_WIDTH: u32 = 1920;
 const PLAYER_COVER_BACKGROUND_HEIGHT: u32 = 1080;
 const PLAYER_COVER_PRELOAD_TIMEOUT_MS: u64 = 1_600;
@@ -362,6 +362,7 @@ struct PlayerMetadata {
     anime_title: String,
     episode_title: Option<String>,
     episode_number: Option<String>,
+    source_summary: Option<String>,
     cover_image: Option<String>,
     loading_image_path: Option<String>,
     loading_image_width: Option<u32>,
@@ -1888,20 +1889,16 @@ fn rgba_to_bgra(image: &image::RgbaImage) -> Vec<u8> {
 }
 
 fn loading_overlay_bgra(image: &image::RgbaImage) -> Vec<u8> {
-    // MPV bitmap overlays sit above ASS text. Fade to transparency before the
-    // lower title/status region so text remains legible during decoder handoff.
-    // BGRA overlays require premultiplied color channels.
+    // Bitmap overlays are above ASS in MPV. The composition is already darkened
+    // over the entire text column. Keep those RGB values over a black ASS base,
+    // with enough alpha headroom for the text beneath to remain readable. Unlike
+    // the old vertical mask, no part of the lower artwork is punched out.
     let mut overlay = image.clone();
-    let height = overlay.height().max(1) as f32;
     let width = overlay.width().max(1) as f32;
-    for (x, y, pixel) in overlay.enumerate_pixels_mut() {
-        let text_region = ((y as f32 / height - 0.30) / 0.22).clamp(0.0, 1.0);
-        let right_edge = ((x as f32 / width - 0.81) / 0.12).clamp(0.0, 1.0);
-        let alpha = 1.0 - text_region * (1.0 - right_edge);
-        for channel in 0..3 {
-            pixel[channel] = (pixel[channel] as f32 * alpha).round() as u8;
-        }
-        pixel[3] = (255.0 * alpha).round() as u8;
+    for (x, _, pixel) in overlay.enumerate_pixels_mut() {
+        let right = ((x as f32 / width - 0.58) / 0.10).clamp(0.0, 1.0);
+        let minimum = *pixel.0[..3].iter().max().unwrap_or(&0);
+        pixel[3] = ((0.24 + right * 0.76) * 255.0).round().max(minimum as f32) as u8;
     }
     rgba_to_bgra(&overlay)
 }
@@ -1922,35 +1919,13 @@ fn cover_fill(
 
 }
 
-fn compose_full_landscape_art(
-    decoded: &image::RgbaImage,
-    target_width: u32,
-    target_height: u32,
-) -> image::RgbaImage {
-    // Panoramic site mastheads otherwise become a thin central strip. A poster
-    // wins candidate ranking when present; crop this last-resort panorama.
-    if decoded.width() as f64 / decoded.height().max(1) as f64 > 2.6 {
-        return cover_fill(decoded, target_width, target_height);
-    }
-    let fill_scale = (target_width as f64 / decoded.width() as f64).max(target_height as f64 / decoded.height() as f64);
-    let contain_scale = (target_width as f64 / decoded.width() as f64).min(target_height as f64 / decoded.height() as f64).min(1.25);
-    if fill_scale / contain_scale <= 1.35 && fill_scale <= 1.25 { return cover_fill(decoded,target_width,target_height); }
-    let mut matte = image::imageops::blur(&cover_fill(decoded,target_width,target_height), 28.0);
-    let width = (decoded.width() as f64 * contain_scale).round().max(1.0) as u32;
-    let height = (decoded.height() as f64 * contain_scale).round().max(1.0) as u32;
-    let foreground = image::imageops::resize(decoded,width,height,FilterType::Lanczos3);
-    image::imageops::overlay(&mut matte,&foreground,((target_width-width)/2) as i64,((target_height-height)/2) as i64);
-    matte
-}
-
 fn apply_loading_readability_gradient(image: &mut image::RgbaImage) {
     let width = image.width().max(1) as f32;
     let height = image.height().max(1) as f32;
     for (x, y, pixel) in image.enumerate_pixels_mut() {
-        let horizontal = 1.0 - (x as f32 / width);
-        let vertical = ((y as f32 / height) - 0.38).max(0.0) / 0.62;
-        let strength = (vertical * (0.40 + horizontal * 0.28)).clamp(0.0, 0.68);
-        let factor = 1.0 - strength;
+        let horizontal = x as f32 / width;
+        let vertical = (std::f32::consts::PI * y as f32 / height).sin();
+        let factor = (0.14 + horizontal * 0.20) * (0.82 + vertical * 0.18);
         pixel[0] = (pixel[0] as f32 * factor).round().clamp(0.0, 255.0) as u8;
         pixel[1] = (pixel[1] as f32 * factor).round().clamp(0.0, 255.0) as u8;
         pixel[2] = (pixel[2] as f32 * factor).round().clamp(0.0, 255.0) as u8;
@@ -1959,11 +1934,32 @@ fn apply_loading_readability_gradient(image: &mut image::RgbaImage) {
 }
 
 fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage, &'static str) {
-    let target_width = decoded.width().clamp(PLAYER_COVER_BACKGROUND_WIDTH, 3840);
+    let target_width = decoded.width().clamp(PLAYER_COVER_BACKGROUND_WIDTH, 2560);
     let target_height = target_width * PLAYER_COVER_BACKGROUND_HEIGHT / PLAYER_COVER_BACKGROUND_WIDTH;
-    let mut composition = compose_full_landscape_art(decoded, target_width, target_height);
+    // Blur at a bounded working resolution, not over a full 4K bitmap. All
+    // artwork work stays asynchronous and never changes playback readiness.
+    let backdrop = image::imageops::blur(&cover_fill(decoded, 640, 360), 3.0);
+    let mut composition = image::imageops::resize(&backdrop, target_width, target_height, FilterType::Triangle);
     apply_loading_readability_gradient(&mut composition);
-    (composition, "landscape")
+    let portrait = decoded.width() as f64 / (decoded.height().max(1) as f64) < 1.1;
+    let max_width = target_width as f64 * if portrait { 0.265 } else { 0.42 };
+    let max_height = target_height as f64 * 0.70;
+    let contain_scale = (max_width / decoded.width() as f64).min(max_height / decoded.height() as f64).min(1.25);
+    let width = (decoded.width() as f64 * contain_scale).round().max(1.0) as u32;
+    let height = (decoded.height() as f64 * contain_scale).round().max(1.0) as u32;
+    let mut foreground = image::imageops::resize(decoded, width, height, FilterType::Lanczos3);
+    let radius = (8.0 * target_width as f32 / 1920.0).max(2.0);
+    for (x, y, pixel) in foreground.enumerate_pixels_mut() {
+        let dx = (radius - (x as f32 + 0.5).min(width as f32 - x as f32 - 0.5)).max(0.0);
+        let dy = (radius - (y as f32 + 0.5).min(height as f32 - y as f32 - 0.5)).max(0.0);
+        let coverage = (radius - (dx * dx + dy * dy).sqrt() + 0.5).clamp(0.0, 1.0);
+        pixel[3] = (pixel[3] as f32 * coverage).round() as u8;
+    }
+    let center_x = target_width as f64 * if portrait { 0.81 } else { 0.73 };
+    let x = (center_x - width as f64 / 2.0).round() as i64;
+    let y = ((target_height - height) / 2) as i64;
+    image::imageops::overlay(&mut composition, &foreground, x, y);
+    (composition, if portrait { "cinematic-poster-v1" } else { "cinematic-wide-v1" })
 }
 
 fn is_quality_landscape_art(decoded: &image::RgbaImage) -> bool {
@@ -2000,7 +1996,8 @@ fn prepare_player_cover(
     cache_dir: &Path,
     request: &PlaybackRequest,
 ) -> Result<Option<PreparedCover>, String> {
-    let sources = playback_cover_sources(request);
+    let mut sources = playback_cover_sources(request);
+    sources.sort_by_key(|(_, role)| *role != "poster");
     if sources.is_empty() {
         return Ok(None);
     }
@@ -2012,6 +2009,7 @@ fn prepare_player_cover(
     let identity = request.artwork.as_ref().map(|a| a.identity.as_str()).unwrap_or(request.anime_title.as_str());
     for (source, source_kind) in sources.into_iter().take(8) {
         if artwork_started.elapsed() >= Duration::from_secs(6) { break; }
+        if source_kind != "poster" && best_score.0 >= 4 { break; }
         let cached_path = artwork_cache_path(identity,&source);
         let cached = if is_remote_url(&source) { fs::metadata(&cached_path).ok().filter(|m|m.len() <= PLAYER_COVER_MAX_BYTES).and_then(|_|fs::read(&cached_path).ok()) } else { None };
         let fresh = file_modified_ms(&cached_path) + 7 * 86_400_000 > now_millis();
@@ -2020,12 +2018,14 @@ fn prepare_player_cover(
         if let Some((image,bytes)) = chosen {
             let pixels=image.width() as u64 * image.height() as u64;
             let ratio = image.width() as f64 / image.height().max(1) as f64;
-            let quality = if source_kind == "landscape" && (1.35..=2.6).contains(&ratio) && image.width() >= 960 && image.height() >= 480 {3}
-                else if source_kind == "poster" && image.width() >= 320 && image.height() >= 480 {2}
+            let quality = if source_kind == "poster" && ratio < 1.1 && image.width() >= 320 && image.height() >= 480 {4}
+                else if source_kind == "landscape" && (1.35..=2.6).contains(&ratio) && image.width() >= 960 && image.height() >= 480 {3}
+                else if source_kind == "poster" && image.width() >= 100 && image.height() >= 150 {2}
                 else if source_kind == "landscape" && image.width() >= 1280 && image.height() >= 320 {1} else {0};
             if is_quality_landscape_art(&image.to_rgba8()) || source_kind == "poster" && image.width() >= 100 && image.height() >= 150 {
                 if is_remote_url(&source) && downloaded.as_deref() == Some(bytes) { store_artwork_cache(&cached_path,bytes); }
                 if decoded_cover.is_none() || (quality,pixels) > best_score { best_score=(quality,pixels); decoded_cover=Some((image.to_rgba8(),source,source_kind)); }
+                if source_kind == "poster" && image.width() >= 640 && image.height() >= 960 { break; }
             }
         } else { last_error=Some("Series artwork was unavailable; preserving the loading fallback".to_string()); }
     }
@@ -2063,8 +2063,8 @@ fn prepare_player_cover(
     fs::create_dir_all(&metadata_dir)
         .map_err(|error| format!("Could not prepare player metadata folder: {}", error))?;
     let loading_image_path = metadata_dir.join("loading-cover.jpg");
-    // The overlay's alpha mask protects ASS text above active video. Baking its
-    // premultiplied RGB into a JPEG instead made the lower half solid black.
+    // The JPEG and BGRA use exactly the same composed RGB. Alpha is only for
+    // ASS text visibility during video buffering, never baked as a black cutout.
     let loading_image_rgb = image::DynamicImage::ImageRgba8(background.clone()).to_rgb8();
     let loading_image_file = fs::File::create(&loading_image_path)
         .map_err(|error| format!("Could not create cover loading image: {}", error))?;
@@ -2132,6 +2132,21 @@ fn prepare_player_cover(
     }))
 }
 
+fn player_source_summary(title: &str) -> Option<String> {
+    let lower = title.to_ascii_lowercase();
+    let tokens: Vec<_> = lower.split(|c: char| !c.is_ascii_alphanumeric()).filter(|v| !v.is_empty()).collect();
+    let mut parts = Vec::new();
+    for quality in ["2160p", "1080p", "720p", "480p"] {
+        if tokens.contains(&quality) { parts.push(quality); break; }
+    }
+    if lower.contains("[dual audio]") || lower.contains("dual-audio") { parts.push("Dual audio"); }
+    else if lower.contains("[dub]") || lower.contains("[dubbed]") { parts.push("Dub"); }
+    else if lower.contains("[sub]") || lower.contains("[subbed]") { parts.push("Sub"); }
+    if tokens.iter().any(|v| ["hevc", "x265", "h265"].contains(v)) { parts.push("HEVC"); }
+    else if tokens.iter().any(|v| ["avc", "x264", "h264"].contains(v)) { parts.push("H.264"); }
+    (!parts.is_empty()).then(|| parts.join("  ·  "))
+}
+
 fn player_metadata_for(
     request: &PlaybackRequest,
     title: &str,
@@ -2152,6 +2167,7 @@ fn player_metadata_for(
         // consumer episode title. Do not expose it on the cinematic loader.
         episode_title: None,
         episode_number: clean_value(Some(request.episode.clone())),
+        source_summary: player_source_summary(&request.title),
         cover_image: playback_cover_source(request),
         loading_image_path: cover.map(|item| path_for_player_option(&item.loading_image_path)),
         loading_image_width: cover.map(|item| item.loading_image_width),
@@ -6740,7 +6756,7 @@ mod tests {
         assert!(loading_image_len > 1024);
         assert_eq!(cover.loading_image_width, PLAYER_COVER_BACKGROUND_WIDTH);
         assert_eq!(cover.loading_image_height, PLAYER_COVER_BACKGROUND_HEIGHT);
-        assert_eq!(cover.artwork_layout, "landscape");
+        assert_eq!(cover.artwork_layout, "cinematic-wide-v1");
 
         let _ = fs::remove_dir_all(root);
     }
@@ -6768,6 +6784,41 @@ mod tests {
     }
 
     #[test]
+    fn cinematic_player_artwork_preserves_rgb_and_full_poster() {
+        let output = env::var("STREAMNYAA_ARTWORK_RENDER_OUTPUT").ok();
+        let root = output.as_ref().map(PathBuf::from).unwrap_or_else(|| env::temp_dir().join(format!("streamnyaa-cinematic-{}", now_millis())));
+        fs::create_dir_all(&root).unwrap();
+        let source = env::var("STREAMNYAA_ARTWORK_RENDER_SOURCE").ok().map(PathBuf::from).unwrap_or_else(|| root.join("portrait.png"));
+        if env::var("STREAMNYAA_ARTWORK_RENDER_SOURCE").is_err() {
+            image::RgbaImage::from_fn(720,1080,|x,y|image::Rgba([(30+x/4) as u8,(25+y/6) as u8,170,255])).save(&source).unwrap();
+        }
+        let mut request=playback_request_for_episode("2");
+        request.anime_title=if output.is_some() {"Dragon Ball Super: Beerus".into()} else {"Artwork fixture".into()};
+        request.title="Fixture [1080p] [HEVC] [Sub]".into();
+        request.poster=Some(source.to_string_lossy().into());request.banner=None;request.banner_candidates=None;
+        let cover=prepare_player_cover(&root,&request).unwrap().unwrap();
+        assert_eq!(cover.artwork_layout,"cinematic-poster-v1");
+        let overlay=fs::read(&cover.background_path).unwrap();
+        assert_eq!(overlay.len(),(cover.background_width*cover.background_height*4) as usize);
+        // Alpha must not discard the lower-left artwork, and each BGRA pixel
+        // must be valid premultiplied color for MPV's bitmap API.
+        for pixel in overlay.chunks_exact(4) { assert!(pixel[..3].iter().all(|c| *c<=pixel[3])); }
+        let lower=((cover.background_height*4/5*cover.background_width+cover.background_width/4)*4) as usize;
+        assert!(overlay[lower+3]>0 && overlay[lower+3]<255);
+        let jpeg=image::open(&cover.loading_image_path).unwrap().to_rgb8();
+        let sample=jpeg.get_pixel(jpeg.width()/4,jpeg.height()*4/5);
+        for (actual,expected) in [sample[2],sample[1],sample[0]].iter().zip(&overlay[lower..lower+3]) {assert!((*actual as i16-*expected as i16).abs()<12,"JPEG and bitmap retain the same artwork colors");}
+        assert_eq!(player_source_summary("Unknown release"),None);
+        assert_eq!(player_source_summary("[Group] Title [1080p] [HEVC] [Sub]"),Some("1080p  ·  Sub  ·  HEVC".into()));
+        assert_eq!(player_source_summary("Dual Trouble [1080p]"),Some("1080p".into()));
+        if output.is_some() {
+            let meta=player_metadata_for(&request,"Artwork fixture",Some(&cover));
+            fs::write(player_metadata_path(&root),serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
+            println!("ARTWORK_RENDER_META={}",player_metadata_path(&root).display());
+        } else {let _=fs::remove_dir_all(root);}
+    }
+
+    #[test]
     fn player_art_candidates_prefer_banners_and_retain_poster_fallback() {
         let mut request = playback_request_for_episode("1");
         request.poster = Some("https://example.com/portrait.jpg".to_string());
@@ -6788,15 +6839,13 @@ mod tests {
     fn landscape_player_art_preserves_original_color_balance() {
         let source = image::RgbaImage::from_pixel(2400, 600, image::Rgba([30, 100, 210, 255]));
         let (composition, layout) = prepare_loading_composition(&source);
-        assert_eq!(layout, "landscape");
+        assert_eq!(layout, "cinematic-wide-v1");
         let center = composition.get_pixel(960, 540);
         let upper_edge = composition.get_pixel(960, 40);
         assert!(center[2] > center[1]);
         assert!(center[1] > center[0]);
-        assert_eq!(
-            [upper_edge[0], upper_edge[1], upper_edge[2]],
-            [30, 100, 210]
-        );
+        assert!(upper_edge[2] > upper_edge[1] && upper_edge[1] > upper_edge[0]);
+        assert!(upper_edge[2] > 15, "continuous background stays visible at the top");
     }
 
     #[test]
@@ -6817,9 +6866,10 @@ mod tests {
     fn bitmap_handoff_leaves_the_ass_title_region_visible() {
         let input = image::RgbaImage::from_pixel(16, 100, image::Rgba([80, 100, 120, 255]));
         let overlay = loading_overlay_bgra(&input);
-        assert_eq!(&overlay[..4], &[120, 100, 80, 255]);
+        assert_eq!(&overlay[..3], &[120, 100, 80]);
         let title_offset = (16 * 60) * 4;
-        assert_eq!(&overlay[title_offset..title_offset + 4], &[0, 0, 0, 0]);
+        assert_eq!(&overlay[title_offset..title_offset + 3], &[120, 100, 80], "text region must retain the same RGB as the loading image");
+        assert!(overlay[title_offset + 3] >= 120 && overlay[title_offset + 3] < 255);
         let fade_offset = (16 * 40) * 4;
         assert!(overlay[fade_offset] <= overlay[fade_offset + 3]);
         let right_offset = (16 * 60 + 15) * 4;
@@ -6861,10 +6911,12 @@ mod tests {
         let cover=prepare_player_cover(&root,&request).unwrap().unwrap();
         let image=image::open(cover.loading_image_path).unwrap().to_rgb8();
         let pixel=image.get_pixel(image.width()/2,40);
-        assert!(pixel[2]>pixel[0]+50,"low-resolution first response must not win");
+        assert!(pixel[2]>pixel[0]+15,"low-resolution first response must not win");
         let wide=image::RgbaImage::from_pixel(1900,400,image::Rgba([10,80,140,255]));
-        let composed=compose_full_landscape_art(&wide,1920,1080);
-        assert_eq!(composed.get_pixel(960,540).0,[10,80,140,255]);
+        let (composed,layout)=prepare_loading_composition(&wide);
+        assert_eq!(layout,"cinematic-wide-v1");
+        assert_eq!(composed.dimensions(),(1920,1080));
+        assert!(composed.get_pixel(960,540)[2]>10);
         assert!(decode_cover(b"invalid image").is_err());
         assert_ne!(artwork_cache_path("anilist:1","https://images.test/a"),artwork_cache_path("anilist:2","https://images.test/a"));
         let _=fs::remove_dir_all(root);
@@ -6882,8 +6934,8 @@ mod tests {
         let cover=prepare_player_cover(&root,&request).unwrap().unwrap();
         let composed=image::open(&cover.loading_image_path).unwrap().to_rgb8();
         let lower=composed.get_pixel(composed.width()/2,composed.height()*4/5);
-        assert!(lower[2]>lower[0]+30,"a valid poster must beat a letterboxed masthead");
-        assert!(lower[2]>40,"the loading JPEG must retain artwork below the title region");
+        assert!(lower[2]>lower[0]+20,"a valid poster must beat a letterboxed masthead");
+        assert!(lower[2]>25,"the loading JPEG must retain artwork below the title region");
         let _=fs::remove_dir_all(root);
     }
 

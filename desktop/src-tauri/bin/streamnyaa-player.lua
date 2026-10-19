@@ -221,6 +221,7 @@ local player_meta = {
   animeTitle = "",
   episodeTitle = "",
   episodeNumber = "",
+  sourceSummary = "",
   loadingImagePath = "",
   loadingImageWidth = 0,
   loadingImageHeight = 0,
@@ -759,16 +760,17 @@ function loading_title_layout(raw_title, width, height, s)
     artwork_layout,
     tostring(math.floor(width or 0)),
     tostring(math.floor(height or 0)),
+    tostring(s),
   }, ":")
   if ui.title_layout_key == key and ui.title_layout then
     return ui.title_layout
   end
 
-  local max_width = artwork_layout == "portrait" and width * 0.52 or width * 0.74
-  local size = clamp(76 * s, 50 * s, 94 * s)
+  local max_width = width * (artwork_layout == "cinematic-wide-v1" and 0.43 or 0.52)
+  local size = 48 * s
   local spacing = 0
 
-  while size > 52 * s and estimated_spaced_text_width(title, size, spacing) > max_width do
+  while size > 38 * s and estimated_spaced_text_width(title, size, spacing) > max_width * 1.75 do
     size = size - 2 * s
   end
 
@@ -794,7 +796,7 @@ function loading_title_layout(raw_title, width, height, s)
         end
       end
       lines = { best_left or title, best_right or "" }
-      while size > 42 * s do
+      while size > 28 * s do
         local fits = true
         for _, line_value in ipairs(lines) do
           if estimated_spaced_text_width(line_value, size, spacing) > max_width then
@@ -925,6 +927,7 @@ function load_player_meta()
   player_meta.animeTitle = tostring(data.animeTitle or data.anime_title or "")
   player_meta.episodeTitle = tostring(data.episodeTitle or data.episode_title or "")
   player_meta.episodeNumber = tostring(data.episodeNumber or data.episode_number or "")
+  player_meta.sourceSummary = tostring(data.sourceSummary or data.source_summary or "")
   local offset_key = tostring(data.subtitleOffsetKey or data.subtitle_offset_key or "")
   if player_meta.subtitleOffsetKey ~= offset_key then
     player_meta.subtitleOffsetKey = offset_key
@@ -1052,7 +1055,7 @@ function ensure_cover_overlay()
 end
 
 function update_cover_overlay(show, width, height, s)
-  if not show or is_cover_loading_media() or ui.recovery_terminal then
+  if not show or is_cover_loading_media() or ui.recovery_terminal or ui.end_overlay or ui.settings_open then
     clear_cover_overlay()
     return nil
   end
@@ -3084,19 +3087,6 @@ function loading_status_text()
   return "PREPARING STREAM..."
 end
 
-function startup_loading_percent()
-  local playable_percent = buffering_display_percent()
-  if playable_percent ~= nil and not is_placeholder_media() then
-    return math.floor(clamp(playable_percent, 0, 100) + 0.5)
-  end
-  local raw_value = mp.get_property_native("user-data/streamnyaa/loading_percent", "")
-  local value = tonumber(raw_value)
-  if not value then return nil end
-  local next_value = math.floor(clamp(value, 0, 96) + 0.5)
-  ui.last_startup_loading_percent = math.max(tonumber(ui.last_startup_loading_percent) or 0, next_value)
-  return ui.last_startup_loading_percent
-end
-
 function loading_episode_label()
   local episode_number = tostring(player_meta.episodeNumber or ""):gsub("^%s+", ""):gsub("%s+$", "")
   local episode_title = tostring(player_meta.episodeTitle or ""):gsub("^%s+", ""):gsub("%s+$", "")
@@ -3117,93 +3107,70 @@ function draw_loading_required_content(ass, width, height, s, status)
     draw_end_button(ass, mouse_pos(), "recovery_backup", cx + 10 * s, y, cx + 174 * s, y + 44 * s, "Try another stream", true, s)
     return
   end
-  if is_midplayback_buffering() then
-    local cy = height * 0.48
-    local radius = clamp(25 * s, 19, 34)
-    local stroke = math.max(2, 2.5 * s)
-    local percent = buffering_display_percent()
-    draw_arc(ass, cx, cy, radius, 0, 360, stroke, C.white, 202)
-    if percent ~= nil and percent > 0 then
-      draw_arc(ass, cx, cy, radius, 0, percent * 3.6, stroke, C.accent, 0)
-    else
-      draw_arc(ass, cx, cy, radius, (mp.get_time() * 180) % 360, 78, stroke, C.accent, 0)
-    end
-    -- MPV's cache fill percentage, never total torrent completion or a timer.
-    draw_text(ass, cx, cy + radius + 24 * s, 5, font_px(s, 18, 16, 22), C.white, 0, percent ~= nil and string.format("%d%%", percent) or "—", true, "Segoe UI Semibold")
-    local label = ui.recovery_attempt and "Reconnecting" or "Buffering"
-    draw_text(ass, cx, cy + radius + 48 * s, 5, font_px(s, 12, 11, 14), C.secondary, 12, percent == nil and "Measuring buffer" or label, false, "Segoe UI")
-    return
-  end
-
-  local artwork_layout = tostring(player_meta.artworkLayout or "landscape")
-  local layout = loading_title_layout(loading_media_title(), width, height, s)
-  local title_size = clamp(layout.size, 50 * s, 94 * s)
-  local line_gap = title_size * 1.08
-  local title_x = width * 0.065
-  local title_center_y = height * 0.60
-  local first_line_y = title_center_y - ((#layout.lines - 1) * line_gap / 2)
-  local episode_label = loading_episode_label()
-  local detail_y = first_line_y + #layout.lines * line_gap + 7 * s
-  local status_y = detail_y + (episode_label ~= "" and 40 * s or 12 * s)
-  local t = (mp.get_time() - ui.anim_started)
-  local percent = startup_loading_percent()
-  local status_text = status
-
-  -- Readability is baked into the generated full-viewport artwork with a
-  -- smooth neutral gradient. Avoid visible overlay bands and color tinting.
-
-  local accent_top = first_line_y - title_size * 0.54
-  local accent_bottom = first_line_y + (#layout.lines - 1) * line_gap + title_size * 0.54
-  rounded_rect(ass, title_x - 16 * s, accent_top, title_x - 12 * s, accent_bottom, 2 * s, C.accent, 0)
-
+  -- The composed artwork uses a fixed stage; keep labels inside the same
+  -- fitted bounds on wide, tall, small and high-DPI windows.
+  local canvas_w = math.min(width, height * 16 / 9)
+  local canvas_h = canvas_w * 9 / 16
+  local ox, oy = (width - canvas_w) / 2, (height - canvas_h) / 2
+  local cs = math.max(canvas_w / 1920, 0.60)
+  local layout = loading_title_layout(loading_media_title(), canvas_w, canvas_h, cs)
+  local title_x = ox + canvas_w * 0.07
+  local title_y = oy + canvas_h * 0.44 - (#layout.lines - 1) * 28 * cs
+  local title_size = layout.size
+  local line_gap = title_size * 1.15
+  local midplayback = is_midplayback_buffering()
+  local eyebrow = midplayback and "BUFFERING" or "PREPARING PLAYBACK"
+  draw_text(ass, title_x, title_y - 64 * cs, 4, 16 * cs, C.accent, 0, eyebrow, true, "Segoe UI Semibold")
   for index, line_value in ipairs(layout.lines) do
-    draw_text(
-      ass,
-      title_x,
-      first_line_y + (index - 1) * line_gap,
-      4,
-      title_size,
-      C.white,
-      0,
-      line_value,
-      true,
-      "Segoe UI Semibold"
-    )
+    draw_text(ass, title_x, title_y + (index - 1) * line_gap, 4, title_size, C.white, 0, line_value, true, "Segoe UI Semibold")
   end
-
+  local detail_y = title_y + #layout.lines * line_gap + 12 * cs
+  local episode_label = loading_episode_label()
   if episode_label ~= "" then
-    draw_text(ass, title_x, detail_y, 4, font_px(s, 17, 14, 20), C.secondary, 3, episode_label, false, "Segoe UI")
+    draw_text(ass, title_x, detail_y, 4, 22 * cs, C.secondary, 0, episode_label, false, "Segoe UI")
   end
-  local activity_alpha = math.floor(28 + ((math.sin(t * 4.2) + 1) / 2) * 112)
-  circle(ass, title_x + 4 * s, status_y, 4 * s, C.accent, activity_alpha)
-  draw_text(ass, title_x + 18 * s, status_y, 4, font_px(s, 14, 12, 17), C.white, 4, status_text, true, "Segoe UI Semibold")
-
-  local bar_x1 = title_x
-  local bar_x2 = title_x + math.min(width * (artwork_layout == "portrait" and 0.42 or 0.38), 560 * s)
+  local summary = tostring(player_meta.sourceSummary or "")
+  if summary ~= "" then
+    draw_text(ass, title_x, detail_y + 38 * cs, 4, math.max(13, 17 * cs), C.secondary, 12, summary, false, "Segoe UI")
+  end
+  local status_y = detail_y + (summary ~= "" and 112 or 80) * cs
+  local percent = not is_placeholder_media() and buffering_display_percent() or nil
+  local radius, stroke = 16 * cs, math.max(1, 3 * cs)
+  draw_arc(ass, title_x + radius, status_y, radius, 0, 360, stroke, C.white, 210)
+  if percent ~= nil and percent > 0 then
+    draw_arc(ass, title_x + radius, status_y, radius, 0, percent * 3.6, stroke, C.accent, 0)
+  else
+    draw_arc(ass, title_x + radius, status_y, radius, (mp.get_time() * 150) % 360, 90, stroke, C.accent, 0)
+  end
+  local label = status:sub(1, 1) .. status:sub(2):lower():gsub("%.+$", "")
+  if midplayback then label = ui.recovery_attempt and "Reconnecting" or "Building playable buffer" end
+  draw_text(ass, title_x + 50 * cs, status_y, 4, 20 * cs, C.white, 0, label, false, "Segoe UI")
+  local bar_x1, bar_x2 = title_x, title_x + canvas_w * 0.34
   if percent ~= nil then
-    draw_text(ass, bar_x2, status_y + 2 * s, 6, font_px(s, 23, 19, 28), C.accent, 0, string.format("%d%%", percent), true, "Segoe UI Semibold")
-  else
-    draw_text(ass, bar_x2, status_y + 1 * s, 6, font_px(s, 12, 11, 14), C.secondary, 0, "Connecting", true, "Segoe UI Semibold")
+    draw_text(ass, bar_x2, status_y, 6, 16 * cs, C.secondary, 0, string.format("%d%%", percent), false, "Segoe UI")
   end
-  local bar_y = status_y + 24 * s
-  rounded_rect(ass, bar_x1, bar_y, bar_x2, bar_y + 4 * s, 2 * s, C.white, 220)
-  if percent then
-    rounded_rect(ass, bar_x1, bar_y, bar_x1 + (bar_x2 - bar_x1) * clamp(percent / 100, 0, 1), bar_y + 4 * s, 2 * s, C.accent, 0)
+  local bar_y = status_y + 44 * cs
+  rounded_rect(ass, bar_x1, bar_y, bar_x2, bar_y + 5 * cs, 2 * cs, C.white, 218)
+  if percent ~= nil then
+    rounded_rect(ass, bar_x1, bar_y, bar_x1 + (bar_x2 - bar_x1) * clamp(percent / 100, 0, 1), bar_y + 5 * cs, 2 * cs, C.accent, 0)
   else
-    local segment = (bar_x2 - bar_x1) * 0.22
-    local pulse_x = bar_x1 + ((bar_x2 - bar_x1) - segment) * ((math.sin(t * 3.0) + 1) / 2)
-    rounded_rect(ass, pulse_x, bar_y, pulse_x + segment, bar_y + 4 * s, 2 * s, C.accent, 0)
+    local segment = (bar_x2 - bar_x1) * 0.24
+    local pulse_x = bar_x1 + ((bar_x2 - bar_x1) - segment) * ((math.sin((mp.get_time() - ui.anim_started) * 2.4) + 1) / 2)
+    rounded_rect(ass, pulse_x, bar_y, pulse_x + segment, bar_y + 5 * cs, 2 * cs, C.accent, 0)
   end
+  local helper = midplayback and "Measuring buffer · Playback resumes automatically." or "Playback will begin automatically."
   local cached = buffered_seconds()
-  if cached and not is_placeholder_media() then
-    draw_text(ass, bar_x1, bar_y + 20 * s, 4, font_px(s, 12, 11, 14), C.secondary, 0, string.format("%.1fs buffered", cached), false, "Segoe UI")
+  if cached ~= nil and not is_placeholder_media() then
+    helper = string.format("%.1fs buffered", cached) .. string.format("  ·  Resume threshold: %.1fs", math.max(0.1, mp.get_property_number("cache-pause-wait", 1)))
+    if canvas_w < 1000 then helper = string.format("%.1f / %.1fs playable", cached, math.max(0.1, mp.get_property_number("cache-pause-wait", 1))) end
   end
+  local helper_size = math.max(12, 16 * cs)
+  draw_text(ass, bar_x1, bar_y + 42 * cs, 4, helper_size, C.secondary, 12, truncate_to_width(helper, bar_x2-bar_x1, helper_size, 0), false, "Segoe UI")
   if ui.startup_stream_actions_visible then
-    local button_y = math.min(height - 66 * s, bar_y + 24 * s)
-    local button_w = 156 * s
-    local gap = 12 * s
-    draw_end_button(ass, mouse_pos(), "recovery_retry", bar_x1, button_y, bar_x1 + button_w, button_y + 40 * s, "RETRY STREAM", false, s)
-    draw_end_button(ass, mouse_pos(), "recovery_backup", bar_x1 + button_w + gap, button_y, bar_x1 + button_w * 2 + gap, button_y + 40 * s, "TRY BACKUP SOURCE", true, s)
+    local button_y = math.min(height - 60 * s, bar_y + 72 * cs)
+    local button_w, gap = 156 * cs, 12 * cs
+    draw_end_button(ass, mouse_pos(), "recovery_retry", bar_x1, button_y, bar_x1 + button_w, button_y + 40 * cs, "Retry stream", false, cs)
+    draw_end_button(ass, mouse_pos(), "recovery_backup", bar_x1 + button_w + gap, button_y, bar_x1 + button_w * 2 + gap, button_y + 40 * cs, "Try another source", true, cs)
   end
 end
 
@@ -3216,10 +3183,12 @@ function draw_loading(ass, width, height, s, cover_info)
   local before_len = #ass.text
 
   local ok, err = pcall(function()
-    if buffering_only then
-      rect(ass, 0, 0, width, height, C.black, 214)
-    elseif cover_info or cover_media then
-      rect(ass, 0, 0, width, height, C.black, 150)
+    if cover_info then
+      -- A black base gives the premultiplied bitmap the same RGB as the JPEG.
+      rect(ass, 0, 0, width, height, C.black, 0)
+    elseif cover_media then
+      -- The prepared image is already shaded. Do not dim or crop it again.
+      if ui.recovery_terminal then rect(ass, 0, 0, width, height, C.black, 130) end
     else
       rect(ass, 0, 0, width, height, C.black, 0)
       rect(ass, 0, 0, width, height, C.panel, 80)
@@ -3846,7 +3815,7 @@ function draw(immediate, reason)
   else
     ui.native_loading_osd_cleared = false
   end
-  local cover_info = update_cover_overlay(startup_loading, width, height, s)
+  local cover_info = update_cover_overlay(loading, width, height, s)
   if loading then
     draw_loading(ass, width, height, s, cover_info)
     -- Buffer telemetry must not dismiss a menu or replace its hit targets

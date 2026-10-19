@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { desktopLandscapeImageCandidates, desktopPosterCandidates, desktopSpotlightArtworkCandidates } from '../../src/lib/desktopArtwork';
+import { desktopLandscapeImageCandidates, desktopPosterCandidates, desktopSpotlightArtworkCandidates, desktopSeriesArtwork } from '../../src/lib/desktopArtwork';
 
 describe('desktop artwork candidates', () => {
+  it('keeps the series poster first and preserves its role when also supplied as a banner', () => {
+    const art = desktopSeriesArtwork({mal_id:1,title:'Series',poster:'https://images.test/portrait.jpg',bannerImage:'https://images.test/portrait.jpg'});
+    expect(art.candidates).toEqual([{url:'https://images.test/portrait.jpg',role:'poster'}]);
+  });
   it('tries high-resolution artwork before known thumbnail variants', () => {
     expect(desktopLandscapeImageCandidates([
       'https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg',

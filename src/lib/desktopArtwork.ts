@@ -20,7 +20,7 @@ export function desktopSeriesArtwork(anime: any): SeriesArtworkDescriptor {
   const posters = desktopLandscapeImageCandidates(desktopPosterCandidates(anime));
   return { version: 1, anilistId, malId,
     identity: `anilist:${anilistId || ''}|mal:${malId || ''}|${String(anime?.title || '').normalize('NFKC')}`,
-    candidates: [...banners.map(url => ({url, role:'banner' as const})), ...posters.filter(url => !banners.includes(url)).map(url => ({url, role:'poster' as const}))] };
+    candidates: [...posters.map(url => ({url, role:'poster' as const})), ...banners.filter(url => !posters.includes(url)).map(url => ({url, role:'banner' as const}))] };
 }
 
 export function desktopLandscapeImageCandidates(values: unknown[]) {
