@@ -21,6 +21,10 @@ Final suite results and release checks are recorded in the accompanying installe
 
 The actual cached poster was rendered at a requested 1920 × 1080 window, 640 × 360 and 800 × 800. Windows constrained the large capture to the available viewport (1834 pixels wide); these are not claims of physical 4K or 150–200% scaling acceptance. The title in the long-title fixture deliberately changes only to stress typography; it is not a real metadata identity example.
 
+## Release
+
+Implementation commit: `e3692d172c649dd047458ff3272f6e693ee6af23`. The rebuilt **0.1.10** installer is **42,474,874 bytes**, SHA-256 **6B1398CD66E1194BB181AD5B83B1648CA881C38EA420F7291C5550A89B6CA666**. Executable version, six staged resources, exact NSIS inclusions and 368 source-input hashes are verified in the [installer manifest](2026-10-19-player-artwork-installer.json). The previous verified 0.1.10 installer (`72B2E46D1A4139EB4A10C473CEA9F0EB457DBC9C3F97596811E3A634554961A0`) and its metadata are archived as rollback. A 0.1.9 installer is not available. The usual release location now contains this build; it is **NotSigned**.
+
 ## Remaining acceptance
 
 Installed-app visual/focus/DPI acceptance, live-torrent endurance and an isolated installation/upgrade are not performed by these render fixtures. No signing certificate is available. Resource verification checks staged hashes and exact NSIS inclusions; independent installer payload extraction is not performed. Historical open gates in earlier reviews remain open unless superseded by explicit evidence.
