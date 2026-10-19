@@ -1,8 +1,10 @@
 import '../styles/desktop-preferences.css';
+import { useHistoryArchivePage } from '../lib/useHistoryArchivePage';
+import { historySource, historyRequest, historyAnime, historyArchiveReady, subscribeHistoryArchive, type HistoryEpisode, type AnimeTrackingSummary } from '../lib/desktopHistoryArchive';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { AlertTriangle, Bookmark, Clock3, Heart, History, Play, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import AnimeCard from '../components/AnimeCard';
 import DesktopLibraryOrganizer from '../components/DesktopLibraryOrganizer';
@@ -33,6 +35,7 @@ function scoreFor(anime: any) {
 }
 
 export default function DesktopLibrary() {
+  const navigate=useNavigate();
   const hideSpoilers = useHideEpisodeSpoilers();
   const { myList, likedAnimes, clearMyList, isLiked, isInMyList } = useStore();
   const [query, setQuery] = useState('');
@@ -46,6 +49,15 @@ export default function DesktopLibrary() {
   const [sortBy, setSortBy] = useState<LibrarySort>('date-desc');
   const [confirmClear, setConfirmClear] = useState(false);
   const [historyItems, setHistoryItems] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
+  const [offset,setOffset]=useState(0);
+  const archive=useHistoryArchivePage<HistoryEpisode|AnimeTrackingSummary>(category==='history'?'page':'titles',{search:query,offset,status:category==='completed'?'Completed':category==='watching'?'Watching':''});
+  const [trackingCounts,setTrackingCounts]=useState({total:0,watchingTitles:0,completedTitles:0});
+  useEffect(()=>{setOffset(0);},[category,query]);
+  useEffect(()=>{
+    const refresh=()=>{if(historyArchiveReady())void historyRequest<typeof trackingCounts>('stats').then(setTrackingCounts).catch(()=>undefined);};
+    refresh();const stop=subscribeHistoryArchive(refresh);window.addEventListener('streamnyaa:history-ready',refresh);
+    return()=>{stop();window.removeEventListener('streamnyaa:history-ready',refresh);};
+  },[]);
 
   useEffect(() => subscribeLocalPlaybackHistory(() => {
     setHistoryItems(loadLocalPlaybackHistory());
@@ -91,7 +103,11 @@ export default function DesktopLibrary() {
   };
 
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleHistory = useMemo(() => historyItems
+  const visibleHistory = useMemo<Array<LocalPlaybackSource & {trackingStatus?:string;caughtUp?:boolean}>>(() => archive.ready ? archive.items.map(value=>{
+    if('episode' in value)return historySource(value);
+    const t=value as AnimeTrackingSummary;
+    return { ...(t.resume?historySource(t.resume):{magnet:'',title:t.metadata.title || t.identity,animeTitle:t.metadata.title || t.identity,animeId:t.metadata.animeId || t.identity,poster:t.metadata.poster,identity:t.identity}), trackingStatus:t.status,caughtUp:t.caughtUp };
+  }) : historyItems
     .filter((item) => {
       const progress = Number(item.progressPercent || 0);
       if (category === 'completed' && progress < 92) return false;
@@ -101,15 +117,15 @@ export default function DesktopLibrary() {
         || String(item.title || '').toLowerCase().includes(normalizedQuery)
         || String(item.episode || '').toLowerCase().includes(normalizedQuery);
     })
-    .slice(0, 100), [historyItems, category, normalizedQuery]);
+    .slice(0, 100), [historyItems, category, normalizedQuery,archive.ready,archive.items]);
 
   const libraryCategories = [
-    { id: 'watching' as const, label: 'Watching', count: historyItems.filter((item) => Number(item.progressPercent || 0) < 92).length, icon: Play },
-    { id: 'completed' as const, label: 'Completed', count: historyItems.filter((item) => Number(item.progressPercent || 0) >= 92).length, icon: Clock3 },
+    { id: 'watching' as const, label: 'Watching', count: archive.ready?trackingCounts.watchingTitles:historyItems.filter((item) => Number(item.progressPercent || 0) < 92).length, icon: Play },
+    { id: 'completed' as const, label: 'Completed', count: archive.ready?trackingCounts.completedTitles:historyItems.filter((item) => Number(item.progressPercent || 0) >= 92).length, icon: Clock3 },
     { id: 'bookmarks' as const, label: 'Bookmarks', count: stats.all, icon: Bookmark },
     { id: 'offline' as const, label: 'Offline & Downloads', count: '↗', icon: Play },
     { id: 'collections' as const, label: 'Collections', count: '↗', icon: Bookmark },
-    { id: 'history' as const, label: 'History', count: historyItems.length, icon: History },
+    { id: 'history' as const, label: 'History', count: archive.ready?trackingCounts.total:historyItems.length, icon: History },
   ];
 
   const showsHistoryRows = category === 'watching' || category === 'completed' || category === 'history';
@@ -120,7 +136,7 @@ export default function DesktopLibrary() {
     const progress = Math.max(0, Math.min(100, Number(source.progressPercent || 0)));
     const title = source.animeTitle || source.title;
     const artwork = hideSpoilers ? source.poster : source.image || source.poster || source.banner;
-    const watchPath = desktopWatchPath({ mal_id: source.animeId, id: source.animeId, title }, source.episode ? { ep: String(source.episode) } : undefined);
+    const watchPath = desktopWatchPath(historyAnime(source), source.episode ? { ep: String(source.episode) } : undefined);
     return (
       <article key={`${source.magnet}-${source.episode || 'recent'}`} className="sn-card-hover sn-glass-card grid gap-4 rounded-xl p-3 sm:grid-cols-[140px_minmax(0,1fr)_auto]">
         <div className="relative aspect-video overflow-hidden rounded-xl bg-white/[0.055]">
@@ -142,14 +158,14 @@ export default function DesktopLibrary() {
             <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
           </div>
           <p className="mt-2 text-xs font-semibold text-white/54">
-            Resume {formatPlaybackTime(source.resumeSeconds)}{source.durationSeconds ? ` / ${formatPlaybackTime(source.durationSeconds)}` : ''} - {Math.round(progress)}%
+            {source.trackingStatus ? `${source.trackingStatus}${source.caughtUp?' · Caught up':''}` : `Resume ${formatPlaybackTime(source.resumeSeconds)}${source.durationSeconds ? ` / ${formatPlaybackTime(source.durationSeconds)}` : ''} - ${Math.round(progress)}%`}
           </p>
         </div>
         <div className="flex items-center gap-2 sm:flex-col sm:items-stretch sm:justify-center">
           <DesktopBookmarkButton anime={{mal_id:source.animeId,title,images:{jpg:{image_url:source.poster}}}} />
           <button
             type="button"
-            onClick={() => void openLocalSourceNow(source)}
+            onClick={() => {if(!source.magnet && !source.offlineFile)navigate(watchPath);else void openLocalSourceNow(source);}}
             className="sn-primary-action h-10 px-4 text-xs"
           >
             Resume
@@ -160,7 +176,7 @@ export default function DesktopLibrary() {
         </div>
       </article>
     );
-  }) : [], [showsHistoryRows, visibleHistory, hideSpoilers]);
+  }) : [], [showsHistoryRows, visibleHistory, hideSpoilers,navigate]);
   const bookmarkCards = useMemo(() => !showsHistoryRows && category !== 'offline' && category !== 'collections' ? filteredList.map((anime) => (
     <AnimeCard key={`desktop-library-${animeIdentity(anime)}`} anime={anime} />
   )) : [], [showsHistoryRows, category, filteredList]);
@@ -260,6 +276,7 @@ export default function DesktopLibrary() {
           </button>
         </div>
       </section>
+      {showsHistoryRows && archive.ready && (offset>0 || archive.nextOffset!==null) && <nav aria-label="Library pages" className="my-4 flex items-center justify-center gap-4"><button className="sn-secondary-action" disabled={!offset} onClick={()=>setOffset(v=>Math.max(0,v-50))}>Previous</button><span className="text-sm text-white/60">{offset+1}–{Math.min(offset+50,archive.total)} of {archive.total}</span><button className="sn-secondary-action" disabled={archive.nextOffset===null} onClick={()=>setOffset(archive.nextOffset!)}>Next</button></nav>}
 
       {confirmClear ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/72 p-4 backdrop-blur-md">

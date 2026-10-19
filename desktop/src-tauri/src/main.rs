@@ -9,6 +9,7 @@ mod player_download;
 mod player_shortcuts;
 mod download_queue;
 mod playback_progress;
+mod history_store;
 mod player_telemetry;
 
 use image::imageops::FilterType;
@@ -6482,6 +6483,8 @@ fn main() {
             playback_progress::get_playback_checkpoints,
             playback_progress::flush_playback_checkpoint,
             playback_progress::set_playback_progress_owner,
+            history_store::history_store,
+            history_store::history_backup,
             play_local_torrent,
             stop_local_playback
         ])

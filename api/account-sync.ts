@@ -43,7 +43,7 @@ async function upsertProfile(user: any) {
   return Array.isArray(rows) ? rows[0] || row : row;
 }
 
-async function getAccountData(user: any) {
+async function getAccountData(user: any, token?:string, version3=false) {
   const userId = encode(user.id);
   const profile = await upsertProfile(user);
 
@@ -53,6 +53,15 @@ async function getAccountData(user: any) {
   const libraryRows = await supabaseRest(`user_library?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=500`);
   library = Array.isArray(libraryRows) ? libraryRows : [];
 
+  if(token){
+    try {
+      const current=await supabaseRest('rpc/history_sync_v3',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:JSON.stringify({p_request:{action:'read'}})});
+      if(current?.migrated){
+        const rows=(current.resumes || []).map((r:any)=>({history_key:`${r.identity}::${r.episode}`,anime_id:r.animeId,anime_title:r.title,episode:r.episode,poster_url:r.poster,resume_seconds:r.positionSeconds,duration_seconds:r.durationSeconds,progress_percent:r.progressPercent,completed:r.completed,source:r.watchedCoverage?{watchedCoverage:r.watchedCoverage}:null,updated_at:new Date(r.updatedAt).toISOString()}));
+        return {profile,library,watchHistory:rows,...(version3?{historyVersion:3,tracking:current.tracking}: {})};
+      }
+    }catch(error:any){if(error?.status!==404)throw error;}
+  }
   const watchRows = await supabaseRest(`user_watch_history?user_id=eq.${userId}&select=*&order=updated_at.desc&limit=500`);
   watchHistory = Array.isArray(watchRows) ? watchRows : [];
 
@@ -91,7 +100,7 @@ export function normalizeWatchHistoryRows(userId: string, rows: any[]) {
       return {
         user_id: userId,
         history_key: key,
-        source: null,
+        source: item.watchedCoverage || legacySource?.watchedCoverage ? {watchedCoverage:item.watchedCoverage || legacySource.watchedCoverage} : null,
         anime_id: item.animeId || item.anime_id || legacySource?.animeId ? String(item.animeId || item.anime_id || legacySource?.animeId) : null,
         anime_title: item.animeTitle || item.anime_title || legacySource?.animeTitle || null,
         episode: item.episode ?? legacySource?.episode ?? null,
@@ -132,12 +141,19 @@ export default async function handler(req: any, res: any) {
 
   try {
     if (req.method === 'GET') {
-      return res.status(200).json(await getAccountData(user));
+      return res.status(200).json(await getAccountData(user,token,String(req.query?.historyVersion || '')==='3'));
     }
 
     if (req.method === 'POST') {
       const body = parseBody(req);
       const userId = user.id;
+      if (body.version === 3) {
+        // Execute as the authenticated user, never as the gateway's service role.
+        const data = await supabaseRest('rpc/history_sync_v3', {
+          method:'POST',headers:{Authorization:`Bearer ${token}`},body:JSON.stringify({p_request:body.request || {action:'read'}}),
+        });
+        return res.status(200).json(data);
+      }
 
       await upsertProfile(user);
 
@@ -158,6 +174,7 @@ export default async function handler(req: any, res: any) {
 
     return res.status(405).json({ error: 'Method not allowed' });
   } catch (error: any) {
+    if(/Upgrade StreamNyaa/.test(String(error?.message)))return res.status(426).json({error:'Update StreamNyaa to synchronize its new history format.'});
     if (error?.status === 404) {
       return res.status(503).json({ error: 'Account sync tables are not configured yet.' });
     }

@@ -395,6 +395,50 @@ local ok, error_message = pcall(function()
     error("Missing clickable control: " .. id)
   end
   reset()
+  state.paused_for_cache=false
+  state.duration,state.pos,ui.last_video_position=1478,1420,1420
+  observers["eof-reached"]("eof-reached",true)
+  local timestamp_ass=require("mp.assdraw").ass_new()
+  draw_timeline(timestamp_ass,1280,720,nil,1)
+  check(timestamp_ass.text:find("Ended · 23:40",1,true)~=nil,"Confirmed EOF must not show a false minute remaining from container duration")
+  check(state.pos==1420 and state.duration==1478,"EOF display must not fabricate watched position or rewrite decoder duration")
+  note_explicit_seek(100)
+  check(ui.confirmed_end==nil,"A replay/seek must restore live timestamp display")
+  -- Exercise the real draw -> hit-test -> pointer path, not just action dispatch.
+  for _, loading in ipairs({false, true}) do
+    reset()
+    state.paused_for_cache = false
+    ui.end_overlay, ui.visible = true, true
+    if loading then state.duration, state.has_started_playback, state.idle = 0, false, true end
+    draw(true, "test-completion-clicks")
+    point_at("end_close")
+    handle_mouse_down()
+    draw(true, "test-eof-telemetry-between-press-and-release")
+    handle_mouse_up()
+    check(not ui.end_overlay, "Close must work through EOF/loading repaint")
+    ui.end_overlay = true
+    draw(true, "test-completion-next")
+    point_at("end_next_episode")
+    handle_mouse_down(); handle_mouse_up()
+    check(ui.end_next_pending, "Pointer Next must prepare one episode")
+    local pending_id = ui.end_request_id
+    point_at("end_replay")
+    handle_mouse_down(); handle_mouse_up()
+    check(not ui.end_overlay and not ui.end_next_pending, "Replay stays clickable while Next is pending")
+    messages["streamnyaa-next-episode-status"](pending_id, "opening")
+    check(not ui.end_overlay, "Cancelled Next cannot reopen the completion panel")
+  end
+  reset()
+  ui.end_overlay, ui.visible = true, true
+  draw(true, "test-completion-modal")
+  properties["mouse-pos"] = {x=10,y=10}
+  local modal_region = hit_region()
+  check(modal_region and modal_region.id == "end-panel", "Completion backdrop must absorb transport clicks")
+  key_callbacks["Shift+TAB"]()
+  check(ui.end_focus == "end_close", "Shift+Tab moves focus backwards")
+  key_callbacks["ENTER"]()
+  check(not ui.end_overlay, "Enter dismisses the focused Close action")
+  reset()
   state.paused_for_cache = false
   ui.visible = true
   draw(true, "test-controls")

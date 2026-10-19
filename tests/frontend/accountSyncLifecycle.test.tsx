@@ -9,6 +9,7 @@ vi.mock('../../src/context/AuthContext', () => ({ useAuth: () => mock.auth }));
 vi.mock('../../src/lib/accountSync', async importOriginal => ({
   ...await importOriginal<any>(), fetchAccountSync: mock.fetch, replaceAccountSyncData: mock.write,
 }));
+vi.mock('../../src/lib/desktopHistorySync',()=>({syncDesktopHistory:vi.fn().mockResolvedValue(undefined)}));
 vi.mock('../../src/lib/desktop', () => ({
   isDesktopApp: () => mock.desktop,
   loadDesktopWatchProgress: () => mock.history,
@@ -43,6 +44,7 @@ it('rejects a late response after logout and preserves the outgoing journal', as
   useStore.getState().addToMyList(anime(1));
   const work = deferred(); mock.fetch.mockReturnValue(work.promise);
   const view = render(app());
+  await waitFor(()=>expect(mock.fetch).toHaveBeenCalledTimes(1));
   mock.auth = { loading: false, session: null, user: null };
   view.rerender(app());
   await act(async () => work.resolve({ ...empty, library: [row(99)] }));
@@ -54,7 +56,7 @@ it('rejects a late response after logout and preserves the outgoing journal', as
 it('never transfers the previous account projection into a different account', async () => {
   useStore.getState().addToMyList(anime(1));
   const old = deferred(); mock.fetch.mockReturnValueOnce(old.promise).mockResolvedValue(empty);
-  const view = render(app()); login('b'); view.rerender(app());
+  const view = render(app());await waitFor(()=>expect(mock.fetch).toHaveBeenCalledTimes(1));login('b'); view.rerender(app());
   await waitFor(() => expect(mock.write).toHaveBeenCalledTimes(1));
   expect(mock.write.mock.calls[0][0].user.id).toBe('b');
   expect(mock.write.mock.calls[0][1].library).toEqual([]);
@@ -66,6 +68,7 @@ it('never transfers the previous account projection into a different account', a
 it('serializes repeated sync requests rather than overlapping fetches', async () => {
   const work = deferred(); mock.fetch.mockReturnValueOnce(work.promise).mockResolvedValue(empty);
   render(app());
+  await waitFor(()=>expect(mock.fetch).toHaveBeenCalledTimes(1));
   act(() => { void sync.syncNow(); void sync.syncNow(); });
   expect(mock.fetch).toHaveBeenCalledTimes(1);
   await act(async () => work.resolve(empty));
@@ -85,6 +88,7 @@ it('does not replace the saved account projection while authentication restores'
 it('does not reuse an old flight after logging out and back into the same account', async () => {
   const old = deferred(); mock.fetch.mockReturnValueOnce(old.promise).mockResolvedValue(empty);
   const view = render(app());
+  await waitFor(()=>expect(mock.fetch).toHaveBeenCalledTimes(1));
   mock.auth = { loading: false, session: null, user: null }; view.rerender(app());
   login('a'); view.rerender(app());
   await waitFor(() => expect(mock.fetch).toHaveBeenCalledTimes(2));

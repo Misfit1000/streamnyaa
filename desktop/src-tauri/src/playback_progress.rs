@@ -8,6 +8,10 @@ pub struct Context {
     pub title: String,
     pub episode: String,
     pub source_key: String,
+    #[serde(default)]
+    pub identity: String,
+    #[serde(default)]
+    pub tracking_epoch: u64,
     pub poster: Option<String>,
     pub offline_id: Option<String>,
     pub offline_file: Option<String>,
@@ -203,6 +207,8 @@ pub fn begin(ipc: &str, mut context: Context) {
         return;
     }
     flush(ipc);
+    let id = if context.identity.is_empty() {history_store::legacy_identity(&context.anime_id)} else {context.identity.clone()};
+    context.tracking_epoch = history_store::current_epoch(&context.owner,&id,&context.episode);
     let generation = SERIAL.fetch_add(1, Ordering::SeqCst) + 1;
     let session_id = format!(
         "{}-{}",
@@ -294,6 +300,10 @@ pub fn accept(ipc: &str, raw: &str) {
         log_info("PROGRESS_CHECKPOINT_WRITE_FAILED");
     }
     drop(s);
+    if let Err(message) = history_store::save_checkpoint(&record) {
+        log_info(&message);
+        if let Some(app)=APP_HANDLE.get(){let _=app.emit("streamnyaa-history-error",message);}
+    }
     if let (Some(id), Some(file)) = (&record.context.offline_id, &record.context.offline_file) {
         download_queue::save_native_progress(id, file, &record);
     }

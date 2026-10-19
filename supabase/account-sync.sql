@@ -90,11 +90,6 @@ create policy "Users can delete own library"
   on public.user_library for delete
   using (auth.uid() = user_id);
 
-create policy "Users can update own library"
-  on public.user_library for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
-
 create policy "Users can read own watch history"
   on public.user_watch_history for select
   using (auth.uid() = user_id);
@@ -111,11 +106,6 @@ create policy "Users can update own watch history"
 create policy "Users can delete own watch history"
   on public.user_watch_history for delete
   using (auth.uid() = user_id);
-
-create policy "Users can update own watch history"
-  on public.user_watch_history for update
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
 
 create index if not exists user_library_user_updated_idx
   on public.user_library (user_id, updated_at desc);

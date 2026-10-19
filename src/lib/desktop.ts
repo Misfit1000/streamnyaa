@@ -1,4 +1,5 @@
 import type { SeriesArtworkDescriptor } from './desktopArtwork';
+import { historyArchiveReady, archiveRecentSources, archiveProgress, archiveTitles, archiveTitle, historyIdentity, saveArchiveEpisode, setArchiveEpisodeWatched, clearArchiveHistory, hydrateHistoryEpisode, queueHistoryWrite } from './desktopHistoryArchive';
 import { SCHEDULE_ALERT_STATE_KEY, scheduleStateForBackup } from './desktopScheduleState';
 import { loadStoredSession } from './supabaseAuth';
 import {mergeCoverage,coveragePercent,type WatchedCoverage} from './desktopCoverage';
@@ -9,6 +10,9 @@ import { readHideEpisodeSpoilers } from './desktopSpoilers';
 import { DESKTOP_AVAILABILITY_KEY, importDesktopAvailabilityRecords } from './desktopAvailability';
 
 export type LocalPlaybackSource = {
+  identity?: string;
+  trackingEpoch?: number;
+  lastPlayedAt?: number;
   watchedCoverage?: WatchedCoverage;
   magnet: string;
   offlineDownloadId?: string;
@@ -35,6 +39,9 @@ export type LocalPlaybackSource = {
 };
 
 export type DesktopWatchProgressRecord = {
+  identity?: string;
+  trackingEpoch?: number;
+  lastPlayedAt?: number;
   watchedCoverage?: WatchedCoverage;
   animeId: string | number;
   title: string;
@@ -553,6 +560,7 @@ function rebuildWatchedSeriesFromHistory(history: LocalPlaybackSource[]) {
 }
 
 export function loadDesktopWatchedSeries(): DesktopWatchedSeriesRecord[] {
+  if (historyArchiveReady()) return archiveTitles().filter(t=>t.lastPlayedAt>0 || t.markers.some(m=>m.watched)).map(t=>({animeId:t.metadata.animeId || t.identity,title:t.metadata.title || t.identity,poster:t.metadata.poster,updatedAt:t.lastPlayedAt}));
   try {
     const stored = readStoredWatchedSeries();
     const migrated = [
@@ -584,6 +592,7 @@ function rebuildWatchProgressFromHistory(history = loadLocalPlaybackHistory()) {
 }
 
 export function loadDesktopWatchProgress(): DesktopWatchProgressRecord[] {
+  if (historyArchiveReady()) return archiveProgress();
   try {
     const raw = localStorage.getItem(DESKTOP_WATCH_PROGRESS_KEY);
     if (!raw) return [];
@@ -598,6 +607,7 @@ export function loadDesktopWatchProgress(): DesktopWatchProgressRecord[] {
 }
 
 export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord): boolean {
+  if (historyArchiveReady()) { saveArchiveEpisode(record); return true; }
   try {
     const normalized: DesktopWatchProgressRecord = {
       ...record,
@@ -639,6 +649,7 @@ export function saveDesktopWatchProgress(record: DesktopWatchProgressRecord): bo
 }
 
 export function replaceDesktopWatchProgress(records: DesktopWatchProgressRecord[]) {
+  if (historyArchiveReady()) { for (const record of records) saveArchiveEpisode(record); return; }
   try {
     const local=loadDesktopWatchProgress();
     const next = records.map(record=>{const old=local.find(r=>watchProgressKey(r)===watchProgressKey(record));if(!old?.watchedCoverage&&!record.watchedCoverage)return record;
@@ -652,7 +663,7 @@ export function replaceDesktopWatchProgress(records: DesktopWatchProgressRecord[
     const watchedSeries = next
       .map(watchedSeriesFromProgress)
       .filter((item): item is DesktopWatchedSeriesRecord => Boolean(item));
-    writeWatchedSeries(watchedSeries, false);
+    writeWatchedSeries([...readStoredWatchedSeries(), ...watchedSeries], false);
     emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
   } catch {
     // Synced progress is optional and must never block playback.
@@ -705,7 +716,7 @@ export function resolveDesktopPlaybackCheckpoint(source: Partial<LocalPlaybackSo
     } : null,
   ].filter((candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate));
 
-  return candidates.sort((left, right) => right.positionSeconds - left.positionSeconds || right.updatedAt - left.updatedAt)[0] || null;
+  return candidates.sort((left, right) => right.updatedAt - left.updatedAt)[0] || null;
 }
 
 function playbackHistoryMatchesAnime(source: Partial<LocalPlaybackSource>, anime: any) {
@@ -724,6 +735,7 @@ export function findLocalPlaybackHistoryItem(source: Partial<LocalPlaybackSource
 }
 
 export function loadLocalPlaybackHistory(): LocalPlaybackSource[] {
+  if (historyArchiveReady()) return archiveRecentSources();
   try {
     const raw = localStorage.getItem(LOCAL_PLAYBACK_HISTORY_KEY);
     if (!raw) return [];
@@ -738,10 +750,10 @@ export function loadLocalPlaybackHistory(): LocalPlaybackSource[] {
 }
 
 export function clearLocalPlaybackHistory() {
+  if (historyArchiveReady()) { void clearArchiveHistory().catch(error=>window.dispatchEvent(new CustomEvent('streamnyaa-history-error',{detail:String(error)}))); return; }
   try {
     localStorage.removeItem(LOCAL_PLAYBACK_HISTORY_KEY);
     localStorage.removeItem(DESKTOP_WATCH_PROGRESS_KEY);
-    localStorage.removeItem(DESKTOP_WATCHED_SERIES_KEY);
     emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
     emitDesktopEvent(DESKTOP_WATCH_PROGRESS_EVENT);
   } catch {
@@ -750,13 +762,14 @@ export function clearLocalPlaybackHistory() {
 }
 
 export function replaceLocalPlaybackHistory(history: LocalPlaybackSource[]) {
+  if (historyArchiveReady()) { for (const record of history) saveArchiveEpisode(record); return; }
   try {
     const next = history
       .filter((item): item is LocalPlaybackSource => Boolean(item?.magnet && item?.title))
       .slice(0, LOCAL_PLAYBACK_HISTORY_LIMIT);
     localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
     rebuildWatchProgressFromHistory(next);
-    rebuildWatchedSeriesFromHistory(next);
+    writeWatchedSeries([...readStoredWatchedSeries(),...next.map(watchedSeriesFromSource).filter((item):item is DesktopWatchedSeriesRecord=>Boolean(item))]);
     emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
   } catch {
     // Playback history sync is optional and should never block app use.
@@ -764,12 +777,11 @@ export function replaceLocalPlaybackHistory(history: LocalPlaybackSource[]) {
 }
 
 export function removeLocalPlaybackHistoryItem(source: Partial<LocalPlaybackSource>) {
+  if (historyArchiveReady()) { void clearArchiveHistory({identity:historyIdentity(source),episode:String(source.episode || '')}).catch(error=>window.dispatchEvent(new CustomEvent('streamnyaa-history-error',{detail:String(error)}))); return; }
   try {
     const key = playbackHistoryKey(source);
     const next = loadLocalPlaybackHistory().filter((item) => playbackHistoryKey(item) !== key);
     localStorage.setItem(LOCAL_PLAYBACK_HISTORY_KEY, JSON.stringify(next));
-    rebuildWatchProgressFromHistory(next);
-    rebuildWatchedSeriesFromHistory(next);
     emitDesktopEvent(LOCAL_PLAYBACK_HISTORY_EVENT);
   } catch {
     // Playback history is optional and should never block app use.
@@ -777,6 +789,7 @@ export function removeLocalPlaybackHistoryItem(source: Partial<LocalPlaybackSour
 }
 
 export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource, persistedProgress?: DesktopWatchProgressRecord): boolean {
+  if (historyArchiveReady()) { saveArchiveEpisode(source); return true; }
   try {
     const normalized = { ...source, savedAt: source.savedAt || Date.now() };
     const key = playbackHistoryKey(normalized);
@@ -812,6 +825,7 @@ export function saveLocalPlaybackHistoryItem(source: LocalPlaybackSource, persis
 }
 
 export async function openLocalSourceNow(source: LocalPlaybackSource, settings = loadDesktopPlaybackSettings()) {
+  if(historyArchiveReady()) await hydrateHistoryEpisode(source,source.episode || 1);
   const existing = findLocalPlaybackHistoryItem(source);
   const checkpoint = resolveDesktopPlaybackCheckpoint(source);
   const preparedSource: LocalPlaybackSource = {
@@ -1205,6 +1219,7 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
     const result = await invoke<DesktopPlaybackStatus>('play_local_torrent', {
       request: {
         progress_context: {
+          identity: historyIdentity(source), trackingEpoch: source.trackingEpoch || 0,
           owner: loadStoredSession()?.user?.id || '', animeId: String(source.animeId || source.animeTitle || ''),
           title: source.animeTitle || source.title, episode: String(source.episode || ''),
           sourceKey: source.infoHash || source.title, poster: source.poster || source.image || null,
@@ -1436,6 +1451,7 @@ export async function listenDesktopPlayerNextEpisode(listener: (event: DesktopPl
 }
 
 function progressRecordMatchesAnime(record: DesktopWatchProgressRecord, anime: any) {
+  if(record.identity) return record.identity===historyIdentity(anime) || record.identity===`legacy:${animeIdentity(anime)}`;
   const recordId = String(record.animeId || '').trim();
   const targetIds = [anime?.mal_id, anime?.idMal, anime?.id, anime?.anilist_id]
     .map((value) => String(value || '').trim())
@@ -1476,6 +1492,10 @@ export function desktopEpisodeWatchState(
   episode: number,
   records = loadDesktopWatchProgress(),
 ): DesktopEpisodeWatchState {
+  if(historyArchiveReady()) {
+    const marker=archiveTitle(anime)?.markers.find(m=>m.episode===String(episode));
+    if(marker?.watched) return {started:true,completed:true,progressPercent:100,positionSeconds:0,updatedAt:marker.updatedAt};
+  }
   const match = records
     .filter((record) => progressRecordMatchesAnime(record, anime))
     .find((record) => normalizedEpisodeNumber(record.episode) === normalizedEpisodeNumber(episode));
@@ -1507,6 +1527,7 @@ export function desktopEpisodeWatchState(
 export function setDesktopEpisodeWatched(anime: any, episode: number, watched: boolean) {
   const normalizedEpisode = normalizedEpisodeNumber(episode);
   if (!normalizedEpisode) return;
+  if(historyArchiveReady()) { void setArchiveEpisodeWatched(anime,normalizedEpisode,watched).catch(error=>window.dispatchEvent(new CustomEvent('streamnyaa-history-error',{detail:String(error)}))); return; }
 
   if (watched) {
     const title = String(
@@ -1564,6 +1585,7 @@ export function setDesktopEpisodeWatched(anime: any, episode: number, watched: b
 }
 
 export function hasDesktopWatchedSeries(anime: any, records = loadDesktopWatchProgress()) {
+  if(historyArchiveReady()) { const t=archiveTitle(anime); return Boolean(t && (t.lastPlayedAt>0 || t.markers.some(m=>m.watched))); }
   const targetSeriesKeys = [anime?.title, anime?.title_english, anime?.title_romaji, anime?.title_japanese]
     .map(seriesTitleKey)
     .filter((value) => value.length >= 4);

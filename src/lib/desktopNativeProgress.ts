@@ -1,9 +1,10 @@
 import { markInterruptedPlayback, clearInterruptedPlayback, readInterruptedPlayback, interruptedSourceKey } from './desktopInterruptedSession';
 import { loadLocalPlaybackHistory, saveDesktopWatchProgress, saveLocalPlaybackHistoryItem, type DesktopWatchProgressRecord } from './desktop';
 import { mergeCoverage, coveragePercent, type WatchedCoverage } from './desktopCoverage';
+import { historyArchiveReady } from './desktopHistoryArchive';
 export type NativeCheckpoint = {
   version: 1; sessionId: string; generation: number; sequence: number; updatedAt: number;
-  context: { owner: string; animeId: string; title: string; episode: string; sourceKey: string; poster?: string; offlineId?: string; offlineFile?: string };
+  context: { owner: string; animeId: string; identity?: string; trackingEpoch?: number; title: string; episode: string; sourceKey: string; poster?: string; offlineId?: string; offlineFile?: string };
   coverage: Omit<WatchedCoverage, 'version'> & {version?: 2}; completed: boolean; state: string;
 };
 export function applyNativeCheckpoint(record: NativeCheckpoint, owner: string): boolean {
@@ -12,7 +13,7 @@ export function applyNativeCheckpoint(record: NativeCheckpoint, owner: string): 
   const coverage=mergeCoverage(undefined,record.coverage,record.coverage.duration || 0,record.coverage.furthest);
   const percent=coveragePercent(coverage,coverage.duration || 0);
   const progress: DesktopWatchProgressRecord = {animeId:context.animeId,title:context.title,episode:context.episode,poster:context.poster,
-    positionSeconds:coverage.furthest,durationSeconds:coverage.duration,watchedCoverage:coverage,progressPercent:percent,completed:percent>=92,updatedAt};
+    identity:context.identity,trackingEpoch:context.trackingEpoch || 0,positionSeconds:historyArchiveReady()?record.coverage.lastPosition:coverage.furthest,durationSeconds:coverage.duration,watchedCoverage:coverage,progressPercent:percent,completed:percent>=92,updatedAt};
   const progressSaved = saveDesktopWatchProgress(progress);
   const interrupted=readInterruptedPlayback();
   const terminal=record.state==='eof'||record.state==='closed'||percent>=92;

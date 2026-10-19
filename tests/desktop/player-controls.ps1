@@ -23,6 +23,9 @@ try {
     '--vo=null',
     '--ao=null',
     '--pause=yes',
+    '--idle=yes',
+    '--keep-open=yes',
+    '--script-opts=streamnyaa_player-debug_input=yes',
     "--input-ipc-server=$pipePath",
     "--script=`"$skin`"",
     'av://lavfi:testsrc=duration=600:size=320x180:rate=24'
@@ -148,6 +151,45 @@ try {
   }
   $player.Refresh()
   Write-Host "Native episode-transition soak passed (12 replacements; working set before=$beforeTransitions after=$($player.WorkingSet64) bytes; one owned MPV process)."
+
+  function Read-CompletionState {
+    Invoke-MpvCommand @('set_property','user-data/streamnyaa/input-state','') | Out-Null
+    Invoke-MpvCommand @('script-message','streamnyaa-debug-input-state') | Out-Null
+    Wait-MpvProperty 'user-data/streamnyaa/input-state' {param($value) !!$value} 'The player did not publish its completion input state.'
+    return (Invoke-MpvCommand @('get_property','user-data/streamnyaa/input-state') | ConvertFrom-Json)
+  }
+  function Finish-ShortFixture {
+    Invoke-MpvCommand @('script-message','streamnyaa-set-auto-next','false') | Out-Null
+    $fixture=Join-Path $repo '.validation/completion-fixture.mkv'
+    if(!(Test-Path -LiteralPath $fixture)) {
+      & (Join-Path $repo 'desktop/src-tauri/bin/mpv.com') --no-config --ao=null --ovc=ffv1 --of=matroska "--o=$fixture" 'av://lavfi:testsrc=duration=3:size=64x64:rate=12' --term-status-msg= | Out-Null
+      if($LASTEXITCODE -ne 0){throw 'Could not generate the seekable EOF fixture.'}
+    }
+    Invoke-MpvCommand @('loadfile',$fixture,'replace',-1,'start=2.2') | Out-Null
+    Invoke-MpvCommand @('set_property','pause',$false) | Out-Null
+    Start-Sleep -Milliseconds 200
+    Wait-MpvProperty 'eof-reached' {param($value) $value -eq $true} 'The short media fixture did not finish.'
+    $state=Read-CompletionState
+    if(!$state.ended -or !$state.confirmedEnd){throw "Real EOF did not retain the completion panel and ended timestamp: $($state | ConvertTo-Json -Depth 4 -Compress)"}
+    return $state
+  }
+  function Click-Completion([object]$State,[string]$Id) {
+    $region=@($State.regions | Where-Object {$_.id -eq $Id})[0]
+    if(!$region){throw "Missing native completion hit target: $Id"}
+    $cx=[int](($region.x1+$region.x2)/2);$cy=[int](($region.y1+$region.y2)/2)
+    Invoke-MpvCommand @('mouse',$cx,$cy,0,'single') | Out-Null
+    Start-Sleep -Milliseconds 100
+  }
+  $ended=Finish-ShortFixture
+  Click-Completion $ended 'end_next_episode'
+  $pending=Read-CompletionState
+  if(!$pending.pending){throw 'Pointer Next did not dispatch through MPV input.'}
+  Click-Completion $pending 'end_close'
+  if((Read-CompletionState).ended){throw 'Pointer Close did not dismiss the pending completion panel.'}
+  $ended=Finish-ShortFixture
+  Click-Completion $ended 'end_replay'
+  Wait-MpvProperty 'time-pos' {param($value) $null -ne $value -and [double]$value -gt 0 -and [double]$value -lt 1.5} 'Pointer Replay did not restart the same media.'
+  Write-Host 'Native completion integration passed (real EOF, ended timestamp, pointer Next/Close/Replay through bundled MPV input).'
 
   Write-Host "Desktop native player-controls integration test passed ($SoakCycles soak cycles)."
 }

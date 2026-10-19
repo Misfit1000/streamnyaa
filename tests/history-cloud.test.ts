@@ -1,0 +1,45 @@
+import { PGlite } from '@electric-sql/pglite';
+import { readFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+const uid='00000000-0000-0000-0000-000000000001',other='00000000-0000-0000-0000-000000000002';
+test('real PostgreSQL history migration, retention, resets and account isolation',async()=>{
+ const db=await PGlite.create();
+ try{
+  await db.exec(`CREATE SCHEMA auth; CREATE ROLE anon; CREATE ROLE authenticated; CREATE TABLE auth.users(id uuid PRIMARY KEY); CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; GRANT USAGE ON SCHEMA auth,public TO authenticated; GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated; INSERT INTO auth.users VALUES('${uid}'),('${other}');`);
+  await db.exec(await readFile(new URL('../supabase/account-sync.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/history-v3.sql',import.meta.url),'utf8'));
+  await db.exec(`SET request.jwt.claim.sub='${uid}';`);
+  const rpc=async(request:any)=>(await db.query<{data:any}>('SELECT public.history_sync_v3($1::jsonb) AS data',[JSON.stringify(request)])).rows[0].data;
+  await db.query(`INSERT INTO public.user_watch_history(user_id,history_key,anime_id,anime_title,episode,resume_seconds,completed) VALUES($1,'old','4','Old anime','1',34,true)`,[uid]);
+  await assert.rejects(rpc({action:'migrate',archivedCount:0}),/Legacy history changed/);
+  assert.equal((await rpc({action:'read'})).migrated,false);
+  let snapshot=await rpc({action:'read'});
+  await db.query(`UPDATE public.user_watch_history SET updated_at=now()+interval '1 second',resume_seconds=45 WHERE user_id=$1`,[uid]);
+  await assert.rejects(rpc({action:'migrate',archivedCount:1,archivedFingerprint:snapshot.legacyFingerprint}),/Legacy history changed/);
+  snapshot=await rpc({action:'read'});
+  let response=await rpc({action:'migrate',archivedCount:1,archivedFingerprint:snapshot.legacyFingerprint});assert.equal(response.migrated,true);assert.equal(response.resumes.length,1);assert.equal(response.tracking[0].markers[0].watched,true);
+  await assert.rejects(db.query(`INSERT INTO public.user_watch_history(user_id,history_key) VALUES($1,'old-client')`,[uid]),/Upgrade StreamNyaa/);
+  const progress=(i:number,sequence:number,epoch=0)=>({kind:'progress',identity:`mal:${i}`,episode:'1',title:`Anime ${i}`,animeId:String(i),sequence,epoch,updatedAt:10000+i,lastPlayedAt:10000+i,positionSeconds:50,watchedCoverage:{intervals:[[0,50]],lastPosition:50,furthest:50,duration:100}});
+  const ops=Array.from({length:25},(_,i)=>progress(i+1,i+1));
+  response=await rpc({action:'apply',deviceId:'device-one',operations:ops});assert.equal(response.resumes.length,20);assert.equal(response.tracking.length,26);assert.equal(response.resumes.some((v:any)=>v.identity==='mal:1'),false);
+  // Replaying an acknowledged batch is idempotent.
+  assert.equal((await rpc({action:'apply',deviceId:'device-one',operations:ops})).acknowledgedThrough,25);
+  await rpc({action:'apply',deviceId:'device-two',operations:[{kind:'watch',identity:'mal:25',episode:'1',watched:false,manual:true,epoch:50000,updatedAt:50000,sequence:1}]});
+  await rpc({action:'apply',deviceId:'device-one',operations:[{...progress(25,26),completed:true,epoch:0},{kind:'watch',identity:'mal:25',episode:'1',watched:true,epoch:0,updatedAt:60000,sequence:27}]});
+  response=await rpc({action:'read'});assert.equal(response.tracking.find((v:any)=>v.identity==='mal:25').markers[0].watched,false);assert.equal(response.resumes.some((v:any)=>v.identity==='mal:25'),false);
+  await rpc({action:'apply',deviceId:'device-one',operations:[{kind:'metadata',identity:'mal:1',metadata:{title:'Renamed'},sequence:28}]});
+  assert.equal((await rpc({action:'read'})).resumes.some((v:any)=>v.identity==='mal:1'),false);
+  await rpc({action:'apply',deviceId:'device-one',operations:[{kind:'alias',identity:'mal:4',from:'legacy:4',sequence:29}]});
+  response=await rpc({action:'read'});assert.equal(response.tracking.some((v:any)=>v.identity==='legacy:4'),false);assert.equal(response.tracking.find((v:any)=>v.identity==='mal:4').markers[0].watched,true);
+  await rpc({action:'apply',deviceId:'device-one',operations:[{...progress(4,30),identity:'legacy:4',lastPlayedAt:70000,updatedAt:70000}]});
+  response=await rpc({action:'read'});assert.equal(response.resumes.filter((v:any)=>v.identity==='mal:4').length,1);assert.equal(response.resumes.some((v:any)=>v.identity==='legacy:4'),false);
+  await db.exec(`SET ROLE authenticated;`);
+  await assert.rejects(db.query('SELECT * FROM public.user_recent_resumes'),/permission denied/);
+  assert.equal((await rpc({action:'read'})).resumes.length,19);
+  await db.exec(`SET request.jwt.claim.sub='${other}';`);
+  assert.deepEqual((await rpc({action:'read'})).tracking,[]);
+  await db.exec(`SET request.jwt.claim.sub='';`);
+  await assert.rejects(rpc({action:'read'}),/Sign in required/);
+ }finally{await db.close();}
+});

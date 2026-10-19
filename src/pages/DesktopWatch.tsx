@@ -13,6 +13,7 @@ import { episodeNumberFromTitle, resolveEpisodeArtwork } from '../lib/desktopEpi
 import { selectedEligibleSource, selectSourceMode } from '../lib/desktopSourceSelection';
 import { homeReadyEpisodes, sourceAvailabilityEvidence } from '../lib/desktopHomeReadiness';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { hydrateHistoryTitle, hydrateHistoryEpisode, updateArchiveMetadata, historyIdentity, historyArchiveReady } from '../lib/desktopHistoryArchive';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { clearInterruptedPlayback } from '../lib/desktopInterruptedSession';
 import { enqueueDownload, enqueueDownloadSelection } from '../lib/desktopDownloads';
@@ -1898,6 +1899,18 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const airedCount = knownAiredEpisodeCount(anime, pageItems);
   const episodeCountLabel = episodeData?.streamnyaa?.status === 'stale' ? 'Last known aired' : episodeData?.latestPageResolved === false && knownAiredEpisodeCount(anime) == null ? 'Loaded through episode' : 'Latest aired';
   const selectedEpisode = requestedEpisode > 0 ? requestedEpisode : 1;
+  useEffect(() => {
+    let disposed=false;
+    const hydrate=()=>{
+      if(disposed || !historyArchiveReady())return;
+      updateArchiveMetadata(anime,airedCount || undefined);
+      void hydrateHistoryTitle(anime).then(()=>hydrateHistoryEpisode(anime,selectedEpisode)).catch(()=>undefined);
+    };
+    hydrate();
+    // Initialization publishes separately; progress events must not trigger another metadata fetch/write.
+    const onReady=()=>hydrate();window.addEventListener('streamnyaa:history-ready',onReady);
+    return()=>{disposed=true;window.removeEventListener('streamnyaa:history-ready',onReady);};
+  },[anime.mal_id,anime.anilist_id,anime.status,anime.episodes,airedCount,selectedEpisode]);
   const sourceEpisodes = useMemo(() => homeReadyEpisodes(anime, sourceAvailability, 'any', Date.now(), sourceIdentity), [anime, sourceAvailability, sourceIdentity]);
   const sourceEpisodeCount = sourceEpisodes.at(-1) || 0;
   const episodeCatalogEstimated = !episodeData?.data?.length && !animeNotYetAired;
@@ -2405,6 +2418,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       infoHash: source.infoHash,
       title: source.title,
       animeTitle: anime.title,
+      identity: historyIdentity(anime),
       animeId: anime.mal_id || anime.id,
       episode: selectedEpisode,
       size: source.size,

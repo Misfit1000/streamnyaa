@@ -1,8 +1,10 @@
 import {coveragePercent} from '../lib/desktopCoverage';
+import { historySource, historyRequest, historyAnime, clearArchiveHistory, resetArchiveTracking, subscribeHistoryArchive, historyArchiveReady, type HistoryEpisode } from '../lib/desktopHistoryArchive';
+import { useHistoryArchivePage } from '../lib/useHistoryArchivePage';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Clock, ExternalLink, Grid2X2, List, Play, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import Seo from '../components/Seo';
 import {
@@ -123,10 +125,7 @@ function resumeLabel(source: LocalPlaybackSource) {
 
 function watchPathForHistory(source: LocalPlaybackSource) {
   return desktopWatchPath(
-    {
-      mal_id: source.animeId,
-      title: source.animeTitle || source.title,
-    },
+    historyAnime(source),
     source.episode ? { episode: source.episode } : undefined,
   );
 }
@@ -151,6 +150,7 @@ function sortHistory(items: LocalPlaybackSource[], sort: HistorySort) {
 }
 
 export default function DesktopHistory() {
+  const navigate=useNavigate();
   const hideSpoilers = useHideEpisodeSpoilers();
   const [history, setHistory] = useState<LocalPlaybackSource[]>(() => loadLocalPlaybackHistory());
   const [status, setStatus] = useState('');
@@ -159,18 +159,30 @@ export default function DesktopHistory() {
   const [sort, setSort] = useState<HistorySort>('recent');
   const [view, setView] = useState<HistoryView>('compact');
   const [pendingClear, setPendingClear] = useState<'all' | 'completed' | null>(null);
+  const [pendingReset,setPendingReset]=useState<LocalPlaybackSource|null>(null);
+  const [offset,setOffset]=useState(0);
+  const archive=useHistoryArchivePage<HistoryEpisode>('page',{search:query,filter,sort,offset});
+  const [archiveStats,setArchiveStats]=useState({total:0,completed:0,inProgress:0,recent:0});
+  useEffect(()=>{setOffset(0);},[query,filter,sort]);
+  useEffect(()=>{
+    const refresh=()=>{if(historyArchiveReady())void historyRequest<typeof archiveStats>('stats').then(setArchiveStats).catch(e=>setStatus(String(e)));};
+    refresh();const unsubscribe=subscribeHistoryArchive(refresh);window.addEventListener('streamnyaa:history-ready',refresh);
+    return()=>{unsubscribe();window.removeEventListener('streamnyaa:history-ready',refresh);};
+  },[]);
 
   useEffect(() => subscribeLocalPlaybackHistory(() => {
     setHistory(loadLocalPlaybackHistory());
   }), []);
 
-  const completedCount = useMemo(() => history.filter(isComplete).length, [history]);
-  const inProgressCount = Math.max(0, history.length - completedCount);
+  const totalCount=archive.ready?archiveStats.total:history.length;
+  const completedCount = archive.ready?archiveStats.completed:history.filter(isComplete).length;
+  const inProgressCount = archive.ready?archiveStats.inProgress:Math.max(0, history.length - completedCount);
   const recentCount = useMemo(
     () => history.filter((source) => updatedAt(source) >= Date.now() - 7 * 24 * 60 * 60 * 1000).length,
     [history],
   );
   const filteredHistory = useMemo(() => {
+    if(archive.ready)return archive.items.map(historySource);
     const normalizedQuery = query.trim().toLowerCase();
     const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const filtered = history.filter((source) => {
@@ -182,15 +194,16 @@ export default function DesktopHistory() {
       return true;
     });
     return sortHistory(filtered, sort);
-  }, [filter, history, query, sort]);
+  }, [filter, history, query, sort,archive.ready,archive.items]);
   const filters: Array<{ id: HistoryFilter; label: string; count: number }> = [
-    { id: 'all', label: 'All', count: history.length },
+    { id: 'all', label: 'All', count: totalCount },
     { id: 'in-progress', label: 'In Progress', count: inProgressCount },
     { id: 'completed', label: 'Completed', count: completedCount },
-    { id: 'recent', label: 'Recent', count: recentCount },
+    { id: 'recent', label: 'Recent', count: archive.ready?archiveStats.recent:recentCount },
   ];
 
   const openSource = useCallback(async (source: LocalPlaybackSource) => {
+    if(!source.magnet && !source.offlineFile){navigate(watchPathForHistory(source));return;}
     setStatus(`Opening ${source.animeTitle || source.title}...`);
     try {
       const result = await openLocalSourceNow(source);
@@ -198,23 +211,28 @@ export default function DesktopHistory() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Playback could not start.');
     }
-  }, []);
+  }, [navigate]);
 
-  const clearAll = () => {
+  const clearAll = async () => {
+    if(archive.ready){try{await clearArchiveHistory();setPendingClear(null);setOffset(0);setStatus('History cleared. Watched and completed markers were kept.');}catch(e){setStatus(String(e));}return;}
     clearLocalPlaybackHistory();
     setHistory([]);
     setPendingClear(null);
     setStatus('Watch history cleared.');
   };
 
-  const clearCompleted = () => {
+  const clearCompleted = async () => {
+    if(archive.ready){try{await clearArchiveHistory({completedOnly:true});setPendingClear(null);setOffset(0);}catch(e){setStatus(String(e));}return;}
     history.filter(isComplete).forEach(removeLocalPlaybackHistoryItem);
     setHistory(loadLocalPlaybackHistory());
     setPendingClear(null);
     setStatus('Completed watch history cleared.');
   };
 
-  const removeOne = useCallback((source: LocalPlaybackSource) => {
+  const removeOne = useCallback(async (source: LocalPlaybackSource) => {
+    if(historyArchiveReady()){
+      try{await clearArchiveHistory({identity:source.identity,episode:String(source.episode || 1)});setStatus('History item removed. Watched markers were kept.');}catch(error){setStatus(String(error));}return;
+    }
     removeLocalPlaybackHistoryItem(source);
     setHistory(loadLocalPlaybackHistory());
     setStatus('History item removed.');
@@ -254,6 +272,7 @@ export default function DesktopHistory() {
             <button type="button" onClick={() => removeOne(source)} className="sn-icon-action h-9 min-h-0 w-9 min-w-0 rounded-lg p-0 hover:text-primary" aria-label="Remove history item">
               <Trash2 className="h-4 w-4" />
             </button>
+            {archive.ready && <button type="button" onClick={()=>setPendingReset(source)} className="sn-secondary-action px-2 text-xs">Reset tracking</button>}
           </div>
         </div>
       </article>
@@ -307,15 +326,17 @@ export default function DesktopHistory() {
             <button type="button" onClick={() => removeOne(source)} className="sn-icon-action h-10 min-h-0 w-10 min-w-0 rounded-xl p-0 hover:text-primary" aria-label="Remove history item">
               <Trash2 className="h-4 w-4" />
             </button>
+            {archive.ready && <button type="button" onClick={()=>setPendingReset(source)} className="sn-secondary-action h-10 px-3 text-xs">Reset tracking</button>}
           </div>
         </div>
       </article>
     );
-  }), [filteredHistory, hideSpoilers, view, openSource, removeOne, relativeTimeBucket]);
+  }), [filteredHistory, hideSpoilers, view, openSource, removeOne, relativeTimeBucket,archive.ready]);
 
   return (
     <div className="sn-page py-6">
       <Seo title="Watch History | StreamNyaa Desktop" description="Local desktop watch history." canonicalPath="/dashboard" robots="noindex, nofollow" />
+      {pendingReset && <section role="alertdialog" aria-modal="true" aria-labelledby="reset-tracking-title" className="sn-glass-panel mb-4 p-4"><h2 id="reset-tracking-title" className="font-semibold">Reset tracking for {pendingReset.animeTitle || pendingReset.title}?</h2><p className="my-2 text-sm text-white/60">Remove its episode progress and watched/completed markers from this account. Bookmarks and downloaded files stay saved.</p><div className="flex gap-2"><button autoFocus className="sn-secondary-action" onClick={()=>setPendingReset(null)}>Cancel</button><button className="sn-primary-action" onClick={()=>{void resetArchiveTracking(pendingReset).then(()=>setPendingReset(null)).catch(e=>setStatus(String(e)));}}>Reset tracking</button></div></section>}
 
       <section className="sn-hero-panel p-6">
         <div className="flex flex-wrap items-end justify-between gap-5">
@@ -334,7 +355,7 @@ export default function DesktopHistory() {
             <button
               type="button"
               onClick={() => setPendingClear('all')}
-              disabled={!history.length}
+              disabled={!totalCount}
               className="sn-primary-action h-11 px-4 disabled:cursor-not-allowed disabled:opacity-45"
               aria-haspopup="dialog"
             >
@@ -346,7 +367,7 @@ export default function DesktopHistory() {
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl bg-white/[0.045] px-4 py-3">
             <p className="text-[10px] font-semibold normal-case tracking-normal text-white/38">Entries</p>
-            <p className="mt-1 text-2xl font-semibold text-white">{history.length}</p>
+            <p className="mt-1 text-2xl font-semibold text-white">{totalCount}</p>
           </div>
           <div className="rounded-xl bg-white/[0.045] px-4 py-3">
             <p className="text-[10px] font-semibold normal-case tracking-normal text-white/38">In progress</p>
@@ -371,7 +392,7 @@ export default function DesktopHistory() {
             </p>
             <p className="mt-1 text-sm text-white/52">
               {pendingClear === 'all'
-                ? 'This removes local history and Continue Watching progress from this device. Bookmarks are not affected.'
+                ? 'Remove history on this device and matching recent cloud resumes. Watched/completed markers and bookmarks stay saved. Other devices keep their local archives.'
                 : `This removes ${completedCount} completed ${completedCount === 1 ? 'entry' : 'entries'}. In-progress history and bookmarks stay intact.`}
             </p>
           </div>
@@ -387,7 +408,7 @@ export default function DesktopHistory() {
       ) : null}
 
       <section className="mt-6">
-        {history.length ? (
+        {totalCount ? (
           <>
             <div className="sn-glass-card mb-4 p-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -503,6 +524,8 @@ export default function DesktopHistory() {
           </div>
         )}
       </section>
+      {archive.error && <p role="alert" className="mt-3 text-sm text-amber-300">{archive.error}</p>}
+      {archive.ready && (offset>0 || archive.nextOffset!==null) && <nav aria-label="History pages" className="mt-5 flex items-center justify-center gap-4"><button className="sn-secondary-action" disabled={!offset} onClick={()=>setOffset(v=>Math.max(0,v-50))}>Previous</button><span className="text-sm text-white/60">{offset+1}–{Math.min(offset+50,archive.total)} of {archive.total}</span><button className="sn-secondary-action" disabled={archive.nextOffset===null} onClick={()=>setOffset(archive.nextOffset!)}>Next</button></nav>}
     </div>
   );
 }

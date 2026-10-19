@@ -17,6 +17,7 @@ chrono = { version = "0.4.44", default-features = false, features = ["clock", "s
 tokio = { version = "1.52.3", features = ["sync", "time", "rt", "macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "brotli", "deflate", "gzip", "json", "rustls-tls"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+rusqlite = { version = "0.32.1", features = ["bundled", "backup"] }
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-deep-link = "2"
 tauri-plugin-opener = "2"

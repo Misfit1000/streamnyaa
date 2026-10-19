@@ -5,6 +5,8 @@ export interface LibraryOrganization { entries: Record<string, LibraryOrganizati
 export interface LibraryUndo { before: Record<string, LibraryOrganizationEntry | undefined>; revision: string }
 const key = 'streamnyaa.desktop.libraryOrganization.v1';
 export const libraryOrganizationEvent = 'streamnyaa-library-organization';
+import { historyArchiveReady, historyArchiveOwner, queueHistoryWrite } from './desktopHistoryArchive';
+export function libraryOrganizationStorageKey(){return historyArchiveReady()?`${key}:${historyArchiveOwner() || '__guest__'}`:key;}
 export function organizationIdentity(anime: any) {
   if (Number(anime?.mal_id) > 0) return `mal:${anime.mal_id}`;
   if (Number(anime?.anilist_id) > 0) return `anilist:${anime.anilist_id}`;
@@ -13,7 +15,7 @@ export function organizationIdentity(anime: any) {
 export function readLibraryOrganization(): LibraryOrganization {
   const empty = { entries: Object.create(null), collections: [] };
   try {
-    const raw = JSON.parse(localStorage.getItem(key) || '{}');
+    const raw = JSON.parse(localStorage.getItem(libraryOrganizationStorageKey()) || '{}');
     const collections = Array.isArray(raw.collections) ? [...new Set<string>(raw.collections.filter((name: unknown) => typeof name === 'string' && name.trim() && name.length <= 40))].slice(0, 30) : [];
     const entries: Record<string, LibraryOrganizationEntry> = Object.create(null);
     for (const [id, value] of Object.entries(raw.entries || {}).slice(0, 10000)) {
@@ -26,7 +28,12 @@ export function readLibraryOrganization(): LibraryOrganization {
   } catch { return empty; }
 }
 function write(value: LibraryOrganization) {
-  localStorage.setItem(key, JSON.stringify(value));
+  localStorage.setItem(libraryOrganizationStorageKey(), JSON.stringify(value));
+  if(historyArchiveReady())for(const [id,entry]of Object.entries(value.entries))queueHistoryWrite('status',{identity:id.startsWith('title:')?`legacy:${id}`:id,status:entry.status,revision:entry.revision},`status:${id}`);
+  if(historyArchiveReady()){
+    const deleted=JSON.parse(localStorage.getItem(`${libraryOrganizationStorageKey()}:removed`)||'{}');
+    for(const [id,revision]of Object.entries(deleted))if(!value.entries[id])queueHistoryWrite('status',{identity:id.startsWith('title:')?`legacy:${id}`:id,status:'',revision},`status:${id}`);
+  }
   window.dispatchEvent(new Event(libraryOrganizationEvent));
   return value;
 }
@@ -79,7 +86,10 @@ export function undoLibraryOrganization(undo: LibraryUndo) {
   for (const [id, previous] of Object.entries(undo.before)) {
     if (value.entries[id]?.revision !== undo.revision) continue; // Never undo a newer edit.
     if (previous) value.entries[id] = previous;
-    else delete value.entries[id];
+    else {
+      delete value.entries[id];
+      if(historyArchiveReady()){const deleted=JSON.parse(localStorage.getItem(`${libraryOrganizationStorageKey()}:removed`)||'{}');deleted[id]=crypto.randomUUID();localStorage.setItem(`${libraryOrganizationStorageKey()}:removed`,JSON.stringify(deleted));}
+    }
   }
   return write(value);
 }

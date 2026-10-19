@@ -40,7 +40,10 @@ export type AccountSyncPayload = {
   profile: AccountProfile | null;
   library: AccountLibraryItem[];
   watchHistory: AccountWatchHistoryItem[];
+  historyVersion?: 3;
+  tracking?: import('./desktopHistoryArchive').AnimeTrackingSummary[];
 };
+const webV3Accounts=new Set<string>();
 
 export class AccountSyncError extends Error {
   code: 'offline' | 'expired-session' | 'missing-schema' | 'service-error';
@@ -170,13 +173,13 @@ async function readCollection(session: AuthSession, path: string) {
   }
 }
 
-async function fetchDesktopAccountSync(session: AuthSession): Promise<AccountSyncPayload> {
+async function fetchDesktopAccountSync(session: AuthSession, includeHistory=true): Promise<AccountSyncPayload> {
   const user = session.user?.id ? session.user : await fetchSessionUser(session);
   const userFilter = encodeURIComponent(user.id);
   const [profiles, library, watchHistory] = await Promise.all([
     desktopRest(session, `user_profiles?user_id=eq.${userFilter}&select=*&limit=1`),
     readCollection(session, `user_library?user_id=eq.${userFilter}&select=*&order=anime_id.asc`),
-    readCollection(session, `user_watch_history?user_id=eq.${userFilter}&select=*&order=history_key.asc`),
+    includeHistory ? readCollection(session, `user_watch_history?user_id=eq.${userFilter}&select=*&order=history_key.asc`) : Promise.resolve([]),
   ]);
   return {
     profile: Array.isArray(profiles) ? profiles[0] || null : null,
@@ -185,20 +188,31 @@ async function fetchDesktopAccountSync(session: AuthSession): Promise<AccountSyn
   };
 }
 
-export async function fetchAccountSync(session?: AuthSession | null): Promise<AccountSyncPayload> {
+export async function fetchAccountSync(session?: AuthSession | null, includeHistory=true): Promise<AccountSyncPayload> {
   if (!session?.access_token) return { profile: null, library: [], watchHistory: [] };
-  if (isDesktopApp()) return fetchDesktopAccountSync(session);
+  if (isDesktopApp()) return fetchDesktopAccountSync(session,includeHistory);
   try {
-    const response = await accountApiFetch('/api/account-sync', { headers: authHeaders(session) });
+    const response = await accountApiFetch('/api/account-sync?historyVersion=3', { headers: authHeaders(session) });
     const data = await parseResponse(response);
+    if(data?.historyVersion===3 && session.user?.id)webV3Accounts.add(session.user.id);
     return {
       profile: data?.profile || null,
       library: Array.isArray(data?.library) ? data.library.map(normalizeLibrary).filter(Boolean) : [],
       watchHistory: Array.isArray(data?.watchHistory) ? data.watchHistory.map(normalizeWatchHistory).filter(Boolean) : [],
+      historyVersion:data?.historyVersion,tracking:data?.tracking,
     } as AccountSyncPayload;
   } catch (error) {
     throw normalizeFetchError(error);
   }
+}
+
+export async function accountHistoryV3(session:AuthSession,request:Record<string,unknown>) {
+  if(isDesktopApp()) return desktopRest(session,'rpc/history_sync_v3',{method:'POST',body:JSON.stringify({p_request:request})});
+  return parseResponse(await accountApiFetch('/api/account-sync',{method:'POST',headers:authHeaders(session),body:JSON.stringify({version:3,request})}));
+}
+export async function fetchLegacyHistoryRows(session:AuthSession):Promise<any[]> {
+  const user=session.user?.id ? session.user : await fetchSessionUser(session);
+  return readCollection(session,`user_watch_history?user_id=eq.${encodeURIComponent(user.id)}&select=*&order=history_key.asc`);
 }
 
 function libraryRows(userId: string, rows: AccountLibraryItem[]) {
@@ -238,10 +252,13 @@ export async function replaceAccountSyncData(
 ) {
   if (!isDesktopApp()) {
     try {
+      const upgraded=Boolean(session.user?.id && webV3Accounts.has(session.user.id));
       const response = await accountApiFetch('/api/account-sync', {
-        method: 'POST', headers: authHeaders(session), body: JSON.stringify(payload),
+        method: 'POST', headers: authHeaders(session), body: JSON.stringify(upgraded?{...payload,watchHistory:undefined}:payload),
       });
-      return await parseResponse(response);
+      const result=await parseResponse(response);
+      if(upgraded && payload.watchHistory)await syncWebRecentHistory(session,payload.watchHistory);
+      return result;
     } catch (error) {
       throw normalizeFetchError(error);
     }
@@ -273,4 +290,29 @@ export async function replaceAccountSyncData(
     });
   }
   return { ok: true };
+}
+
+async function syncWebRecentHistory(session:AuthSession,rows:AccountWatchHistoryItem[]) {
+  const key=`streamnyaa.web.historyOutbox.v3.${session.user!.id}`;
+  const previous=JSON.parse(localStorage.getItem(key)||'{"sequence":0,"signatures":{},"pending":[]}');
+  const deviceKey='streamnyaa.web.historyDevice.v3';let deviceId=localStorage.getItem(deviceKey);
+  if(!deviceId){deviceId=crypto.randomUUID();localStorage.setItem(deviceKey,deviceId);}
+  for(const row of [...rows].sort((a,b)=>Date.parse(a.updatedAt)-Date.parse(b.updatedAt))){
+    const signature=JSON.stringify(row);if(previous.signatures[row.key]===signature)continue;
+    const identity=/^(mal|anilist|legacy):/.test(row.animeId || '')?row.animeId!:`legacy:${row.animeId || row.animeTitle}`;
+    const updatedAt=Date.parse(row.updatedAt)||0;
+    const base={identity,episode:String(row.episode || 1),updatedAt,epoch:0};
+    if(row.deletedAt)previous.pending.push({...base,kind:'clearResume',sequence:++previous.sequence});
+    else {
+      if(row.completed)previous.pending.push({...base,kind:'watch',watched:true,manual:false,sequence:++previous.sequence});
+      if(!(row.completed && row.positionSeconds===0 && row.watchedPercent===100))previous.pending.push({...base,kind:'progress',title:row.animeTitle,animeId:row.animeId,poster:row.poster,positionSeconds:row.positionSeconds,durationSeconds:row.durationSeconds,progressPercent:row.watchedPercent,completed:row.completed,watchedCoverage:row.watchedCoverage,lastPlayedAt:updatedAt,sequence:++previous.sequence});
+    }
+    previous.signatures[row.key]=signature;
+  }
+  localStorage.setItem(key,JSON.stringify(previous));
+  while(previous.pending.length){
+    const result=await accountHistoryV3(session,{action:'apply',deviceId,operations:previous.pending.slice(0,200)});
+    previous.pending=previous.pending.filter((op:any)=>op.sequence>result.acknowledgedThrough);
+    localStorage.setItem(key,JSON.stringify(previous));
+  }
 }

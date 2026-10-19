@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import DesktopHomeSettings from '../components/DesktopHomeSettings';
 import DesktopDownloadSettings from '../components/DesktopDownloadSettings';
 import { useLocation } from 'react-router-dom';
-import { exportPersonalBackup, importPersonalBackup } from '../lib/desktopPersonalBackup';
+import { exportPersonalBackupFile, importPersonalBackupFile } from '../lib/desktopPersonalBackup';
 import { useEffect, useRef, useState } from 'react';
 import { saveHideEpisodeSpoilers, useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { BellRing, CheckCircle2, Copy, Download, Globe2, HardDrive, History, Keyboard, PlayCircle, RefreshCw, ServerCog, ShieldCheck, Square, Trash2, Upload, UserRound } from 'lucide-react';
@@ -48,6 +48,7 @@ import {
   type DesktopScheduleUpdatePreferences,
 } from '../lib/scheduleRevisions';
 import { desktopPlayerShortcuts } from '../lib/desktopPlayerShortcuts';
+import { clearArchiveHistory, historyArchiveReady, historyRequest } from '../lib/desktopHistoryArchive';
 
 function formatBytes(bytes?: number | null) {
   if (!bytes) return '0 B';
@@ -154,6 +155,7 @@ export default function DesktopSettings() {
   const [runtime, setRuntime] = useState<DesktopRuntimeStatus | null>(() => loadCachedDesktopRuntimeStatus());
   const [diagnostics, setDiagnostics] = useState<DesktopDiagnosticsStatus | null>(null);
   const [historyCount, setHistoryCount] = useState(() => loadLocalPlaybackHistory().length);
+  const [confirmHistoryClear, setConfirmHistoryClear] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [message, setMessage] = useState<{ tone: 'neutral' | 'success' | 'error'; text: string } | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
@@ -176,9 +178,12 @@ export default function DesktopSettings() {
     return () => window.clearTimeout(timer);
   }, [isAdmin]);
 
-  useEffect(() => subscribeLocalPlaybackHistory(() => {
-    setHistoryCount(loadLocalPlaybackHistory().length);
-  }), []);
+  useEffect(() => {
+    const refreshCount=()=>{if(historyArchiveReady())void historyRequest<{total:number}>('stats').then(v=>setHistoryCount(v.total)).catch(()=>undefined);else setHistoryCount(loadLocalPlaybackHistory().length);};
+    refreshCount();const unsubscribe=subscribeLocalPlaybackHistory(refreshCount);
+    window.addEventListener('streamnyaa:history-ready',refreshCount);
+    return()=>{unsubscribe();window.removeEventListener('streamnyaa:history-ready',refreshCount);};
+  }, []);
 
   const updateSetting = (key: keyof DesktopPlaybackSettings, value: string) => {
     const next = { ...settings, [key]: value };
@@ -226,25 +231,18 @@ export default function DesktopSettings() {
     }
   };
 
-  const clearWatchHistory = () => {
-    clearLocalPlaybackHistory();
-    setHistoryCount(0);
-    setMessage({ tone: 'success', text: 'Watch history and Continue Watching were cleared.' });
+  const clearWatchHistory = async () => {
+    try{
+      if(historyArchiveReady())await clearArchiveHistory();else clearLocalPlaybackHistory();
+      setHistoryCount(0);setConfirmHistoryClear(false);
+      setMessage({ tone: 'success', text: 'History and matching cloud resumes cleared. Watched and completed markers were kept.' });
+    }catch(error){setMessage({tone:'error',text:String(error)});}
   };
 
   const exportSettings = async () => {
     try {
-      const payload = await exportPersonalBackup();
-      const blob = new Blob([payload], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `streamnyaa-desktop-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      setMessage({ tone: 'success', text: 'Library, history, preferences and shortcuts backup saved.' });
+      const backup = await exportPersonalBackupFile();
+      setMessage({ tone: 'success', text: `Full Library, history, preferences and shortcuts backup saved to ${backup.path}` });
     } catch (error) {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Desktop settings could not be exported.' });
     }
@@ -253,7 +251,7 @@ export default function DesktopSettings() {
   const importSettings = async (file?: File) => {
     if (!file) return;
     try {
-      const imported = await importPersonalBackup(await file.text());
+      const imported = await importPersonalBackupFile(file);
       setSettings(loadDesktopPlaybackSettings());
       setAudioPreference(loadDesktopAudioPreference());
       setAutoOpenBestSource(loadDesktopAutoOpenBestSource());
@@ -494,7 +492,7 @@ export default function DesktopSettings() {
               icon={<History className="h-5 w-5" />}
               eyebrow="Privacy"
               title="Local watch data"
-              description="History is stored on this device and powers Continue Watching. Clearing it does not affect the app install."
+              description="Full history stays on this device. Online sync keeps recent resumes for 20 anime and watched/completed tracking for every title."
             />
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-xl bg-white/[0.045] p-4">
@@ -502,17 +500,21 @@ export default function DesktopSettings() {
                 <p className="text-base font-semibold text-white">{historyCount} saved history item{historyCount === 1 ? '' : 's'}</p>
                 <p className="mt-1 text-sm text-white/50">Resume progress, recent sources, and Continue Watching entries.</p>
               </div>
-              <button onClick={clearWatchHistory} className="sn-secondary-action h-12 px-5 text-sm">
+              <button onClick={()=>setConfirmHistoryClear(true)} className="sn-secondary-action h-12 px-5 text-sm">
                 <Trash2 className="h-4 w-4" />
                 Clear history
               </button>
             </div>
+            {confirmHistoryClear && <div role="alertdialog" aria-label="Clear watch history" className="mt-3 rounded-xl border border-white/10 p-4">
+              <p className="text-sm text-white/70">Remove this device’s history and matching cloud resumes? Watched/completed markers and bookmarks remain. Other devices keep their local archives.</p>
+              <div className="mt-3 flex gap-2"><button onClick={()=>void clearWatchHistory()} className="sn-primary-action px-4 py-2">Confirm clear</button><button onClick={()=>setConfirmHistoryClear(false)} className="sn-secondary-action px-4 py-2">Cancel</button></div>
+            </div>}
 
             <div className="mt-4 rounded-xl bg-white/[0.045] p-4">
               <input
                 ref={backupInputRef}
                 type="file"
-                accept="application/json,.json"
+                accept="application/json,.json,.streamnyaa"
                 className="hidden"
                 onChange={(event) => void importSettings(event.target.files?.[0])}
               />

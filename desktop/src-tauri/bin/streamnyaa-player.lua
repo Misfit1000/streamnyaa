@@ -1516,6 +1516,7 @@ function is_buffering()
 end
 
 function is_loading()
+  if ui.confirmed_end then return false end
   if is_midplayback_buffering() then return false end
   if has_playable_media() and state.has_started_playback and not ui.recovery_terminal then return false end
   if ui.recovery_terminal or (ui.recovery_attempt and state.idle) then return true end
@@ -2355,7 +2356,9 @@ end)
 
 function handle_episode_eof()
   local key = tostring(ui.eof_candidate_key or "")
-  if key == "" or ui.eof_handled_key == key then return end
+  if is_placeholder_media() or not state.has_started_playback then return end
+  if key == "" then key = current_media_key() end
+  if ui.eof_handled_key ~= "" then return end
   ui.eof_handled_key = key
   ui.eof_candidate_key = ""
   show_overlay()
@@ -2781,7 +2784,7 @@ function draw_timeline(ass, width, height, mouse, s)
   local seek_hot = inside(mouse, x1, y - seek_hit_y, x2, y + seek_hit_y)
   local dragging = ui.dragging == "seek"
   local h = (seek_hot or dragging) and 7 * s or 4 * s
-  local ratio = state.duration > 0 and clamp(state.pos / state.duration, 0, 1) or 0
+  local ratio = ui.confirmed_end and 1 or (state.duration > 0 and clamp(state.pos / state.duration, 0, 1) or 0)
   if dragging and current_drag_ratio() then ratio = current_drag_ratio() end
   local buffered = ratio
   if state.duration > 0 and (tonumber(state.cache_end) or 0) > 0 then
@@ -2808,7 +2811,10 @@ function draw_timeline(ass, width, height, mouse, s)
 
   circle(ass, x1 + w * ratio, y, dragging and 12 * s or ((seek_hot and 10 * s) or 7 * s), C.accent, 0)
   local display_pos = dragging and state.duration * ratio or state.pos
-  draw_text(ass, x2, y - 20 * s, 6, font_px(s, 17, 16, 19), C.white, 0, string.format("%s / %s", format_time(display_pos), state.duration > 0 and format_time(state.duration) or "--:--"), false, "Segoe UI", true)
+  local timestamp = ui.confirmed_end and not dragging
+    and ("Ended · " .. format_time(ui.confirmed_end.position))
+    or string.format("%s / %s", format_time(display_pos), state.duration > 0 and format_time(state.duration) or "--:--")
+  draw_text(ass, x2, y - 20 * s, 6, font_px(s, 17, 16, 19), C.white, 0, timestamp, false, "Segoe UI", true)
   add_region("seek", x1, y - seek_hit_y, x2, y + seek_hit_y)
 
   if seek_hot and state.duration > 0 then
@@ -2986,8 +2992,9 @@ end
 
 function draw_end_action(ass, mouse, id, x1, y1, x2, y2, label, primary, s, disabled, icon_name)
   local hot = not disabled and inside(mouse, x1, y1, x2, y2)
+  local pressed = hot and ui.mouse_down_region and ui.mouse_down_region.id == id
   local fill = primary and (hot and C.hover or C.accent) or (hot and C.panel_2 or C.panel)
-  local alpha = disabled and 105 or (primary and 0 or 16)
+  local alpha = disabled and 105 or (pressed and 0 or (primary and 0 or 16))
   rounded_rect(ass, x1, y1, x2, y2, 8 * s, disabled and C.muted or fill, alpha)
   if not primary then
     rounded_outline(ass, x1, y1, x2, y2, 8 * s, 1.0 * s, C.white, disabled and 236 or (hot and 164 or 214))
@@ -3006,12 +3013,16 @@ function draw_end_action(ass, mouse, id, x1, y1, x2, y2, label, primary, s, disa
 end
 
 function end_overlay_layout(width, height, s)
-  local scale = math.min(controls_scale(s), (width - 32) / 520, (height - 32) / 246)
-  return { x = (width - 520 * scale) / 2, y = (height - 246 * scale) / 2, w = 520 * scale, h = 246 * scale, s = scale }
+  local scale = math.min(controls_scale(s), (width - 32) / 520, (height - 32) / 264)
+  return { x = (width - 520 * scale) / 2, y = (height - 264 * scale) / 2, w = 520 * scale, h = 264 * scale, s = scale }
 end
 
 function draw_end_overlay(ass, width, height, mouse, s)
   if not ui.end_overlay then return end
+  -- Completion is modal, including while EOF/idle telemetry reports loading.
+  -- Do not leave invisible transport controls beneath its buttons.
+  reset_regions()
+  add_region("end-panel", 0, 0, width, height)
   local p = end_overlay_layout(width, height, s)
   s = p.s
   local x, y, w, h = p.x, p.y, p.w, p.h
@@ -3019,17 +3030,21 @@ function draw_end_overlay(ass, width, height, mouse, s)
   rounded_rect(ass, x, y, x + w, y + h, 14 * s, C.panel, 0)
   rounded_outline(ass, x, y, x + w, y + h, 14 * s, s, C.white, 220)
   local unavailable = ui.end_status == "unavailable"
-  draw_text(ass, x + 28 * s, y + 36 * s, 4, 25 * s, C.white, 0, unavailable and "You're caught up" or "Episode complete", true, "Segoe UI Semibold")
+  draw_text(ass, x + 28 * s, y + 20 * s, 4, 10 * s, C.accent, 0, "PLAYBACK", true, "Segoe UI Semibold")
+  draw_text(ass, x + 28 * s, y + 49 * s, 4, 25 * s, C.white, 0, unavailable and "You're caught up" or "Episode complete", true, "Segoe UI Semibold")
   local title = tostring(player_meta.animeTitle ~= "" and player_meta.animeTitle or state.title or ""):gsub("[\r\n]", " ")
-  draw_text(ass, x + 28 * s, y + 72 * s, 4, 16 * s, C.white, 8, truncate_to_width(title, w - 56 * s, 16 * s, 0), true, "Segoe UI Semibold")
+  local episode = tostring(player_meta.episode or "")
+  if episode ~= "" then title = title .. " · Episode " .. episode end
+  draw_text(ass, x + 28 * s, y + 86 * s, 4, 16 * s, C.white, 8, truncate_to_width(title, w - 56 * s, 16 * s, 0), true, "Segoe UI Semibold")
   local detail = unavailable and "No next aired episode yet."
     or ui.end_status == "opening" and "Opening the next episode…"
     or ui.end_status == "preparing" and "Preparing the next episode…"
     or ui.end_status == "failed" and "Couldn't prepare the next episode. Try again."
     or "Continue with the next episode, or watch this one again."
-  draw_text(ass, x + 28 * s, y + 103 * s, 4, 13 * s, C.secondary, 0, detail, false, "Segoe UI")
-  draw_text(ass, x + 28 * s, y + 130 * s, 4, 12 * s, C.secondary, 0, state.autoplay and "Autoplay on" or "Autoplay off", false, "Segoe UI")
-  local bx, by = x + 28 * s, y + 168 * s
+  draw_text(ass, x + 28 * s, y + 117 * s, 4, 13 * s, C.secondary, 0, detail, false, "Segoe UI")
+  draw_text(ass, x + 28 * s, y + 144 * s, 4, 12 * s, C.secondary, 0, state.autoplay and "Auto-next on" or "Auto-next off", false, "Segoe UI")
+  rect(ass,x + 28*s,y+169*s,x+w-28*s,y+170*s,C.white,235)
+  local bx, by = x + 28 * s, y + 188 * s
   if not unavailable then
     local label = ui.end_status == "opening" and "Opening…" or ui.end_next_pending and "Preparing…" or ui.end_status == "failed" and "Try again" or "Next episode"
     draw_end_action(ass, mouse, "end_next_episode", bx, by, bx + 196 * s, by + 48 * s, label, true, s, ui.end_next_pending, "next")
@@ -3742,6 +3757,14 @@ function input_draw_interval(loading, dragging, reason)
 end
 
 function draw(immediate, reason)
+  -- keep-open can seek to its last frame and emit playback-restart after EOF.
+  -- Reconcile with MPV's terminal flag rather than letting that repaint erase
+  -- the completion layer. Explicit user seeks own their own transition.
+  if not ui.ignore_eof_until_restart and mp.get_property_native("eof-reached",false)
+    and state.has_started_playback and not is_placeholder_media() then
+    note_confirmed_end()
+    handle_episode_eof()
+  end
   local now = mp.get_time()
   local width, height = mp.get_osd_size()
   if not width or not height or width <= 0 or height <= 0 then
@@ -3828,7 +3851,9 @@ function draw(immediate, reason)
     draw_loading(ass, width, height, s, cover_info)
     -- Buffer telemetry must not dismiss a menu or replace its hit targets
     -- between mouse-down and mouse-up. Menus are always the top input layer.
-    if ui.settings_open then draw_settings_panel(ass, width, height, mouse, s) end
+    if ui.end_overlay then
+      draw_end_overlay(ass, width, height, mouse, s)
+    elseif ui.settings_open then draw_settings_panel(ass, width, height, mouse, s) end
     ui.regions_ready = #regions > 0
     remember_hover_region()
     ui.region_width = width
@@ -3851,7 +3876,7 @@ function draw(immediate, reason)
   draw_controls(ass, width, height, mouse, s)
   draw_manual_skip_buttons(ass, width, height, mouse, s)
   draw_end_overlay(ass, width, height, mouse, s)
-  draw_settings_panel(ass, width, height, mouse, s)
+  if not ui.end_overlay then draw_settings_panel(ass, width, height, mouse, s) end
 
   ui.regions_ready = #regions > 0
   remember_hover_region()
@@ -3888,6 +3913,8 @@ function update_property(name, value, should_show)
 end
 
 function note_explicit_seek(target)
+  ui.ignore_eof_until_restart = true
+  ui.confirmed_end = nil
   ui.last_video_position = math.max(0, tonumber(target) or 0)
   ui.playhead_last_advance_at = mp.get_time()
   -- A user seek during a retry replaces the resume checkpoint. Do not let
@@ -4154,7 +4181,8 @@ function activate_region(region, mouse)
 
   local id = region.id
   debug_input("activate=" .. tostring(id))
-  if id == "settings-panel" then return end
+  if id == "settings-panel" or id == "end-panel" then return end
+  if ui.end_overlay and not starts_with(id, "end_") then return end
   if id ~= "settings"
     and not starts_with(id, "settings:")
     and not starts_with(id, "speed:")
@@ -4178,7 +4206,12 @@ function activate_region(region, mouse)
     ui.eof_handled_key = ""
     ui.last_next_episode_request_key = ""
     note_explicit_seek(0)
-    safe_commandv("seek", "0", "absolute+exact")
+    local media_path = tostring(state.path or ui.last_video_path or "")
+    if state.idle or not has_playable_media() then
+      if media_path ~= "" and not is_placeholder_path(media_path) then safe_commandv("loadfile", media_path, "replace", "-1", "start=0") end
+    else
+      safe_commandv("seek", "0", "absolute+exact")
+    end
     safe_set_property_bool("pause", false)
     settings_notice("Replaying episode")
   elseif id == "end_close" then
@@ -4480,7 +4513,6 @@ function handle_mouse_down()
     set_volume_from_mouse(mouse, false, false)
   end
   draw(true, "mouse-down")
-  draw(true, "mouse-down")
 end
 
 function handle_mouse_up()
@@ -4690,8 +4722,31 @@ mp.observe_property("pause", "bool", function(_, value)
   update_stall_watchdog_timer()
 end)
 mp.observe_property("seeking", "bool", function(_, value)
+  if value then ui.confirmed_end = nil end
   update_property("seeking", value or false, true)
   update_stall_watchdog_timer()
+end)
+function note_confirmed_end()
+  if is_placeholder_media() then return end
+  -- Container durations can include trailing audio/subtitles or be inaccurate.
+  -- Display the last actual playhead as ended; never turn it into watched coverage.
+  ui.confirmed_end = {position=math.max(tonumber(state.pos) or 0,tonumber(ui.last_video_position) or 0)}
+end
+mp.observe_property("eof-reached", "bool", function(_, value)
+  -- MPV clears eof-reached again when entering idle. Retain the ended display
+  -- until a real seek, replacement, replay or non-EOF stop invalidates it.
+  if not value then ui.ignore_eof_until_restart=false
+  elseif not ui.ignore_eof_until_restart then note_confirmed_end(); handle_episode_eof() end
+  draw(true,"eof-timestamp")
+end)
+mp.register_script_message("streamnyaa-debug-input-state",function()
+  if not DEBUG_INPUT then return end
+  draw(true,"input-state")
+  safe_set_property("user-data/streamnyaa/input-state",utils.format_json({
+    ended=ui.end_overlay,pending=ui.end_next_pending,requestId=ui.end_request_id,
+    confirmedEnd=ui.confirmed_end,regions=regions,position=state.pos,duration=state.duration,
+    started=state.has_started_playback,path=state.path,handledKey=ui.eof_handled_key
+  }))
 end)
 mp.observe_property("volume", "number", function(_, value) update_property("volume", value or 100, false) end)
 mp.observe_property("mute", "bool", function(_, value) update_property("muted", value or false, false) end)
@@ -4716,6 +4771,7 @@ end)
 mp.observe_property("path", "string", function(_, value)
   local next_path = value or ""
   if next_path ~= state.path then
+    if next_path ~= "" then ui.confirmed_end=nil end
     local recovering_same_file = ui.recovery_attempt
       and (next_path == "" or next_path == ui.recovery_attempt.path)
     reset_skip_range_state()
@@ -4932,6 +4988,9 @@ end
 bind_key("TAB", "streamnyaa-end-focus", function()
   if ui.end_overlay then keyboard_seek(1, "end-focus") end
 end)
+bind_key("Shift+TAB", "streamnyaa-end-focus-back", function()
+  if ui.end_overlay then keyboard_seek(-1, "end-focus-back") end
+end)
 bind_key("ENTER", "streamnyaa-end-activate", function()
   if ui.end_overlay then activate_region({ id = ui.end_focus }, nil); draw(true, "end-activate") end
 end)
@@ -5055,6 +5114,8 @@ mp.register_script_message("streamnyaa-set-player-preference", function(key, val
 end)
 
 mp.register_event("file-loaded", function()
+  ui.ignore_eof_until_restart = false
+  ui.confirmed_end = nil
   show_overlay()
   ui.settings_open = false
   ui.submenu = "main"
@@ -5080,8 +5141,10 @@ mp.register_event("end-file", function(event)
   ui.marker_log_key = ""
   ui.chapter_state_key = ""
   if event and event.reason == "eof" then
+    note_confirmed_end()
     handle_episode_eof()
   else
+    ui.confirmed_end = nil
     ui.eof_candidate_key = ""
     hide_end_overlay()
   end
@@ -5092,6 +5155,9 @@ mp.register_event("end-file", function(event)
   draw(true, "end-file")
 end)
 mp.register_event("playback-restart", function()
+  if not ui.ignore_eof_until_restart and mp.get_property_native("eof-reached",false) then
+    note_confirmed_end();handle_episode_eof();draw(true,"keep-open-eof");return
+  end
   if has_playable_media() and not is_placeholder_media() then
     local offset_key = tostring(player_meta.subtitleOffsetKey or "")
     if ui.restored_offset_key ~= offset_key then

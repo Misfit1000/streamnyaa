@@ -17,6 +17,8 @@ import {
   type DesktopWatchProgressRecord,
 } from '../lib/desktop';
 import { useStore } from '../store/useStore';
+import { ensureHistoryArchive, flushHistoryWrites } from '../lib/desktopHistoryArchive';
+import { syncDesktopHistory } from '../lib/desktopHistorySync';
 
 type AccountSyncState = 'idle' | 'syncing' | 'synced' | 'unavailable';
 
@@ -170,18 +172,8 @@ function captureLocalChanges(userId: string, journal = loadJournal(userId)) {
     }
   });
 
-  const currentProgress = new Map(loadDesktopWatchProgress().map((record) => [progressKey(record), progressToSync(record)]));
-  currentProgress.forEach((item, key) => {
-    const previous = journal.watchHistory[key];
-    if (!previous || timestamp(item.updatedAt) > timestamp(previous.updatedAt) || previous.deletedAt) {
-      journal.watchHistory[key] = item;
-    }
-  });
-  Object.values(journal.watchHistory).forEach((previous) => {
-    if (!previous.deletedAt && !currentProgress.has(previous.key)) {
-      journal.watchHistory[previous.key] = { ...previous, updatedAt: now, deletedAt: now };
-    }
-  });
+  // History uses the native transactional outbox. Absence from a UI projection
+  // is never evidence of a user deletion.
   saveJournal(userId, journal);
   return journal;
 }
@@ -252,6 +244,7 @@ function DesktopAccountSyncProvider({ children }: { children: React.ReactNode })
   const flight = useRef<{ identity: string; epoch: number; promise: Promise<void> } | null>(null);
   const resync = useRef(false);
   const projectionReady = useRef(false);
+  const [preparedOwner,setPreparedOwner]=useState<string|null>(null);
 
   // The visible library is a projection, never an implicit transfer between
   // accounts. Retain each outgoing projection in its existing journal.
@@ -260,7 +253,9 @@ function DesktopAccountSyncProvider({ children }: { children: React.ReactNode })
     projectionReady.current = false;
     currentIdentity.current = identity;
     const owner = userId || GUEST_OWNER;
+    let cancelled=false;setPreparedOwner(null);
     try {
+      const preparation=ensureHistoryArchive(userId);
       const previous = localStorage.getItem(PROJECTION_OWNER_KEY);
       if (previous && previous !== owner) {
         captureLocalChanges(previous);
@@ -268,19 +263,26 @@ function DesktopAccountSyncProvider({ children }: { children: React.ReactNode })
         applyingRemoteRef.current = true;
         try {
           applyLibraryToStore(Object.values(journal.library));
-          applyWatchHistory(Object.values(journal.watchHistory));
         } finally { applyingRemoteRef.current = false; }
       }
       localStorage.setItem(PROJECTION_OWNER_KEY, owner);
       resync.current = false;
-      projectionReady.current = true;
+      void preparation.then(()=>{
+        if(cancelled || currentIdentity.current!==identity)return;
+        projectionReady.current=true;
+        const journal=loadJournal(owner);journal.watchHistory={};saveJournal(owner,journal);
+        setPreparedOwner(owner);
+      }).catch(error=>{
+        if(cancelled)return;
+        setState('unavailable');setMessage(error instanceof Error?error.message:'Local history could not be opened.');
+      });
     } catch {
       currentIdentity.current = '';
       setState('unavailable');
       setMessage('Account data could not be saved locally. Free some storage and restart before syncing.');
     }
-    return () => { currentIdentity.current = ''; };
-  }, [userId, loading]);
+    return () => { cancelled=true;currentIdentity.current = ''; };
+  }, [userId, loading, identity]);
 
   const syncNow = useCallback((): Promise<void> => {
     const isCurrent = () => projectionReady.current && currentIdentity.current === identity && epochRef.current.value === epoch;
@@ -296,25 +298,25 @@ function DesktopAccountSyncProvider({ children }: { children: React.ReactNode })
     initialSyncedRef.current = false;
     try {
       captureLocalChanges(userId);
-      const remote = await fetchAccountSync(session);
+      const remote = await fetchAccountSync(session,false);
       if (!isCurrent()) return;
       // Capture again after I/O: edits, removals and backward seeks made while
       // fetching are newer than the pre-request snapshot.
       const local = captureLocalChanges(userId);
       const merged: SyncJournal = {
         library: mergeByKey(local.library, remote.library, (item) => item.animeId),
-        watchHistory: mergeByKey(local.watchHistory, remote.watchHistory, (item) => item.key),
+        watchHistory: {},
       };
       // Persist first so a quota failure never replaces unsaved local data.
       saveJournal(userId, merged);
       applyingRemoteRef.current = true;
       applyLibraryToStore(Object.values(merged.library));
-      applyWatchHistory(Object.values(merged.watchHistory));
       applyingRemoteRef.current = false;
       await replaceAccountSyncData(session, {
-        library: Object.values(merged.library),
-        watchHistory: Object.values(merged.watchHistory),
+        library: Object.values(merged.library).filter(item=>!remote.library.some(r=>r.animeId===item.animeId && timestamp(r.updatedAt)>=timestamp(item.updatedAt))),
       });
+      if(!isCurrent())return;
+      await syncDesktopHistory(session,isCurrent);
       if (!isCurrent()) return;
       initialSyncedRef.current = true;
       setState('synced');
@@ -340,9 +342,9 @@ function DesktopAccountSyncProvider({ children }: { children: React.ReactNode })
     });
     flight.current = { identity, epoch, promise };
     return promise;
-  }, [epoch, identity, loading, session, user?.email, userId]);
+  }, [epoch, identity, loading, session, user?.email, userId,preparedOwner]);
 
-  const schedulePush = useCallback(() => {
+  const schedulePush = useCallback((delay=60_000) => {
     if (!projectionReady.current || currentIdentity.current !== identity || !session?.access_token || !userId || applyingRemoteRef.current) return;
     try { captureLocalChanges(userId); }
     catch {
@@ -350,8 +352,8 @@ function DesktopAccountSyncProvider({ children }: { children: React.ReactNode })
       setMessage('Local changes could not be saved. Check available storage before closing the app.');
       return;
     }
-    if (pushTimerRef.current) window.clearTimeout(pushTimerRef.current);
-    pushTimerRef.current = window.setTimeout(() => { void syncNow(); }, PUSH_DEBOUNCE_MS);
+    if (pushTimerRef.current) return;
+    pushTimerRef.current = window.setTimeout(() => { pushTimerRef.current=null;void syncNow(); }, delay);
   }, [identity, syncNow, session?.access_token, userId]);
 
   useEffect(() => {
@@ -367,17 +369,23 @@ function DesktopAccountSyncProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     if (!session?.access_token || !userId) return undefined;
-    const unsubscribeStore = useStore.subscribe(() => schedulePush());
+    const unsubscribeStore = useStore.subscribe(() => schedulePush(900));
     const unsubscribeProgress = subscribeDesktopWatchProgress(() => schedulePush());
     const retryOnline = () => void syncNow();
     window.addEventListener('online', retryOnline);
+    window.addEventListener('streamnyaa:history-sync-now',retryOnline);
     return () => {
       unsubscribeStore();
       unsubscribeProgress();
       window.removeEventListener('online', retryOnline);
+      window.removeEventListener('streamnyaa:history-sync-now',retryOnline);
       if (pushTimerRef.current) window.clearTimeout(pushTimerRef.current);
     };
   }, [schedulePush, session?.access_token, syncNow, userId]);
+  useEffect(()=>{
+    if(state!=='unavailable' || !session?.access_token || !userId)return;
+    const timer=window.setTimeout(()=>{void syncNow();},60_000);return()=>window.clearTimeout(timer);
+  },[state,session?.access_token,userId,syncNow]);
 
   const value = useMemo<AccountSyncContextValue>(() => ({ state, message, lastSyncedAt, syncNow }), [lastSyncedAt, message, state, syncNow]);
   return <AccountSyncContext.Provider value={value}>{children}</AccountSyncContext.Provider>;

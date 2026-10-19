@@ -171,11 +171,7 @@ function captureLocalChanges(userId: string, journal = loadJournal(userId)) {
       journal.watchHistory[key] = item;
     }
   });
-  Object.values(journal.watchHistory).forEach((previous) => {
-    if (!previous.deletedAt && !currentProgress.has(previous.key)) {
-      journal.watchHistory[previous.key] = { ...previous, updatedAt: now, deletedAt: now };
-    }
-  });
+  // Capped local projections do not imply deletion of watched status or resumes.
   saveJournal(userId, journal);
   return journal;
 }
