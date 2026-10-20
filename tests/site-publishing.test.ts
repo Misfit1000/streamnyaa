@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { calculateRanking } from '../api/_shared/publishingData.ts';
-import { validateEditorial } from '../api/_shared/publishing.ts';
+import { publicationDefinition, validateEditorial } from '../api/_shared/publishing.ts';
 import blog from '../api/blog.ts';
 import sitemap from '../api/blog-sitemap.ts';
 import archive from '../api/blog-archive.ts';
@@ -39,6 +39,8 @@ test('PostgreSQL leases fence old workers, deduplicate topics and isolate servic
   }finally{await db.close();}
 });
 test('weekly activity uses recorded days, stable ties and explicit missing coverage',()=>{
+  assert.notEqual(publicationDefinition('weekly',0).slug,publicationDefinition('daily',0).slug);
+  assert.notEqual(publicationDefinition('weekly',0).slug,publicationDefinition('daily',1).slug);
   const start=Date.UTC(2026,9,12),end=start+7*86400_000,rows:any[]=[];
   for(let id=1;id<=14;id++)for(let day=0;day<(id===14?3:4);day++)rows.push({mediaId:id,date:(start+day*86400_000)/1000,trending:id<=2?100:id,popularity:id===1?20:10,media:{title:{romaji:`Series ${id}`}}});
   rows.push({mediaId:1,date:end/1000,trending:99999});

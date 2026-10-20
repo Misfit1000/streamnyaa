@@ -90,6 +90,19 @@ export const BLOG_POSTS = [
     articleKind: 'non_ai',
     sortRank: 50,
   },
+  {
+    slug: 'weekly-anilist-activity',
+    title: 'Weekly AniList Activity',
+    seoTitle: 'Weekly AniList Activity | StreamNyaa',
+    category: 'Weekly',
+    description: 'Top 10 and honorable mentions calculated from recorded daily AniList activity, with coverage disclosed.',
+    summary: 'A reproducible seven-day activity ranking with sources and coverage.',
+    intro: 'Recorded daily activity provides a bounded view of changes on AniList.',
+    angle: 'weekly AniList activity',
+    readerPromise: 'Compare recorded activity using the published method and source coverage.',
+    articleKind: 'gemini',
+    sortRank: 90,
+  },
 ] as const;
 
 export type BlogSlug = typeof BLOG_POSTS[number]['slug'];

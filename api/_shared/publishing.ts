@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { supabaseRest } from './adminAuth.js';
 import { archiveBlogPost, findDurableBlogPost, listPrimaryPublishedBlogPosts } from '../blogArchive.js';
-import { BLOG_POSTS } from '../../src/api/blogShared.js';
+import { BLOG_POSTS, getBlogPost } from '../../src/api/blogShared.js';
 import { discoverNews, rankingBrief, EditorialTransport, type EvidenceBrief } from './publishingData.js';
 
 export type GenerationRun={id:string;idempotency_key:string;kind:'daily'|'weekly';status:'pending'|'running'|'published'|'skipped'|'failed';checkpoint:any;reason?:string;created_at:string;updated_at:string;lease_until?:string};
 const jsonPost=(body:any)=>({method:'POST',signal:AbortSignal.timeout(5000),body:JSON.stringify(body)});
 const slug=(value:string)=>value.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,105);
 export const dayKey=(now=Date.now())=>new Date(now).toISOString().slice(0,10);
+export function publicationDefinition(kind:'daily'|'weekly',index:number){
+  return kind==='weekly'?getBlogPost('weekly-anilist-activity')!:BLOG_POSTS[index>0?1:0];
+}
 export async function enqueueGeneration(kind:'daily'|'weekly',limit=2,now=Date.now()):Promise<GenerationRun>{
   const key=`${kind}:${dayKey(now)}`;
   const created=await supabaseRest('blog_generation_runs?on_conflict=idempotency_key',{...jsonPost({idempotency_key:key,kind,checkpoint:{limit:kind==='weekly'?1:Math.min(2,Math.max(1,limit)),published:[]}}),headers:{Prefer:'resolution=ignore-duplicates,return=representation'}});
@@ -105,7 +108,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
       if(!state.draft){state.draft=await authorBrief(brief,recent,deadline);await save(run,token,'running',state);}
       if(state.draft.errors.length){state.rejections=[...(state.rejections||[]),{fingerprint:brief.fingerprint,reason:state.draft.errors,draft:state.draft.draft}].slice(-4);delete state.draft;state.next++;await save(run,token,'running',state);continue;}
       if(Date.now()>deadline-45_000){await save(run,token,'pending',{...state,resumeRequired:true},'Validated draft saved. Resume to finish durable publication.');return;}
-      const now=new Date().toISOString(),definition=BLOG_POSTS[run.kind==='daily'&&state.published.length>0?1:0];
+      const now=new Date().toISOString(),definition=publicationDefinition(run.kind,state.published.length);
       const post:any={...definition,category:brief.kind==='news'?'News':brief.kind==='weekly-ranking'?'Weekly':'Data',contentKind:brief.kind,qualityVersion:1,articleKind:'gemini',articleSource:'gemini',articleStatus:'published',articleSlug,generatedAt:now,updatedAt:now,
         items:brief.items,topic:{type:brief.kind,title:state.draft.draft.headline,animeTitle:brief.subject,summary:state.draft.draft.excerpt,confidence:'headline',reason:'Verified evidence brief',evidence:brief.facts,image:brief.items[0]?.image},
         article:articleFromDraft(state.draft.draft,brief),sources:brief.sources.map(({text,...source})=>source),charts:brief.charts,ranking:brief.ranking,publication:{runId:run.id,fingerprint:brief.fingerprint,publishedAt:now,updatedAt:now}};
