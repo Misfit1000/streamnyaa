@@ -26,6 +26,8 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
   const from=Math.floor(start/86400)*86400, until=Math.ceil(end/86400)*86400;
   const providers:PublicCalendar['providers']={}, incoming:CalendarRecord[]=[];
   let nextPage=0,nextOffset=offset,retryAt=0,persistenceError:string|undefined;
+  const key=`calendar-records:${from}:${until}`, priorRead=readPublicSnapshot<CalendarRecord[]>(key);
+  const anilistPass=(async()=>{
   if(page){
     try{
       const schedule=await publicSnapshot<any>(`calendar-anilist:${from}:${until}:${page}`,180,()=>json('https://graphql.anilist.co',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:airingQuery,variables:{start:from-1,end:until,page}})},usage,deadline),value=>Array.isArray(value?.data?.Page?.airingSchedules)&&typeof value?.data?.Page?.pageInfo?.hasNextPage==='boolean');
@@ -39,7 +41,8 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
       nextPage=data.pageInfo.hasNextPage?page+1:0;
     }catch(error){retryAt=Math.max(retryAt,(error as any).retryAt||0);providers.anilist={fetchedAt:0,stale:true,error:(error as Error).message};}
   }
-  const key=`calendar-records:${from}:${until}`, prior=await readPublicSnapshot<CalendarRecord[]>(key);
+  })();
+  const prior=await priorRead;
   if(prior)prior.value=Array.isArray(prior.value)?prior.value.filter(isCalendarRecord):[];
   const token=process.env.ANIMESCHEDULE_TOKEN||process.env.ANIMESCHEDULE_API_TOKEN;
   let routesRemain=false;
@@ -48,7 +51,8 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
       const weeks=[isoWeek(start*1000),isoWeek((end-1)*1000)].filter((week,index,all)=>all.findIndex(other=>other.year===week.year&&other.week===week.week)===index);
       const feed:any[]=[];let fetchedAt=Date.now(),stale=false;
       const fetchSchedule=(path:string)=>json(`https://animeschedule.net/api/v3${path}`,{headers:{Accept:'application/json',Authorization:`Bearer ${token}`}},usage,deadline);
-      for(const week of weeks){const snapshot=await publicSnapshot<any[]>(`animeschedule:timetables:${week.year}:${week.week}`,900,()=>fetchSchedule(`/timetables/all?year=${week.year}&week=${week.week}&tz=UTC`),Array.isArray);feed.push(...snapshot.value.slice(0,1500));fetchedAt=Math.min(fetchedAt,snapshot.fetchedAt);stale ||= snapshot.stale;persistenceError ||= snapshot.persistenceError;}
+      const snapshots=await Promise.all(weeks.map(week=>publicSnapshot<any[]>(`animeschedule:timetables:${week.year}:${week.week}`,900,()=>fetchSchedule(`/timetables/all?year=${week.year}&week=${week.week}&tz=UTC`),Array.isArray)));
+      for(const snapshot of snapshots){feed.push(...snapshot.value.slice(0,1500));fetchedAt=Math.min(fetchedAt,snapshot.fetchedAt);stale ||= snapshot.stale;persistenceError ||= snapshot.persistenceError;}
       providers.animeschedule={fetchedAt,stale};
       const relevantFeed=feed.filter(row=>{const normalized=normalizeScheduleTrack(row,row,fetchedAt);return normalized&&(normalized.airingAt>=start&&normalized.airingAt<end||Number(normalized.previousAiringAt)>=start*1000&&Number(normalized.previousAiringAt)<end*1000);});
       const routes=[...new Set(relevantFeed.sort((a,b)=>Number(/delayed|break|postpon/i.test(b.airingStatus||''))-Number(/delayed|break|postpon/i.test(a.airingStatus||''))).map(row=>String(row.route||'')).filter(route=>/^[a-z0-9-]{1,240}$/.test(route)))];
@@ -73,6 +77,7 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
       }
     }catch(error){retryAt=Math.max(retryAt,(error as any).retryAt||0);providers.animeschedule={fetchedAt:0,stale:true,error:(error as Error).message};}
   }else providers.animeschedule={fetchedAt:0,stale:true,error:'Release-track updates are not configured.'};
+  await anilistPass;
   if(!incoming.length&&!prior?.value?.length)throw Object.assign(Error('The airing schedule is temporarily unavailable.'),{status:503,retryAt:Date.now()+30000});
   let records=reconcileCalendarRecords(prior?.value||[],incoming);
   if(incoming.length){try{const merged=await supabaseRest('rpc/merge_calendar_snapshot',{method:'POST',signal:AbortSignal.timeout(4000),body:JSON.stringify({p_key:key,p_rows:records})});if(Array.isArray(merged))records=reconcileCalendarRecords([],merged.filter(isCalendarRecord));}catch{persistenceError='Shared Calendar persistence is temporarily unavailable.';}}
