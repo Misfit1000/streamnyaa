@@ -54,7 +54,7 @@ test('API routes stay ahead of the SPA rewrites', () => {
   assert.ok(firstSpaIndex > apiIndex);
 });
 
-test('crawler policy keeps public indexing and the sitemap while excluding API crawling', () => {
+test('crawler policy permits essential article reads while excluding unrelated APIs', () => {
   const robots = readFileSync(new URL('../public/robots.txt', import.meta.url), 'utf8');
   const groups = robots.split(/\r?\n\s*\r?\n/).filter(block => block.startsWith('User-agent:'));
   const publicGroups = groups.filter(block => /^User-agent: (?:\*|Googlebot)$/m.test(block));
@@ -63,6 +63,8 @@ test('crawler policy keeps public indexing and the sitemap while excluding API c
     assert.match(block, /^Allow: \/$/m);
     assert.match(block, /^Disallow: \/api\/$/m);
     assert.match(block, /^Allow: \/api\/blog-sitemap$/m);
+    assert.match(block, /^Allow: \/api\/blog\?$/m);
+    assert.match(block, /^Allow: \/api\/blog-archive\?$/m);
   }
   for (const crawler of ['Reflectionbot', 'AhrefsBot', 'ClaudeBot']) {
     const group = groups.find(block => block.includes(`User-agent: ${crawler}`));

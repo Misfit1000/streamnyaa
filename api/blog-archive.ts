@@ -1,6 +1,8 @@
 import { findArchivedBlogPost, listArchivedBlogPostSummaries, listArchivedBlogPostSummaryPage, listArchivedBlogPosts, migrateArchivedBlogPostsToSupabase } from './blogArchive.js';
 
 export default async function handler(req: any, res: any) {
+  // Let renderers read public article JSON without indexing the transport URL.
+  res.setHeader('X-Robots-Tag', 'noindex');
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -15,6 +17,7 @@ export default async function handler(req: any, res: any) {
     if (slug) {
       const post = await findArchivedBlogPost(slug);
       if (!post) return res.status(404).json({ error: 'Archived blog post not found' });
+      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=900, stale-while-revalidate=3600');
       return res.status(200).json(post);
     }
 

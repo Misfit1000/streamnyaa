@@ -31,6 +31,7 @@ export async function getCachedBlogPost(slug:string,_preview=false,_force=false,
   flights.set(slug,request);try{return await request;}finally{flights.delete(slug);}
 }
 export default async function handler(req:any,res:any){
+  res.setHeader('X-Robots-Tag','noindex');
   if(req.method!=='GET')return res.status(405).json({error:'Blog reads require GET. Use authenticated publishing jobs for generation.'});
   if(req.query.force||req.query.manual)return res.status(405).json({error:'Generation is available through authenticated Admin jobs only.'});
   const slug=String(Array.isArray(req.query.slug)?req.query.slug[0]:req.query.slug||'');

@@ -2,11 +2,15 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Allow: /api/blog-sitemap
+Allow: /api/blog?
+Allow: /api/blog-archive?
 
 User-agent: Googlebot
 Allow: /
 Disallow: /api/
 Allow: /api/blog-sitemap
+Allow: /api/blog?
+Allow: /api/blog-archive?
 
 User-agent: Reflectionbot
 User-agent: AhrefsBot
