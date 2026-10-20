@@ -61,30 +61,42 @@ export class EditorialTransport{
   }
 }
 const fields='id idMal title{romaji english} format status episodes genres averageScore popularity coverImage{extraLarge large} studios(isMain:true){nodes{name}} externalLinks{url site}';
-export async function discoverNews(transport:EditorialTransport):Promise<EvidenceBrief[]>{
-  const catalog=await publicSnapshot<any>('editorial:candidates:v1',3600,()=>transport.graph(`query{active:Page(perPage:12){media(type:ANIME,status:RELEASING,sort:TRENDING_DESC,isAdult:false){${fields}}} upcoming:Page(perPage:12){media(type:ANIME,status:NOT_YET_RELEASED,sort:POPULARITY_DESC,isAdult:false){${fields}}}}`,{}));
-  if(catalog.stale)throw Error('Current editorial candidates could not refresh.');
-  const media=[...(catalog.value?.data?.active?.media||[]).slice(0,3),...(catalog.value?.data?.upcoming?.media||[]).slice(0,3)];
-  const leads:{item:any;news:any}[]=[];
-  for(const item of media){if(!item.idMal)continue;const source=await publicSnapshot<any>(`editorial:news:${item.idMal}`,3600,async()=>{const response=await transport.fetch(`https://api.tenrai.org/v1/anime/${item.idMal}/news`);const json=await response.json();if(!Array.isArray(json.data))throw Error('Invalid news discovery response.');return json;});
-    if(!source.stale)for(const news of source.value.data.slice(0,8)){const age=Date.now()-Date.parse(news.date||'');if(age>=0&&age<=48*3600_000&&/announce|confirm|season|film|movie|trailer|delay|postpon|cancel|cast|replace|died|dies|death|passed away|industry|studio|release/i.test(news.title||''))leads.push({item,news});}}
-  const briefs:EvidenceBrief[]=[];const seen=new Set<string>();
-  for(const {item,news} of leads.sort((a,b)=>Date.parse(b.news.date)-Date.parse(a.news.date)).slice(0,8)){
-    if(briefs.length>=4)break;if(seen.has(news.url))continue;seen.add(news.url);
+export type DiscoveryCheckpoint={media?:any[];feedIndex?:number;leads?:{item:any;news:any}[];leadIndex?:number;briefs?:EvidenceBrief[];rejections?:{url:string;reason:string}[]};
+export async function discoverNews(transport:EditorialTransport,state:DiscoveryCheckpoint={},checkpoint:()=>Promise<void>=async()=>{}):Promise<EvidenceBrief[]>{
+  if(!state.media){
+    const catalog=await publicSnapshot<any>('editorial:candidates:v1',3600,()=>transport.graph(`query{active:Page(perPage:12){media(type:ANIME,status:RELEASING,sort:TRENDING_DESC,isAdult:false){${fields}}} upcoming:Page(perPage:12){media(type:ANIME,status:NOT_YET_RELEASED,sort:POPULARITY_DESC,isAdult:false){${fields}}}}`,{}));
+    if(catalog.stale)throw Object.assign(Error('Current editorial candidates could not refresh.'),{status:503});
+    state.media=[...(catalog.value?.data?.active?.media||[]).slice(0,3),...(catalog.value?.data?.upcoming?.media||[]).slice(0,3)];await checkpoint();
+  }
+  const media=state.media,leads=state.leads ||= [];
+  for(state.feedIndex ||= 0;state.feedIndex<media.length;){
+    const item=media[state.feedIndex];
+    if(item.idMal){const source=await publicSnapshot<any>(`editorial:news:${item.idMal}`,3600,async()=>{const response=await transport.fetch(`https://api.tenrai.org/v1/anime/${item.idMal}/news`);const json=await response.json();if(!Array.isArray(json.data))throw Error('Invalid news discovery response.');return json;});
+      if(source.stale)throw Object.assign(Error(`News evidence for MAL ${item.idMal} could not refresh.`),{status:503});
+      for(const news of source.value.data.slice(0,8)){const age=Date.now()-Date.parse(news.date||'');if(age>=0&&age<=48*3600_000&&/announce|confirm|season|film|movie|trailer|delay|postpon|cancel|cast|replace|died|dies|death|passed away|industry|studio|release/i.test(news.title||'')&&!leads.some(lead=>lead.news.url===news.url))leads.push({item,news});}
+    }
+    state.feedIndex++;await checkpoint();
+  }
+  const ordered=leads.slice().sort((a,b)=>Date.parse(b.news.date)-Date.parse(a.news.date)).slice(0,8),briefs=state.briefs ||= [];
+  for(state.leadIndex ||= 0;state.leadIndex<ordered.length;){
+    if(briefs.length>=4)break;const {item,news}=ordered[state.leadIndex];let completed=true;
     try{
       const officialHosts=(item.externalLinks||[]).filter((link:any)=>/official/i.test(link.site||'')).flatMap((link:any)=>{try{return[new URL(link.url).hostname];}catch{return[];}});
       const trusted=[...primaryDomains,...officialHosts];const discovery=await transport.document(news.url,['animenewsnetwork.com',...trusted]);
       const direct=trusted.some(host=>hostMatches(new URL(discovery.url).hostname,host));
       let primary=direct?discovery:undefined;
       if(!primary)for(const link of discovery.links.filter(link=>{try{return trusted.some(host=>hostMatches(new URL(link).hostname,host));}catch{return false;}}).slice(0,3)){
-        try{const evidence=await transport.document(link,trusted);if(evidence.text.toLowerCase().includes(String(item.title.english||item.title.romaji).toLowerCase().slice(0,12))){primary=evidence;break;}}catch{/* A link is not confirmation if its document cannot be read. */}
+        try{const evidence=await transport.document(link,trusted);if(evidence.text.toLowerCase().includes(String(item.title.english||item.title.romaji).toLowerCase().slice(0,12))){primary=evidence;break;}}catch(error){if([403,429].includes((error as any).status)||(error as any).status>=500)throw error;}
       }
       if(!primary?.publishedAt||Date.now()-Date.parse(primary.publishedAt)>7*86400_000||Date.parse(primary.publishedAt)>Date.now()+60_000)continue;
       const title=item.title.english||item.title.romaji,source:EvidenceSource={id:'primary-1',title:'Official announcement',url:primary.url,publishedAt:primary.publishedAt,retrievedAt:new Date().toISOString(),text:primary.text,primary:true};
       // The primary document, not a ranking score or aggregated headline, is
       // supplied as the evidence brief. Sensitive claims follow the same gate.
       briefs.push({kind:'news',subject:title,headline:news.title,fingerprint:fingerprint(`event:${primary.url.split('#')[0]}:${primary.publishedAt}`),sources:[source],items:[toMediaItem(item)],facts:[`Discovery headline: ${news.title}`,`Affected installment: ${title}`,`Discovery date: ${news.date}`]});
-    }catch(error){if([403,429].includes((error as any).status))throw error;}
+    }catch(error){
+      if([403,429].includes((error as any).status)||(error as any).status>=500||/budget/i.test(String((error as Error).message))){completed=false;throw error;}
+      state.rejections=[...(state.rejections||[]),{url:news.url,reason:String((error as Error).message).slice(0,300)}].slice(-8);
+    }finally{if(completed)state.leadIndex++;await checkpoint();}
   }
   return briefs;
 }

@@ -7,7 +7,7 @@ import {
   supabaseSecretKey,
 } from '../_shared/adminAuth.js';
 
-import { generateBlog, summary, generationStatusRoute } from '../_shared/adminPublishing.js';
+import { generateBlog, summary, generationStatusRoute, reviewBlog } from '../_shared/adminPublishing.js';
 export const maxDuration = 300;
 
 function routeName(req: any) {
@@ -60,6 +60,7 @@ export default function handler(req: any, res: any) {
     case 'admins': return admins(req, res);
     case 'generate-blog': return generateBlog(req, res);
     case 'generation-status': return generationStatusRoute(req, res);
+    case 'generation-review': return reviewBlog(req,res);
     case 'summary': return summary(req, res);
     default: return res.status(404).json({ error: 'Admin route not found' });
   }

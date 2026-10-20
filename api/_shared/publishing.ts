@@ -3,21 +3,27 @@ import { supabaseRest } from './adminAuth.js';
 import { archiveBlogPost, findDurableBlogPost, listPrimaryPublishedBlogPosts } from '../blogArchive.js';
 import { BLOG_POSTS, getBlogPost } from '../../src/api/blogShared.js';
 import { discoverNews, rankingBrief, EditorialTransport, type EvidenceBrief } from './publishingData.js';
+import { publicationPolicy, draftRevision } from './publicationReview.js';
 
-export type GenerationRun={id:string;idempotency_key:string;kind:'daily'|'weekly';status:'pending'|'running'|'published'|'skipped'|'failed';checkpoint:any;reason?:string;created_at:string;updated_at:string;lease_until?:string};
+export type GenerationRun={id:string;idempotency_key:string;kind:'daily'|'weekly';publication_mode:'review'|'automatic';status:'pending'|'running'|'awaiting_review'|'published'|'skipped'|'failed';checkpoint:any;reason?:string;created_at:string;updated_at:string;lease_until?:string};
 const jsonPost=(body:any)=>({method:'POST',signal:AbortSignal.timeout(5000),body:JSON.stringify(body)});
 const slug=(value:string)=>value.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,105);
 export const dayKey=(now=Date.now())=>new Date(now).toISOString().slice(0,10);
 export function publicationDefinition(kind:'daily'|'weekly',index:number){
   return kind==='weekly'?getBlogPost('weekly-anilist-activity')!:BLOG_POSTS[index>0?1:0];
 }
-export async function enqueueGeneration(kind:'daily'|'weekly',limit=2,now=Date.now()):Promise<GenerationRun>{
+export async function enqueueGeneration(kind:'daily'|'weekly',limit=2,now=Date.now(),mode?:'review'|'automatic'):Promise<GenerationRun>{
+  const policy=await publicationPolicy();
   const key=`${kind}:${dayKey(now)}`;
-  const created=await supabaseRest('blog_generation_runs?on_conflict=idempotency_key',{...jsonPost({idempotency_key:key,kind,checkpoint:{limit:kind==='weekly'?1:Math.min(2,Math.max(1,limit)),published:[]}}),headers:{Prefer:'resolution=ignore-duplicates,return=representation'}});
+  const created=await supabaseRest('blog_generation_runs?on_conflict=idempotency_key',{...jsonPost({idempotency_key:key,kind,publication_mode:mode|| (policy.automaticEnabled?'automatic':'review'),checkpoint:{limit:kind==='weekly'?1:Math.min(2,Math.max(1,limit)),published:[]}}),headers:{Prefer:'resolution=ignore-duplicates,return=representation'}});
   let run=created?.[0] as GenerationRun|undefined;
   if(!run){const rows=await supabaseRest(`blog_generation_runs?idempotency_key=eq.${encodeURIComponent(key)}&select=*&limit=1`);run=rows?.[0];}
   if(!run)throw Error('The persistent publication job could not be created.');
-  if(run.status==='failed'||run.status==='skipped'||run.status==='published'&&(run.checkpoint?.published?.length||0)<limit){
+  if(mode==='review'&&!run.checkpoint?.reviewRejected&&['pending','failed','skipped','awaiting_review'].includes(run.status)){
+    const changed=await supabaseRest(`blog_generation_runs?id=eq.${run.id}&status=eq.${run.status}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({publication_mode:'review',checkpoint:{...run.checkpoint,limit:kind==='weekly'?1:Math.min(2,Math.max(1,limit))}})});
+    run=changed?.[0]||run;
+  }
+  if(!run.checkpoint?.reviewRejected&&(run.status==='failed'||run.status==='skipped'||run.status==='published'&&(run.checkpoint?.published?.length||0)<limit)){
     const checkpoint={...run.checkpoint,limit:kind==='weekly'?1:limit,resumeRequired:false};
     if(run.status==='skipped'){delete checkpoint.briefs;delete checkpoint.draft;checkpoint.next=0;}
     const changed=await supabaseRest(`blog_generation_runs?id=eq.${run.id}&status=eq.${run.status}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:'pending',reason:null,checkpoint,updated_at:new Date().toISOString()})});
@@ -27,9 +33,9 @@ export async function enqueueGeneration(kind:'daily'|'weekly',limit=2,now=Date.n
 }
 export async function generationStatus(ids?:string[]){
   const filter=ids?.length?`&id=in.(${ids.filter(id=>/^[a-f0-9-]{36}$/i.test(id)).join(',')})`:'';
-  const rows=await supabaseRest(`blog_generation_runs?select=id,kind,status,reason,checkpoint,created_at,updated_at,lease_until&order=created_at.desc&limit=12${filter}`,{signal:AbortSignal.timeout(5000)});
-  return (rows||[]).map((row:GenerationRun)=>({id:row.id,kind:row.kind,status:row.status,reason:row.reason,createdAt:row.created_at,updatedAt:row.updated_at,
-    published:row.checkpoint?.published||[],active:row.status==='running'||row.status==='pending'&&!row.checkpoint?.resumeRequired,retryAt:row.checkpoint?.retryAt}));
+  const rows=await supabaseRest(`blog_generation_runs?select=id,kind,publication_mode,status,reason,checkpoint,created_at,updated_at,lease_until&order=created_at.desc&limit=12${filter}`,{signal:AbortSignal.timeout(5000)});
+  return (rows||[]).map((row:GenerationRun)=>({id:row.id,kind:row.kind,publicationMode:row.publication_mode,status:row.status,reason:row.reason,createdAt:row.created_at,updatedAt:row.updated_at,
+    published:row.checkpoint?.published||[],reviewApproved:row.checkpoint?.reviewDecision?.approved===true,active:row.status==='running'||row.status==='pending'&&!row.checkpoint?.resumeRequired,retryAt:row.checkpoint?.retryAt}));
 }
 export function validateEditorial(raw:any,brief:EvidenceBrief,recent:any[]=[]):string[]{
   const errors:string[]=[],paragraphs=raw?.paragraphs,sections=raw?.sections||[];
@@ -98,7 +104,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
     if(!state.briefs){
       state.stage='Evidence discovery';
       if(run.kind==='weekly'){const brief=await rankingBrief(transport,'weekly-ranking',Date.parse(run.created_at));state.briefs=brief?[brief]:[];}
-      else{state.briefs=await discoverNews(transport);if(!state.briefs.length){const brief=await rankingBrief(transport,'data-report');state.briefs=brief?[brief]:[];}}
+      else{state.discovery ||= {};state.briefs=await discoverNews(transport,state.discovery,async()=>{await save(run,token,'running',state);});if(!state.briefs.length){state.stage='Activity report discovery';const brief=await rankingBrief(transport,'data-report');state.briefs=brief?[brief]:[];}}
       await save(run,token,'running',state);
     }
     if(!state.briefs.length){await save(run,token,'skipped',state,'No recent primary-confirmed story or sufficiently complete activity report passed the evidence gate.');return;}
@@ -117,6 +123,11 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
       // Resumed drafts must pass the current gate as well as newly written ones.
       if(!state.draft.errors.length)state.draft.errors=validateEditorial(state.draft.draft,brief,recent);
       if(state.draft.errors.length){state.rejections=[...(state.rejections||[]),{fingerprint:brief.fingerprint,reason:state.draft.errors,draft:state.draft.draft}].slice(-4);delete state.draft;state.next++;await save(run,token,'running',state);continue;}
+      const revision=draftRevision(brief,state.draft.draft),policy=await publicationPolicy();
+      if((run.publication_mode==='review'||!policy.automaticEnabled)&&state.approvedRevision!==revision){
+        state.reviewRevision=revision;state.stage='Awaiting editorial review';
+        await save(run,token,'awaiting_review',{...state,resumeRequired:true},'Draft saved privately. Review its evidence and approve this exact revision before publication.');return;
+      }
       if(Date.now()>deadline-45_000){await save(run,token,'pending',{...state,resumeRequired:true},'Validated draft saved. Resume to finish durable publication.');return;}
       const now=new Date().toISOString(),definition=publicationDefinition(run.kind,state.published.length);
       const post:any={...definition,category:brief.kind==='news'?'News':brief.kind==='weekly-ranking'?'Weekly':'Data',contentKind:brief.kind,qualityVersion:2,articleKind:'gemini',articleSource:'gemini',articleStatus:'published',articleSlug,generatedAt:now,updatedAt:now,
@@ -128,7 +139,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
       await save(run,token,'running',state);
       if(!await archiveBlogPost(post))throw Error('The article was generated but durable publication failed. The draft remains saved.');
       await supabaseRest(`blog_publication_claims?fingerprint=eq.${brief.fingerprint}&run_id=eq.${run.id}`,{method:'PATCH',signal:AbortSignal.timeout(5000),body:JSON.stringify({published_at:now})});
-      state.published.push(articleSlug);state.next++;delete state.draft;await save(run,token,'running',state);recent.unshift(post);
+      state.published.push(articleSlug);state.next++;delete state.draft;delete state.approvedRevision;delete state.reviewRevision;await save(run,token,'running',state);recent.unshift(post);
     }
     await save(run,token,state.published.length?'published':'skipped',state,state.published.length?undefined:'Candidates were duplicates or failed editorial quality checks.');
   }catch(error){

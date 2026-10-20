@@ -1,3 +1,4 @@
+import AdminPublicationReview from '../components/AdminPublicationReview';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
@@ -70,7 +71,7 @@ export default function AdminDashboard() {
   useEffect(()=>{const update=()=>setVisible(document.visibilityState!=='hidden');document.addEventListener('visibilitychange',update);return()=>document.removeEventListener('visibilitychange',update);},[]);
   useEffect(()=>{
     setJobIds([]);setActionMessage('');setActionError('');
-    queryClient.removeQueries({predicate:query=>['admin-summary','admin-jobs'].includes(String(query.queryKey[0]))&&query.queryKey[1]!==user?.id});
+    queryClient.removeQueries({predicate:query=>['admin-summary','admin-jobs','admin-draft'].includes(String(query.queryKey[0]))&&query.queryKey[1]!==user?.id});
     try{if(user?.id)setJobIds(JSON.parse(localStorage.getItem(`streamnyaa.admin.jobs.${user.id}`)||'[]').filter((id:unknown)=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id)).slice(0,4));}catch{/* Optional status restoration. */}
   },[user?.id,queryClient]);
   const [adminEmail, setAdminEmail] = useState('');
@@ -282,6 +283,8 @@ export default function AdminDashboard() {
           {jobs.isError&&<p role="status" className="mt-3 text-sm text-amber-200">Publication status could not refresh. <button className="underline" onClick={()=>void jobs.refetch()}>Retry status</button></p>}
           {!!data?.jobs?.length&&<div className="mt-3 space-y-2 text-xs text-muted-foreground">{data.jobs.slice(0,3).map((job:any)=><div key={job.id} className="flex flex-wrap items-center justify-between gap-2"><span>{job.kind} · {job.status}{job.reason?` · ${job.reason}`:''}</span>{['pending','failed'].includes(job.status)&&<button className="font-semibold text-primary underline" disabled={Boolean(busyAction)} onClick={()=>void resumeJob(job.id)}>Resume job</button>}</div>)}</div>}
 
+          <AdminPublicationReview key={user.id} accountId={user.id} token={session?.access_token||''} jobs={data?.jobs||[]} automaticEnabled={Boolean(data?.publicationPolicy?.automaticEnabled)} onAccepted={ids=>{if(account.current!==user.id)return;setJobIds(ids);void summary.refetch();}} />
+
           <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_380px]">
             <div className="space-y-6">
               <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
@@ -301,7 +304,7 @@ export default function AdminDashboard() {
                       {busyAction === 'generate' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
                     </span>
                     <span>
-                      <span className="block text-sm font-black text-foreground">Write one article</span>
+                      <span className="block text-sm font-black text-foreground">Generate one draft</span>
                       <span className="mt-0.5 block text-xs text-muted-foreground">Use for today’s main story.</span>
                     </span>
                     <ArrowRight className="h-4 w-4 text-primary" />
@@ -311,7 +314,7 @@ export default function AdminDashboard() {
                       {busyAction === 'generate-both' ? <Loader2 className="h-5 w-5 animate-spin" /> : <FileText className="h-5 w-5" />}
                     </span>
                     <span>
-                      <span className="block text-sm font-black text-foreground">Write two articles</span>
+                      <span className="block text-sm font-black text-foreground">Generate two drafts</span>
                       <span className="mt-0.5 block text-xs text-muted-foreground">Use when a topic is moving fast.</span>
                     </span>
                     <ArrowRight className="h-4 w-4 text-muted-foreground" />
@@ -473,7 +476,7 @@ export default function AdminDashboard() {
                   <Clock className="h-4 w-4 text-primary" />
                   Scheduled publishing
                 </div>
-                <p className="mt-3 text-sm leading-6 text-muted-foreground">{data?.cronSchedule || 'Daily generation is scheduled.'}</p>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">{data?.cronSchedule || 'Daily generation is scheduled.'}</p><p className="mt-2 text-xs text-muted-foreground">{data?.publicationPolicy?.automaticEnabled?'Automatic publication is enabled after quality checks.':'Drafts are saved privately. Automatic publication is paused for acceptance.'}</p>
               </div>
 
               <div className="rounded-lg border border-border bg-secondary/20 p-5">
