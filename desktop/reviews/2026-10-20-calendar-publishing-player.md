@@ -25,3 +25,17 @@ The normal daily cron remains 00:00–00:59 UTC (05:45–06:44 Nepal), subject t
 Direct AniList activity verification from this machine timed out; deployed-provider evidence is tracked separately. A live provider failure cannot be treated as an empty schedule. Controlled fixtures do not establish installed-app interaction, physical 100/150/200% DPI behavior, real notifications, isolated installer acceptance or live-torrent endurance. No trusted code-signing certificate is available. Existing CDN overage is not reset by this update.
 
 The verified 0.1.10 installer is retained as rollback. The 0.1.11 manifest records executable version, staged resource hashes, NSIS resource inclusion, checksum, size and signature status. Installer extraction/installation are distinct acceptance gates.
+
+## Live delivery addendum
+
+Production Calendar returned 315 records with fresh AniList and AnimeSchedule retrieval times. The initial cold read took 15,661 ms. Identity discovery was moved out of first paint and independent snapshot reads were parallelized. Two later normal reads took 5,826 ms and 2,829 ms. Their cache states differ from the first observation, so these are timings, not a percentage improvement or a promise about every cold load. Continuation remains explicit and the response accurately reports incomplete discovery.
+
+The exact daily-activity query through the deployed gateway returned HTTP 200 with an empty record set. It confirms query compatibility, not sufficient ranking coverage. Missing statistics must never be invented.
+
+One immediate production cron run was explicitly approved and executed. The durable job `bd6e51cb-ef70-4c0e-8283-8dc3d8485d0d` recorded a pre-draft timeout and zero publications. Candidate metadata and six news feeds were durably saved. Model access, a successful real article publication, representative editorial review and scheduled-run acceptance remain unverified. Timeout handling now names the provider when available, records its stage and preserves a resumable checkpoint without an automatic loop. The original failed run remains visible in Admin; it was not silently marked successful or run a second time.
+
+Production function permissions were checked directly: anonymous and authenticated roles cannot execute the service-only generation and snapshot RPCs. Unauthenticated cron/Admin requests return 401; public Blog and sitemap reads return saved content without generation.
+
+Individual article URLs and the dynamic article sitemap exist. A Googlebot request to a published article returned an empty React root and the generic StreamNyaa title before JavaScript rendering. The public article JSON endpoints were blocked by robots.txt. The repair allows only those essential read endpoints, adds noindex on their JSON responses, and retains blocking for unrelated/private APIs. The website UI is unchanged. Server-rendered article HTML and Search Console URL Inspection remain follow-up SEO work; this release does not establish Google index inclusion or rankings.
+
+The final web-only changes were checked against the desktop build: all 65 embedded frontend files are byte-identical. The verified installer remains 42,474,467 bytes, SHA-256 `A2203D48B63C2C52FD64830960ED77BD46810D2069D687C570DA48E8ABE86B40`, NotSigned. Its native build source is recorded in the installer manifest; later server-only changes and integration validation are recorded separately.
