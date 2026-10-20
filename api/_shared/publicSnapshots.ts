@@ -15,6 +15,20 @@ export async function writePublicSnapshot<T>(key: string, value: T, fetchedAt: n
 export async function readPublicSnapshot<T>(key: string): Promise<SharedSnapshot<T> | undefined> {
   try { return await stored<T>(key); } catch { return memory.get(key) as SharedSnapshot<T> | undefined; }
 }
+export async function readPublicSnapshots<T>(keys:string[]):Promise<Map<string,SharedSnapshot<T>>>{
+  const found=new Map<string,SharedSnapshot<T>>();
+  // Route keys contain only the fixed namespace and provider slugs. Bound both
+  // query length and rows; one cold instance must not perform a read per title.
+  for(let offset=0;offset<Math.min(keys.length,200);offset+=40){
+    const batch=keys.slice(offset,offset+40).filter(key=>/^[a-z0-9:-]{1,300}$/.test(key));
+    if(!batch.length)continue;
+    try{
+      const rows=await supabaseRest(`site_public_snapshots?key=in.(${batch.map(encodeURIComponent).join(',')})&select=key,payload,fetched_at&limit=40`,{signal:AbortSignal.timeout(3000)});
+      for(const row of rows||[])if(batch.includes(row.key)&&Number.isFinite(Date.parse(row.fetched_at)))found.set(row.key,{value:row.payload,fetchedAt:Date.parse(row.fetched_at),stale:false});
+    }catch{/* Missing cached identities remain explicitly unresolved. */}
+  }
+  return found;
+}
 /** Provider identity is the key; caller freshness can only shorten reuse. */
 export async function publicSnapshot<T>(key: string, ttlSeconds: number, load: () => Promise<T>, valid: (value: T) => boolean = () => true): Promise<SharedSnapshot<T>> {
   const cached = memory.get(key) as SharedSnapshot<T> | undefined;

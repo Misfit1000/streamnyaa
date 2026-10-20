@@ -1,5 +1,5 @@
 import { isCalendarRecord, normalizeScheduleTrack, reconcileCalendarRecords, type CalendarRecord, type PublicCalendar } from '../../src/lib/calendarModel.js';
-import { publicSnapshot, readPublicSnapshot } from './publicSnapshots.js';
+import { publicSnapshot, readPublicSnapshot, readPublicSnapshots } from './publicSnapshots.js';
 import { supabaseRest } from './adminAuth.js';
 import type { RequestUsage } from './requestReuse.js';
 
@@ -53,10 +53,14 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
       const relevantFeed=feed.filter(row=>{const normalized=normalizeScheduleTrack(row,row,fetchedAt);return normalized&&(normalized.airingAt>=start&&normalized.airingAt<end||Number(normalized.previousAiringAt)>=start*1000&&Number(normalized.previousAiringAt)<end*1000);});
       const routes=[...new Set(relevantFeed.sort((a,b)=>Number(/delayed|break|postpon/i.test(b.airingStatus||''))-Number(/delayed|break|postpon/i.test(a.airingStatus||''))).map(row=>String(row.route||'')).filter(route=>/^[a-z0-9-]{1,240}$/.test(route)))];
       const details=new Map<string,any>();
+      const cached=await readPublicSnapshots<any>(routes.map(route=>`animeschedule:anime:${route}`));
+      for(const route of routes){const detail=cached.get(`animeschedule:anime:${route}`);if(detail&&detail.fetchedAt+86400_000>Date.now()&&detail.value?.route===route)details.set(route,detail.value);}
       nextOffset=offset;
-      for(const route of routes.slice(offset,offset+6)){
+      // First paint uses the real schedule and shared identity snapshots. New
+      // identity discovery belongs to bounded continuation, not that paint.
+      for(const route of routes.slice(offset,offset+(req.query.cursor?6:0))){
         if (Date.now()>deadline-5000) break;
-        try{const detail=await publicSnapshot<any>(`animeschedule:anime:${route}`,86400,()=>fetchSchedule(`/anime/${route}`),value=>value&&typeof value==='object'&&!Array.isArray(value)&&value.route===route);if(!detail.stale)details.set(route,detail.value);}catch(error){if([403,429].includes((error as any).status))throw error;/* Unresolved identities stay provider-qualified. */}
+        try{if(!details.has(route)){const detail=await publicSnapshot<any>(`animeschedule:anime:${route}`,86400,()=>fetchSchedule(`/anime/${route}`),value=>value&&typeof value==='object'&&!Array.isArray(value)&&value.route===route);if(!detail.stale)details.set(route,detail.value);}}catch(error){if([403,429].includes((error as any).status))throw error;/* Unresolved identities stay provider-qualified. */}
         nextOffset++;
       }
       nextOffset=Math.min(routes.length,nextOffset);routesRemain=nextOffset<routes.length;

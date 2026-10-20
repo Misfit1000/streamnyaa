@@ -83,7 +83,9 @@ test('Calendar reuses week/page requests, links only verified IDs and retains a 
     return response([{route:'fixture-series',episodeNumber:2,airType:'dub',airingStatus:'delayed-air',episodeDate:new Date((start+3600)*1000).toISOString(),delayedUntil:'0001-01-01T00:00:00Z',delayedText:'Dub delayed'}]);
   }) as any;
   try{
-    const request={query:{start,end}},first=await publicCalendar(request,new RequestUsage(request,'calendar'));
+    const request={query:{start,end}},initial=await publicCalendar(request,new RequestUsage(request,'calendar'));
+    assert.ok(initial.cursor);assert.ok(!calls.some(path=>path.includes('/anime/')));
+    const next={query:{start,end,cursor:initial.cursor}},first=await publicCalendar(next,new RequestUsage(next,'calendar'));
     assert.equal(first.data.length,2);assert.equal(first.data.find(row=>row.releaseTrack==='dub')?.airingAt,0);
     assert.ok(first.data.every(row=>row.canonicalId==='anilist:777'));const total=calls.length;
     await publicCalendar(request,new RequestUsage(request,'calendar'));assert.equal(calls.length,total);
