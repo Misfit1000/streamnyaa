@@ -26,7 +26,9 @@ export class EditorialTransport{
     if(this.requests>=40||Date.now()>this.deadline-12_000)throw Error('Publishing request/time budget reached; retry this run.');
     const host=new URL(url).hostname,wait=(this.admitted.get(host)||0)+spacing-Date.now();
     if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));this.admitted.set(host,Date.now());this.requests++;
-    const signal=AbortSignal.timeout(Math.min(10_000,Math.max(1,this.deadline-Date.now())));
+    // Aggregated activity queries can take longer than simple metadata reads.
+    // Still bounded by the worker deadline and the same request budget/pacing.
+    const signal=AbortSignal.timeout(Math.min(host==='graphql.anilist.co'?20_000:10_000,Math.max(1,this.deadline-Date.now())));
     const response=await (async()=>{try{return pinned?await new Promise<Response>((resolve,reject)=>{
       const request=httpsRequest(url,{method:'GET',headers:init.headers as Record<string,string>,signal,
         lookup:((_host:any,options:any,callback:any)=>options?.all?callback(null,pinned):callback(null,pinned[0].address,pinned[0].family)) as any},incoming=>resolve(new Response(Readable.toWeb(incoming) as any,{status:incoming.statusCode,headers:incoming.headers as any})));

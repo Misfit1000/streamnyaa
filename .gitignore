@@ -3,6 +3,7 @@ build/
 dist/
 coverage/
 .validation/
+api/_generated/
 target/
 desktop/src-tauri/target/
 desktop/src-tauri/bin/*

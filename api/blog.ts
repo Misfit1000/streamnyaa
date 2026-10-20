@@ -1,5 +1,6 @@
 import { getBlogPost, type BlogPostData } from '../src/api/blogShared.js';
-import { latestPublishedBlogPost } from './blogArchive.js';
+import { latestPublishedBlogPost, readPublishedArticle } from './blogArchive.js';
+import { articleHtml } from './_shared/blogHtml.js';
 import { publicSnapshot } from './_shared/publicSnapshots.js';
 import { EditorialTransport, toMediaItem } from './_shared/publishingData.js';
 
@@ -31,6 +32,25 @@ export async function getCachedBlogPost(slug:string,_preview=false,_force=false,
   flights.set(slug,request);try{return await request;}finally{flights.delete(slug);}
 }
 export default async function handler(req:any,res:any){
+  if(req.query.render==='1' && ['GET','HEAD'].includes(req.method)){
+    const slug=String(req.query.slug||'');
+    res.setHeader('Content-Type','text/html; charset=utf-8');
+    try{
+      if(!/^[a-z0-9][a-z0-9-]{0,220}$/.test(slug))throw Object.assign(Error('Article not found.'),{status:404});
+      const value=getBlogPost(slug)?await getCachedBlogPost(slug):await readPublishedArticle(slug);
+      if(!value)throw Object.assign(Error('Article not found.'),{status:404});
+      if(value.articleKind==='gemini' && value.articleSlug && value.articleSlug!==slug){
+        res.setHeader('Location',`/blog/${encodeURIComponent(value.articleSlug)}`);return res.status(308).end();
+      }
+      const html=articleHtml(value,`/blog/${slug}`);
+      res.setHeader('Cache-Control',value.articleStatus==='stale'?'no-store':'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+      return req.method==='HEAD'?res.status(200).end():res.status(200).send(html);
+    }catch(error){
+      const missing=(error as any).status===404;res.setHeader('Cache-Control','no-store');res.setHeader('X-Robots-Tag','noindex');
+      if(!missing)res.setHeader('Retry-After','60');
+      return res.status(missing?404:503).send(`<!doctype html><html lang="en"><head><meta name="robots" content="noindex"><title>${missing?'Article not found':'Article temporarily unavailable'} | StreamNyaa</title></head><body><h1>${missing?'Article not found':'Article temporarily unavailable'}</h1><p>${missing?'This article does not exist.':'Please retry shortly. Saved articles have not been removed.'}</p><a href="/blog">Back to Blog</a></body></html>`);
+    }
+  }
   res.setHeader('X-Robots-Tag','noindex');
   if(req.method!=='GET')return res.status(405).json({error:'Blog reads require GET. Use authenticated publishing jobs for generation.'});
   if(req.query.force||req.query.manual)return res.status(405).json({error:'Generation is available through authenticated Admin jobs only.'});

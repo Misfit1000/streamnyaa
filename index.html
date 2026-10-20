@@ -48,12 +48,12 @@
         var siteUrl = 'https://www.streamnyaa.xyz';
         var path = window.location.pathname === '/' ? '/' : window.location.pathname.replace(/\/+$/, '');
         var canonicalUrl = siteUrl + path;
-        var canonical = document.createElement('link');
+        var canonical = document.querySelector('link[rel=canonical]') || document.createElement('link');
         canonical.rel = 'canonical';
         canonical.href = canonicalUrl;
         document.head.appendChild(canonical);
 
-        var ogUrl = document.createElement('meta');
+        var ogUrl = document.querySelector('meta[property="og:url"]') || document.createElement('meta');
         ogUrl.setAttribute('property', 'og:url');
         ogUrl.content = canonicalUrl;
         document.head.appendChild(ogUrl);

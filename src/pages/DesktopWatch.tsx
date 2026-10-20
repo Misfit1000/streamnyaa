@@ -3,6 +3,7 @@ import DesktopWatchEpisodeCard from '../components/DesktopWatchEpisodeCard';
 import { mergeScheduleWatchEvidence } from '../lib/desktopScheduleWatch';
 import DesktopDrawer from '../components/DesktopDrawer';
 import DesktopActionMenu from '../components/DesktopActionMenu';
+import DesktopSourceUseButton from '../components/DesktopSourceUseButton';
 import { DesktopWatchNavigation, DesktopWatchPlaybackCard } from '../components/DesktopWatchControls';
 import '../styles/desktop-watch.css';
 import DesktopEpisodeStatus from '../components/DesktopEpisodeStatus';
@@ -10,7 +11,7 @@ import DesktopTrailer from '../components/DesktopTrailer';
 import DesktopAnimeCast from '../components/DesktopAnimeCast';
 import DesktopEpisodeThumbnail from '../components/DesktopEpisodeThumbnail';
 import { episodeNumberFromTitle, resolveEpisodeArtwork } from '../lib/desktopEpisodeArtwork';
-import { selectedEligibleSource, selectSourceMode } from '../lib/desktopSourceSelection';
+import { selectedEligibleSource, selectSourceMode, sourceSelectionKey } from '../lib/desktopSourceSelection';
 import { homeReadyEpisodes, sourceAvailabilityEvidence } from '../lib/desktopHomeReadiness';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { hydrateHistoryTitle, hydrateHistoryEpisode, updateArchiveMetadata, historyIdentity, historyArchiveReady } from '../lib/desktopHistoryArchive';
@@ -2263,8 +2264,11 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   );
 
   const sourceSelectionScope = `${sourceContextSignature}:${selectedEpisode}:${audioMode}:${audioPreference}:${sourceMode}:${sourceQuality}`;
-  const sourceKey = (source: RankedNyaaItem) => source.infoHash || source.magnet || source.link || source.title;
-  const selectedSafeSource = selectedEligibleSource(sourceSelection, sourceSelectionScope, playableSources, sourceKey);
+  const sourceKey = (source: RankedNyaaItem) => sourceSelectionKey(source);
+  // Failed releases stay out of recommendations, but a verified release can be
+  // deliberately selected for another attempt from the visible Broad results.
+  const selectableSources = sortedSources.filter(source => source.playable && !source.manualOnly);
+  const selectedSafeSource = selectedEligibleSource(sourceSelection, sourceSelectionScope, selectableSources, sourceKey);
   const primarySource = selectedSafeSource || nextPlayableSource;
   useEffect(() => { if (sourceSelection && !selectedSafeSource) setSourceSelection(null); }, [sourceSelection, selectedSafeSource]);
   useEffect(() => { setOptionsOpen(false); }, [id]);
@@ -2449,7 +2453,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     return { result, playbackSource };
   }, [sourcePayloadFor]);
 
-  const playSource = useCallback(async (source: RankedNyaaItem, resumeOverride?: number, manualConfirmed = false) => {
+  const playSource = useCallback(async (source: RankedNyaaItem, resumeOverride?: number) => {
     const current = playbackValueRef.current?.source;
     const currentSeconds = playbackProgressValueRef.current?.current_seconds;
     if (resumeOverride === undefined && current && String(current.animeId) === String(anime.mal_id || anime.id)
@@ -2459,7 +2463,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       setPlaybackNotice({ tone: 'loading', text: 'This source is already opening.' });
       return;
     }
-    if (!source.playable && !(manualConfirmed && source.manualOnly && sourceHasValidInput(source) && source.rawSeeders > 0)) {
+    if (!source.playable || source.manualOnly) {
       setPlaybackNotice({ tone: 'error', text: `${source.playableLabel} source. StreamNyaa will only play sources that pass the same-anime, same-installment, same-episode checks.` });
       return;
     }
@@ -2469,7 +2473,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     playActionLockRef.current = true;
     const retryPool = [
       source,
-      ...(manualConfirmed ? [] : playableSources.filter((candidate) => (
+      ...playableSources.filter((candidate) => (
         (candidate.infoHash || candidate.magnet) !== (source.infoHash || source.magnet)
         && (
           candidate.matchTier !== 'broad'
@@ -2477,7 +2481,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
           || sourceMode === 'broad'
           || (!exactSources.length && !likelySources.length)
         )
-      ))),
+      )),
     ].slice(0, SOURCE_RETRY_LIMIT);
     const errors: string[] = [];
     setPlaybackNotice({
@@ -3229,9 +3233,9 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             {animeNotYetAired ? <div className="sn-watch-playback-card"><h2>Episodes are not available yet</h2><p className="mt-2 text-sm text-white/65">Playback becomes available after the first episode airs.</p><UpcomingNotifyButton anime={anime} /><Link to="/schedule" className="sn-secondary-action mt-3">View airing schedule</Link></div> : <DesktopWatchPlaybackCard
               episode={selectedEpisode} progress={selectedEpisodeWatchState}
               duration={resolveDesktopPlaybackCheckpoint({animeId:anime.mal_id || anime.id,animeTitle:anime.title,episode:selectedEpisode})?.durationSeconds}
-              disabled={!primarySource || Boolean(activeSourceId) || sourcesBusy}
-              busy={activeSourceId || pendingAutoPlayEpisode === selectedEpisode ? 'Opening…' : sourcesBusy ? 'Preparing…' : ''}
-              sourceSummary={primarySource ? `${selectedSafeSource ? 'Selected source' : 'Recommended source'} · ${sourceQualityLabel(sourceQualityBucket(primarySource.title))} · ${isDualAudioSource(primarySource.title) ? 'Dual audio' : isDubOnlySource(primarySource.title) ? 'Dub' : 'Sub'} · ${sourceMode}` : sourceSectionTitle}
+              disabled={!primarySource || Boolean(activeSourceId) || (sourcesBusy && !selectedSafeSource)}
+              busy={activeSourceId || pendingAutoPlayEpisode === selectedEpisode ? 'Opening…' : sourcesBusy && !selectedSafeSource ? 'Preparing…' : ''}
+              sourceSummary={primarySource ? `${selectedSafeSource ? `Selected: ${selectedSafeSource.title}` : 'Recommended source'} · ${sourceQualityLabel(sourceQualityBucket(primarySource.title))} · ${isDualAudioSource(primarySource.title) ? 'Dual audio' : isDubOnlySource(primarySource.title) ? 'Dub' : 'Sub'} · ${sourceMode}` : sourceSectionTitle}
               onPlay={() => primarySource && void playSource(primarySource, selectedEpisodeWatchState.completed ? 0 : undefined)}
               onOptions={() => setOptionsOpen(true)}
               onDownloadRelease={primarySource?.magnet ? () => { void enqueueDownload(primarySource.title,primarySource.magnet).catch(issue => setPlaybackNotice({tone:'error',text:errorMessage(issue,'Download could not start.')})); } : undefined}
@@ -3538,7 +3542,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             ) : sortedSources.length ? (
               <div className="grid gap-3">
                 {sortedSources.map((source, index) => {
-                  const sourceId = source.infoHash || source.magnet || source.link || source.title;
+                  const sourceId = sourceKey(source);
                   const active = activeSourceId === (source.infoHash || source.magnet);
                   const reasons = [
                     ...source.matchReasons,
@@ -3559,9 +3563,11 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       <div className="sn-watch-source-copy"><strong title={source.title}>{source.title.match(/^\[([^\]]+)\]/)?.[0] || source.title}</strong><p title={source.title}>{source.title}</p></div>
                       <div className="sn-watch-source-meta"><span>{quality} · {audioLabel} · {codec}</span><small>{source.size} · {source.seeders} seeders</small></div>
                       <span className={`sn-watch-source-confidence ${sourceConfidenceClassName(confidence.band)}`}>{source.manualOnly ? 'Uncertain identity' : source.playable ? confidence.label : source.playableLabel}</span>
-                      <button type="button" className="sn-secondary-action" disabled={!playableSources.some(item => sourceKey(item) === sourceId)} aria-pressed={selectedSafeSource ? sourceKey(selectedSafeSource) === sourceId : false} onClick={() => setSourceSelection({scope:sourceSelectionScope,id:sourceId})}>Use</button>
+                      <DesktopSourceUseButton selected={Boolean(selectedSafeSource && sourceKey(selectedSafeSource) === sourceId)} title={source.title}
+                        unavailableReason={source.manualOnly ? 'Identity is unverified. Open Actions for release details.' : !source.playable ? `${source.playableLabel}. Open Actions for release details.` : undefined}
+                        onSelect={() => setSourceSelection({scope:sourceSelectionScope,id:sourceId})} />
                       <DesktopActionMenu label={`Actions for ${source.title}`} actions={[
-                        {label:source.manualOnly ? 'Review & play' : 'Play this source',disabled:Boolean(active) || (!source.playable && !(source.manualOnly && source.rawSeeders > 0)),action:()=>{ if (!source.manualOnly || window.confirm('This release has not been verified for the selected installment and episode. Inspect its title carefully. Open this release manually?')) void playSource(source,undefined,source.manualOnly); }},
+                        ...(!source.manualOnly ? [{label:'Play this source',disabled:Boolean(active) || !source.playable,action:()=>{ void playSource(source); }}] : []),
                         {label:expanded ? 'Hide details' : 'Details',action:()=>toggleSourceDetails(sourceId)},
                         {label:'Copy source link',action:()=>{ void (navigator.clipboard ? navigator.clipboard.writeText(source.magnet || torrentUrlFor(source)) : Promise.reject(new Error('Clipboard unavailable'))).then(()=>setPlaybackNotice({tone:'success',text:'Source link copied.'}),()=>setPlaybackNotice({tone:'error',text:'Source link could not be copied.'})); }},
                         {label:'Download release',disabled:!source.magnet,title:'Downloads every file in this release, including batch episodes',action:()=>{ void enqueueDownload(source.title,source.magnet).catch(issue=>setPlaybackNotice({tone:'error',text:errorMessage(issue,'Download could not start.')})); }},

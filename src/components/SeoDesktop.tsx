@@ -4,6 +4,7 @@ type SeoProps = {
   canonicalPath?: string;
   image?: string;
   robots?: string;
+  type?: 'website' | 'article';
   jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 };
 

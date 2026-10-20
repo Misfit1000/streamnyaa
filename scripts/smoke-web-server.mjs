@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 
 const port = 4179;
 const origin = `http://127.0.0.1:${port}`;
@@ -12,15 +13,20 @@ const routes = [
   '/nyaa',
   '/compare',
   '/blog',
-  '/blog/example',
+  '/blog/smoke-published',
   '/login',
   '/reset-password',
   '/about',
 ];
 
+const fixture=createServer((_req,res)=>{
+  res.setHeader('Content-Type','application/json');
+  res.end(JSON.stringify([{content:{slug:'anime-trending-news-today',title:'Smoke article',articleKind:'gemini',articleSlug:'smoke-published',qualityVersion:2,items:[],updatedAt:'2026-10-20T00:00:00Z',article:{headline:'A durably published smoke article',excerpt:'A controlled fixture verifies complete article HTML without requesting any public provider.',paragraphs:['This article body must be present in the first HTML response.'],sections:[],faq:[],takeaways:[]}}}]));
+});
+await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
 const server = spawn(process.execPath, ['dist/server.cjs'], {
   cwd: process.cwd(),
-  env: { ...process.env, NODE_ENV: 'production', PORT: String(port) },
+  env: { ...process.env, NODE_ENV: 'production', PORT: String(port),SUPABASE_URL:`http://127.0.0.1:${fixture.address().port}`,SUPABASE_SECRET_KEY:'smoke-fixture' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 
@@ -50,8 +56,11 @@ try {
     if (response.status !== 200 || !body.includes('id="root"')) {
       throw new Error(`Route smoke test failed for ${route}: HTTP ${response.status}`);
     }
+    if(route==='/blog/smoke-published'&&!body.includes('This article body must be present'))throw Error('Article HTML was replaced by an empty shell.');
   }
+  const absent=await fetch(origin+'/blog/invalid_slug');if(absent.status!==404)throw Error('Invalid articles must return a real 404.');
   console.log(`Verified ${routes.length} local production routes.`);
 } finally {
   server.kill();
+  fixture.close();
 }

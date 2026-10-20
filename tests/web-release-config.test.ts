@@ -32,7 +32,6 @@ test('Vercel serves every bookmarkable web route through the SPA shell', () => {
     '/nyaa',
     '/compare',
     '/blog',
-    '/blog/:slug',
     '/login',
     '/reset-password',
     '/dashboard',
@@ -74,3 +73,5 @@ test('crawler policy permits essential article reads while excluding unrelated A
   }
   assert.match(robots, /Sitemap: https:\/\/www.streamnyaa.xyz\/api\/blog-sitemap/);
 });
+
+test('article routes receive public HTML rather than the empty SPA shell',()=>{assert.equal(rewrites.get('/blog/:slug'),'/api/blog?render=1&slug=:slug');});

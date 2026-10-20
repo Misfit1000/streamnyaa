@@ -13,7 +13,7 @@
     "desktop:dev": "npm run preflight:desktop && cd desktop/src-tauri && cargo tauri dev",
     "desktop:build": "npm run preflight:desktop && powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-desktop-tauri.ps1",
     "start": "node dist/server.cjs",
-    "build": "npm run generate:sitemap && vite build --config vite.config.mjs --configLoader native",
+    "build": "npm run generate:sitemap && vite build --config vite.config.mjs --configLoader native && node scripts/build-blog-renderer.mjs",
     "build:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-desktop-fallback.ps1",
     "build:server": "esbuild server.ts --bundle --platform=node --target=node20 --external:vite --outfile=dist/server.cjs --format=cjs",
     "build:local": "npm run build && npm run build:server",
@@ -38,7 +38,8 @@
     "verify:desktop": "npm run lint && npm run test:frontend && npm run test:desktop && npm run test:desktop-state && npm run test:desktop-controls && npm run test:desktop-stall && npm run test:desktop-soak && cargo test --manifest-path .\\desktop\\src-tauri\\Cargo.toml",
     "verify:desktop-release": "npm run preflight:desktop && npm run prepare:desktop-binaries && npm run verify:desktop",
     "prepare:desktop-release": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\prepare-desktop-release.ps1",
-    "release:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-desktop-release.ps1"
+    "release:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\build-desktop-release.ps1",
+    "test:blog-html": "node scripts/build-blog-renderer.mjs && node --test --import tsx tests/blog-html.test.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

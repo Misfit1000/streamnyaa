@@ -5,10 +5,33 @@ import DesktopDrawer from '../../src/components/DesktopDrawer';
 import DesktopActionMenu from '../../src/components/DesktopActionMenu';
 import { DesktopWatchNavigation, DesktopWatchPlaybackCard } from '../../src/components/DesktopWatchControls';
 import { manualEpisodeTarget } from '../../src/lib/desktopEpisodeInteraction';
-import { selectedEligibleSource, selectSourceMode } from '../../src/lib/desktopSourceSelection';
+import { selectedEligibleSource, selectSourceMode, sourceSelectionKey } from '../../src/lib/desktopSourceSelection';
+import DesktopSourceUseButton from '../../src/components/DesktopSourceUseButton';
+import { useState } from 'react';
 import DesktopWatchEpisodeCard from '../../src/components/DesktopWatchEpisodeCard';
 afterEach(cleanup);
 describe('Watch presentation without controller duplication',()=>{
+  it('selects a release with visible feedback and passes that release to Play after enrichment',()=>{
+    const play=vi.fn(), hash='a'.repeat(40);
+    function Selection({ enriched=false }) {
+      const [selection,setSelection]=useState<{scope:string;id:string}|null>(null);
+      const rows=[{title:'Recommended',infoHash:'b'.repeat(40)},{title:'Chosen release',magnet:`magnet:?xt=urn:btih:${hash}`,infoHash:enriched?hash.toUpperCase():undefined}];
+      const chosen=selectedEligibleSource(selection,'anime:1:episode:2',rows,sourceSelectionKey);
+      return <>{rows.map(row=><DesktopSourceUseButton key={sourceSelectionKey(row)} title={row.title} selected={chosen===row} onSelect={()=>setSelection({scope:'anime:1:episode:2',id:sourceSelectionKey(row)})}/>)}<button onClick={()=>play(chosen||rows[0])}>Play episode</button></>;
+    }
+    const view=render(<Selection/>);
+    fireEvent.click(screen.getByRole('button',{name:'Use source: Chosen release'}));
+    expect(screen.getByRole('button',{name:'Selected source: Chosen release'}).getAttribute('aria-pressed')).toBe('true');
+    view.rerender(<Selection enriched/>);
+    fireEvent.click(screen.getByRole('button',{name:'Play episode'}));
+    expect(play).toHaveBeenCalledWith(expect.objectContaining({title:'Chosen release'}));
+    expect(play).toHaveBeenCalledOnce();
+  });
+  it('explains unavailable selection without dispatching playback or selection',()=>{
+    const select=vi.fn();render(<DesktopSourceUseButton selected={false} title="Unverified" unavailableReason="Identity is unverified" onSelect={select}/>);
+    const button=screen.getByRole('button',{name:'Use source: Unverified'}) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);expect(button.title).toBe('Identity is unverified');fireEvent.click(button);expect(select).not.toHaveBeenCalled();
+  });
   it('keeps the three compact destinations',()=>{
     render(<MemoryRouter><DesktopWatchNavigation /></MemoryRouter>);
     for(const [name,path] of [['Home','/'],['Browse','/search'],['My List','/my-list']]) expect(screen.getByRole('link',{name}).getAttribute('href')).toBe(path);

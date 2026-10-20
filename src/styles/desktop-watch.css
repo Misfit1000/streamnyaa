@@ -39,3 +39,5 @@
 @media(prefers-reduced-motion:reduce){.sn-watch-page *{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 
 .sn-watch-source-group{font-size:12px;color:#b4b4c2;padding:5px 0}.sn-watch-page :is(.sn-primary-action,.sn-secondary-action){box-shadow:none}
+
+.sn-watch-source-row .sn-source-use{display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:80px}.sn-watch-source-row .sn-source-use[aria-pressed="true"]{border-color:#ef3158;color:#ff6987;background:#ef31581a}.sn-watch-source-summary>span{min-width:0;overflow-wrap:anywhere}.sn-source-use:disabled{cursor:not-allowed;opacity:.5}

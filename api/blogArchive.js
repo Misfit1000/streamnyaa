@@ -193,6 +193,25 @@ export async function latestPublishedBlogPost(slot) {
 }
 
 export async function listPrimaryPublishedBlogPosts(limit = 8) { return listSupabaseBlogPosts(limit); }
+/** HTML must distinguish a confirmed missing article from a storage outage. */
+export async function readPublishedArticle(articleSlug) {
+  let primaryError;
+  if (supabaseUrl() && supabaseKey()) {
+    try {
+      const rows=await supabase(`blog_articles?${new URLSearchParams({select:'content',slug:`eq.${articleSlug}`,limit:'1'})}`);
+      if (!Array.isArray(rows)) throw Error('Invalid article storage response.');
+      if (rows[0]?.content) return rows[0].content;
+    } catch (error) { primaryError=error; }
+  } else primaryError=Error('Article storage is unavailable.');
+  try {
+    const file=await github(`/contents/${archivePath(articleSlug)}?ref=${encodeURIComponent(BRANCH)}`);
+    if (file?.content) return JSON.parse(Buffer.from(file.content,'base64').toString('utf8'));
+    throw Error('Invalid archive response.');
+  } catch (error) {
+    if (error?.status===404 && !primaryError) return null;
+    throw Object.assign(Error('Published article storage is temporarily unavailable.'),{status:503});
+  }
+}
 export async function findDurableBlogPost(articleSlug) {
   const primary = await findSupabaseBlogPost(articleSlug);
   if (primary) return primary;

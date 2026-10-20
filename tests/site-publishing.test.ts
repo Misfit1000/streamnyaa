@@ -56,6 +56,13 @@ test('editorial outages name the provider, keep query data private and remain re
   try{await assert.rejects(new EditorialTransport().fetch('https://api.tenrai.org/v1/anime/1/news?private=do-not-log'),(error:any)=>error.status===503&&error.message.includes('api.tenrai.org')&&!error.message.includes('do-not-log'));}
   finally{globalThis.fetch=original;}
 });
+
+test('editorial depth rejects repeated padding, clickbait and fictional first-hand reporting',()=>{
+  const paragraph='Fixture Series changes its release plan according to the official publisher announcement. The revised schedule affects the original broadcast, while the publisher has not confirmed a separate dubbed release.';
+  const brief:any={kind:'news',subject:'Fixture Series',facts:[],sources:[{id:'official',primary:true,text:paragraph}],items:[]};
+  const draft={headline:'The shocking truth about Fixture Series',excerpt:'The publisher explains a release change and the timing that remains unconfirmed for the affected installment.',paragraphs:[{text:paragraph,sourceIds:['official']},{text:paragraph+' We interviewed the director about the revised schedule.',sourceIds:['official']}],sections:[]};
+  const errors=validateEditorial(draft,brief);assert.ok(errors.some(error=>/repeat.*information/i.test(error)));assert.ok(errors.some(error=>/exaggerates/i.test(error)));assert.ok(errors.some(error=>/first.hand/i.test(error)));
+});
 test('public Blog, archive and sitemap reads make no model calls or storage mutations',async()=>{
   const original=globalThis.fetch,oldUrl=process.env.SUPABASE_URL,oldKey=process.env.SUPABASE_SECRET_KEY;const requests:any[]=[];
   process.env.SUPABASE_URL='https://fixture.supabase.co';process.env.SUPABASE_SECRET_KEY='fixture-secret';

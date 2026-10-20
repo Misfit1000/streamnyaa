@@ -6,6 +6,7 @@ interface SeoProps {
   canonicalPath?: string;
   image?: string;
   robots?: string;
+  type?: 'website' | 'article';
   jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 }
 
@@ -50,7 +51,7 @@ function setJsonLd(jsonLd?: SeoProps['jsonLd']) {
   script.text = JSON.stringify(jsonLd);
 }
 
-export default function Seo({ title, description, canonicalPath = '/', image, robots = 'index, follow, max-image-preview:large', jsonLd }: SeoProps) {
+export default function Seo({ title, description, canonicalPath = '/', image, robots = 'index, follow, max-image-preview:large', type = 'website', jsonLd }: SeoProps) {
   useEffect(() => {
     const canonicalUrl = new URL(canonicalPath, SITE_URL).toString();
     const imageUrl = image ? new URL(image, SITE_URL).toString() : SITE_URL + '/logo.svg';
@@ -61,7 +62,7 @@ export default function Seo({ title, description, canonicalPath = '/', image, ro
     setMeta('og:title', title, 'property');
     setMeta('og:description', description, 'property');
     setMeta('og:url', canonicalUrl, 'property');
-    setMeta('og:type', 'website', 'property');
+    setMeta('og:type', type, 'property');
     setMeta('og:image', imageUrl, 'property');
     setMeta('twitter:card', 'summary_large_image');
     setMeta('twitter:title', title);
@@ -69,7 +70,7 @@ export default function Seo({ title, description, canonicalPath = '/', image, ro
     setMeta('twitter:image', imageUrl);
     setCanonical(canonicalUrl);
     setJsonLd(jsonLd);
-  }, [title, description, canonicalPath, image, robots, jsonLd]);
+  }, [title, description, canonicalPath, image, robots, type, jsonLd]);
 
   return null;
 }

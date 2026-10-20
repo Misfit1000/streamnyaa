@@ -1,5 +1,10 @@
 /** Display confidence never establishes anime/episode identity. */
 export type SourceMode = 'strict' | 'balanced' | 'broad';
+/** Stable across magnet enrichment, tracker changes and hash casing. */
+export function sourceSelectionKey(source: { infoHash?: string; magnet?: string; link?: string; title: string }) {
+  const hash = source.infoHash || source.magnet?.match(/[?&]xt=urn:btih:([a-z0-9]+)/i)?.[1];
+  return hash ? `hash:${hash.toLowerCase()}` : source.link || source.magnet || source.title;
+}
 export function selectedEligibleSource<T>(selection: {scope:string;id:string} | null, scope: string, eligible: T[], key: (source:T)=>string): T | undefined {
   return selection?.scope === scope ? eligible.find(source => key(source) === selection.id) : undefined;
 }

@@ -65,6 +65,11 @@ export function About() {
           </p>
         </InfoBlock>
 
+        <InfoBlock title="How our articles are produced">
+          <p>Automated articles use Gemini to draft from retrieved evidence. News requires primary confirmation; rankings use code-calculated AniList activity with source dates and coverage disclosed. We label AI-assisted reporting and link the material sources beside the article.</p>
+          <p>Automated checks reject missing attribution, unsupported claims, copied passages and repeated filler. These checks do not constitute expert human review. We skip stories when evidence is inadequate rather than inventing details or filling a daily quota. Original publication dates remain visible; a refresh does not make an old story new.</p>
+        </InfoBlock>
+
         <InfoBlock title="Information Sources and External Services">
           <p>
             Anime details, artwork, schedules, relations, and recommendations may come from public anime information services. Download source results are requested from public third-party listings and normalized for display.

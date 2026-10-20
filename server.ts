@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { XMLParser } from "fast-xml-parser";
-import { getCachedBlogPost } from "./api/blog";
+import blogHandler, { getCachedBlogPost } from "./api/blog";
 import { getBlogPost } from "./src/api/blogShared";
 
 type SourceCacheEntry = {
@@ -105,6 +105,8 @@ async function startServer() {
       return res.status(500).json({ error: e.message });
     }
   });
+
+  app.get('/blog/:slug', (req,res) => { req.query.render='1';req.query.slug=req.params.slug;return blogHandler(req,res); });
 
   // Vite middleware
   if (process.env.NODE_ENV !== "production") {
