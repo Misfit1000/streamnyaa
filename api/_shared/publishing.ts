@@ -89,6 +89,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
     if(state.retryAt&&state.retryAt>Date.now()){await save(run,token,'pending',{...state,resumeRequired:true},'Waiting for the provider retry deadline.');return;}
     const transport=new EditorialTransport(deadline);
     if(!state.briefs){
+      state.stage='Evidence discovery';
       if(run.kind==='weekly'){const brief=await rankingBrief(transport,'weekly-ranking',Date.parse(run.created_at));state.briefs=brief?[brief]:[];}
       else{state.briefs=await discoverNews(transport);if(!state.briefs.length){const brief=await rankingBrief(transport,'data-report');state.briefs=brief?[brief]:[];}}
       await save(run,token,'running',state);
@@ -105,7 +106,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
       if(!claimed){state.next++;await save(run,token,'running',state);continue;}
       const existing=await findDurableBlogPost(articleSlug);
       if(existing?.publication?.fingerprint===brief.fingerprint){if(existing.publication.storage==='github'&&!await archiveBlogPost(existing))throw Error('Saved article discovery index could not recover.');state.published.push(articleSlug);state.next++;await save(run,token,'running',state);continue;}
-      if(!state.draft){state.draft=await authorBrief(brief,recent,deadline);await save(run,token,'running',state);}
+      if(!state.draft){state.stage='Article writing';state.draft=await authorBrief(brief,recent,deadline);await save(run,token,'running',state);}
       if(state.draft.errors.length){state.rejections=[...(state.rejections||[]),{fingerprint:brief.fingerprint,reason:state.draft.errors,draft:state.draft.draft}].slice(-4);delete state.draft;state.next++;await save(run,token,'running',state);continue;}
       if(Date.now()>deadline-45_000){await save(run,token,'pending',{...state,resumeRequired:true},'Validated draft saved. Resume to finish durable publication.');return;}
       const now=new Date().toISOString(),definition=publicationDefinition(run.kind,state.published.length);
@@ -114,6 +115,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
         article:articleFromDraft(state.draft.draft,brief),sources:brief.sources.map(({text,...source})=>source),charts:brief.charts,ranking:brief.ranking,publication:{runId:run.id,fingerprint:brief.fingerprint,publishedAt:now,updatedAt:now}};
       // Renew/fence immediately before bounded durable publication. No draft or
       // successful model response is counted as a published article.
+      state.stage='Durable publication';
       await save(run,token,'running',state);
       if(!await archiveBlogPost(post))throw Error('The article was generated but durable publication failed. The draft remains saved.');
       await supabaseRest(`blog_publication_claims?fingerprint=eq.${brief.fingerprint}&run_id=eq.${run.id}`,{method:'PATCH',signal:AbortSignal.timeout(5000),body:JSON.stringify({published_at:now})});
@@ -121,9 +123,10 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
     }
     await save(run,token,state.published.length?'published':'skipped',state,state.published.length?undefined:'Candidates were duplicates or failed editorial quality checks.');
   }catch(error){
-    const status=(error as any).status,header=String((error as any).retryAfter||''),reason=String((error as Error).message||'Publication failed.').slice(0,800);
+    const status=(error as any).status,header=String((error as any).retryAfter||''),reason=`${state.stage||'Publishing'}: ${String((error as Error).message||'Publication failed.')}`.slice(0,800);
     if(status===429||status===403)state.retryAt=Math.max(Date.now()+300000,/^\d+$/.test(header)?Date.now()+Number(header)*1000:Date.parse(header)||0);
-    const paused=/budget reached|time budget/i.test(reason)||status===429||status===503;
+    const paused=/budget reached|time budget/i.test(reason)||status===429||status>=500||['TimeoutError','AbortError'].includes((error as Error).name);
+    if(paused)state.retryAt=Math.max(state.retryAt||0,Date.now()+30000);
     await save(run,token,paused?'pending':'failed',{...state,resumeRequired:paused},reason).catch(()=>undefined);
   }
 }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
-import { calculateRanking } from '../api/_shared/publishingData.ts';
+import { calculateRanking, EditorialTransport } from '../api/_shared/publishingData.ts';
 import { publicationDefinition, validateEditorial } from '../api/_shared/publishing.ts';
 import blog from '../api/blog.ts';
 import sitemap from '../api/blog-sitemap.ts';
@@ -50,6 +50,11 @@ test('editorial gate rejects fabricated figures, sensitive claims and missing at
   const brief:any={kind:'news',subject:'Fixture Series',headline:'A headline is only a discovery lead',facts:[],sources:[{id:'official',primary:true,text:'Fixture Series will return in 2026. The official announcement gives no date and no statement about staff changes.'}],items:[]};
   const draft:any={headline:'Fixture Series confirms its next season',excerpt:'A careful account of what the official announcement confirms and what it leaves unresolved.',paragraphs:[{text:'Fixture Series has 9000 worldwide viewers and its actor died.',sourceIds:[]},{text:'Fans are buzzing and only time will tell how the series develops.',sourceIds:['unknown']}],sections:[]};
   const errors=validateEditorial(draft,brief);assert.ok(errors.some(error=>/9000/.test(error)));assert.ok(errors.some(error=>/sensitive/.test(error)));assert.ok(errors.some(error=>/attribution/.test(error)));assert.ok(errors.some(error=>/filler/.test(error)));
+});
+test('editorial outages name the provider, keep query data private and remain resumable',async()=>{
+  const original=globalThis.fetch;globalThis.fetch=(async()=>{throw new DOMException('aborted','TimeoutError');}) as any;
+  try{await assert.rejects(new EditorialTransport().fetch('https://api.tenrai.org/v1/anime/1/news?private=do-not-log'),(error:any)=>error.status===503&&error.message.includes('api.tenrai.org')&&!error.message.includes('do-not-log'));}
+  finally{globalThis.fetch=original;}
 });
 test('public Blog, archive and sitemap reads make no model calls or storage mutations',async()=>{
   const original=globalThis.fetch,oldUrl=process.env.SUPABASE_URL,oldKey=process.env.SUPABASE_SECRET_KEY;const requests:any[]=[];

@@ -27,11 +27,12 @@ export class EditorialTransport{
     const host=new URL(url).hostname,wait=(this.admitted.get(host)||0)+spacing-Date.now();
     if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));this.admitted.set(host,Date.now());this.requests++;
     const signal=AbortSignal.timeout(Math.min(10_000,Math.max(1,this.deadline-Date.now())));
-    const response=pinned?await new Promise<Response>((resolve,reject)=>{
+    const response=await (async()=>{try{return pinned?await new Promise<Response>((resolve,reject)=>{
       const request=httpsRequest(url,{method:'GET',headers:init.headers as Record<string,string>,signal,
         lookup:((_host:any,options:any,callback:any)=>options?.all?callback(null,pinned):callback(null,pinned[0].address,pinned[0].family)) as any},incoming=>resolve(new Response(Readable.toWeb(incoming) as any,{status:incoming.statusCode,headers:incoming.headers as any})));
       request.on('error',reject);request.end();
     }):await fetch(url,{...init,signal});
+    }catch{throw Object.assign(Error(`The editorial request to ${host} timed out or could not connect. Saved work can resume later.`),{status:503});}})();
     if(!response.ok&&!(init.redirect==='manual'&&response.status>=300&&response.status<400))throw Object.assign(Error(`Evidence provider returned ${response.status}.`),{status:response.status,retryAfter:response.headers.get('retry-after')});
     return response;
   }
