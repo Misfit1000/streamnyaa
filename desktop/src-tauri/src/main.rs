@@ -62,9 +62,9 @@ const PLAYER_COVER_MAX_HEIGHT: u32 = 1440;
 const PLAYER_COVER_BACKGROUND_WIDTH: u32 = 1920;
 const PLAYER_COVER_BACKGROUND_HEIGHT: u32 = 1080;
 const PLAYER_COVER_PRELOAD_TIMEOUT_MS: u64 = 1_600;
-const PLAYER_ARTWORK_LAYOUT_VERSION: &str = "cinematic-v2";
-const DESKTOP_BUILD_REVISION: &str = concat!(env!("CARGO_PKG_VERSION"), "-calendar-publishing-player-v2");
-const PLAYER_RESOURCE_REVISION: &str = "StreamNyaa player resource: cinematic-v2";
+const PLAYER_ARTWORK_LAYOUT_VERSION: &str = "cinematic-v3";
+const DESKTOP_BUILD_REVISION: &str = concat!(env!("CARGO_PKG_VERSION"), "-source-artwork-v3");
+const PLAYER_RESOURCE_REVISION: &str = "StreamNyaa player resource: cinematic-v3";
 const MAX_REMOTE_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -1946,18 +1946,22 @@ fn apply_loading_readability_gradient(image: &mut image::RgbaImage) {
 }
 
 fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage, &'static str) {
-    let target_width = decoded.width().clamp(PLAYER_COVER_BACKGROUND_WIDTH, 2560);
+    prepare_loading_with_background(decoded,None)
+}
+fn prepare_loading_with_background(decoded: &image::RgbaImage, backdrop: Option<&image::RgbaImage>) -> (image::RgbaImage, &'static str) {
+    let backdrop=backdrop.unwrap_or(decoded);
+    let target_width = backdrop.width().max(decoded.width()).clamp(PLAYER_COVER_BACKGROUND_WIDTH, 2560);
     let target_height = target_width * PLAYER_COVER_BACKGROUND_HEIGHT / PLAYER_COVER_BACKGROUND_WIDTH;
     // Composition stays within the bounded stage resolution. Artwork work is
     // asynchronous and never changes playback readiness.
     // Keep the series art recognizable behind the text, instead of blurring
     // a low-resolution intermediate into an indistinct colored background.
-    let mut composition = cover_fill(decoded, target_width, target_height);
+    let mut composition = cover_fill(backdrop, target_width, target_height);
     apply_loading_readability_gradient(&mut composition);
     let portrait = decoded.width() as f64 / (decoded.height().max(1) as f64) < 1.1;
     let max_width = target_width as f64 * if portrait { 0.265 } else { 0.42 };
     let max_height = target_height as f64 * 0.70;
-    let contain_scale = (max_width / decoded.width() as f64).min(max_height / decoded.height() as f64).min(1.25);
+    let contain_scale = (max_width / decoded.width() as f64).min(max_height / decoded.height() as f64).min(1.0);
     let width = (decoded.width() as f64 * contain_scale).round().max(1.0) as u32;
     let height = (decoded.height() as f64 * contain_scale).round().max(1.0) as u32;
     let mut foreground = image::imageops::resize(decoded, width, height, FilterType::Lanczos3);
@@ -1972,7 +1976,7 @@ fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage,
     let x = (center_x - width as f64 / 2.0).round() as i64;
     let y = ((target_height - height) / 2) as i64;
     image::imageops::overlay(&mut composition, &foreground, x, y);
-    (composition, if portrait { "cinematic-poster-v2" } else { "cinematic-wide-v2" })
+    (composition, if portrait { "cinematic-poster-v3" } else { "cinematic-wide-v3" })
 }
 
 fn is_quality_landscape_art(decoded: &image::RgbaImage) -> bool {
@@ -2011,18 +2015,23 @@ fn prepare_player_cover(
 ) -> Result<Option<PreparedCover>, String> {
     let mut sources = playback_cover_sources(request);
     sources.sort_by_key(|(_, role)| *role != "poster");
+    // Reserve an early request for a real backdrop; a good poster does not
+    // establish that a heavily enlarged poster crop is the best background.
+    if let Some(index)=sources.iter().position(|(_,role)|*role=="landscape") { let backdrop=sources.remove(index);sources.insert(1.min(sources.len()),backdrop); }
     if sources.is_empty() {
         return Ok(None);
     }
 
     let mut decoded_cover = None;
+    let mut decoded_background: Option<image::RgbaImage> = None;
+    let mut background_detail=0_u64;
     let mut best_score = (0_u8, 0_u64);
     let mut last_error = None;
     let artwork_started = Instant::now();
     let identity = request.artwork.as_ref().map(|a| a.identity.as_str()).unwrap_or(request.anime_title.as_str());
     for (source, source_kind) in sources.into_iter().take(8) {
         if artwork_started.elapsed() >= Duration::from_secs(6) { break; }
-        if source_kind != "poster" && best_score.0 >= 4 { break; }
+        if source_kind == "poster" && best_score.0 >= 4 && source.contains("/cover/medium/") { continue; }
         let cached_path = artwork_cache_path(identity,&source);
         let cached = if is_remote_url(&source) { fs::metadata(&cached_path).ok().filter(|m|m.len() <= PLAYER_COVER_MAX_BYTES).and_then(|_|fs::read(&cached_path).ok()) } else { None };
         let fresh = file_modified_ms(&cached_path) + 7 * 86_400_000 > now_millis();
@@ -2030,6 +2039,12 @@ fn prepare_player_cover(
         let chosen = [cached.as_deref(),downloaded.as_deref()].into_iter().flatten().filter_map(|bytes|decode_cover(bytes).ok().map(|image|(image,bytes))).max_by_key(|(image,_)|image.width() as u64 * image.height() as u64);
         if let Some((image,bytes)) = chosen {
             let pixels=image.width() as u64 * image.height() as u64;
+            if source_kind=="landscape" && is_quality_landscape_art(&image.to_rgba8()) {
+                let crop_width=(image.height() as u64*16/9).min(image.width() as u64);
+                let crop_height=(image.width() as u64*9/16).min(image.height() as u64);
+                let detail=crop_width*crop_height;
+                if detail>background_detail {background_detail=detail;decoded_background=Some(image.to_rgba8());}
+            }
             let ratio = image.width() as f64 / image.height().max(1) as f64;
             let quality = if source_kind == "poster" && ratio < 1.1 && image.width() >= 320 && image.height() >= 480 {4}
                 else if source_kind == "landscape" && (1.35..=2.6).contains(&ratio) && image.width() >= 960 && image.height() >= 480 {3}
@@ -2038,7 +2053,7 @@ fn prepare_player_cover(
             if is_quality_landscape_art(&image.to_rgba8()) || source_kind == "poster" && image.width() >= 100 && image.height() >= 150 {
                 if is_remote_url(&source) && downloaded.as_deref() == Some(bytes) { store_artwork_cache(&cached_path,bytes); }
                 if decoded_cover.is_none() || (quality,pixels) > best_score { best_score=(quality,pixels); decoded_cover=Some((image.to_rgba8(),source,source_kind)); }
-                if source_kind == "poster" && image.width() >= 640 && image.height() >= 960 { break; }
+
             }
         } else { last_error=Some("Series artwork was unavailable; preserving the loading fallback".to_string()); }
     }
@@ -2065,7 +2080,7 @@ fn prepare_player_cover(
         .min(1.0);
     let width = ((source_width as f64 * scale).round() as u32).max(1);
     let height = ((source_height as f64 * scale).round() as u32).max(1);
-    let (background, artwork_layout) = prepare_loading_composition(&decoded);
+    let (background, artwork_layout) = prepare_loading_with_background(&decoded,decoded_background.as_ref());
     let resized = if width == source_width && height == source_height {
         decoded.clone()
     } else {
@@ -6773,7 +6788,7 @@ mod tests {
         assert!(loading_image_len > 1024);
         assert_eq!(cover.loading_image_width, PLAYER_COVER_BACKGROUND_WIDTH);
         assert_eq!(cover.loading_image_height, PLAYER_COVER_BACKGROUND_HEIGHT);
-        assert_eq!(cover.artwork_layout, "cinematic-wide-v2");
+        assert_eq!(cover.artwork_layout, "cinematic-wide-v3");
 
         let _ = fs::remove_dir_all(root);
     }
@@ -6810,11 +6825,12 @@ mod tests {
             image::RgbaImage::from_fn(720,1080,|x,y|image::Rgba([(30+x/4) as u8,(25+y/6) as u8,170,255])).save(&source).unwrap();
         }
         let mut request=playback_request_for_episode("2");
-        request.anime_title=if output.is_some() {"Dragon Ball Super: Beerus".into()} else {"Artwork fixture".into()};
+        request.anime_title=env::var("STREAMNYAA_ARTWORK_RENDER_TITLE").unwrap_or_else(|_|if output.is_some() {"Dragon Ball Super: Beerus".into()} else {"Artwork fixture".into()});
         request.title="Fixture [1080p] [HEVC] [Sub]".into();
         request.poster=Some(source.to_string_lossy().into());request.banner=None;request.banner_candidates=None;
+        if let Ok(backdrop)=env::var("STREAMNYAA_ARTWORK_RENDER_BACKGROUND"){request.banner=Some(backdrop);}
         let cover=prepare_player_cover(&root,&request).unwrap().unwrap();
-        assert_eq!(cover.artwork_layout,"cinematic-poster-v2");
+        assert_eq!(cover.artwork_layout,"cinematic-poster-v3");
         let overlay=fs::read(&cover.background_path).unwrap();
         assert_eq!(overlay.len(),(cover.background_width*cover.background_height*4) as usize);
         // Alpha must not discard the lower-left artwork, and each BGRA pixel
@@ -6833,6 +6849,17 @@ mod tests {
             fs::write(player_metadata_path(&root),serde_json::to_vec_pretty(&meta).unwrap()).unwrap();
             println!("ARTWORK_RENDER_META={}",player_metadata_path(&root).display());
         } else {let _=fs::remove_dir_all(root);}
+    }
+
+    #[test]
+    fn artwork_uses_a_separate_backdrop_without_enlarging_a_small_poster() {
+        let poster=image::RgbaImage::from_pixel(460,651,image::Rgba([255,0,0,255]));
+        let banner=image::RgbaImage::from_pixel(1900,400,image::Rgba([0,0,255,255]));
+        let (composed,_)=prepare_loading_with_background(&poster,Some(&banner));
+        assert!(composed.get_pixel(480,540)[2]>0,"The verified landscape is the background");
+        assert_eq!(composed.get_pixel(1555,540)[0],255,"Poster pixels retain their original color");
+        let poster_width=composed.rows().nth(540).unwrap().filter(|pixel|pixel[0]==255).count();
+        assert_eq!(poster_width,460,"A low-detail poster must not be enlarged beyond its native width");
     }
 
     #[test]
@@ -6856,7 +6883,7 @@ mod tests {
     fn landscape_player_art_preserves_original_color_balance() {
         let source = image::RgbaImage::from_pixel(2400, 600, image::Rgba([30, 100, 210, 255]));
         let (composition, layout) = prepare_loading_composition(&source);
-        assert_eq!(layout, "cinematic-wide-v2");
+        assert_eq!(layout, "cinematic-wide-v3");
         let center = composition.get_pixel(960, 540);
         let upper_edge = composition.get_pixel(960, 40);
         assert!(center[2] > center[1]);
@@ -6931,7 +6958,7 @@ mod tests {
         assert!(pixel[2]>pixel[0]+15,"low-resolution first response must not win");
         let wide=image::RgbaImage::from_pixel(1900,400,image::Rgba([10,80,140,255]));
         let (composed,layout)=prepare_loading_composition(&wide);
-        assert_eq!(layout,"cinematic-wide-v2");
+        assert_eq!(layout,"cinematic-wide-v3");
         assert_eq!(composed.dimensions(),(1920,1080));
         assert!(composed.get_pixel(960,540)[2]>10);
         assert!(decode_cover(b"invalid image").is_err());
@@ -6940,7 +6967,7 @@ mod tests {
     }
 
     #[test]
-    fn loading_jpeg_preserves_lower_artwork_and_prefers_poster_to_thin_masthead() {
+    fn loading_jpeg_preserves_poster_and_separate_backdrop_without_cutouts() {
         let root=env::temp_dir().join(format!("streamnyaa-series-panorama-{}",now_millis()));
         fs::create_dir_all(&root).unwrap();
         let banner=root.join("banner.png"); let poster=root.join("poster.png");
@@ -6951,9 +6978,24 @@ mod tests {
         let cover=prepare_player_cover(&root,&request).unwrap().unwrap();
         let composed=image::open(&cover.loading_image_path).unwrap().to_rgb8();
         let lower=composed.get_pixel(composed.width()/2,composed.height()*4/5);
-        assert!(lower[2]>lower[0]+20,"a valid poster must beat a letterboxed masthead");
-        assert!(lower[2]>25,"the loading JPEG must retain artwork below the title region");
+        assert!(lower[0]>lower[2]+20,"the verified banner remains the background");
+        assert!(lower[0]>25,"the loading JPEG must retain artwork below the title region");
+        let foreground=composed.get_pixel(composed.width()*81/100,composed.height()/2);
+        assert!(foreground[2]>foreground[0]+20,"the poster remains a separate proportional foreground");
         let _=fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    #[ignore = "one live public source page through the actual native request and classification commands"]
+    async fn live_movie_source_native_acceptance() {
+        let response=fetch_desktop_source_api("https://www.streamnyaa.xyz/api/nyaa?q=Infinity%20Castle&c=1_2&f=0&p=1&deep=0&pages=1&scope=title".into(),None,Some("foreground".into()),Some(30_000)).await.expect("live title-scoped source request");
+        let titles:Vec<String>=response.data.as_array().expect("source array").iter().filter_map(|row|row["title"].as_str().map(str::to_string)).collect();
+        let fixture:serde_json::Value=serde_json::from_str(include_str!("../../../tests/fixtures/movie-source-identity.json")).unwrap();
+        let identity=serde_json::from_value(fixture["identity"].clone()).unwrap();
+        let matches=classify_desktop_sources(identity,Some(1),titles.clone()).unwrap();
+        let exact=matches.iter().filter(|value|**value==source_identity::Evidence::Exact).count();
+        println!("LIVE_NATIVE_MOVIE_SOURCE rows={} exact={} complete={} cache={}",titles.len(),exact,response.complete,response.cache_status);
+        assert!(!titles.is_empty()&&exact>0,"verified movie releases must survive the real native path");
     }
 
     #[tokio::test]

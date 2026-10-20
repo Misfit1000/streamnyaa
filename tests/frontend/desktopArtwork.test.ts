@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { desktopLandscapeImageCandidates, desktopPosterCandidates, desktopSpotlightArtworkCandidates, desktopSeriesArtwork } from '../../src/lib/desktopArtwork';
 
 describe('desktop artwork candidates', () => {
+  it('keeps provider roles and accepts supplemental artwork only for the verified MAL entry',()=>{
+    const anime={mal_id:60059,title:'The Elusive Samurai Season 2',poster:'https://images.test/anilist.jpg',bannerImage:'https://images.test/banner.jpg'};
+    const extra={mal_id:60059,images:{jpg:{large_image_url:'https://images.test/mal-large.jpg'}}};
+    const art=desktopSeriesArtwork(anime,extra);expect(art.candidates).toContainEqual({url:extra.images.jpg.large_image_url,role:'poster'});
+    expect(art.candidates).toContainEqual({url:anime.bannerImage,role:'banner'});
+    expect(desktopSeriesArtwork(anime,{...extra,mal_id:1}).candidates.some(row=>row.url===extra.images.jpg.large_image_url)).toBe(false);
+  });
   it('keeps the series poster first and preserves its role when also supplied as a banner', () => {
     const art = desktopSeriesArtwork({mal_id:1,title:'Series',poster:'https://images.test/portrait.jpg',bannerImage:'https://images.test/portrait.jpg'});
     expect(art.candidates).toEqual([{url:'https://images.test/portrait.jpg',role:'poster'}]);

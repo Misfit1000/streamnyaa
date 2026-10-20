@@ -3,6 +3,14 @@ import { runSourceSearchPass, sourceSearchPlan } from '../../src/lib/desktopSour
 import { buildSourceIdentity } from '../../src/lib/desktopSourceIdentity';
 
 describe('bounded resumable source discovery', () => {
+  it('searches films without episode tokens or an episode transport filter and keeps every alias',()=>{
+    const identity=buildSourceIdentity({mal_id:59192,type:'MOVIE',title:'Demon Slayer Infinity Castle',synonyms:Array.from({length:9},(_,i)=>`Verified movie alias ${i}`)});
+    const plan=sourceSearchPlan(identity,1);
+    expect(plan.every(job=>job.scope==='title'&&job.episode===undefined&&!job.query.endsWith(' 01'))).toBe(true);
+    expect(new Set(plan.map(job=>job.query)).size).toBe(identity.aliases.length);
+    const series=sourceSearchPlan(buildSourceIdentity({...identity,mal_id:1,title:'Series',type:'TV',synonyms:identity.aliases}),2);
+    expect(series.some(job=>job.query==='Verified movie alias 8 02')).toBe(true);
+  });
   const jobs = () => sourceSearchPlan(buildSourceIdentity({ mal_id: 1, title_romaji: 'Romaji Example', title_english: 'English Example' }), 1);
   const merge = (items: { id: string }[]) => [...new Map(items.map(item => [item.id, item])).values()];
   it('continues beyond three matches, preserves alias order and resumes only pending pages', async () => {

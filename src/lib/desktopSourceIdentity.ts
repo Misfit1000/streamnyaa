@@ -9,7 +9,7 @@ export type SourceIdentity = {
   sequel: boolean;
 };
 export type SourceEvidence = { evidence: 'exact' | 'uncertain' | 'conflict'; reason: string; episodeMatch: boolean };
-export const SOURCE_CLASSIFIER_VERSION = 2;
+export const SOURCE_CLASSIFIER_VERSION = 3;
 
 export function normalizeSourceTitle(value = '') {
   return String(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -44,14 +44,21 @@ export function sourceAnimeTitle(value = '') {
     .split(/\bs\d{1,2}e\d{1,4}(?:v\d+)?\b|\b(?:episode|ep)\.?\s*\d+\b|\s[-–]\s*\d+(?:v\d+)?\b/i)[0]
     .replace(/\[[^\]]*\]|\([^)]*(?:\d{3,4}p|web|hevc|aac)[^)]*\)/ig, ' ')
     .replace(/\b(?:480|720|1080|1440|2160)p\b.*$/i, '')
-    .replace(/\b(?:hevc|x26[45]|h\.?26[45]|aac|flac|webrip|webdl|bluray)\b.*$/i, ''));
+    .replace(/\b(?:hevc|x26[45]|h\.?26[45]|aac|flac|web(?:[ .-]?(?:dl|rip)|(?=\s*(?:$|\d{3,4}p|dual|h[ .]?26|aac)))|bluray|bdrip|bdremux|repack|dual[ .-]?audio|jap[ .-]?eng)\b.*$/i, '')
+    .replace(/\.(?:mkv|mp4|avi|webm|m2ts)\s*$/i,''));
+}
+function sourceTitleCandidates(value:string) {
+  const segments=value.split('|');
+  for(const match of value.matchAll(/\(([^)]+)\)/g))segments.push(match[1]);
+  segments.push(value.replace(/\([^)]*\)/g,' '));
+  return orderedSourceAliases(segments.map(sourceAnimeTitle));
 }
 function stripMarkers(value = '') {
   return normalizeSourceTitle(value.replace(/\b(?:season|part|cour)\s*\d+\b|\b\d+(?:st|nd|rd|th)\s+season\b|\bs\d{1,2}(?:e\d+)?\b/ig, ' '));
 }
 function containsTitle(value: string, alias: string) { return Boolean(alias && (` ${value} `).includes(` ${alias} `)); }
 function canonicalTitleCore(value: string) {
-  return stripMarkers(value).split(' ').filter(word => !/^\d{4}$/.test(word) || Number(word) < 1900 || Number(word) > 2099).join(' ');
+  return stripMarkers(value).replace(/\b(?:the\s+)?(?:movie|film)\b(?!\s*\d)/g,' ').trim().replace(/\s+/g,' ').split(' ').filter(word => !/^\d{4}$/.test(word) || Number(word) < 1900 || Number(word) > 2099).join(' ');
 }
 function hasExactCanonicalTitle(parsed: string, aliases: string[], episode: number) {
   const core = canonicalTitleCore(parsed);
@@ -81,11 +88,23 @@ export function buildSourceIdentity(anime: any, installment?: { name?: string; f
   // Only complete aliases of THIS canonical entry, never aliases imported from related entries.
   const predecessorTitles = orderedSourceAliases((anime?.relations || []).filter((r: any) => /^(prequel|parent)$/i.test(r?.relation || r?.relationType || ''))
     .flatMap((r: any) => (r?.entry || []).map((entry: any) => entry?.name || entry?.title || ''))).map(stripMarkers);
-  const installmentAliases = aliases.filter(x => seasonFromTitle(x) || partFromTitle(x)
+  const format=String(installment?.format || anime?.type || anime?.format || 'TV').toUpperCase();
+  const allOriginalAliasesLength=aliases.length;
+  // A translated franchise prefix can repeat its romanized name. Keep a
+  // shortened translation only when a verified prequel establishes that prefix
+  // and at least two installment-specific words remain.
+  for(const alias of [...aliases])if(format==='MOVIE'&&alias.includes(':')){
+    const root=alias.split(':')[0].trim(),words=normalizeSourceTitle(alias).split(' ');
+    for(const previous of predecessorTitles){const prior=previous.split(' ');let common=0;while(common<words.length&&words[common]===prior[common])common++;
+      const suffix=words.slice(common);if(common>=3&&root.split(/\s+/).length>=2&&suffix.length>=2&&!/^(?:part|movie|film|season|cour)\b/.test(suffix.join(' '))){ aliases.push(`${root} ${suffix.join(' ')}`); const repeated=words.slice(normalizeSourceTitle(root).split(' ').length,common);if(repeated.length>=2)aliases.push(`${repeated.join(' ')} ${suffix.join(' ')}`); }
+    }
+  }
+  const installmentAliases = orderedSourceAliases(aliases).filter(x => seasonFromTitle(x) || partFromTitle(x)
+    || format==='MOVIE' && (x.includes(':') || /\b(?:movie|film)\s*\d+\b/i.test(x) || ![...predecessorTitles].some(p=>p===stripMarkers(x))&&aliases.indexOf(x)>=allOriginalAliasesLength)
     || /\b(?:second|third|fourth|final|after story|shippuuden|shippuden|ii|iii|iv)\b/i.test(x)
     || predecessorTitles.some(predecessor => stripMarkers(x) !== predecessor && containsTitle(stripMarkers(x), predecessor)));
   return { animeId: anime?.anilist_id ? `anilist:${anime.anilist_id}` : anime?.mal_id ? `mal:${anime.mal_id}` : '',
-    aliases, installmentAliases, format: String(installment?.format || anime?.type || anime?.format || 'TV').toUpperCase(), seasonNumber, partNumber, sequel };
+    aliases:orderedSourceAliases(aliases), installmentAliases, format, seasonNumber, partNumber, sequel };
 }
 export function sourceIdentitySignature(identity: SourceIdentity) { return JSON.stringify([SOURCE_CLASSIFIER_VERSION, identity]); }
 
@@ -102,14 +121,18 @@ export async function validateDesktopSourceCandidates<T extends { title: string 
 }
 
 export function classifySourceIdentity(title: string, identity: SourceIdentity, episode: number): SourceEvidence {
-  const parsed = sourceAnimeTitle(title);
+  const candidates=sourceTitleCandidates(title);
+  const parsed = candidates.find(value=>hasExactCanonicalTitle(value,identity.aliases,episode)) || candidates.find(value=>identity.aliases.some(alias=>containsTitle(stripMarkers(value),stripMarkers(alias)))) || candidates[0] || '';
   const aliases = identity.aliases.map(stripMarkers).filter(Boolean);
-  const titleMatch = aliases.some(alias => containsTitle(stripMarkers(parsed), alias));
+  const titleMatch = aliases.some(alias => containsTitle(canonicalTitleCore(parsed), canonicalTitleCore(alias)));
   const episodeMatch = identity.format === 'MOVIE' || parseSourceEpisode(title) === episode;
   const conflict = (reason: string): SourceEvidence => ({ evidence: 'conflict', reason, episodeMatch });
   if (!identity.animeId || !titleMatch) return conflict('Different anime title');
   if (/\b(?:trailer|preview|creditless|ncop|nced|soundtrack|ost|pv)\b/i.test(title)) return conflict('Non-episode extra');
   const season = seasonFromTitle(title), part = partFromTitle(title);
+  const movieNumber=(value:string)=>positive(value.match(/\b(?:movie|film)\s*(\d+)\b/i)?.[1]);
+  const expectedMovie=identity.format==='MOVIE'?identity.aliases.map(movieNumber).find(Boolean):null;
+  if(expectedMovie&&((movieNumber(title)&&movieNumber(title)!==expectedMovie)||(part&&part!==expectedMovie)))return conflict('Wrong movie installment');
   if (!identity.sequel && !identity.seasonNumber && season && season > 1) return conflict(`Unconfirmed sequel: S${season}`);
   if (identity.seasonNumber && season && identity.seasonNumber !== season) return conflict(`Wrong season: S${season}`);
   if (identity.partNumber && part && identity.partNumber !== part) return conflict(`Wrong part: Part ${part}`);
@@ -121,7 +144,7 @@ export function classifySourceIdentity(title: string, identity: SourceIdentity, 
   if (!identity.partNumber && part && part > 1) return { evidence: 'uncertain', reason: 'Part identity needs verification', episodeMatch };
   if (!episodeMatch) return { evidence: 'uncertain', reason: 'Episode identity needs verification', episodeMatch };
   if (!hasExactCanonicalTitle(parsed, identity.aliases, episode)) return { evidence: 'uncertain', reason: 'Release subtitle is not verified for this installment', episodeMatch };
-  const matchingAliases = identity.installmentAliases.filter(alias => containsTitle(parsed, normalizeSourceTitle(alias)));
+  const matchingAliases = identity.installmentAliases.filter(alias => identity.format==='MOVIE' ? containsTitle(canonicalTitleCore(parsed),canonicalTitleCore(alias)) : containsTitle(parsed,normalizeSourceTitle(alias)));
   const installmentAlias = matchingAliases.length > 0;
   const seasonAlias = matchingAliases.some(alias => seasonFromTitle(alias) === identity.seasonNumber || !seasonFromTitle(alias) && !partFromTitle(alias));
   const partAlias = matchingAliases.some(alias => partFromTitle(alias) === identity.partNumber || !seasonFromTitle(alias) && !partFromTitle(alias));

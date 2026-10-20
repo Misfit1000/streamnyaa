@@ -12,15 +12,17 @@ export type SeriesArtworkDescriptor = {
   candidates: { url: string; role: 'banner' | 'poster' }[];
 };
 
-export function desktopSeriesArtwork(anime: any): SeriesArtworkDescriptor {
+export function desktopSeriesArtwork(anime: any, supplemental?: any): SeriesArtworkDescriptor {
   const id = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : undefined;
   const anilistId = id(anime?.anilist_id);
   const malId = id(anime?.mal_id);
   const banners = desktopLandscapeImageCandidates([anime?.bannerImage, anime?.banner_image, anime?.backdrop]);
-  const posters = desktopLandscapeImageCandidates(desktopPosterCandidates(anime));
+  const verifiedSupplement = malId && Number(supplemental?.mal_id) === malId
+    ? [supplemental?.images?.webp?.large_image_url,supplemental?.images?.jpg?.large_image_url] : [];
+  const posters = desktopLandscapeImageCandidates([...desktopPosterCandidates(anime),...verifiedSupplement]).slice(0,6);
   return { version: 1, anilistId, malId,
     identity: `anilist:${anilistId || ''}|mal:${malId || ''}|${String(anime?.title || '').normalize('NFKC')}`,
-    candidates: [...posters.map(url => ({url, role:'poster' as const})), ...banners.filter(url => !posters.includes(url)).map(url => ({url, role:'banner' as const}))] };
+    candidates: [...posters.map(url => ({url, role:'poster' as const})), ...banners.filter(url => !posters.includes(url)).slice(0,4).map(url => ({url, role:'banner' as const}))] };
 }
 
 export function desktopLandscapeImageCandidates(values: unknown[]) {

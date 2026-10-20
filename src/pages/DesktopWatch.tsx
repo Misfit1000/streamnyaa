@@ -24,7 +24,7 @@ import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, Maxi
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
-import { fetchAnimeDetails, cachedAnimeEpisodeWindow, fetchAnimeEpisodeWindow, fetchAnimeEpisodeTail, mergeAnimeEpisodeTail, fetchAnimeInstallments } from '../api/jikan';
+import { fetchAnimeDetails, fetchTenraiPath, cachedAnimeEpisodeWindow, fetchAnimeEpisodeWindow, fetchAnimeEpisodeTail, mergeAnimeEpisodeTail, fetchAnimeInstallments } from '../api/jikan';
 import { loadSeriesTimeline, type TimelineResult } from '../lib/desktopSeriesTimeline';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
@@ -1813,6 +1813,24 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const anime = useMemo(() => mergeScheduleWatchEvidence(resolvedAnime || fallbackAnime, fallbackAnime), [resolvedAnime, fallbackAnime]);
   const animeNotYetAired = (!resolvedAnime && routeMarkedUpcoming && !anime?.latestEpisode) || isUpcomingAnime(anime);
   const hasFullMetadata = Boolean(resolvedAnime);
+  const supplementalArtwork = useQuery({
+    queryKey:['desktop-series-artwork',Number(anime?.mal_id)||null],
+    enabled:isDesktopApp() && hasFullMetadata && Number.isSafeInteger(Number(anime?.mal_id)) && Number(anime.mal_id)>0,
+    queryFn:async({signal})=>{
+      const response=await fetchTenraiPath(`/anime/${Number(anime.mal_id)}`,604800,{signal,priority:'background',deadlineMs:10_000});
+      if(!response.ok)throw Error('Supplemental artwork is unavailable.');
+      const value=await response.json();
+      if(Number(value.data?.mal_id)!==Number(anime.mal_id))throw Error('Artwork identity did not match.');
+      return {mal_id:Number(value.data.mal_id),images:value.data.images,titles:Array.isArray(value.data.titles)?value.data.titles:[],title_synonyms:Array.isArray(value.data.title_synonyms)?value.data.title_synonyms:[]};
+    },
+    staleTime:7*86400_000,retry:false,refetchOnWindowFocus:false,refetchOnReconnect:false,
+  });
+  const [sourceMetadata,setSourceMetadata]=useState<typeof supplementalArtwork.data>();
+  useEffect(()=>{
+    // Optional alias enrichment must not reset a release the user just chose.
+    // It is adopted before selection, or on the next identity/episode change.
+    if(!sourceSelection && supplementalArtwork.data && supplementalArtwork.data!==sourceMetadata)setSourceMetadata(supplementalArtwork.data);
+  },[sourceSelection,supplementalArtwork.data,sourceMetadata]);
   const metadataFailed = detailsQuery.isError && !usingPlaceholderDetails;
   const metadataLoading = Boolean(id)
     && !metadataFailed
@@ -1895,7 +1913,9 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   const pageItems = episodeData?.data || [];
   const seasonItems = useMemo(() => buildInstallmentItems(anime, installmentGraphData || []), [anime, installmentGraphData]);
   const selectedInstallment = seasonItems.find((item) => item.current) || seasonItems[0] || null;
-  const sourceIdentity = useMemo(() => buildSourceIdentity(anime, selectedInstallment || undefined), [anime, selectedInstallment]);
+  const sourceAnime = useMemo(() => sourceMetadata?.mal_id === Number(anime?.mal_id)
+    ? {...anime,titles:[...(Array.isArray(anime.titles)?anime.titles:[]),...sourceMetadata.titles],title_synonyms:[...(Array.isArray(anime.title_synonyms)?anime.title_synonyms:[]),...sourceMetadata.title_synonyms]} : anime,[anime,sourceMetadata]);
+  const sourceIdentity = useMemo(() => buildSourceIdentity(sourceAnime, selectedInstallment || undefined), [sourceAnime, selectedInstallment]);
   const sourceContextSignature = sourceIdentitySignature(sourceIdentity);
   const airedCount = knownAiredEpisodeCount(anime, pageItems);
   const episodeCountLabel = episodeData?.streamnyaa?.status === 'stale' ? 'Last known aired' : episodeData?.latestPageResolved === false && knownAiredEpisodeCount(anime) == null ? 'Loaded through episode' : 'Latest aired';
@@ -2110,7 +2130,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
         fetch: async (job, deadlineMs) => {
           const raw = await searchNyaa(job.query, job.category, '0', String(job.page), {
             deep: false, pages: 1, wide: false, signal, deadlineMs, maxAgeMs: 60_000,
-            intent: { scope: 'episode', episode: selectedEpisode },
+            intent: job.scope==='episode' ? { scope: 'episode', episode: selectedEpisode } : { scope:'title' },
           });
           const items = await validateDesktopSourceCandidates(raw, sourceIdentity, selectedEpisode);
           return { items, complete: raw.complete, stale: raw.stale, fetchedAt: raw.fetchedAt, emptyPage: raw.length === 0, retryAt: raw.retryAt };
@@ -2174,7 +2194,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
   const failedSourceRecords = useMemo(() => loadSourceFailureRecords(), [failedSourceVersion]);
   const allRankedSources = useMemo<RankedNyaaItem[]>(() => {
-    const items = (sources?.items || []).map(source => classifySource(source, { anime, routeId: id, installment: selectedInstallment, episode: selectedEpisode }))
+    const items = (sources?.items || []).map(source => classifySource(source, { anime:sourceAnime, routeId: id, installment: selectedInstallment, episode: selectedEpisode }))
       .filter(source => source.matchTier !== 'rejected');
     return items.sort((a, b) => {
       if (sortBy === 'seeders') return b.rawSeeders - a.rawSeeders;
@@ -2263,7 +2283,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     [failedSourceRecords, playableSources],
   );
 
-  const sourceSelectionScope = `${sourceContextSignature}:${selectedEpisode}:${audioMode}:${audioPreference}:${sourceMode}:${sourceQuality}`;
+  const sourceSelectionScope = JSON.stringify([sourceIdentity.animeId,sourceIdentity.format,sourceIdentity.seasonNumber,sourceIdentity.partNumber,selectedEpisode,audioMode,audioPreference,sourceMode,sourceQuality]);
   const sourceKey = (source: RankedNyaaItem) => sourceSelectionKey(source);
   // Failed releases stay out of recommendations, but a verified release can be
   // deliberately selected for another attempt from the visible Broad results.
@@ -2414,7 +2434,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   }, [anime.status, anime.episodes, episodeSearch, searchedEpisodes, selectEpisode]);
 
   const sourcePayloadFor = useCallback((source: NyaaItem, resumeOverride?: number): LocalPlaybackSource => {
-    const artwork = desktopSeriesArtwork(anime);
+    const artwork = desktopSeriesArtwork(anime,supplementalArtwork.data);
     const bannerCandidates = artwork.candidates.filter(item => item.role === 'banner').map(item => item.url);
     const baseSource: LocalPlaybackSource = {
       magnet: source.magnet,
@@ -2443,7 +2463,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       durationSeconds: checkpoint?.durationSeconds ?? 0,
       completed: checkpoint?.completed ?? false,
     };
-  }, [anime, selectedEpisode, selectedEpisodeInfo?.image, streamingEpisodeMap, hideEpisodeSpoilers]);
+  }, [anime, supplementalArtwork.data, selectedEpisode, selectedEpisodeInfo?.image, streamingEpisodeMap, hideEpisodeSpoilers]);
 
   const openOneSource = useCallback(async (source: NyaaItem, resumeOverride?: number) => {
     const playbackSource = sourcePayloadFor(source, resumeOverride);
@@ -3521,6 +3541,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                 <span>Sources</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} shown · ${playableSources.length} verified${sourceSearchInProgress ? ' · finding more' : ''}` : 'No matches in this view'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
               </summary>
               <div className="p-4">
+            {sources?.pending?.length ? <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm text-white/60"><span>More release names, categories or pages remain to be checked.</span><button type="button" className="sn-secondary-action px-3 py-2" disabled={sourcesFetching} onClick={findMoreSources}>{sourcesFetching ? 'Finding sources…' : 'Find more sources'}</button></div> : null}
             {sourceSearchInProgress && !sourcesBusy && <p role="status" className="mb-3 text-sm text-white/60">{playableSources.length ? 'Verified sources are ready to play.' : 'Source identity checks are in progress.'} Additional options are still being checked.</p>}
             {sources?.stale && <p role="status" className="mb-3 text-sm text-white/60">Saved sources are shown while the provider recovers.</p>}
             {!sourcesFetching && !sourcesBusy && !playableSources.length && <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-white/60">

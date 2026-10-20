@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { buildSourceIdentity, classifySourceIdentity, parseSourceEpisode, sourceEpisodeIdentity, sourceIdentitySignature } from '../../src/lib/desktopSourceIdentity';
 import fixtures from '../fixtures/source-identity.json';
+import movies from '../fixtures/movie-source-identity.json';
 
 function sequel(format = 'ONA') { return buildSourceIdentity({ mal_id: 2, type: format, title: 'Yasei no Last Boss ga Arawareta! Season 2', title_romaji: 'Yasei no Last Boss ga Arawareta!' }); }
 describe('canonical source identity', () => {
+  it.each(movies.cases)('matches native movie rules: $title',fixture=>{
+    expect(classifySourceIdentity(fixture.title,movies.identity,fixture.episode).evidence).toBe(fixture.evidence);
+  });
+  it('derives a shortened movie franchise name only with verified prequel context',()=>{
+    const movie={mal_id:59192,type:'MOVIE',title:'Demon Slayer: Kimetsu no Yaiba Infinity Castle',title_romaji:'Kimetsu no Yaiba: Mugenjou-hen Movie 1 - Akaza Sairai'};
+    expect(buildSourceIdentity(movie).aliases).not.toContain('Demon Slayer infinity castle');
+    const identity=buildSourceIdentity({...movie,relations:[{relation:'PREQUEL',entry:[{name:'Demon Slayer: Kimetsu no Yaiba Hashira Training Arc'}]}]});
+    expect(identity.aliases).toContain('Demon Slayer infinity castle');expect(identity.aliases).toContain('kimetsu no yaiba infinity castle');
+    expect(identity.aliases).not.toContain('Demon Slayer');
+  });
   it.each(fixtures.cases)('agrees with native golden fixture: $title', fixture => {
     expect(classifySourceIdentity(fixture.title, fixture.identity || fixtures.identity, fixture.episode).evidence).toBe(fixture.evidence);
   });

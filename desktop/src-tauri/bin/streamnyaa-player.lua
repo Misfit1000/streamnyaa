@@ -5,7 +5,7 @@ local utils = require "mp.utils"
 local options = require "mp.options"
 
 -- StreamNyaa Desktop MPV OSC.
--- StreamNyaa player resource: cinematic-v2
+-- StreamNyaa player resource: cinematic-v3
 -- MPV launches with --osc=no, so this file is the only player overlay.
 
 local C = {

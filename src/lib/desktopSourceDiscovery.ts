@@ -7,8 +7,9 @@ export type SourceDiscovery<T> = { items: T[]; complete: boolean; pending?: Sour
 /** Page/category coverage is explicit, so a fast first result is never described as exhaustive. */
 export function sourceSearchPlan(identity: SourceIdentity, episode?: number, audioSuffix = ''): SourceSearchJob[] {
   const allAliases = orderedSourceAliases(identity.aliases);
-  const aliases = episode ? allAliases.slice(0, 6) : allAliases;
-  const queryValues = episode
+  const aliases = allAliases;
+  const episodeScoped = Boolean(episode && identity.format !== 'MOVIE');
+  const queryValues = episodeScoped
     ? aliases.flatMap(alias => {
       const root = alias.replace(/\b(?:season|part|cour)\s*\d+\b|\b\d+(?:st|nd|rd|th)\s+season\b/ig, ' ').replace(/\s+/g, ' ').trim();
       return identity.seasonNumber
@@ -21,7 +22,7 @@ export function sourceSearchPlan(identity: SourceIdentity, episode?: number, aud
   const jobs: SourceSearchJob[] = [];
   // All spelling variants on the preferred category first, then broaden categories, then pages.
   for (const page of [1, 2, 3]) for (const category of ['1_2', '1_3', '1_4']) for (const query of queries) {
-    jobs.push({ query, category, page, scope: episode ? 'episode' : 'title', ...(episode ? { episode } : {}) });
+    jobs.push({ query, category, page, scope: episodeScoped ? 'episode' : 'title', ...(episodeScoped ? { episode } : {}) });
   }
   return jobs;
 }
