@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import Layout from './components/Layout';
@@ -7,6 +7,7 @@ import ScrollToTop from './components/ScrollToTop';
 import { AuthProvider } from './context/AuthContext';
 import { AccountSyncProvider } from './context/AccountSyncContext';
 import { createAppQueryClient } from './lib/queryClient';
+import { installDesktopAutoRecovery } from './lib/desktopAutoRecovery';
 
 const Search = lazy(() => import('./pages/Search'));
 const Schedule = lazy(() => import('./pages/Schedule'));
@@ -40,6 +41,7 @@ function RouteFallback() {
 }
 
 export default function App() {
+  useEffect(()=>installDesktopAutoRecovery(queryClient),[]);
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

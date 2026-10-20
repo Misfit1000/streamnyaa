@@ -116,7 +116,7 @@ export function useSeasonalAnimeQuery({
     retry: isDesktopApp() ? false : retry,
     staleTime,
     refetchOnWindowFocus: false,
-    refetchInterval: query => query.state.data?.fallback ? 300_000 : false,
+    refetchInterval: false,
     initialData: savedCatalog?.data,
     initialDataUpdatedAt: savedCatalog?.savedAt,
   });

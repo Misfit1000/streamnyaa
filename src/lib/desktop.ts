@@ -189,6 +189,9 @@ export type DesktopCacheStatus = {
 
 export type DesktopDiagnosticsStatus = {
   app_version: string;
+  build_revision?: string;
+  artwork_layout_version?: string;
+  player_resource_revision?: string;
   runtime: DesktopRuntimeStatus;
   cache: DesktopCacheStatus;
   recent_errors: string[];

@@ -48,8 +48,6 @@
 .sn-calendar-card .sn-schedule-status details{margin-left:0;flex-basis:100%}
 .sn-calendar-card .sn-schedule-status summary{min-height:28px}
 .sn-calendar-card .sn-schedule-status-detail{font-size:11px;overflow-wrap:anywhere}
-.sn-schedule-artwork-delay{position:absolute;inset:0;display:block!important;pointer-events:none;background:#05060818}
-.sn-calendar-card .sn-schedule-artwork-delay>span{position:absolute;left:50%;top:50%;width:220%;transform:translate(-50%,-50%) rotate(-55deg);padding:8px 4px;text-align:center;border-top:1px solid #ec456a99;border-bottom:1px solid #ec456a99;background:#0d090dd9;color:#ff647f;letter-spacing:.075em;font-size:12px;line-height:1.3;font-weight:750;text-transform:uppercase;box-sizing:border-box}
 .sn-calendar-card[data-schedule-state] .broadcast-time .broadcast-period{align-self:auto;border:0;border-radius:0;background:none;padding:0;color:#bfc0cc;font-weight:400;white-space:normal}
 @media(min-width:1280px){.sn-calendar-card .broadcast-actions{right:calc(320px + 48px)}}
 @media(min-width:1001px) and (max-width:1279px){.sn-calendar-card.broadcast-ticket{grid-template-columns:72px minmax(0,1fr) 260px;gap:16px;padding:18px}.sn-calendar-card .broadcast-title{gap:16px;grid-template-columns:108px minmax(0,1fr)}.sn-calendar-card .broadcast-title>.sn-schedule-artwork{width:108px;height:156px}.sn-calendar-card .broadcast-actions{right:294px}.sn-calendar-card .sn-schedule-tracks{padding-left:16px}.sn-calendar-card .broadcast-time strong{font-size:22px}}

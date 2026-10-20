@@ -62,6 +62,9 @@ const PLAYER_COVER_MAX_HEIGHT: u32 = 1440;
 const PLAYER_COVER_BACKGROUND_WIDTH: u32 = 1920;
 const PLAYER_COVER_BACKGROUND_HEIGHT: u32 = 1080;
 const PLAYER_COVER_PRELOAD_TIMEOUT_MS: u64 = 1_600;
+const PLAYER_ARTWORK_LAYOUT_VERSION: &str = "cinematic-v2";
+const DESKTOP_BUILD_REVISION: &str = concat!(env!("CARGO_PKG_VERSION"), "-calendar-publishing-player-v2");
+const PLAYER_RESOURCE_REVISION: &str = "StreamNyaa player resource: cinematic-v2";
 const MAX_REMOTE_RESPONSE_BYTES: u64 = 8 * 1024 * 1024;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -306,6 +309,9 @@ struct CacheStatus {
 #[derive(Serialize)]
 struct DiagnosticsStatus {
     app_version: String,
+    build_revision: String,
+    artwork_layout_version: String,
+    player_resource_revision: Option<String>,
     runtime: RuntimeStatus,
     cache: CacheStatus,
     recent_errors: Vec<String>,
@@ -356,6 +362,7 @@ struct PlaybackRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PlayerMetadata {
+    build_revision: String,
     shortcuts: HashMap<String, String>,
     subtitle_offset_key: Option<String>,
     subtitle_offset_seconds: f64,
@@ -771,9 +778,14 @@ fn bundled_player_skin_script() -> Option<PathBuf> {
         }
     }
 
-    paths.push(manifest_bin.join("streamnyaa-player.lua"));
-
-    paths.into_iter().find(|path| path.exists())
+    if cfg!(debug_assertions) { paths.push(manifest_bin.join("streamnyaa-player.lua")); }
+    paths.into_iter().find(|path| {
+        match fs::read_to_string(path) {
+            Ok(script) if script.contains(PLAYER_RESOURCE_REVISION) => true,
+            Ok(_) => { log_info(format!("Incompatible bundled player resource: {}",path.display())); false },
+            Err(_) => false,
+        }
+    })
 }
 
 fn configured_command(
@@ -1936,10 +1948,11 @@ fn apply_loading_readability_gradient(image: &mut image::RgbaImage) {
 fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage, &'static str) {
     let target_width = decoded.width().clamp(PLAYER_COVER_BACKGROUND_WIDTH, 2560);
     let target_height = target_width * PLAYER_COVER_BACKGROUND_HEIGHT / PLAYER_COVER_BACKGROUND_WIDTH;
-    // Blur at a bounded working resolution, not over a full 4K bitmap. All
-    // artwork work stays asynchronous and never changes playback readiness.
-    let backdrop = image::imageops::blur(&cover_fill(decoded, 640, 360), 3.0);
-    let mut composition = image::imageops::resize(&backdrop, target_width, target_height, FilterType::Triangle);
+    // Composition stays within the bounded stage resolution. Artwork work is
+    // asynchronous and never changes playback readiness.
+    // Keep the series art recognizable behind the text, instead of blurring
+    // a low-resolution intermediate into an indistinct colored background.
+    let mut composition = cover_fill(decoded, target_width, target_height);
     apply_loading_readability_gradient(&mut composition);
     let portrait = decoded.width() as f64 / (decoded.height().max(1) as f64) < 1.1;
     let max_width = target_width as f64 * if portrait { 0.265 } else { 0.42 };
@@ -1959,7 +1972,7 @@ fn prepare_loading_composition(decoded: &image::RgbaImage) -> (image::RgbaImage,
     let x = (center_x - width as f64 / 2.0).round() as i64;
     let y = ((target_height - height) / 2) as i64;
     image::imageops::overlay(&mut composition, &foreground, x, y);
-    (composition, if portrait { "cinematic-poster-v1" } else { "cinematic-wide-v1" })
+    (composition, if portrait { "cinematic-poster-v2" } else { "cinematic-wide-v2" })
 }
 
 fn is_quality_landscape_art(decoded: &image::RgbaImage) -> bool {
@@ -2059,7 +2072,7 @@ fn prepare_player_cover(
         image::imageops::resize(&decoded, width, height, FilterType::Lanczos3)
     };
 
-    let metadata_dir = player_metadata_dir(cache_dir);
+    let metadata_dir = player_metadata_dir(cache_dir).join(PLAYER_ARTWORK_LAYOUT_VERSION);
     fs::create_dir_all(&metadata_dir)
         .map_err(|error| format!("Could not prepare player metadata folder: {}", error))?;
     let loading_image_path = metadata_dir.join("loading-cover.jpg");
@@ -2158,6 +2171,7 @@ fn player_metadata_for(
     let subtitle_offset_seconds = offset_key.as_deref().and_then(persisted_player_preference)
         .and_then(|value| value.parse::<f64>().ok()).filter(|value| value.is_finite() && value.abs() <= 120.0).unwrap_or(0.0);
     PlayerMetadata {
+        build_revision: DESKTOP_BUILD_REVISION.to_string(),
         shortcuts: player_shortcuts::load(),
         subtitle_offset_key: offset_key,
         subtitle_offset_seconds,
@@ -4683,7 +4697,7 @@ fn launch_or_reuse_player(
             player_skin_path.to_string_lossy()
         ));
     } else {
-        log_info("MPV Lua skin path was not found; player will open without StreamNyaa Lua UI");
+        return Err("The bundled StreamNyaa player interface is missing or incompatible. Repair the app with the current installer.".to_string());
     }
     let player_log = logs_root().join("mpv-player.log");
     if let Some(log_dir) = player_log.parent() {
@@ -5495,6 +5509,9 @@ fn get_desktop_diagnostics(settings: Option<DesktopSettings>) -> Result<Diagnost
         .unwrap_or_default();
     Ok(DiagnosticsStatus {
         app_version: env!("CARGO_PKG_VERSION").to_string(),
+        build_revision: DESKTOP_BUILD_REVISION.to_string(),
+        artwork_layout_version: PLAYER_ARTWORK_LAYOUT_VERSION.to_string(),
+        player_resource_revision: bundled_player_skin_script().map(|_| PLAYER_RESOURCE_REVISION.to_string()),
         runtime,
         cache,
         recent_errors,
@@ -6756,7 +6773,7 @@ mod tests {
         assert!(loading_image_len > 1024);
         assert_eq!(cover.loading_image_width, PLAYER_COVER_BACKGROUND_WIDTH);
         assert_eq!(cover.loading_image_height, PLAYER_COVER_BACKGROUND_HEIGHT);
-        assert_eq!(cover.artwork_layout, "cinematic-wide-v1");
+        assert_eq!(cover.artwork_layout, "cinematic-wide-v2");
 
         let _ = fs::remove_dir_all(root);
     }
@@ -6797,7 +6814,7 @@ mod tests {
         request.title="Fixture [1080p] [HEVC] [Sub]".into();
         request.poster=Some(source.to_string_lossy().into());request.banner=None;request.banner_candidates=None;
         let cover=prepare_player_cover(&root,&request).unwrap().unwrap();
-        assert_eq!(cover.artwork_layout,"cinematic-poster-v1");
+        assert_eq!(cover.artwork_layout,"cinematic-poster-v2");
         let overlay=fs::read(&cover.background_path).unwrap();
         assert_eq!(overlay.len(),(cover.background_width*cover.background_height*4) as usize);
         // Alpha must not discard the lower-left artwork, and each BGRA pixel
@@ -6839,7 +6856,7 @@ mod tests {
     fn landscape_player_art_preserves_original_color_balance() {
         let source = image::RgbaImage::from_pixel(2400, 600, image::Rgba([30, 100, 210, 255]));
         let (composition, layout) = prepare_loading_composition(&source);
-        assert_eq!(layout, "cinematic-wide-v1");
+        assert_eq!(layout, "cinematic-wide-v2");
         let center = composition.get_pixel(960, 540);
         let upper_edge = composition.get_pixel(960, 40);
         assert!(center[2] > center[1]);
@@ -6914,7 +6931,7 @@ mod tests {
         assert!(pixel[2]>pixel[0]+15,"low-resolution first response must not win");
         let wide=image::RgbaImage::from_pixel(1900,400,image::Rgba([10,80,140,255]));
         let (composed,layout)=prepare_loading_composition(&wide);
-        assert_eq!(layout,"cinematic-wide-v1");
+        assert_eq!(layout,"cinematic-wide-v2");
         assert_eq!(composed.dimensions(),(1920,1080));
         assert!(composed.get_pixel(960,540)[2]>10);
         assert!(decode_cover(b"invalid image").is_err());

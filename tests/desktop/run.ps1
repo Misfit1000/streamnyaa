@@ -78,9 +78,9 @@ $cargoManifest = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\Cargo.toml
 $releasePreparer = Get-Content -Raw (Join-Path $repo 'scripts\prepare-desktop-release.ps1')
 
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
-Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.10"' 'Desktop release configuration should target version 0.1.10.'
-Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.10"' 'Rust package version should match the desktop release version.'
-Assert-Match $releasePreparer "releaseRevision\s*=\s*'playback-home-reliability'" 'The release manifest must identify the current playback and Home revision.'
+Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.11"' 'Desktop release configuration should target version 0.1.11.'
+Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.11"' 'Rust package version should match the desktop release version.'
+Assert-Match $releasePreparer "releaseRevision\s*=\s*'calendar-publishing-player-v2'" 'The release manifest must identify the current Calendar, publishing and player revision.'
 Assert-Match $releasePreparer 'Previous installer checksum mismatch' 'The previous installer must be verified before being retained for rollback.'
 Assert-Match $releasePreparer '2MB' 'The installer must reject growth beyond the two MiB budget.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
@@ -266,7 +266,8 @@ Assert-Match $desktopSchedule 'Windows notifications enabled' 'Desktop Schedule 
 Assert-Match $desktopSchedule 'Native notifications unavailable' 'Desktop Schedule should report unsupported native notification delivery.'
 Assert-Match $nyaaApi 'inMemorySearchCache' 'Desktop source fetch cache is missing.'
 Assert-Match $nyaaApi 'Source search cancelled' 'Cancelled source searches must remain distinct from valid empty results.'
-Assert-Match $metadataApi 'inFlightMetadataRequests' 'Desktop metadata requests should be coalesced to prevent provider rate-limit bursts.'
+Assert-Match $metadataApi 'sharedPublicResponse' 'Web metadata requests should reuse the cancellation-safe public request coordinator.'
+Assert-Match $metadataApi 'fetchDesktopMetadataApi' 'Desktop metadata requests should retain the paced native request coordinator.'
 Assert-Match $metadataApi 'isValidDesktopMetadataPayload' 'Malformed primary metadata must be rejected before it reaches the persistent cache.'
 Assert-Match $desktopCatalogCache 'if \(typeof window === .undefined. \|\| !key \|\| key\.length > 180 \|\| !Array\.isArray\(data\?\.data\) \|\| !data\.data\.length\) return' 'An ambiguous empty Home refresh must not overwrite last-known-good catalog data.'
 Assert-Match $desktopSecurity 'redactDesktopDiagnostic' 'Desktop diagnostics must redact credentials and source links.'

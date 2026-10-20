@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, BarChart3, CalendarClock, CheckCircle2, ExternalLink, HelpCircle, Loader2, Newspaper, Star } from 'lucide-react';
 import Seo from '../components/Seo';
 import AdSenseAd from '../components/AdSenseAd';
+import ArticleEvidence, { ArticleCitations } from '../components/ArticleEvidence';
 import { articlePath, BLOG_POSTS, fetchBlogPost, fetchBlogPostByArticleSlug, getBlogPost } from '../api/blog';
 import type { BlogMediaItem } from '../api/blog';
 import { animePath } from '../lib/slug';
@@ -154,8 +155,9 @@ export default function BlogPost() {
   const paragraphs = article?.paragraphs?.length ? article.paragraphs : buildArticleParagraphs(definition, post.items);
   const leadParagraph = paragraphs[0];
   const bodyParagraphs = paragraphs.slice(1);
-  const takeaways = article?.takeaways?.length ? article.takeaways : buildTakeaways(post.items);
-  const faq = article?.faq?.length ? article.faq : buildFaq(definition, post.items);
+  const takeaways = article?.takeaways?.length ? article.takeaways : post.qualityVersion ? [] : buildTakeaways(post.items);
+  const faq = article?.faq?.length ? article.faq : post.qualityVersion ? [] : buildFaq(definition, post.items);
+  const contentLabel = post.contentKind === 'weekly-ranking' ? 'Weekly activity' : post.contentKind === 'data-report' ? 'Data report' : isGeminiArticle ? 'Focused news' : definition.category;
   const seoTitle = article?.seoTitle || definition.seoTitle;
   const seoDescription = article?.metaDescription || definition.description;
   const headline = article?.headline || definition.title;
@@ -170,8 +172,8 @@ export default function BlogPost() {
       headline,
       description: seoDescription,
       articleSection: isGeminiArticle ? 'Anime News' : definition.category,
-      datePublished: '2026-05-05',
-      dateModified: post.generatedAt || post.updatedAt,
+      datePublished: post.publication?.publishedAt || post.generatedAt || undefined,
+      dateModified: post.publication?.updatedAt || post.updatedAt || undefined,
       mainEntityOfPage: 'https://www.streamnyaa.xyz' + canonicalPath,
       image: image ? [image] : undefined,
       author: { '@type': 'Organization', name: 'StreamNyaa' },
@@ -183,7 +185,7 @@ export default function BlogPost() {
       '@type': 'FAQPage',
       mainEntity: faq.map((item) => ({ '@type': 'Question', name: item.question, acceptedAnswer: { '@type': 'Answer', text: item.answer } })),
     },
-  ];
+  ].filter(item => item['@type'] !== 'FAQPage' || faq.length > 0);
 
   return (
     <article className="container mx-auto px-4 md:px-10 py-10 md:py-14">
@@ -191,7 +193,7 @@ export default function BlogPost() {
       <Link to="/blog" className="inline-flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-colors mb-8"><ArrowLeft className="w-4 h-4" />Blog</Link>
       <header className="max-w-4xl">
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <span className="text-[11px] uppercase font-black tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full">{isGeminiArticle ? 'Focused news' : definition.category}</span>
+          <span className="text-[11px] uppercase font-black tracking-wider text-primary bg-primary/10 px-3 py-1 rounded-full">{contentLabel}</span>
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><CalendarClock className="w-4 h-4" />Anime article</span>
         </div>
         <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-tight mb-5">{headline}</h1>
@@ -253,10 +255,10 @@ export default function BlogPost() {
                 <section className="border border-border bg-[var(--glass)] rounded-2xl p-5 md:p-6">
                   <div className="flex items-center gap-2 mb-5"><Newspaper className="w-5 h-5 text-primary" /><h2 className="text-xl md:text-2xl font-black">{isGeminiArticle ? 'Story breakdown' : 'Quick read'}</h2></div>
                   {leadParagraph ? (
-                    <p className="border-l-2 border-primary pl-4 text-base md:text-lg font-semibold leading-8 text-foreground">{leadParagraph}</p>
+                    <p className="border-l-2 border-primary pl-4 text-base md:text-lg font-semibold leading-8 text-foreground">{leadParagraph}<ArticleCitations post={post} block="paragraph:0"/></p>
                   ) : null}
                   <div className="mt-5 space-y-5 text-sm md:text-base text-muted-foreground leading-8">
-                    {bodyParagraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                    {bodyParagraphs.map((paragraph,index) => <p key={paragraph}>{paragraph}<ArticleCitations post={post} block={`paragraph:${index+1}`}/></p>)}
                   </div>
                 </section>
 
@@ -268,10 +270,11 @@ export default function BlogPost() {
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-black text-primary">{index + 1}</span>
                       <h2 className="text-xl md:text-2xl font-black tracking-tight">{section.heading}</h2>
                     </div>
-                    <p className="text-sm md:text-base text-muted-foreground leading-8">{section.body}</p>
+                    <p className="text-sm md:text-base text-muted-foreground leading-8">{section.body}<ArticleCitations post={post} block={`section:${index}`}/></p>
                   </div>)}
                 </section> : null}
 
+                <ArticleEvidence post={post}/>
                 {takeaways.length ? <section className="grid gap-3 sm:grid-cols-2">
                   {takeaways.map((item) => <div key={item.label} className="border border-border bg-secondary/30 rounded-2xl p-4">
                     <div className="flex items-center gap-2 text-xs font-black uppercase text-primary mb-2"><CheckCircle2 className="w-4 h-4" />{editorialLabel(item.label)}</div>
@@ -357,7 +360,7 @@ export default function BlogPost() {
                   </section>
                 )}
 
-                <section className="border border-border bg-secondary/30 rounded-2xl p-5 md:p-6">
+                {faq.length > 0 && <section className="border border-border bg-secondary/30 rounded-2xl p-5 md:p-6">
                   <div className="flex items-center gap-2 mb-4"><HelpCircle className="w-5 h-5 text-primary" /><h2 className="text-xl md:text-2xl font-black">FAQ</h2></div>
                   <div className="space-y-4">
                     {faq.map((item) => <div key={item.question}>
@@ -365,7 +368,7 @@ export default function BlogPost() {
                       <p className="mt-1 text-sm text-muted-foreground leading-relaxed">{item.answer}</p>
                     </div>)}
                   </div>
-                </section>
+                </section>}
               </>
             )}
           </main>

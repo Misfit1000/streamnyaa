@@ -1,6 +1,7 @@
 import { fetchDesktopSourceApi, isDesktopApp } from '../lib/desktop';
 import { desktopDataError } from '../lib/desktopData';
 import { parseSourceEpisode } from '../lib/desktopSourceIdentity';
+import { sharedPublicResponse } from '../lib/publicBrowserCache';
 
 export type SourceSearchIntent = { scope: 'episode' | 'title'; episode?: number };
 export type SourceSearchResult = NyaaItem[] & { complete?: boolean; stale?: boolean; fetchedAt?: number; retryAt?: number };
@@ -44,7 +45,6 @@ const SEARCH_CACHE_MAX_STALE = 1000 * 60 * 60 * 24 * 7;
 const SEARCH_CACHE_MAX_ENTRIES = 260;
 const SEARCH_CACHE_STORAGE_KEY = 'streamnyaa.desktop.sourceCache.v1';
 const inMemorySearchCache = new Map<string, SearchCacheEntry>();
-const inFlightSearches = new Map<string, Promise<NyaaItem[]>>();
 const DEFAULT_TRACKERS = [
   'http://nyaa.tracker.wf:7777/announce',
   'udp://open.stealth.si:80/announce',
@@ -182,8 +182,6 @@ options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal;
     retryAt: error && typeof error === 'object' && 'retryAt' in error && typeof error.retryAt === 'number' ? error.retryAt : undefined });
 
   if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
-  const existingRequest = desktopRuntime ? undefined : inFlightSearches.get(cacheKey);
-  if (existingRequest) return searchResultUnlessAborted(existingRequest, options.signal);
 
   const request = (async () => {
     const desktop = desktopRuntime;
@@ -217,7 +215,8 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
         throw desktopDataError('nyaa', error);
       }
     } else {
-      const response = await fetch(url.toString());
+      const response = await sharedPublicResponse(`source:v2:${cacheKey}`,options.maxAgeMs??SEARCH_CACHE_TTL,
+        signal=>fetch(url.toString(),{signal}),options.signal,Array.isArray);
       if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
 
       sourceCacheStatus = response.headers.get('X-Source-Cache') || '';
@@ -295,11 +294,6 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
     }
     throw desktopDataError('nyaa', error);
   });
-  if (!desktopRuntime) inFlightSearches.set(cacheKey, handledRequest);
-  const clearInFlight = () => {
-    if (inFlightSearches.get(cacheKey) === handledRequest) inFlightSearches.delete(cacheKey);
-  };
-  void handledRequest.then(clearInFlight, clearInFlight);
   return searchResultUnlessAborted(handledRequest, options.signal);
 }
 

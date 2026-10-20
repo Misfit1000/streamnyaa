@@ -35,6 +35,7 @@ function apiUrl(pathname) {
 async function github(pathname, options = {}) {
   const token = githubToken();
   const response = await fetch(apiUrl(pathname), {
+    signal: AbortSignal.timeout(8000),
     ...options,
     headers: {
       Accept: 'application/vnd.github+json',
@@ -65,6 +66,7 @@ async function supabase(pathname, options = {}) {
   if (!url || !key) return null;
 
   const response = await fetch(`${url}/rest/v1/${pathname}`, {
+    signal: AbortSignal.timeout(8000),
     ...options,
     headers: {
       apikey: key,
@@ -99,6 +101,7 @@ async function supabaseWithHeaders(pathname, options = {}) {
   if (!url || !key) return null;
 
   const response = await fetch(`${url}/rest/v1/${pathname}`, {
+    signal: AbortSignal.timeout(8000),
     ...options,
     headers: {
       apikey: key,
@@ -152,9 +155,14 @@ async function archiveIndexSha() {
 }
 
 async function updateArchiveIndex(articleSlug) {
-  const current = await listArchiveSlugs();
+  let current = [], sha;
+  try {
+    const file = await github(`/contents/${ARCHIVE_DIR}/index.json?ref=${encodeURIComponent(BRANCH)}`);
+    sha = file?.sha;
+    const data = file?.content ? JSON.parse(Buffer.from(file.content, 'base64').toString('utf8')) : {};
+    current = Array.isArray(data.slugs) ? data.slugs : [];
+  } catch (error) { if (error?.status !== 404) throw error; }
   const slugs = [articleSlug, ...current.filter((slug) => slug !== articleSlug)];
-  const sha = await archiveIndexSha();
   await github(`/contents/${ARCHIVE_DIR}/index.json`, {
     method: 'PUT',
     body: JSON.stringify({
@@ -170,22 +178,52 @@ export async function archiveBlogPost(post) {
   if (!post?.articleSlug || post.articleKind !== 'gemini') return false;
 
   const savedToSupabase = await archiveSupabaseBlogPost(post);
-  const savedToGithub = await archiveGithubBlogPost(post);
-  return savedToSupabase || savedToGithub;
+  if (savedToSupabase) return true;
+  return archiveGithubBlogPost(post);
+}
+
+export async function latestPublishedBlogPost(slot) {
+  try {
+    const params = new URLSearchParams({select:'content', 'content->>slug':`eq.${slot}`,order:'updated_at.desc',limit:'1'});
+    const rows = await supabase(`blog_articles?${params}`);
+    if (rows?.[0]?.content?.articleSlug) return rows[0].content;
+  } catch { /* Existing GitHub archive remains a read fallback. */ }
+  const posts = await listGithubArchivedBlogPosts(12);
+  return posts.find(post => post?.slug === slot && post?.articleSlug);
+}
+
+export async function listPrimaryPublishedBlogPosts(limit = 8) { return listSupabaseBlogPosts(limit); }
+export async function findDurableBlogPost(articleSlug) {
+  const primary = await findSupabaseBlogPost(articleSlug);
+  if (primary) return primary;
+  if (!githubToken()) return null;
+  try {
+    const file = await github(`/contents/${archivePath(articleSlug)}?ref=${encodeURIComponent(BRANCH)}`);
+    return file?.content ? JSON.parse(Buffer.from(file.content, 'base64').toString('utf8')) : null;
+  } catch { return null; }
+}
+
+export async function publishedBlogSitemap() {
+  try {
+    const rows = await supabase('blog_articles?select=slug,updated_at&order=updated_at.desc&limit=1000');
+    if (Array.isArray(rows)) return rows.map(row => ({articleSlug:row.slug,updatedAt:row.updated_at}));
+  } catch { /* Read-only archive fallback. */ }
+  return (await listGithubArchivedBlogPosts(100)).map(post => ({articleSlug:post.articleSlug,updatedAt:post.publication?.updatedAt||post.updatedAt||post.generatedAt}));
 }
 
 async function archiveSupabaseBlogPost(post) {
   if (!supabaseUrl() || !supabaseKey()) return false;
 
   try {
+    if (post.publication) post.publication.storage = 'supabase';
     const heroAnime = post.topic
       ? post.items?.find((anime) => anime.mal_id === post.topic?.malId || anime.id === post.topic?.animeId)
       : post.items?.[0];
 
-    await supabase('blog_articles?on_conflict=slug', {
+    const saved = await supabase('blog_articles?on_conflict=slug&select=slug', {
       method: 'POST',
       headers: {
-        Prefer: 'resolution=merge-duplicates,return=minimal',
+        Prefer: 'resolution=merge-duplicates,return=representation',
       },
       body: JSON.stringify({
         slug: post.articleSlug,
@@ -198,7 +236,7 @@ async function archiveSupabaseBlogPost(post) {
         updated_at: post.generatedAt || post.updatedAt || new Date().toISOString(),
       }),
     });
-    return true;
+    return Array.isArray(saved) && saved.some(row => row.slug === post.articleSlug);
   } catch (error) {
     console.error('Supabase blog archive save failed', error);
     supabaseArchiveErrors.push({
@@ -212,6 +250,7 @@ async function archiveSupabaseBlogPost(post) {
 
 async function archiveGithubBlogPost(post) {
   if (!githubToken()) return false;
+  if (post.publication) post.publication.storage = 'github';
   const pathname = archivePath(post.articleSlug);
 
   try {
@@ -291,13 +330,10 @@ export async function migrateArchivedBlogPostsToSupabase(limit = 60) {
 export async function listArchivedBlogPosts(limit = 60) {
   try {
     const supabasePosts = await listSupabaseBlogPosts(limit);
+    if (supabasePosts.length >= limit) return supabasePosts;
     const githubPosts = await listGithubArchivedBlogPosts(limit);
     const supabaseSlugs = new Set(supabasePosts.map((post) => post.articleSlug).filter(Boolean));
     const missingSupabasePosts = githubPosts.filter((post) => post?.articleKind === 'gemini' && post.articleSlug && !supabaseSlugs.has(post.articleSlug));
-
-    if (missingSupabasePosts.length && supabaseUrl() && supabaseKey()) {
-      await Promise.all(missingSupabasePosts.slice(0, 20).map((post) => archiveSupabaseBlogPost(post)));
-    }
 
     return [...supabasePosts, ...githubPosts]
       .filter(Boolean)
@@ -327,6 +363,10 @@ function summarizeArchivedPost(post) {
     angle: post.angle,
     readerPromise: post.readerPromise,
     articleKind: post.articleKind,
+    contentKind: post.contentKind,
+    publication: post.publication,
+    sources: post.sources,
+    qualityVersion: post.qualityVersion,
     sortRank: post.sortRank,
     updatedAt: post.updatedAt,
     generatedAt: post.generatedAt,
@@ -353,17 +393,19 @@ export async function listArchivedBlogPostSummaries(limit = 24) {
   if (supabaseUrl() && supabaseKey()) {
     try {
       const params = new URLSearchParams({
-        select: 'slug,title,excerpt,topic,image,source,updated_at',
+        select: 'slug,title,excerpt,topic,image,source,updated_at,content_kind:content->>contentKind,publication:content->publication,slot:content->>slug,content_category:content->>category',
         order: 'updated_at.desc',
         limit: String(limit),
       });
       const rows = await supabase(`blog_articles?${params.toString()}`);
       if (Array.isArray(rows) && rows.length) {
         return rows.map((row) => ({
-          slug: 'anime-trending-news-today',
+          slug: row.slot || 'anime-trending-news-today',
           title: row.title || 'Anime News',
           seoTitle: `${row.title || 'Anime News'} | StreamNyaa`,
-          category: 'News',
+          category: row.content_category || (row.content_kind === 'weekly-ranking' ? 'Weekly' : row.content_kind === 'data-report' ? 'Data' : 'News'),
+          contentKind: row.content_kind || 'news',
+          publication: row.publication,
           description: row.excerpt || '',
           summary: row.excerpt || '',
           intro: row.excerpt || '',
@@ -420,7 +462,7 @@ export async function listArchivedBlogPostSummaryPage({ page = 1, limit = 12 } =
   if (supabaseUrl() && supabaseKey()) {
     try {
       const params = new URLSearchParams({
-        select: 'slug,title,excerpt,topic,image,source,updated_at',
+        select: 'slug,title,excerpt,topic,image,source,updated_at,content_kind:content->>contentKind,publication:content->publication,slot:content->>slug,content_category:content->>category',
         order: 'updated_at.desc',
         limit: String(safeLimit),
         offset: String(offset),
@@ -432,10 +474,12 @@ export async function listArchivedBlogPostSummaryPage({ page = 1, limit = 12 } =
       const total = parseTotalCount(result?.headers?.get('content-range'));
       if (Array.isArray(rows)) {
         const posts = rows.map((row) => ({
-          slug: 'anime-trending-news-today',
+          slug: row.slot || 'anime-trending-news-today',
           title: row.title || 'Anime News',
           seoTitle: `${row.title || 'Anime News'} | StreamNyaa`,
-          category: 'News',
+          category: row.content_category || (row.content_kind === 'weekly-ranking' ? 'Weekly' : row.content_kind === 'data-report' ? 'Data' : 'News'),
+          contentKind: row.content_kind || 'news',
+          publication: row.publication,
           description: row.excerpt || '',
           summary: row.excerpt || '',
           intro: row.excerpt || '',

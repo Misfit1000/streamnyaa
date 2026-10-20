@@ -7,6 +7,7 @@ import { fetchDesktopMetadataApi, isDesktopApp } from '../lib/desktop';
 import { desktopDataError, DesktopDataError, isDesktopAdmissionWait } from '../lib/desktopData';
 import { readEpisodePage, saveEpisodePage } from '../lib/desktopEpisodeCache';
 import type { DesktopRequestOptions } from '../lib/desktopRequests';
+import { sharedPublicResponse } from '../lib/publicBrowserCache';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 const LOCAL_METADATA_PREFIX = 'streamnyaa.metadataCache.v2.';
@@ -24,7 +25,6 @@ type MetadataCacheEntry = {
 };
 
 const memoryMetadataCache = new Map<string, MetadataCacheEntry>();
-const inFlightMetadataRequests = new Map<string, Promise<Response>>();
 const providerCooldowns = new Map<MetadataProvider, number>();
 const desktopProviderFailures = new Map<MetadataProvider, { until: number; error: ReturnType<typeof desktopDataError> }>();
 const desktopRequestFailures = new Map<string, { until: number; error: ReturnType<typeof desktopDataError> }>();
@@ -205,11 +205,11 @@ const titleMatchScore = (routeTitle: string, media: any) => {
   return score;
 };
 
-const readLocalMetadata = (key: string, allowStale = false) => {
+const readLocalMetadata = (key: string, allowStale = false, maxAgeMs = Infinity) => {
   const now = Date.now();
   const memoryEntry = memoryMetadataCache.get(key);
   if (memoryEntry) {
-    if (memoryEntry.expiresAt > now) return memoryEntry;
+    if (memoryEntry.expiresAt > now && memoryEntry.savedAt+maxAgeMs>now) return memoryEntry;
     if (allowStale && now - Number(memoryEntry.savedAt || 0) <= LOCAL_METADATA_MAX_STALE_MS) return memoryEntry;
   }
 
@@ -220,7 +220,7 @@ const readLocalMetadata = (key: string, allowStale = false) => {
     const parsed = JSON.parse(raw) as MetadataCacheEntry;
     if (!parsed || !Number.isFinite(parsed.expiresAt) || !Number.isFinite(parsed.savedAt) || parsed.savedAt > now + 60_000
       || !isValidDesktopMetadataPayload(key.split('.')[3] as MetadataProvider, parsed.value)) return null;
-    if (parsed.expiresAt <= now) {
+    if (parsed.expiresAt <= now || parsed.savedAt+maxAgeMs<=now) {
       if (now - Number(parsed.savedAt || 0) > LOCAL_METADATA_MAX_STALE_MS) return null;
       if (!allowStale) return null;
     }
@@ -293,9 +293,10 @@ const fetchWithLocalMetadataCache = async (
   provider: MetadataProvider,
   key: string,
   ttlSeconds: number,
-  request: () => Promise<Response>,
+  request: (signal?:AbortSignal) => Promise<Response>,
+  signal?:AbortSignal,
 ) => {
-  const cached = readLocalMetadata(key);
+  const cached = readLocalMetadata(key,false,ttlSeconds*1000);
   if (cached) return jsonResponse(cached.value, 'local-hit', cached.savedAt);
   const stale = readLocalMetadata(key, true);
   const providerFailure = desktopProviderFailures.get(provider);
@@ -319,21 +320,9 @@ const fetchWithLocalMetadataCache = async (
     }
   }
 
-  const requestKey = `${provider}:${key}`;
-  // React Query retains the visible snapshot while this refresh is pending.
-  // Returning stale success here would hide completion from the exact subscriber.
-  const existingRequest = isDesktopApp() ? undefined : inFlightMetadataRequests.get(requestKey);
-  if (existingRequest) {
-    try {
-      return (await existingRequest).clone();
-    } catch (error) {
-      if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
-      throw error;
-    }
-  }
-
   const nextRequest = (async () => {
-    const response = await request();
+    const response = await (isDesktopApp()?request(signal):sharedPublicResponse(`metadata:${provider}:${key}`,ttlSeconds*1000,
+      ownedSignal=>request(ownedSignal),signal,value=>isValidDesktopMetadataPayload(provider,value)&&!(value as any)?.disabled));
     if (!response.ok) {
       if (response.status === 429 || response.status >= 500) markProviderCooldown(provider, response);
       if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
@@ -353,7 +342,6 @@ const fetchWithLocalMetadataCache = async (
   const ownsRecovery = isDesktopApp() && Boolean(providerFailure) && !providerRecoveryFlights.has(provider);
   if (ownsRecovery) providerRecoveryFlights.set(provider, nextRequest);
 
-  if (!isDesktopApp()) inFlightMetadataRequests.set(requestKey, nextRequest);
 
   try {
     return (await nextRequest).clone();
@@ -380,22 +368,20 @@ const fetchWithLocalMetadataCache = async (
     throw failure;
   } finally {
     if (ownsRecovery && providerRecoveryFlights.get(provider) === nextRequest) providerRecoveryFlights.delete(provider);
-    if (inFlightMetadataRequests.get(requestKey) === nextRequest) {
-      inFlightMetadataRequests.delete(requestKey);
-    }
   }
 };
 
-const fetchAniListDirect = (body: Record<string, unknown>) => fetch(ANILIST_URL, {
+const fetchAniListDirect = (body: Record<string, unknown>, signal?:AbortSignal) => fetch(ANILIST_URL, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body),
+  signal,
 });
 
 export const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 21600, options: DesktopRequestOptions = {}) => {
   if (options.signal?.aborted) throw desktopDataError('anilist', new DOMException('Cancelled', 'AbortError'));
   const cacheKey = cacheKeyFor('anilist', body);
-  return fetchWithLocalMetadataCache('anilist', cacheKey, ttlSeconds, async () => {
+  return fetchWithLocalMetadataCache('anilist', cacheKey, ttlSeconds, async ownedSignal => {
     if (isDesktopApp()) {
       const desktopResponse = await fetchDesktopMetadataApi({
         provider: 'anilist',
@@ -416,11 +402,12 @@ export const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 2
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }).catch(() => null);
+      signal:ownedSignal,
+    }).catch(error => {if(ownedSignal?.aborted)throw error;return null;});
 
-    if (gatewayResponse?.ok) return gatewayResponse;
-    return fetchAniListDirect(body);
-  });
+    if (gatewayResponse && (gatewayResponse.ok || [400,401,403,404,429,501].includes(gatewayResponse.status))) return gatewayResponse;
+    return fetchAniListDirect(body,ownedSignal);
+  },options.signal);
 };
 
 const fetchJikanPathDirect = (path: string, signal?: AbortSignal) => fetch(`${MAL_METADATA_BASE_URL}${path}`, { signal });
@@ -430,7 +417,7 @@ export const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: 
   const validPath = supportedMalMetadataPath(path);
   if (!validPath) throw new DesktopDataError({provider:'tenrai', code:'invalid', retryable:false, statusCode:501, message:'This metadata endpoint is unsupported.'});
   const cacheKey = cacheKeyFor('tenrai', `v${MAL_METADATA_ADAPTER_VERSION}:${validPath}`);
-  return fetchWithLocalMetadataCache('tenrai', cacheKey, ttlSeconds, async () => {
+  return fetchWithLocalMetadataCache('tenrai', cacheKey, ttlSeconds, async ownedSignal => {
     if (isDesktopApp()) {
       const desktopResponse = await fetchDesktopMetadataApi({
         provider: 'tenrai',
@@ -447,10 +434,10 @@ export const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: 
       });
     }
 
-    const gatewayResponse = await fetch(`/api/stream-sources?provider=tenrai&ttl=${ttlSeconds}&path=${encodeURIComponent(validPath)}`, { signal: options.signal }).catch(() => null);
+    const gatewayResponse = await fetch(`/api/stream-sources?provider=tenrai&ttl=${ttlSeconds}&path=${encodeURIComponent(validPath)}`, { signal: ownedSignal }).catch(error => {if(ownedSignal?.aborted)throw error;return null;});
     if (gatewayResponse && (gatewayResponse.ok || [400,401,403,404,429,501].includes(gatewayResponse.status))) return gatewayResponse;
-    return fetchJikanPathDirect(validPath, options.signal);
-  });
+    return fetchJikanPathDirect(validPath, ownedSignal);
+  },options.signal);
 };
 
 /** Explicit transport name; fetchJikanPath remains a source-compatible wrapper. */
@@ -984,7 +971,7 @@ export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupO
   const titleHint = String(options.routeTitle || titleHintFromRoute(id) || '').trim();
 
   const candidates: any[] = [];
-  let detailState = { status: 'authoritative' };
+  let detailState: ReturnType<typeof metadataState> = { status: 'authoritative', fetchedAt: Date.now(), retryAt: undefined };
   const seen = new Set<number>();
 
   const pushCandidate = (media: any) => {
@@ -1050,7 +1037,7 @@ const jikanRes = await fetchJikanPath(detailPath, 21600, options);
             if (!useStore.getState().nsfwMode && mapped.isAdult) {
               throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
             }
-            return { data: mapped };
+            return { data: mapped, streamnyaa: metadataState(jikanRes) };
           }
         }
       } catch (error) {

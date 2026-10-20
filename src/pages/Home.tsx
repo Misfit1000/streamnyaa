@@ -10,6 +10,7 @@ import Spotlight from '../components/Spotlight';
 import { getRecentAnime, type RecentAnime } from '../lib/activity';
 import { animePath } from '../lib/slug';
 import { useStore } from '../store/useStore';
+import { useNearViewport } from '../lib/useNearViewport';
 
 function AnimeGridSkeleton({ count = 10 }: { count?: number }) {
   return (
@@ -24,6 +25,8 @@ function AnimeGridSkeleton({ count = 10 }: { count?: number }) {
 export default function Home() {
   const { myList } = useStore();
   const [recentlyViewed, setRecentlyViewed] = useState<RecentAnime[]>([]);
+  const seasonalSection=useNearViewport();
+  const upcomingSection=useNearViewport();
   const localTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time', []);
 
   useEffect(() => {
@@ -49,6 +52,7 @@ export default function Home() {
   const { data: upcomingData, isLoading: upcomingLoading } = useQuery({
     queryKey: ['upcomingAnime'],
     queryFn: fetchUpcomingAnime,
+    enabled: upcomingSection.eligible,
   });
 
   const todayStart = new Date();
@@ -121,7 +125,7 @@ export default function Home() {
 
           <AdSenseAd />
 
-          <section>
+          <section ref={seasonalSection.ref}>
             <div className="mb-7 flex items-end justify-between gap-4">
               <div>
                 <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">This season</p>
@@ -145,7 +149,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section>
+          <section ref={upcomingSection.ref}>
             <div className="mb-7 flex items-end justify-between gap-4">
               <div>
                 <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">Next up</p>
@@ -159,7 +163,7 @@ export default function Home() {
               </Link>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-              {upcomingLoading ? (
+              {upcomingLoading || !upcomingSection.eligible ? (
                 <AnimeGridSkeleton />
               ) : (
                 upcomingData?.data?.slice(0, 10).map((anime: any, idx: number) => (

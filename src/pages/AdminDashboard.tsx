@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { FormEvent, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
   Activity,
@@ -63,22 +63,42 @@ function formatDate(value?: string) {
 
 export default function AdminDashboard() {
   const { session, user, isAdmin, loading } = useAuth();
+  const queryClient=useQueryClient();
+  const [jobIds,setJobIds]=useState<string[]>([]);
+  const [visible,setVisible]=useState(document.visibilityState!=='hidden');
+  const account=useRef(user?.id);account.current=user?.id;
+  useEffect(()=>{const update=()=>setVisible(document.visibilityState!=='hidden');document.addEventListener('visibilitychange',update);return()=>document.removeEventListener('visibilitychange',update);},[]);
+  useEffect(()=>{
+    setJobIds([]);setActionMessage('');setActionError('');
+    queryClient.removeQueries({predicate:query=>['admin-summary','admin-jobs'].includes(String(query.queryKey[0]))&&query.queryKey[1]!==user?.id});
+    try{if(user?.id)setJobIds(JSON.parse(localStorage.getItem(`streamnyaa.admin.jobs.${user.id}`)||'[]').filter((id:unknown)=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id)).slice(0,4));}catch{/* Optional status restoration. */}
+  },[user?.id,queryClient]);
   const [adminEmail, setAdminEmail] = useState('');
   const [actionMessage, setActionMessage] = useState('');
   const [actionError, setActionError] = useState('');
   const [busyAction, setBusyAction] = useState<'generate' | 'generate-both' | 'admin' | 'remove-admin' | ''>('');
 
   const summary = useQuery({
-    queryKey: ['admin-summary'],
+    queryKey: ['admin-summary',user?.id],
     enabled: Boolean(session?.access_token && isAdmin),
-    queryFn: async () => {
+    queryFn: async ({signal}) => {
       const response = await fetch('/api/admin/summary', {
+        signal,
         headers: { Authorization: `Bearer ${session!.access_token}` },
       });
       if (!response.ok) throw new Error('Admin summary could not load.');
       return response.json();
     },
   });
+  const jobs=useQuery({queryKey:['admin-jobs',user?.id,...jobIds],enabled:Boolean(session?.access_token&&isAdmin&&jobIds.length),retry:false,
+    queryFn:async({signal})=>{const response=await fetch(`/api/admin/generation-status?ids=${jobIds.join(',')}`,{signal,headers:{Authorization:`Bearer ${session!.access_token}`}});if(!response.ok)throw Error('Publication status could not load. Retry from the job list.');return response.json();},
+    refetchInterval:query=>visible&&query.state.data?.jobs?.some((job:any)=>job.active)?5000:false});
+  useEffect(()=>{
+    const current=jobs.data?.jobs;if(!current?.length)return;
+    const published=current.reduce((count:number,job:any)=>count+job.published.length,0),active=current.some((job:any)=>job.active);
+    setActionMessage(active?`Publication job running. ${published} article${published===1?'':'s'} durably published so far.`:`${published} article${published===1?'':'s'} published. ${current.map((job:any)=>job.reason||job.status).join(' ')}`);
+    if(!active){setJobIds([]);try{if(user?.id)localStorage.removeItem(`streamnyaa.admin.jobs.${user.id}`);}catch{/* Optional status restoration. */}void summary.refetch();void queryClient.invalidateQueries({predicate:query=>String(query.queryKey[0]).startsWith('blog')});}
+  },[jobs.data]);
 
   const data = summary.data;
   const adminEmails = useMemo(() => (
@@ -116,6 +136,7 @@ export default function AdminDashboard() {
 
   const triggerGemini = async (mode: 'one' | 'both') => {
     if (!session?.access_token) return;
+    const owner=user?.id;
     setActionError('');
     setActionMessage('');
     setBusyAction(mode === 'both' ? 'generate-both' : 'generate');
@@ -131,13 +152,29 @@ export default function AdminDashboard() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Generation failed.');
-      setActionMessage(`Generated ${result.generated?.length || 0} article${result.generated?.length === 1 ? '' : 's'}.`);
+      if(account.current!==owner)return;
+      const accepted=(result.jobs||[]).map((job:any)=>job.id);setJobIds(accepted);
+      try{localStorage.setItem(`streamnyaa.admin.jobs.${owner}`,JSON.stringify(accepted));}catch{/* Status remains in memory. */}
+      setActionMessage('Publication job accepted. Evidence and quality checks run before anything is published.');
       summary.refetch();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Generation failed.');
+      if(account.current===owner)setActionError(error instanceof Error ? error.message : 'Generation failed.');
     } finally {
       setBusyAction('');
     }
+  };
+
+  const resumeJob = async (id:string) => {
+    if(!session?.access_token||busyAction)return;
+    const owner=user?.id;setBusyAction('generate');setActionError('');
+    try{
+      const response=await fetch('/api/admin/generate-blog',{method:'POST',headers:{Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({jobId:id})});
+      if(!response.ok)throw Error('The publication job could not resume.');
+      if(account.current!==owner)return;
+      setJobIds([id]);try{localStorage.setItem(`streamnyaa.admin.jobs.${owner}`,JSON.stringify([id]));}catch{/* In-memory status remains available. */}
+      setActionMessage('Resume accepted. Publication still requires evidence, quality checks and a durable save.');
+    }catch(error){if(account.current===owner)setActionError(error instanceof Error?error.message:'The job could not resume.');}
+    finally{if(account.current===owner)setBusyAction('');}
   };
 
   const addAdmin = async (event: FormEvent) => {
@@ -242,6 +279,8 @@ export default function AdminDashboard() {
 
           {actionMessage ? <div className="mt-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm font-semibold text-emerald-300">{actionMessage}</div> : null}
           {actionError ? <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm font-semibold text-red-400">{actionError}</div> : null}
+          {jobs.isError&&<p role="status" className="mt-3 text-sm text-amber-200">Publication status could not refresh. <button className="underline" onClick={()=>void jobs.refetch()}>Retry status</button></p>}
+          {!!data?.jobs?.length&&<div className="mt-3 space-y-2 text-xs text-muted-foreground">{data.jobs.slice(0,3).map((job:any)=><div key={job.id} className="flex flex-wrap items-center justify-between gap-2"><span>{job.kind} · {job.status}{job.reason?` · ${job.reason}`:''}</span>{['pending','failed'].includes(job.status)&&<button className="font-semibold text-primary underline" disabled={Boolean(busyAction)} onClick={()=>void resumeJob(job.id)}>Resume job</button>}</div>)}</div>}
 
           <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_380px]">
             <div className="space-y-6">

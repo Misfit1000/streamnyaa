@@ -1,6 +1,5 @@
 const SITE_URL = (process.env.VITE_SITE_URL || process.env.SITE_URL || 'https://www.streamnyaa.xyz').replace(/\/$/, '');
 const ANILIST_URL = 'https://graphql.anilist.co';
-const TODAY = new Date().toISOString().slice(0, 10);
 
 const staticRoutes = [
   { path: '/', changefreq: 'daily', priority: '1.0' },
@@ -66,8 +65,8 @@ function escapeXml(value) {
 }
 
 function normalizeDate(updatedAt) {
-  if (!updatedAt) return TODAY;
-  return new Date(updatedAt * 1000).toISOString().slice(0, 10);
+  if (!updatedAt || !Number.isFinite(Number(updatedAt))) return undefined;
+  return new Date(Number(updatedAt) * 1000).toISOString().slice(0, 10);
 }
 
 function sleep(ms) {
@@ -127,7 +126,7 @@ function mediaSlug(item) {
   return item.id + '-' + slugifyTitle(item.title);
 }
 
-function addUrl(urls, path, changefreq, priority, lastmod = TODAY) {
+function addUrl(urls, path, changefreq, priority, lastmod) {
   urls.push({ loc: SITE_URL + path, changefreq, priority, lastmod });
 }
 
@@ -143,7 +142,7 @@ function uniqueUrls(urls) {
 function formatUrlset(urls) {
   const body = uniqueUrls(urls).map((url) => '  <url>\n' +
     '    <loc>' + escapeXml(url.loc) + '</loc>\n' +
-    '    <lastmod>' + url.lastmod + '</lastmod>\n' +
+    (url.lastmod ? '    <lastmod>' + url.lastmod + '</lastmod>\n' : '') +
     '    <changefreq>' + url.changefreq + '</changefreq>\n' +
     '    <priority>' + url.priority + '</priority>\n' +
     '  </url>').join('\n');
@@ -157,7 +156,7 @@ function formatUrlset(urls) {
 function formatSitemapIndex(entries) {
   const body = entries.map((entry) => '  <sitemap>\n' +
     '    <loc>' + escapeXml(SITE_URL + entry.path) + '</loc>\n' +
-    '    <lastmod>' + entry.lastmod + '</lastmod>\n' +
+    (entry.lastmod ? '    <lastmod>' + entry.lastmod + '</lastmod>\n' : '') +
     '  </sitemap>').join('\n');
 
   return '<?xml version="1.0" encoding="UTF-8"?>\n' +
@@ -174,7 +173,7 @@ function parseUrlsetXml(xml) {
     if (!loc) continue;
     urls.push({
       loc: loc.replace(/&amp;/g, '&'),
-      lastmod: block.match(/<lastmod>([\s\S]*?)<\/lastmod>/)?.[1] || TODAY,
+      lastmod: block.match(/<lastmod>([\s\S]*?)<\/lastmod>/)?.[1],
       changefreq: block.match(/<changefreq>([\s\S]*?)<\/changefreq>/)?.[1] || 'weekly',
       priority: block.match(/<priority>([\s\S]*?)<\/priority>/)?.[1] || '0.6',
     });
@@ -235,9 +234,11 @@ export async function buildSitemaps() {
     addUrl(blogUrls, '/blog/' + slug, 'daily', '0.8');
   }
 
-  const anime = await fetchAniListMedia('ANIME', animeCollections);
-  await sleep(750);
-  const manga = await fetchAniListMedia('MANGA', mangaCollections);
+  // Ordinary application builds reuse known public URLs. An explicit metadata
+  // refresh can update discovery without every deploy crawling public providers.
+  const refresh = process.env.STREAMNYAA_REFRESH_SITEMAP === '1';
+  const anime = refresh ? await fetchAniListMedia('ANIME', animeCollections) : [];
+  const manga = refresh ? await fetchAniListMedia('MANGA', mangaCollections) : [];
 
   const animeUrls = [];
   for (const item of anime) {
@@ -252,19 +253,19 @@ export async function buildSitemaps() {
   }
 
   if (!animeUrls.length) {
-    animeUrls.push(...await fetchExistingSitemapUrls('anime'));
+    try { const {readFile}=await import('node:fs/promises');animeUrls.push(...parseUrlsetXml(await readFile(new URL('../public/sitemap-anime.xml',import.meta.url),'utf8'))); } catch { if(refresh)animeUrls.push(...await fetchExistingSitemapUrls('anime')); }
   }
 
   if (!mangaUrls.length) {
-    mangaUrls.push(...await fetchExistingSitemapUrls('manga'));
+    try { const {readFile}=await import('node:fs/promises');mangaUrls.push(...parseUrlsetXml(await readFile(new URL('../public/sitemap-manga.xml',import.meta.url),'utf8'))); } catch { if(refresh)mangaUrls.push(...await fetchExistingSitemapUrls('manga')); }
   }
 
   const entries = [
-    { path: '/sitemap-static.xml', lastmod: TODAY },
-    { path: '/sitemap-anime.xml', lastmod: TODAY },
-    { path: '/sitemap-manga.xml', lastmod: TODAY },
-    { path: '/sitemap-blog.xml', lastmod: TODAY },
-    { path: '/api/blog-sitemap', lastmod: TODAY },
+    { path: '/sitemap-static.xml' },
+    { path: '/sitemap-anime.xml' },
+    { path: '/sitemap-manga.xml' },
+    { path: '/sitemap-blog.xml' },
+    { path: '/api/blog-sitemap' },
   ];
 
   return {

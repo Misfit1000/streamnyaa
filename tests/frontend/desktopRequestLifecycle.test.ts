@@ -76,6 +76,16 @@ describe('shared native request lifecycle', () => {
   });
 });
 describe('active-screen recovery', () => {
+  it('treats Calendar continuation as pagination and uses the final page freshness',async()=>{
+    vi.useFakeTimers();
+    const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+    const request=vi.fn();
+    const observer=new QueryObserver(client,{queryKey:['schedule-public',1,2],queryFn:request,staleTime:Infinity,
+      initialData:{pages:[{complete:false,stale:true},{complete:false,stale:false,cursor:'0:6'}]}});
+    const unsubscribe=observer.subscribe(()=>{}),stop=installDesktopAutoRecovery(client);
+    await vi.advanceTimersByTimeAsync(300_000);expect(request).not.toHaveBeenCalled();
+    stop();unsubscribe();client.clear();
+  });
   it.each([['desktop-schedule-week', 'background-budget'], ['desktop-watch-sources', 'discovery-budget']])('does not turn intentionally bounded %s discovery into an automatic drain loop', async (prefix, partialReason) => {
     vi.useFakeTimers();
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

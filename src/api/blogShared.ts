@@ -159,6 +159,7 @@ export interface BlogArticleSection {
 }
 
 export interface BlogArticleContent {
+  citations?: Record<string,string[]>;
   seoTitle?: string;
   metaDescription?: string;
   headline: string;
@@ -171,6 +172,12 @@ export interface BlogArticleContent {
 }
 
 export type BlogPostData = BlogPostDefinition & {
+  qualityVersion?: number;
+  contentKind?: 'news' | 'data-report' | 'weekly-ranking';
+  sources?: {id:string;title:string;url:string;publishedAt?:string;retrievedAt?:string;primary?:boolean}[];
+  charts?: {title:string;unit:string;values:{label:string;value:number;days?:number}[]}[];
+  ranking?: {start:string;end:string;method:string;candidateCount:number;eligibleCount:number;coverage:string;rows:{id:number;title:string;mean:number;days:number;movement?:number}[];honorableMentions:{id:number;title:string;mean:number;days:number}[]};
+  publication?: {runId?:string;fingerprint?:string;publishedAt?:string;updatedAt?:string};
   updatedAt: string;
   generatedAt?: string;
   articleSlug?: string;

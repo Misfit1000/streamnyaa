@@ -11,20 +11,26 @@ import { animeIdentity } from '../lib/animeIdentity';
 import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 import { preloadDesktopRoute } from '../lib/desktopRoutePreload';
 import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
+import { desktopAnimeQueryKey } from '../lib/desktopRequests';
+import { createIntentPrefetch } from '../lib/intentPrefetch';
+import ScheduleDelayBadge from './ScheduleDelayBadge';
 
 interface AnimeCardProps {
   anime: any;
   key?: React.Key;
+  delayLabel?: string;
+  destination?: string;
 }
 
 function imageCandidatesFor(anime: any) {
-  const fallbackId = Number(anime?.anilist_id || anime?.id || 0);
+  const fallbackId = Number(anime?.anilist_id || 0);
   const fallbackCover = fallbackId > 0 ? `https://img.anili.st/media/${fallbackId}` : '';
   return [
     anime?.images?.webp?.large_image_url,
     anime?.images?.jpg?.large_image_url,
     anime?.images?.webp?.image_url,
     anime?.images?.jpg?.image_url,
+    anime?.image,
     fallbackCover,
     anime?.banner_image,
   ]
@@ -32,7 +38,7 @@ function imageCandidatesFor(anime: any) {
     .filter((value, index, list): value is string => Boolean(value) && list.indexOf(value) === index);
 }
 
-export default function AnimeCard({ anime }: AnimeCardProps) {
+export default function AnimeCard({ anime, delayLabel, destination }: AnimeCardProps) {
   const desktop = isDesktopApp();
   const queryClient = useQueryClient();
   const { isInMyList, addToMyList, removeFromMyList, isLiked, toggleLike } = useStore();
@@ -40,7 +46,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   const inList = isInMyList(animeId);
   const liked = isLiked(animeId);
   const detailPath = animePath(anime);
-  const cardPath = desktop ? desktopWatchOrBrowsePath(anime) : detailPath;
+  const cardPath = destination || (desktop ? desktopWatchOrBrowsePath(anime) : detailPath);
   const routeId = detailPath.split('/').pop() || animeId;
   const imageCandidates = useMemo(() => imageCandidatesFor(anime), [anime]);
   const [imageIndex, setImageIndex] = useState(0);
@@ -52,7 +58,8 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
     setImageFailed(false);
   }, [detailPath, imageCandidates.join('|')]);
 
-  const prefetchAnime = () => {
+  const prefetchAnime = async (signal:AbortSignal) => {
+    if(destination)return;
     if (desktop) void preloadDesktopRoute(cardPath);
     if (desktop) {
       primeDesktopWatchSnapshot(cardPath, anime);
@@ -61,23 +68,25 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
       const params = new URLSearchParams(routeSearch);
       const anilistId = params.get('aid') || '';
       const malId = params.get('mid') || '';
-      void queryClient.prefetchQuery({
-        queryKey: ['anime', desktopRouteId, anilistId, malId],
-        queryFn: () => fetchAnimeDetails(desktopRouteId, {
+      const queryKey=desktopAnimeQueryKey(desktopRouteId, anilistId, malId);
+      const saved=queryClient.getQueryState(queryKey);
+      if(saved?.data&&Date.now()-saved.dataUpdatedAt<15*60_000)return;
+      const result=await fetchAnimeDetails(desktopRouteId, {
+          signal, priority:'prefetch',
           anilistId,
           malId,
           routeTitle: anime?.title || anime?.title_english || anime?.title_romaji || desktopRouteId,
-        }),
-        staleTime: 1000 * 60 * 15,
       });
+      if(!signal.aborted){const updatedAt=Number(result.streamnyaa?.fetchedAt)||Date.now();if((queryClient.getQueryState(queryKey)?.dataUpdatedAt||0)<=updatedAt)queryClient.setQueryData(queryKey,result,{updatedAt});}
       return;
     }
-    void queryClient.prefetchQuery({
-      queryKey: ['anime', routeId],
-      queryFn: () => fetchAnimeDetails(routeId),
-      staleTime: 1000 * 60 * 30,
-    });
+    const queryKey=['anime',routeId];const saved=queryClient.getQueryState(queryKey);
+    if(saved?.data&&Date.now()-saved.dataUpdatedAt<30*60_000)return;
+    const result=await fetchAnimeDetails(routeId,{signal,priority:'prefetch'});
+    if(!signal.aborted){const updatedAt=Number(result.streamnyaa?.fetchedAt)||Date.now();if((queryClient.getQueryState(queryKey)?.dataUpdatedAt||0)<=updatedAt)queryClient.setQueryData(queryKey,result,{updatedAt});}
   };
+  const intent=useMemo(()=>createIntentPrefetch(prefetchAnime),[cardPath,routeId,desktop,queryClient,destination]);
+  useEffect(()=>()=>intent.cancel(),[intent]);
 
   const handleListToggle = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -96,12 +105,15 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   return (
     <div className="relative"><Link
       to={cardPath}
-      onMouseEnter={prefetchAnime}
-      onFocus={prefetchAnime}
-      onPointerDown={prefetchAnime}
+      onMouseEnter={()=>intent.start()}
+      onMouseLeave={()=>intent.cancel()}
+      onFocus={()=>intent.start(true)}
+      onBlur={()=>intent.cancel()}
+      onPointerDown={()=>intent.start(true)}
       className="sn-card-hover group relative block w-full rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
     >
-      <div className="sn-poster-card relative aspect-[2/3]">
+      <div className="sn-poster-card relative aspect-[2/3]" data-delayed={Boolean(delayLabel)}>
+        <ScheduleDelayBadge label={delayLabel}/>
         {currentImage && !imageFailed ? (
           <img
             key={currentImage}

@@ -1,0 +1,5 @@
+.web-calendar-tracks{display:grid;gap:8px;padding:12px 2px;font-size:11px;line-height:1.5}
+.web-calendar-track{display:grid;grid-template-columns:48px minmax(0,1fr);gap:8px;align-items:start}
+.web-calendar-track-label{padding:3px 4px;border:1px solid var(--border,#ffffff20);border-radius:4px;text-align:center;font-size:10px}
+.web-calendar-track details{margin-top:4px}.web-calendar-track summary{cursor:pointer;text-decoration:underline;text-underline-offset:3px}.web-calendar-track details p{margin-top:6px;overflow-wrap:anywhere}
+.web-calendar-card button:focus-visible,.web-calendar-card summary:focus-visible{outline:2px solid #f1677b;outline-offset:3px}

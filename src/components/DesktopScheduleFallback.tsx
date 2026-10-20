@@ -45,7 +45,8 @@ export default function DesktopScheduleFallback({ favoritesOnly, selectedWeekday
       throw lastError;
     },
     retry: false, staleTime: 300_000,
-    refetchInterval: query => query.state.error ? 30_000 : 300_000,
+    refetchInterval: query => query.state.error ? false : 300_000,
+    meta:{publicProvider:'tenrai'},
   });
   const items = query.data?.data.filter((item, index, all) => all.findIndex(other => (other.anilist_id ? `a:${other.anilist_id}` : `m:${other.mal_id}`) === (item.anilist_id ? `a:${item.anilist_id}` : `m:${item.mal_id}`)) === index).filter(item => (nsfwMode || !jikanAdultTitle(item)) && (!favoritesOnly || isInMyList(animeIdentity(item))) && (!matchesTracked || matchesTracked(item)) && String(item.title_english || item.title || '').toLowerCase().includes(search.trim().toLowerCase()) && (weekday === 'All' || item.broadcast?.day === weekday)) || [];
   items.sort((a, b) => String(a.broadcast?.timezone || '').localeCompare(String(b.broadcast?.timezone || '')) || String(a.broadcast?.time || '99:99').localeCompare(String(b.broadcast?.time || '99:99')));

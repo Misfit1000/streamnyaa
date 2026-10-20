@@ -18,7 +18,8 @@ export default async function handler(req: any, res: any) {
       return res.status(200).json(post);
     }
 
-    const migration = migrate ? await migrateArchivedBlogPostsToSupabase() : null;
+    if(migrate)return res.status(405).json({error:'Archive migration is not available through a public read.'});
+    const migration = null;
     if (summary && (page || limit)) {
       const result = await listArchivedBlogPostSummaryPage({ page, limit });
       res.setHeader('Cache-Control', migrate ? 'no-store' : 'public, s-maxage=900, stale-while-revalidate=3600');

@@ -7,7 +7,8 @@ import {
   supabaseSecretKey,
 } from '../_shared/adminAuth.js';
 
-const BLOG_SLUGS = ['anime-trending-news-today', 'anime-viral-topic-today'];
+import { generateBlog, summary, generationStatusRoute } from '../_shared/adminPublishing.js';
+export const maxDuration = 300;
 
 function routeName(req: any) {
   const route = req.query?.route;
@@ -53,119 +54,12 @@ async function admins(req: any, res: any) {
   }
 }
 
-function requestOrigin(req: any) {
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}`;
-}
-
-async function generateBlog(req: any, res: any) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  try {
-    const auth = await requireAdmin(req);
-    if ('error' in auth) return res.status(auth.status).json({ error: auth.error });
-    const mode = String(req.body?.mode || 'one');
-    const slugs = mode === 'both' ? BLOG_SLUGS : [BLOG_SLUGS[0]];
-    const secret = process.env.CRON_SECRET;
-    const generated = [];
-    const origin = requestOrigin(req);
-    for (const slug of slugs) {
-      const response = await fetch(`${origin}/api/blog?slug=${encodeURIComponent(slug)}&force=1&debug=1&manual=1`, {
-        headers: {
-          Accept: 'application/json',
-          ...(secret ? { Authorization: `Bearer ${secret}` } : { Authorization: req.headers.authorization }),
-          'Cache-Control': 'no-cache',
-          Pragma: 'no-cache',
-          'User-Agent': 'StreamNyaa-Admin',
-        },
-      });
-      const post = await response.json();
-      if (!response.ok) throw new Error(post?.error || `Blog generation failed with ${response.status}`);
-      generated.push({
-        slug,
-        articleSlug: post.articleSlug,
-        title: post.article?.headline || post.topic?.title || post.title,
-        generatedAt: post.generatedAt,
-        articleStatus: post.articleStatus,
-      });
-    }
-    return res.status(200).json({ ok: true, generated });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Gemini article generation failed.' });
-  }
-}
-
-async function fetchBlogArticleCount() {
-  if (!supabaseBaseUrl() || !supabaseSecretKey()) return null;
-  const response = await fetch(`${supabaseBaseUrl()}/rest/v1/blog_articles?select=id`, {
-    method: 'HEAD',
-    headers: {
-      apikey: supabaseSecretKey(),
-      Authorization: `Bearer ${supabaseSecretKey()}`,
-      Prefer: 'count=exact',
-    },
-  });
-  if (!response.ok) return null;
-  const total = (response.headers.get('content-range') || '').split('/')[1];
-  return total && total !== '*' ? Number(total) : null;
-}
-
-async function fetchRecentBlogArticles() {
-  if (!supabaseBaseUrl() || !supabaseSecretKey()) return [];
-  const params = new URLSearchParams({
-    select: 'slug,title,category,updated_at,article_kind,source,status',
-    order: 'updated_at.desc',
-    limit: '8',
-  });
-  try {
-    const rows = await supabaseRest(`blog_articles?${params.toString()}`);
-    return Array.isArray(rows) ? rows : [];
-  } catch {
-    return [];
-  }
-}
-
-async function adminTableStatus() {
-  try {
-    await supabaseRest('admin_users?select=email&limit=1');
-    return { ready: true, message: '' };
-  } catch (error: any) {
-    if (error?.status === 404) return { ready: false, message: 'Create the admin access table before adding admins from the dashboard.' };
-    return { ready: false, message: error?.message || 'Admin table could not be checked.' };
-  }
-}
-
-async function summary(req: any, res: any) {
-  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-  try {
-    const auth = await requireAdmin(req);
-    if ('error' in auth) return res.status(auth.status).json({ error: auth.error });
-    const [articleCount, recentArticles, storedAdmins, tableStatus] = await Promise.all([
-      fetchBlogArticleCount(), fetchRecentBlogArticles(), listStoredAdmins().catch(() => []), adminTableStatus(),
-    ]);
-    return res.status(200).json({
-      adminEmail: auth.user.email,
-      generatedBlogArticles: articleCount,
-      recentArticles,
-      cronSchedule: 'Daily between 5:45 AM and 6:44 AM Nepal time',
-      admins: { env: envAdminEmails(), stored: storedAdmins, tableReady: tableStatus.ready, setupMessage: tableStatus.message },
-      archive: {
-        supabaseConfigured: Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)),
-        githubFallbackConfigured: Boolean(process.env.GITHUB_ARTICLE_TOKEN || process.env.GH_ARTICLE_TOKEN),
-      },
-      config: { geminiConfigured: Boolean(process.env.GEMINI_API_KEY), smtpExpected: true, productionUrl: 'https://www.streamnyaa.xyz' },
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: 'Failed to load admin summary' });
-  }
-}
-
 export default function handler(req: any, res: any) {
+  res.setHeader('Cache-Control', 'no-store');
   switch (routeName(req)) {
     case 'admins': return admins(req, res);
     case 'generate-blog': return generateBlog(req, res);
+    case 'generation-status': return generationStatusRoute(req, res);
     case 'summary': return summary(req, res);
     default: return res.status(404).json({ error: 'Admin route not found' });
   }

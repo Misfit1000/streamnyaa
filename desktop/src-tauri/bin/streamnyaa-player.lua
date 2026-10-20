@@ -5,6 +5,7 @@ local utils = require "mp.utils"
 local options = require "mp.options"
 
 -- StreamNyaa Desktop MPV OSC.
+-- StreamNyaa player resource: cinematic-v2
 -- MPV launches with --osc=no, so this file is the only player overlay.
 
 local C = {
@@ -766,7 +767,7 @@ function loading_title_layout(raw_title, width, height, s)
     return ui.title_layout
   end
 
-  local max_width = width * (artwork_layout == "cinematic-wide-v1" and 0.43 or 0.52)
+  local max_width = width * (artwork_layout:find("cinematic%-wide") and 0.43 or 0.52)
   local size = 48 * s
   local spacing = 0
 

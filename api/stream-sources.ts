@@ -1,5 +1,6 @@
 import { MAL_METADATA_BASE_URL, supportedMalMetadataPath } from '../src/lib/malMetadataProvider.js';
 import { RequestUsage, publicFreshness } from './_shared/requestReuse.js';
+import { publicCalendar } from './_shared/publicCalendar.js';
 const ANILIST_URL = 'https://graphql.anilist.co';
 const JIKAN_URL = MAL_METADATA_BASE_URL;
 class UpstreamMetadataError extends Error { constructor(message: string, readonly status: number, readonly retryAfter?: string | null) { super(message); } }
@@ -303,6 +304,14 @@ export default async function handler(req: any, res: any) {
   const ttlSeconds = ttlFromRequest(req);
 
   try {
+    if (provider === 'calendar') {
+      if(req.method!=='GET'){status=405;return res.status(status).json({error:'Calendar requires GET.'});}
+      const calendar=await publicCalendar(req,usage);
+      res.setHeader('X-StreamNyaa-Fetched-At',String(calendar.fetchedAt));
+      res.setHeader('X-StreamNyaa-Provider','calendar');
+      publicFreshness(res,calendar.fetchedAt,Math.min(ttlSeconds,180),!calendar.stale&&!calendar.cursor);
+      return res.status(200).json(calendar);
+    }
     if (provider === 'anilist') {
       if (req.method !== 'POST') { status = 405; return res.status(status).json({ error: 'AniList cache requires POST.' }); }
       const result = await fetchAniList(req, ttlSeconds, usage);
@@ -342,7 +351,9 @@ export default async function handler(req: any, res: any) {
       if (error.retryAfter) res.setHeader('Retry-After', error.retryAfter);
       return res.status(error.status).json({error:error.message, provider:'tenrai', retryable:error.status === 429 || error.status >= 500 && error.status !== 501});
     }
-    status = 500; return res.status(status).json({ error: error?.message || 'Metadata cache failed.' });
+    status = Number(error?.status)||500;
+    if(error?.retryAt)res.setHeader('Retry-After',String(Math.max(1,Math.ceil((error.retryAt-Date.now())/1000))));
+    return res.status(status).json({ error: error?.message || 'Metadata cache failed.', retryAt:error?.retryAt });
   } finally {
     usage.finish(status);
   }

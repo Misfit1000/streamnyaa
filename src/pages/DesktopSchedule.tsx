@@ -1,5 +1,5 @@
 import DesktopScheduleCard from '../components/DesktopScheduleCard';
-import { airingAtMs, groupScheduleEpisodes, scheduleArtworkCandidates, scheduleBroadcastState, scheduleSections, scheduleTitleCount } from '../lib/desktopSchedulePresentation';
+import { airingAtMs, groupScheduleEpisodes, scheduleArtworkCandidates, scheduleBroadcastState, scheduleSections, scheduleTitleCount, scheduleInRange } from '../lib/desktopSchedulePresentation';
 import { DesktopScheduleReminders } from '../components/DesktopScheduleControls';
 import { mergeScheduleTracks, readScheduleAlertState, subscribeScheduleTracks } from '../lib/desktopScheduleAlerts';
 import { useAuth } from '../context/AuthContext';
@@ -168,6 +168,7 @@ export default function DesktopSchedule() {
     && safeReminderTitle(anime).toLowerCase().includes(daySearch.trim().toLowerCase())),
     [completeSchedule, days, active, selectedDay, clock, favoritesOnly, isInMyList, trackedOnly, watchedSeries, daySearch]);
   const visibleItems = useMemo(() => groupedItems.flatMap(group => group.items), [groupedItems]);
+  const recentUpdates = useMemo(()=>scheduleUpdates.filter(update=>scheduleInRange({...update,scheduleStatus:update.kind},days[0].start*1000,(days[6].end+1)*1000)),[scheduleUpdates,days]);
   const notificationStatusMessage = useMemo(
     () => scheduleNotificationStatusMessage(notificationPermission),
     [notificationPermission],
@@ -343,7 +344,7 @@ export default function DesktopSchedule() {
         </div>
       ) : null}
 
-      {scheduleUpdates.length ? (
+      {recentUpdates.length ? (
         <section className="mt-4 rounded-xl border border-white/[0.08] bg-white/[0.035] p-4" aria-labelledby="recent-schedule-alerts">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -355,10 +356,10 @@ export default function DesktopSchedule() {
                 <p className="mt-0.5 text-xs text-white/46">Confirmed updates for each episode and release track.</p>
               </div>
             </div>
-            <span className="text-xs font-semibold text-white/42">{scheduleUpdates.length} update{scheduleUpdates.length === 1 ? '' : 's'}</span>
+            <span className="text-xs font-semibold text-white/42">{recentUpdates.length} update{recentUpdates.length === 1 ? '' : 's'}</span>
           </div>
-          <div className="sn-scroll-rail mt-3 flex gap-2 pb-1">
-            {scheduleUpdates.slice(0, 8).map((update) => (
+          <DesktopDragRail label="Recent schedule changes" compact>
+            {recentUpdates.map((update) => (
               <div key={update.id} className="w-[280px] shrink-0 rounded-lg bg-black/28 px-3 py-3 ring-1 ring-inset ring-white/[0.06]">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-semibold text-white">{update.title}</span>
@@ -371,7 +372,7 @@ export default function DesktopSchedule() {
                 </p>
               </div>
             ))}
-          </div>
+          </DesktopDragRail>
         </section>
       ) : null}
 

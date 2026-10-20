@@ -1,10 +1,10 @@
 param(
   [string]$ReleaseTree,
-  [string]$ValidationRecord = '.validation/0.1.10-results.json',
-  [string]$BuildInputs = '.validation/0.1.10-build-inputs.json',
-  [string]$ValidationNotes = 'desktop/reviews/2026-10-12-playback-home.md',
-  [string]$EvidenceManifest = 'desktop/reviews/2026-10-12-playback-home-installer.json',
-  [string]$ReleaseRevision = 'playback-home-reliability'
+  [string]$ValidationRecord = '.validation/0.1.11-results.json',
+  [string]$BuildInputs = '.validation/0.1.11-build-inputs.json',
+  [string]$ValidationNotes = 'desktop/reviews/2026-10-20-calendar-publishing-player.md',
+  [string]$EvidenceManifest = 'desktop/reviews/2026-10-20-calendar-publishing-player-installer.json',
+  [string]$ReleaseRevision = 'calendar-publishing-player-v2'
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -43,8 +43,8 @@ $resources = foreach ($resource in Get-ChildItem -LiteralPath $resourceRoot -Rec
 }
 $release = Join-Path $ReleaseTree "v$version"
 $destination = Join-Path $release $installer.Name
-$rollback = Join-Path $ReleaseTree 'v0.1.9/StreamNyaa_0.1.9_x64-setup.exe'
-$rollbackManifestPath = Join-Path $ReleaseTree 'v0.1.9/release-manifest.json'
+$rollback = Join-Path $ReleaseTree 'v0.1.10/StreamNyaa_0.1.10_x64-setup.exe'
+$rollbackManifestPath = Join-Path $ReleaseTree 'v0.1.10/release-manifest.json'
 $requestedRollbackAvailable = Test-Path -LiteralPath $rollback
 if (!$requestedRollbackAvailable) {
   # A user cleanup may remove the older release. Preserve the verified current
@@ -72,7 +72,7 @@ if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $hash) {
 $manifest = [ordered]@{
   product='StreamNyaa Desktop'; version=$version; identifier=$config.identifier; releaseRevision=$ReleaseRevision; builtAt=(Get-Date).ToString('o'); sourceCommit=(git -C $repoRoot rev-parse HEAD);
   installer=$destination; bytes=$installer.Length; sha256=$hash; signature=(Get-AuthenticodeSignature -LiteralPath $destination).Status.ToString();
-  rollback=@{installer=$rollback;sha256=$rollbackHash;version=$rollbackManifest.version;requestedVersion='0.1.9';requestedVersionAvailable=$requestedRollbackAvailable}; resources=@($resources); sourceFiles=$sourceEvidence;
+  rollback=@{installer=$rollback;sha256=$rollbackHash;version=$rollbackManifest.version;requestedVersion='0.1.10';requestedVersionAvailable=$requestedRollbackAvailable}; resources=@($resources); sourceFiles=$sourceEvidence;
   executableVersion=$exe.VersionInfo.ProductVersion; executableSha256=(Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash;
   validation=$checks; payloadVerification='Staged resource hashes and exact NSIS inclusions; independent installer extraction not performed'
 }
