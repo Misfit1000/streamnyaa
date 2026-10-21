@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { draftRevision } from '../api/_shared/publicationReview.ts';
 import { reviewBlog } from '../api/_shared/adminPublishing.ts';
+import { enqueueGeneration } from '../api/_shared/publishing.ts';
 
 test('review migration fences revisions, blocks cron claims and isolates private state',async()=>{
   const db=await PGlite.create();
@@ -47,4 +48,29 @@ test('draft reads require authentication and remain no-store',async()=>{
     await reviewBlog({method,headers:{},query:{jobId:'00000000-0000-0000-0000-000000000001'}},response);
     assert.equal(state.status,401);assert.equal(state.headers['Cache-Control'],'no-store');assert.equal(state.body.draft,undefined);
   }
+});
+
+test('a completed quiet-day retry refreshes discovery, while interrupted work retains its cursor',async()=>{
+  const oldFetch=globalThis.fetch,oldUrl=process.env.SUPABASE_URL,oldKey=process.env.SUPABASE_SECRET_KEY;
+  process.env.SUPABASE_URL='https://review-retry.supabase.co';process.env.SUPABASE_SECRET_KEY='fixture';
+  let run:any;
+  globalThis.fetch=(async(input:any,init:any={})=>{
+    const url=new URL(String(input)),body=init.body?JSON.parse(init.body):undefined;
+    let data:any;
+    if(url.pathname.endsWith('blog_publication_settings'))data=[{automatic_enabled:false}];
+    else if(init.method==='POST')data=[];
+    else if(init.method==='PATCH'){run={...run,...body};data=[run];}
+    else data=[run];
+    return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
+  }) as any;
+  try{
+    for(const status of ['skipped','failed']){
+      run={id:'00000000-0000-0000-0000-000000000001',status,checkpoint:{discovery:{feedIndex:3,leads:[{url:'saved-evidence'}]},briefs:[],published:[]}};
+      const result=await enqueueGeneration('daily',1,Date.UTC(2026,9,21),'review');
+      assert.equal(result.status,'pending');
+      assert.equal(result.publication_mode,'review');
+      if(status==='skipped')assert.equal(result.checkpoint.discovery,undefined);
+      else assert.equal(result.checkpoint.discovery.feedIndex,3);
+    }
+  }finally{globalThis.fetch=oldFetch;if(oldUrl===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=oldUrl;if(oldKey===undefined)delete process.env.SUPABASE_SECRET_KEY;else process.env.SUPABASE_SECRET_KEY=oldKey;}
 });

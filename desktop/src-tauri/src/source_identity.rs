@@ -179,6 +179,43 @@ pub fn classify(title: &str, identity: &SourceIdentity, episode: u32) -> Evidenc
 }
 pub fn exact_candidate(title: &str, identity: &SourceIdentity, episode: u32) -> bool { classify(title, identity, episode) == Evidence::Exact }
 
+pub fn season_marker(title: &str) -> Option<u32> { marker(title, &["season"]) }
+pub fn part_marker(title: &str) -> Option<u32> { marker(title, &["part", "cour"]) }
+/// A verified pack can supply an omitted series name, but a different explicit
+/// title must not become an automatic episode match just because its number fits.
+pub fn batch_file_auto_identity(name:&str,identity:&SourceIdentity,episode:u32)->bool{
+    let core=canonical_title_core(&title_part(name));
+    core.is_empty() || core.split_whitespace().next().is_some_and(|word|number(word).is_some())
+        || exact_candidate(name,identity,episode)
+}
+/// Pack labels establish the installment only. Episode identity comes from files.
+pub fn batch_identity(title: &str, identity: &SourceIdentity) -> Evidence {
+    let mut clean = String::new();
+    let chars: Vec<char> = title.chars().collect(); let mut i = 0;
+    while i < chars.len() {
+        if chars[i].is_ascii_digit() {
+            let start = i; while i < chars.len() && chars[i].is_ascii_digit() { i += 1; }
+            let mut end = i; while end < chars.len() && chars[end].is_whitespace() { end += 1; }
+            if end < chars.len() && ['-', '–', '~'].contains(&chars[end]) {
+                end += 1; while end < chars.len() && chars[end].is_whitespace() { end += 1; }
+                let next = end; while end < chars.len() && chars[end].is_ascii_digit() { end += 1; }
+                if end > next { clean.push(' '); i = end; continue; }
+            }
+            clean.extend(&chars[start..i]);
+        } else { clean.push(chars[i]); i += 1; }
+    }
+    let base = title_part(&clean);
+    let words:Vec<_>=base.split_whitespace().collect();
+    let base = words.iter().enumerate().filter(|(index,word)| !["batch", "complete", "collection", "pack"].contains(word)
+        && !(**word=="season"&&words.get(index+1).and_then(|s|number(s)).is_none()&&(words.get(index+1)==Some(&"pack")||index.checked_sub(1).and_then(|i|words.get(i))==Some(&"complete"))))
+        .map(|(_,word)|*word).collect::<Vec<_>>().join(" ");
+    classify(&format!("{base} - 01"), identity, 1)
+}
+pub fn is_batch_release(title:&str)->bool {
+    normalize(title).split_whitespace().any(|word|["batch","complete","collection","pack"].contains(&word))
+        || title.split_whitespace().any(|word|word.trim_matches(['[',']','(',')']).split_once('-').is_some_and(|(a,b)|number(a).is_some()&&number(b).is_some()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

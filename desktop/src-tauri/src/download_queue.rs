@@ -334,7 +334,7 @@ pub fn play_offline_file(id: String, file: String, resume: Option<bool>, checkpo
     let player = status.player_path.ok_or("Bundled player is unavailable")?;
     let identity = item.episode_links.get(&file);
     let title = identity.map(|value| value.title.clone()).unwrap_or_else(|| item.title.clone());
-    let request = PlaybackRequest { progress_context: None, magnet: String::new(), info_hash: Some(id.clone()), title: title.clone(), anime_title: title, episode: identity.map(|value| value.episode.to_string()).unwrap_or_default(), size: None, poster: identity.and_then(|value| value.poster.clone()), banner: None, banner_candidates: None, artwork: None, resume_seconds: Some(checkpoint), settings: None };
+    let request = PlaybackRequest { source_identity: None, batch_selection: None, progress_context: None, magnet: String::new(), info_hash: Some(id.clone()), title: title.clone(), anime_title: title, episode: identity.map(|value| value.episode.to_string()).unwrap_or_default(), size: None, poster: identity.and_then(|value| value.poster.clone()), banner: None, banner_candidates: None, artwork: None, resume_seconds: Some(checkpoint), settings: None };
     let ipc = launch_or_reuse_player(&player, &root().join("player-meta"), &request, &file)?;
     let context=playback_progress::Context {
         identity: identity.map(|v|history_store::legacy_identity(&v.anime_id)).unwrap_or_default(), tracking_epoch:0,
@@ -377,7 +377,7 @@ pub fn shutdown() {
 struct Engine(std::sync::Arc<Mutex<Child>>);
 impl Drop for Engine { fn drop(&mut self) { shutdown(); if let Ok(mut slot) = process_slot().lock() { *slot = None; } } }
 #[cfg(windows)]
-fn contain_process(child: &Child) -> Result<std::os::windows::io::OwnedHandle, String> {
+pub(super) fn contain_process(child: &Child) -> Result<std::os::windows::io::OwnedHandle, String> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
     use windows_sys::Win32::System::JobObjects::*;
     // The OS closes this handle on application failure and terminates its owned

@@ -21,7 +21,7 @@ describe('bounded resumable source discovery', () => {
     expect(first.complete).toBe(false);
     expect(first.partialReason).toBe('discovery-budget');
     expect(first.pending?.length).toBe(jobs().length - 4);
-    const next = await runSourceSearchPass({ jobs: first.pending!, initial: first.items, merge, fetch, requestLimit: 30 });
+    const next = await runSourceSearchPass({ jobs: first.pending!, initial: first.items, merge, fetch, requestLimit: jobs().length });
     expect(next.complete).toBe(true);
     expect(next.items.length).toBe(jobs().length);
     expect(fetch.mock.calls[0][0].query).toContain('Romaji Example');
@@ -44,10 +44,10 @@ describe('bounded resumable source discovery', () => {
     const fetch = vi.fn(async () => ({ items: [], complete: true, emptyPage: true }));
     const result = await runSourceSearchPass({ jobs: plan, merge, fetch });
     expect(result.complete).toBe(true);
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch).toHaveBeenCalledTimes(6);
     const filtered = await runSourceSearchPass({ jobs: plan, merge, requestLimit: 3, fetch: async () => ({ items: [], complete: true, emptyPage: false }) });
     expect(filtered.complete).toBe(false);
-    expect(filtered.pending?.length).toBe(6);
+    expect(filtered.pending?.length).toBe(plan.length-3);
   });
   it('never reports stale or cancelled discovery as complete', async () => {
     const result = await runSourceSearchPass({ jobs: jobs().slice(0, 1), merge, fetch: async () => ({ items: [{ id: 'saved' }], complete: false, stale: true, fetchedAt: 10 }) });

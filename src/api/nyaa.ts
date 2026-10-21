@@ -33,6 +33,7 @@ export interface NyaaItem {
   sourceCacheStatus?: string;
   nativeEvidence?: 'exact' | 'uncertain' | 'conflict';
   nativeIdentitySignature?: string;
+  nativeBatchIdentity?: boolean;
 }
 
 type SearchCacheEntry = {

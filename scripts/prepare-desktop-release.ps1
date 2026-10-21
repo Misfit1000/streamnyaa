@@ -1,10 +1,11 @@
 param(
   [string]$ReleaseTree,
-  [string]$ValidationRecord = '.validation/0.1.11-results.json',
-  [string]$BuildInputs = '.validation/0.1.11-build-inputs.json',
-  [string]$ValidationNotes = 'desktop/reviews/2026-10-20-calendar-publishing-player.md',
-  [string]$EvidenceManifest = 'desktop/reviews/2026-10-20-calendar-publishing-player-installer.json',
-  [string]$ReleaseRevision = 'calendar-publishing-player-v2'
+  [string]$ValidationRecord = '.validation/0.1.12-results.json',
+  [string]$BuildInputs = '.validation/0.1.12-build-inputs.json',
+  [string]$ValidationNotes = 'desktop/reviews/2026-10-21-batch-publishing.md',
+  [string]$EvidenceManifest = 'desktop/reviews/2026-10-21-batch-publishing-installer.json',
+  [string]$ReleaseRevision = 'batch-publishing-review-v1',
+  [string]$RollbackVersion = '0.1.11'
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -43,19 +44,17 @@ $resources = foreach ($resource in Get-ChildItem -LiteralPath $resourceRoot -Rec
 }
 $release = Join-Path $ReleaseTree "v$version"
 $destination = Join-Path $release $installer.Name
-$rollback = Join-Path $ReleaseTree 'v0.1.10/StreamNyaa_0.1.10_x64-setup.exe'
-$rollbackManifestPath = Join-Path $ReleaseTree 'v0.1.10/release-manifest.json'
+if ($RollbackVersion -notmatch '^\d+\.\d+\.\d+$' -or $RollbackVersion -eq $version) { throw 'An explicit earlier rollback version is required.' }
+$rollback = Join-Path $ReleaseTree "v$RollbackVersion/StreamNyaa_${RollbackVersion}_x64-setup.exe"
+$rollbackManifestPath = Join-Path $ReleaseTree "v$RollbackVersion/release-manifest.json"
 $requestedRollbackAvailable = Test-Path -LiteralPath $rollback
 if (!$requestedRollbackAvailable) {
-  # A user cleanup may remove the older release. Preserve the verified current
-  # release instead of inventing an old version or replacing without rollback.
-  $rollback = $destination
-  $rollbackManifestPath = Join-Path $release 'release-manifest.json'
+  throw "Requested rollback $RollbackVersion is missing. No installer will be replaced."
 }
 $rollbackHash = (Get-FileHash -LiteralPath $rollback -Algorithm SHA256).Hash
 if ($installer.Length -gt ((Get-Item -LiteralPath $rollback).Length + 2MB)) { throw 'Installer exceeded the two MiB growth budget over the rollback release.' }
 $rollbackManifest = Get-Content -Raw -LiteralPath $rollbackManifestPath | ConvertFrom-Json
-if ($rollbackHash -ne $rollbackManifest.sha256) { throw 'Previous installer checksum mismatch.' }
+if ($rollbackHash -ne $rollbackManifest.sha256 -or $rollbackManifest.version -ne $RollbackVersion) { throw 'Previous installer checksum mismatch or version mismatch.' }
 New-Item -ItemType Directory -Path $release -Force | Out-Null
 $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash
 if (Test-Path -LiteralPath $destination) {
@@ -72,7 +71,7 @@ if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash -ne $hash) {
 $manifest = [ordered]@{
   product='StreamNyaa Desktop'; version=$version; identifier=$config.identifier; releaseRevision=$ReleaseRevision; builtAt=(Get-Date).ToString('o'); sourceCommit=(git -C $repoRoot rev-parse HEAD);
   installer=$destination; bytes=$installer.Length; sha256=$hash; signature=(Get-AuthenticodeSignature -LiteralPath $destination).Status.ToString();
-  rollback=@{installer=$rollback;sha256=$rollbackHash;version=$rollbackManifest.version;requestedVersion='0.1.10';requestedVersionAvailable=$requestedRollbackAvailable}; resources=@($resources); sourceFiles=$sourceEvidence;
+  rollback=@{installer=$rollback;sha256=$rollbackHash;version=$rollbackManifest.version;requestedVersion=$RollbackVersion;requestedVersionAvailable=$requestedRollbackAvailable}; resources=@($resources); sourceFiles=$sourceEvidence;
   executableVersion=$exe.VersionInfo.ProductVersion; executableSha256=(Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash;
   validation=$checks; payloadVerification='Staged resource hashes and exact NSIS inclusions; independent installer extraction not performed'
 }

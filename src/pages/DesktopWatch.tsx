@@ -4,6 +4,8 @@ import { mergeScheduleWatchEvidence } from '../lib/desktopScheduleWatch';
 import DesktopDrawer from '../components/DesktopDrawer';
 import DesktopActionMenu from '../components/DesktopActionMenu';
 import DesktopSourceUseButton from '../components/DesktopSourceUseButton';
+import DesktopBatchPicker from '../components/DesktopBatchPicker';
+import { inspectDesktopBatch, batchResolutionKey, type BatchResolution, type BatchFile, type BatchSelection } from '../lib/desktopBatchSources';
 import { DesktopWatchNavigation, DesktopWatchPlaybackCard } from '../components/DesktopWatchControls';
 import '../styles/desktop-watch.css';
 import DesktopEpisodeStatus from '../components/DesktopEpisodeStatus';
@@ -35,7 +37,7 @@ import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { desktopAnimeQueryKey } from '../lib/desktopRequests';
 import { verifiedAiredEpisodeCount, watchEpisodeCatalogSize } from '../lib/animeEpisodes';
 import { runSourceSearchPass, sourceSearchPlan, type SourceDiscovery } from '../lib/desktopSourceDiscovery';
-import { buildSourceIdentity, classifySourceIdentity, parseSourceEpisode, sourceIdentitySignature, validateDesktopSourceCandidates } from '../lib/desktopSourceIdentity';
+import { buildSourceIdentity, classifySourceIdentity, parseSourceEpisode, sourceIdentitySignature, validateDesktopSourceCandidates, isBatchRelease, batchTitleIdentity } from '../lib/desktopSourceIdentity';
 import { desktopAvailabilityKey, readDesktopAvailabilityRecords, recordDesktopAvailability, subscribeDesktopAvailability } from '../lib/desktopAvailability';
 import { totalEpisodeCount } from '../lib/animeEpisodes';
 import { desktopDataError } from '../lib/desktopData';
@@ -119,6 +121,8 @@ type RankedNyaaItem = NyaaItem & {
   playableLabel: string;
   playable: boolean;
   manualOnly?: boolean;
+  batchCandidate?:boolean;
+  batchSelection?:BatchSelection;
 };
 
 const EPISODE_WINDOW_SIZE = 72;
@@ -997,6 +1001,8 @@ function classifySource(
     evidence.episodeMatch ? 'Exact episode' : '', context.installment?.label || '', manualOnly ? 'Manual review required' : ''].filter(Boolean);
   debugSourceDecision({ selectedAnime: context.anime?.title, selectedEpisode: context.episode, searchQuery: source.matchedQuery,
     rawSourceTitle: source.title, parsedSourceAnimeTitle: titleCompatibility.parsedTitle, episodeMatch: evidence.episodeMatch, rejectionReason: evidence.reason });
+  const batchCandidate=isBatchRelease(source.title)&&validInput&&seeded&&(isDesktopApp()?source.nativeBatchIdentity===true:batchTitleIdentity(source.title,identity));
+  if(batchCandidate)return {...source,matchTier:'likely',matchReasons:['Batch installment verified; episode file needs verification'],playableStatus:'untested',playable:false,manualOnly:false,batchCandidate:true,playableLabel:'Check batch files'};
   return { ...source, matchTier, matchReasons, playableStatus, playable,
     manualOnly, playableLabel: manualOnly ? 'Identity unverified' : playable ? 'High confidence' : !seeded ? 'Low seed' : 'Blocked' };
 }
@@ -1633,6 +1639,14 @@ export default function DesktopWatch() {
   const [episodeViewMode, setEpisodeViewMode] = useState<EpisodeViewMode>('cards');
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [sourceSelection, setSourceSelection] = useState<{scope:string; id:string} | null>(null);
+  const [batchRecords,setBatchRecords]=useState<Record<string,{resolution:BatchResolution;source:NyaaItem;identity:string;preferences:string}>>({});
+  const batchPreferences=JSON.stringify([audioMode,audioPreference,sourceMode,sourceQuality]);
+  const [batchBusy,setBatchBusy]=useState<string|null>(null);
+  const batchAbort=useRef<AbortController|null>(null);
+  const batchScope=useRef('');
+  const nextBatchHash=useRef<string|null>(null);
+  const [batchPicker,setBatchPicker]=useState<{episode:number;files:BatchFile[];finish:(file:BatchFile|null)=>void}|null>(null);
+  const batchPickerRef=useRef<typeof batchPicker>(null);batchPickerRef.current=batchPicker;
   const [trailerOpen, setTrailerOpen] = useState(false);
   const closeTrailer = useCallback(() => setTrailerOpen(false), []);
   const [episodeRailDragging, setEpisodeRailDragging] = useState(false);
@@ -1932,7 +1946,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     const onReady=()=>hydrate();window.addEventListener('streamnyaa:history-ready',onReady);
     return()=>{disposed=true;window.removeEventListener('streamnyaa:history-ready',onReady);};
   },[anime.mal_id,anime.anilist_id,anime.status,anime.episodes,airedCount,selectedEpisode]);
-  const sourceEpisodes = useMemo(() => homeReadyEpisodes(anime, sourceAvailability, 'any', Date.now(), sourceIdentity), [anime, sourceAvailability, sourceIdentity]);
+  const batchEpisodes=useMemo(()=>new Set(Object.values(batchRecords).filter(record=>record.identity===sourceContextSignature).flatMap(record=>record.resolution.availableEpisodes)),[batchRecords,sourceContextSignature]);
+  const sourceEpisodes = useMemo(() => [...new Set([...homeReadyEpisodes(anime, sourceAvailability, 'any', Date.now(), sourceIdentity),...batchEpisodes])].sort((a,b)=>a-b), [anime, sourceAvailability, sourceIdentity,batchEpisodes]);
   const sourceEpisodeCount = sourceEpisodes.at(-1) || 0;
   const episodeCatalogEstimated = !episodeData?.data?.length && !animeNotYetAired;
   const selectedEpisodeWatchState = desktopEpisodeWatchState(anime, selectedEpisode, watchProgressRecords);
@@ -2194,7 +2209,15 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
   const failedSourceRecords = useMemo(() => loadSourceFailureRecords(), [failedSourceVersion]);
   const allRankedSources = useMemo<RankedNyaaItem[]>(() => {
-    const items = (sources?.items || []).map(source => classifySource(source, { anime:sourceAnime, routeId: id, installment: selectedInstallment, episode: selectedEpisode }))
+    const rememberedPacks=Object.values(batchRecords).filter(record=>record.identity===sourceContextSignature).map(record=>record.source);
+    const items = dedupeNyaaItems([...(sources?.items || []),...rememberedPacks]).map(source => {
+      const ranked=classifySource(source, { anime:sourceAnime, routeId: id, installment: selectedInstallment, episode: selectedEpisode });
+      const knownPack=Object.values(batchRecords).find(record=>record.identity===sourceContextSignature&&record.source.infoHash.toLowerCase()===source.infoHash.toLowerCase());
+      if(ranked.batchCandidate&&knownPack?.resolution.availableEpisodes.length&&!knownPack.resolution.availableEpisodes.includes(selectedEpisode))return {...ranked,matchTier:'rejected' as const,playable:false};
+      const resolved=batchRecords[batchResolutionKey(sourceIdentity,source,selectedEpisode)];
+      if(ranked.batchCandidate&&resolved?.identity===sourceContextSignature&&resolved.preferences===batchPreferences&&resolved.resolution.selection)return {...ranked,matchTier:'exact' as const,playable:true,manualOnly:false,batchSelection:resolved.resolution.selection,playableLabel:'Verified batch file',matchReasons:['Requested episode file verified in pack']};
+      return ranked;
+    })
       .filter(source => source.matchTier !== 'rejected');
     return items.sort((a, b) => {
       if (sortBy === 'seeders') return b.rawSeeders - a.rawSeeders;
@@ -2205,7 +2228,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       if (tierDifference !== 0) return tierDifference;
       return sourceScore(b, audioPreference, audioMode) - sourceScore(a, audioPreference, audioMode);
     });
-  }, [audioMode, audioPreference, failedSourceRecords, sortBy, sources, sourceContextSignature, selectedEpisode]);
+  }, [audioMode, audioPreference, failedSourceRecords, sortBy, sources, sourceContextSignature, selectedEpisode,batchRecords,batchPreferences]);
   const exactSources = useMemo(() => allRankedSources.filter((source) => source.matchTier === 'exact'), [allRankedSources]);
   const likelySources = useMemo(() => allRankedSources.filter((source) => source.matchTier === 'likely'), [allRankedSources]);
   const broadSources = useMemo(() => allRankedSources.filter((source) => source.matchTier === 'broad'), [allRankedSources]);
@@ -2234,8 +2257,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   }, [qualityCounts]);
   const playableSources = useMemo(() => (
     sourceQuality === 'auto'
-      ? modeFilteredSources.filter(source => source.playable && !source.manualOnly && !sourceFailureFor(source, failedSourceRecords))
-      : modeFilteredSources.filter((source) => source.playable && !source.manualOnly && !sourceFailureFor(source, failedSourceRecords) && sourceQualityBucket(source.title) === sourceQuality)
+      ? modeFilteredSources.filter(source => (source.playable||source.batchCandidate) && !source.manualOnly && !sourceFailureFor(source, failedSourceRecords))
+      : modeFilteredSources.filter((source) => (source.playable||source.batchCandidate) && !source.manualOnly && !sourceFailureFor(source, failedSourceRecords) && sourceQualityBucket(source.title) === sourceQuality)
   ), [modeFilteredSources, sourceQuality, failedSourceRecords]);
   const sortedSources = useMemo(() => (
     sourceQuality === 'auto'
@@ -2277,13 +2300,15 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       : 'Try Broad mode to include less certain matches.';
   const sourceSearchInProgress = sourcesLoading || sourcesFetching;
   // A progressive search must not hide or disable verified results already found.
-  const sourcesBusy = sourceSearchInProgress && !playableSources.some(source => source.playable);
+  const sourcesBusy = sourceSearchInProgress && !playableSources.some(source => source.playable||source.batchCandidate);
   const nextPlayableSource = useMemo(
-    () => playableSources.find((source) => !sourceFailureFor(source, failedSourceRecords)) || playableSources[0] || null,
+    () => playableSources.find(source=>source.playable&&!sourceFailureFor(source,failedSourceRecords)) || playableSources[0] || null,
     [failedSourceRecords, playableSources],
   );
 
   const sourceSelectionScope = JSON.stringify([sourceIdentity.animeId,sourceIdentity.format,sourceIdentity.seasonNumber,sourceIdentity.partNumber,selectedEpisode,audioMode,audioPreference,sourceMode,sourceQuality]);
+  batchScope.current=sourceSelectionScope;
+  useEffect(()=>()=>{batchAbort.current?.abort();batchPickerRef.current?.finish(null);},[sourceSelectionScope]);
   const sourceKey = (source: RankedNyaaItem) => sourceSelectionKey(source);
   // Failed releases stay out of recommendations, but a verified release can be
   // deliberately selected for another attempt from the visible Broad results.
@@ -2452,6 +2477,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       banner: bannerCandidates[0] || '',
       bannerCandidates,
       artwork,
+      sourceIdentity,
+      batchSelection:(source as RankedNyaaItem).batchSelection,
     };
     const checkpoint = resolveDesktopPlaybackCheckpoint(baseSource);
     const hasResumeOverride = Number.isFinite(resumeOverride);
@@ -2463,17 +2490,43 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       durationSeconds: checkpoint?.durationSeconds ?? 0,
       completed: checkpoint?.completed ?? false,
     };
-  }, [anime, supplementalArtwork.data, selectedEpisode, selectedEpisodeInfo?.image, streamingEpisodeMap, hideEpisodeSpoilers]);
+  }, [anime, supplementalArtwork.data, selectedEpisode, selectedEpisodeInfo?.image, streamingEpisodeMap, hideEpisodeSpoilers,sourceIdentity]);
+
+  const prepareBatch=useCallback(async(source:RankedNyaaItem):Promise<RankedNyaaItem|null>=>{
+    if(!source.batchCandidate||source.batchSelection)return source;
+    batchAbort.current?.abort();batchPickerRef.current?.finish(null);
+    const controller=new AbortController();batchAbort.current=controller;
+    const scope=sourceSelectionScope;setBatchBusy(sourceSelectionKey(source));
+    try{
+      const result=await inspectDesktopBatch(source,sourceIdentity,selectedEpisode,controller.signal);
+      if(controller.signal.aborted||batchScope.current!==scope)return null;
+      let selection=result.selection;
+      if(result.state==='choose-file'){
+        const file=await new Promise<BatchFile|null>(finish=>setBatchPicker({episode:selectedEpisode,files:result.files,finish}));
+        setBatchPicker(null);
+        if(!file||controller.signal.aborted||batchScope.current!==scope)return null;
+        selection={infoHash:result.infoHash,manifestId:result.manifestId,fileIndex:file.index,manual:true};
+      }
+      setBatchRecords(records=>Object.fromEntries([...Object.entries(records).filter(([,record])=>record.identity===sourceContextSignature),[batchResolutionKey(sourceIdentity,source,selectedEpisode),{resolution:{...result,selection},source,identity:sourceContextSignature,preferences:batchPreferences}]].slice(-64)));
+      if(!selection){setPlaybackNotice({tone:'error',text:result.reason});return null;}
+      setSourceSelection({scope,id:sourceSelectionKey(source)});
+      return {...source,batchSelection:selection,matchTier:'exact',playable:true,manualOnly:false,playableLabel:'Verified batch file'};
+    }catch(error){if(!controller.signal.aborted&&batchScope.current===scope)setPlaybackNotice({tone:'error',text:errorMessage(error,'Batch files could not be checked. Retry this release.')});return null;}
+    finally{if(batchAbort.current===controller){batchAbort.current=null;setBatchBusy(null);}}
+  },[sourceSelectionScope,sourceIdentity,sourceContextSignature,selectedEpisode,batchPreferences]);
 
   const openOneSource = useCallback(async (source: NyaaItem, resumeOverride?: number) => {
-    const playbackSource = sourcePayloadFor(source, resumeOverride);
+    const prepared=await prepareBatch(source as RankedNyaaItem);
+    if(!prepared)throw new Error('Batch playback was cancelled or its file could not be verified.');
+    const playbackSource = sourcePayloadFor(prepared, resumeOverride);
     const result = await openLocalSourceNow(playbackSource);
     if (!result.ok) throw new Error(result.message || 'Source link could not open.');
     if (!result.torrent_id) throw new Error('The local engine did not return a stream id.');
     return { result, playbackSource };
-  }, [sourcePayloadFor]);
+  }, [sourcePayloadFor,prepareBatch]);
 
   const playSource = useCallback(async (source: RankedNyaaItem, resumeOverride?: number) => {
+    if(source.batchCandidate&&!source.batchSelection){const ready=await prepareBatch(source);if(!ready)return;source=ready;}
     const current = playbackValueRef.current?.source;
     const currentSeconds = playbackProgressValueRef.current?.current_seconds;
     if (resumeOverride === undefined && current && String(current.animeId) === String(anime.mal_id || anime.id)
@@ -2572,7 +2625,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
         playActionLockRef.current = false;
       }
     }
-  }, [activeSourceId, anime?.id, anime?.mal_id, exactSources.length, likelySources.length, openOneSource, persistActivePlaybackCheckpoint, playableSources, selectedEpisode, sourceMode, syncPlayerPreferences]);
+  }, [activeSourceId, anime?.id, anime?.mal_id, exactSources.length, likelySources.length, openOneSource, persistActivePlaybackCheckpoint, playableSources, selectedEpisode, sourceMode, syncPlayerPreferences,prepareBatch]);
 
   useEffect(() => {
     playSourceRef.current = playSource;
@@ -2693,6 +2746,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       lastNextEpisodeRequestRef.current = { episode: nextEpisode, reason: normalizedReason, at: Date.now() };
     }
     reportNextStatus('preparing');
+    const currentPack=playbackValueRef.current?.source;
+    nextBatchHash.current=currentPack?.batchSelection?currentPack.infoHash?.toLowerCase()||null:null;
     console.info(`[StreamNyaa Watch] Resolved next episode current=${currentEpisode} next=${nextEpisode}`);
     setPlaybackNotice({
       tone: 'loading',
@@ -2721,6 +2776,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
       if (event.reason === 'cancel') {
         if (event.request_id && nextRequestRef.current?.id !== event.request_id) return;
         nextRequestRef.current = null;
+        nextBatchHash.current=null;
+        batchAbort.current?.abort();batchPickerRef.current?.finish(null);setBatchPicker(null);
         pendingAutoPlayEpisodeRef.current = null;
         setPendingAutoPlayEpisode(null);
         playbackRequestIdRef.current++;
@@ -2929,7 +2986,8 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
     if (playableSourcesEpisodeRef.current !== selectedEpisode) return;
     if (playableSources[0]) {
       reportNextStatus('opening');
-      const bestSource = playableSources[0];
+      const bestSource = playableSources.find(source=>nextBatchHash.current&&source.infoHash.toLowerCase()===nextBatchHash.current)||playableSources[0];
+      nextBatchHash.current=null;
       setPendingAutoPlayEpisode(null);
       console.info('[StreamNyaa Watch] Starting the prepared next episode source.');
       void playSource(bestSource);
@@ -2959,6 +3017,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   return (
     <div className={`sn-watch-page relative min-h-screen text-white ${optionsOpen ? 'sn-watch-options-open' : ''}`}>
       <DesktopWatchNavigation />
+      <DesktopBatchPicker open={Boolean(batchPicker)} episode={batchPicker?.episode||selectedEpisode} files={batchPicker?.files||[]} onClose={()=>{batchPicker?.finish(null);setBatchPicker(null);}} onChoose={file=>{batchPicker?.finish(file);setBatchPicker(null);}} />
       <Seo title={`${anime.title} Watch | StreamNyaa Desktop`} description="Desktop watch source screen." canonicalPath={`/watch/${id}`} robots="noindex, nofollow" />
       <div className="sn-watch-layout sn-page relative grid min-h-screen gap-7 py-6">
         <aside className="sn-glass-panel rounded-xl p-5">
@@ -3234,6 +3293,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                     <DesktopWatchEpisodeCard number={episode.number} title={hideEpisodeSpoilers ? `Episode ${episode.number}` : episode.title} artwork={episode.artwork}
                       state={desktopEpisodeWatchState(anime, episode.number, watchProgressRecords)} selected={episode.number === selectedEpisode}
                       onSelect={() => chooseEpisodeFromRail(episode.number)} onPlay={() => playEpisodeNumber(episode.number)} />
+                    {batchEpisodes.has(episode.number)&&<p className="mt-1 text-xs text-white/60">Available from batch</p>}
                   </div>
                 ))}
               </div>
@@ -3538,7 +3598,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
 
             <details key={`${id}:${selectedEpisode}`} open ref={playbackOptionsRef} className="sn-playback-options">
               <summary className="flex min-h-14 cursor-pointer items-center justify-between gap-4 px-5 py-3 font-semibold">
-                <span>Sources</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} shown · ${playableSources.length} verified${sourceSearchInProgress ? ' · finding more' : ''}` : 'No matches in this view'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
+                <span>Sources</span><span className="ml-auto text-sm font-normal text-white/60">{sourcesBusy ? 'Preparing options…' : sortedSources.length ? `${sortedSources.length} shown · ${playableSources.filter(source=>source.playable).length} verified${sourceSearchInProgress ? ' · finding more' : ''}` : 'No matches in this view'}</span><ChevronDown className="sn-details-chevron h-5 w-5" aria-hidden="true" />
               </summary>
               <div className="p-4">
             {sources?.pending?.length ? <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm text-white/60"><span>More release names, categories or pages remain to be checked.</span><button type="button" className="sn-secondary-action px-3 py-2" disabled={sourcesFetching} onClick={findMoreSources}>{sourcesFetching ? 'Finding sources…' : 'Find more sources'}</button></div> : null}
@@ -3583,12 +3643,13 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                       <span className="sn-watch-source-rank">#{index + 1}</span>
                       <div className="sn-watch-source-copy"><strong title={source.title}>{source.title.match(/^\[([^\]]+)\]/)?.[0] || source.title}</strong><p title={source.title}>{source.title}</p></div>
                       <div className="sn-watch-source-meta"><span>{quality} · {audioLabel} · {codec}</span><small>{source.size} · {source.seeders} seeders</small></div>
-                      <span className={`sn-watch-source-confidence ${sourceConfidenceClassName(confidence.band)}`}>{source.manualOnly ? 'Uncertain identity' : source.playable ? confidence.label : source.playableLabel}</span>
+                      <span className={`sn-watch-source-confidence ${sourceConfidenceClassName(confidence.band)}`}>{source.batchSelection?'Verified batch file':source.batchCandidate?'Batch · check files':source.manualOnly ? 'Uncertain identity' : source.playable ? confidence.label : source.playableLabel}</span>
                       <DesktopSourceUseButton selected={Boolean(selectedSafeSource && sourceKey(selectedSafeSource) === sourceId)} title={source.title}
-                        unavailableReason={source.manualOnly ? 'Identity is unverified. Open Actions for release details.' : !source.playable ? `${source.playableLabel}. Open Actions for release details.` : undefined}
-                        onSelect={() => setSourceSelection({scope:sourceSelectionScope,id:sourceId})} />
+                        busy={batchBusy===sourceId}
+                        unavailableReason={source.manualOnly ? 'Identity is unverified. Open Actions for release details.' : !source.playable&&!source.batchCandidate ? `${source.playableLabel}. Open Actions for release details.` : undefined}
+                        onSelect={() => {if(source.batchCandidate&&!source.batchSelection)void prepareBatch(source);else setSourceSelection({scope:sourceSelectionScope,id:sourceId});}} />
                       <DesktopActionMenu label={`Actions for ${source.title}`} actions={[
-                        ...(!source.manualOnly ? [{label:'Play this source',disabled:Boolean(active) || !source.playable,action:()=>{ void playSource(source); }}] : []),
+                        ...(!source.manualOnly ? [{label:'Play this source',disabled:Boolean(active) || (!source.playable&&!source.batchCandidate),action:()=>{ void playSource(source); }}] : []),
                         {label:expanded ? 'Hide details' : 'Details',action:()=>toggleSourceDetails(sourceId)},
                         {label:'Copy source link',action:()=>{ void (navigator.clipboard ? navigator.clipboard.writeText(source.magnet || torrentUrlFor(source)) : Promise.reject(new Error('Clipboard unavailable'))).then(()=>setPlaybackNotice({tone:'success',text:'Source link copied.'}),()=>setPlaybackNotice({tone:'error',text:'Source link could not be copied.'})); }},
                         {label:'Download release',disabled:!source.magnet,title:'Downloads every file in this release, including batch episodes',action:()=>{ void enqueueDownload(source.title,source.magnet).catch(issue=>setPlaybackNotice({tone:'error',text:errorMessage(issue,'Download could not start.')})); }},

@@ -25,7 +25,10 @@ export async function enqueueGeneration(kind:'daily'|'weekly',limit=2,now=Date.n
   }
   if(!run.checkpoint?.reviewRejected&&(run.status==='failed'||run.status==='skipped'||run.status==='published'&&(run.checkpoint?.published?.length||0)<limit)){
     const checkpoint={...run.checkpoint,limit:kind==='weekly'?1:limit,resumeRequired:false};
-    if(run.status==='skipped'){delete checkpoint.briefs;delete checkpoint.draft;checkpoint.next=0;}
+    // A completed empty discovery is not an interrupted cursor. A later manual
+    // retry must be able to find newly announced stories (public request caches
+    // still enforce provider freshness and pacing).
+    if(run.status==='skipped'){delete checkpoint.briefs;delete checkpoint.draft;delete checkpoint.discovery;checkpoint.next=0;}
     const changed=await supabaseRest(`blog_generation_runs?id=eq.${run.id}&status=eq.${run.status}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:'pending',reason:null,checkpoint,updated_at:new Date().toISOString()})});
     run=changed?.[0]||run;
   }

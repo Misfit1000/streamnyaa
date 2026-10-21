@@ -9,7 +9,12 @@ export type SourceIdentity = {
   sequel: boolean;
 };
 export type SourceEvidence = { evidence: 'exact' | 'uncertain' | 'conflict'; reason: string; episodeMatch: boolean };
-export const SOURCE_CLASSIFIER_VERSION = 3;
+export const SOURCE_CLASSIFIER_VERSION = 4;
+export function isBatchRelease(title:string){return /\b(?:batch|complete|collection|season pack)\b/i.test(title)||/\b\d{1,4}\s*[-–~]\s*\d{1,4}\b/.test(title);}
+export function batchTitleIdentity(title:string,identity:SourceIdentity){
+  const clean=title.replace(/\b\d{1,4}\s*[-–~]\s*\d{1,4}\b/g,' ').replace(/\b(?:complete\s+season(?!\s*\d)|season\s+pack)\b/ig,' ').replace(/\b(?:batch|complete|collection|pack)\b/ig,' ');
+  return classifySourceIdentity(`${clean} - 01`,identity,1).evidence==='exact';
+}
 
 export function normalizeSourceTitle(value = '') {
   return String(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
@@ -109,7 +114,7 @@ export function buildSourceIdentity(anime: any, installment?: { name?: string; f
 export function sourceIdentitySignature(identity: SourceIdentity) { return JSON.stringify([SOURCE_CLASSIFIER_VERSION, identity]); }
 
 /** Desktop uses the same native validator as the background notification worker. */
-export async function validateDesktopSourceCandidates<T extends { title: string }>(items: T[], identity: SourceIdentity, episode: number | null): Promise<Array<T & { nativeEvidence: SourceEvidence['evidence']; nativeIdentitySignature: string }>> {
+export async function validateDesktopSourceCandidates<T extends { title: string }>(items: T[], identity: SourceIdentity, episode: number | null): Promise<Array<T & { nativeEvidence: SourceEvidence['evidence']; nativeIdentitySignature: string; nativeBatchIdentity?:boolean }>> {
   if (!items.length) return [];
   const invoke = typeof window !== 'undefined' ? window.__TAURI__?.core?.invoke || window.__TAURI__?.invoke : undefined;
   if (!invoke && typeof window !== 'undefined' && (window.__STREAMNYAA_DESKTOP__ || window.__TAURI__ || window.__TAURI_INTERNALS__)) throw new Error('Native source identity validation is unavailable. Retry when the desktop connection recovers.');
@@ -117,7 +122,10 @@ export async function validateDesktopSourceCandidates<T extends { title: string 
   const evidence = invoke ? await invoke<SourceEvidence['evidence'][]>('classify_desktop_sources', { identity, episode, titles: items.map(item => item.title) })
     : items.map(item => classifySourceIdentity(item.title, identity, episode || parseSourceEpisode(item.title) || 1).evidence);
   if (!Array.isArray(evidence) || evidence.length !== items.length || evidence.some(value => !['exact', 'uncertain', 'conflict'].includes(value))) throw new Error('Source identity validation could not finish.');
-  return items.map((item, index) => ({ ...item, nativeEvidence: evidence[index], nativeIdentitySignature: signature }));
+  const packs=items.filter(item=>isBatchRelease(item.title));
+  const batchProof=packs.length?(invoke?await invoke<boolean[]>('classify_desktop_batch_titles',{identity,titles:packs.map(item=>item.title)}):packs.map(item=>batchTitleIdentity(item.title,identity))):[];
+  if(batchProof.length!==packs.length||batchProof.some(value=>typeof value!=='boolean'))throw Error('Batch installment checks could not finish.');
+  return items.map((item, index) => ({ ...item, nativeEvidence: evidence[index], nativeIdentitySignature: signature,nativeBatchIdentity:isBatchRelease(item.title)?batchProof[packs.indexOf(item)]:false }));
 }
 
 export function classifySourceIdentity(title: string, identity: SourceIdentity, episode: number): SourceEvidence {

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod data_requests;
 mod source_identity;
+mod batch_sources;
 mod reminder_scheduler;
 mod schedule_updates;
 mod trailer_webview;
@@ -342,6 +343,10 @@ struct SeriesArtworkCandidate { url: String, role: String }
 struct SeriesArtworkDescriptor { version: u32, identity: String, candidates: Vec<SeriesArtworkCandidate> }
 #[derive(Clone, Deserialize)]
 struct PlaybackRequest {
+    #[serde(default)]
+    source_identity: Option<source_identity::SourceIdentity>,
+    #[serde(default)]
+    batch_selection: Option<batch_sources::Selection>,
     #[serde(default)]
     progress_context: Option<playback_progress::Context>,
     magnet: String,
@@ -3205,6 +3210,13 @@ fn select_stream_target(
     entries: &[PlaylistEntry],
     request: &PlaybackRequest,
 ) -> Option<ResolvedStreamTarget> {
+    if let Some(selection) = &request.batch_selection {
+        let expected_name = batch_sources::selected_filename(request)?;
+        let media = entries.iter().find(|entry| entry.kind == PlaylistKind::Video && entry.file_index == Some(selection.file_index) && entry.file_name == expected_name)?;
+        let subtitles: Vec<_> = entries.iter().filter(|entry| entry.kind == PlaylistKind::Subtitle && (entry.file_stem.eq_ignore_ascii_case(&media.file_stem)||entry.file_stem.to_lowercase().starts_with(&format!("{}.",media.file_stem.to_lowercase())))).collect();
+        let mut indices=vec![selection.file_index]; indices.extend(subtitles.iter().filter_map(|entry|entry.file_index));
+        return Some(ResolvedStreamTarget{media_url:media.url.clone(),subtitle_urls:subtitles.iter().map(|entry|entry.url.clone()).collect(),selected_file_indices:indices,selected_file_name:media.file_name.clone()});
+    }
     let videos = entries
         .iter()
         .filter(|entry| entry.kind == PlaylistKind::Video)
@@ -3219,6 +3231,12 @@ fn select_stream_target(
     } else {
         playable_videos
     };
+
+    // Legacy callers cannot make a pack playable through a best-score fallback.
+    // Exact single-episode releases remain compatible, including their extras.
+    if video_pool.len()>1 && request.episode.parse::<u64>().is_ok_and(|episode| {
+        video_pool.iter().filter(|entry|source_identity::matches_episode(&playlist_entry_search_text(entry),episode)).count()!=1
+    }) { return None; }
 
     let media = video_pool
         .into_iter()
@@ -5559,6 +5577,42 @@ fn start_stream(
         });
     }
 
+    // A verified next file in the same pack keeps its engine and downloaded
+    // pieces. Inspection and identity validation have already completed before
+    // the old media is replaced.
+    if request.batch_selection.is_some() {
+        let reuse=manager().lock().ok().and_then(|guard|guard.active.clone().zip(guard.player_ipc.clone()))
+            .filter(|(active,_)|batch_sources::same_pack(&active.download_request,&request));
+        if let Some((active,old_ipc))=reuse {
+            if torrent_stats(&active.torrent_id).is_ok() {
+                let reused = (|| -> Result<PlaybackStatus,String> {
+                let target=playlist_target(&active.torrent_id,&request)?.ok_or("Verified episode file is missing from the active pack.")?;
+                let cache_dir=PathBuf::from(&status.cache_dir);
+                let retained_bytes=dir_size(&active.session_dir);
+                let cache_limit=stream_session_cache_limit(batch_sources::selected_bytes(&request).map(|bytes|bytes.saturating_add(retained_bytes)),available_disk_bytes(&cache_dir).map(|bytes|bytes.saturating_add(retained_bytes)))?;
+                prioritize_stream_target(&active.torrent_id,&target)?;
+                let ipc=launch_or_reuse_player(status.player_path.as_deref().ok_or("Player is unavailable.")?,&cache_dir,&request,&title)?;
+                ensure_playback_generation_current(playback_generation)?;
+                playback_progress::flush(&old_ipc);
+                send_player_script_message_arg(&ipc,"streamnyaa-source-generation",&playback_generation.to_string());
+                if let Ok(mut guard)=manager().lock(){guard.active=Some(ActiveSession{download_request:request.clone(),media_url:target.media_url.clone(),cache_limit_bytes:cache_limit,playback_generation,..active.clone()});ACTIVE_ENGINE_GENERATION.store(playback_generation,Ordering::SeqCst);}
+                let target=wait_for_stream_with_session_guard(&active.torrent_id,&request,Some(&ipc),&cache_dir,&active.session_dir,cache_limit,playback_generation)?;
+                if let Some(context)=request.progress_context.clone(){playback_progress::begin(&ipc,context);}
+                if !load_player_target(&ipc,&title,&target,request.resume_seconds){return Err("The player could not open the next pack file.".into());}
+                Ok(PlaybackStatus{ok:true,state:"started".into(),message:"Selected episode opened from the existing pack.".into(),title:title.clone(),torrent_id:Some(active.torrent_id.clone()),playlist_url:Some(format!("{RQBIT_URL}/torrents/{}/playlist",percent_encode(&active.torrent_id))),media_url:Some(target.media_url)})
+                })();
+                if let Err(error)=&reused {
+                    if playback_generation_current(playback_generation){
+                        remember_error(format!("{title}: {error}"));
+                        send_player_script_message_arg(&old_ipc,"streamnyaa-playback-failed",&playback_generation.to_string());
+                        stop_active_session(false);
+                    }
+                }
+                return reused;
+            }
+        }
+    }
+
     let cache_dir = PathBuf::from(&status.cache_dir);
     fs::create_dir_all(&cache_dir)
         .map_err(|error| format!("Could not prepare StreamNyaa cache: {}", error))?;
@@ -5581,7 +5635,7 @@ fn start_stream(
             });
         }
     }
-    let source_size = parse_size_bytes(request.size.as_deref());
+    let source_size = batch_sources::selected_bytes(&request).filter(|bytes|*bytes>0).or_else(||parse_size_bytes(request.size.as_deref()));
     let session_cache_limit = match stream_session_cache_limit(source_size, free_bytes) {
         Ok(limit) => limit,
         Err(message) => {
@@ -5671,7 +5725,7 @@ fn start_stream(
             engine_started.elapsed().as_millis()
         ));
 
-        let add_path = rqbit_add_path(&media_dir);
+        let add_path = if let Some(selection)=&request.batch_selection {format!("{}&only_files={}",rqbit_add_path(&media_dir),selection.file_index)} else {rqbit_add_path(&media_dir)};
         let mut add_payload = None;
         let last_index = source_inputs.len().saturating_sub(1);
         let add_started = Instant::now();
@@ -5819,6 +5873,7 @@ fn start_stream(
 
 #[tauri::command]
 async fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
+    batch_sources::validate(&request)?;
     let playback_generation = next_playback_generation();
     let title = playback_title(&request);
     log_info(format!(
@@ -5833,6 +5888,19 @@ async fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, 
             remember_error(message.clone());
             message
         })?
+}
+
+#[tauri::command]
+async fn inspect_batch_release(request: batch_sources::Request, request_id: String) -> Result<batch_sources::Resolution,String> {
+    tauri::async_runtime::spawn_blocking(move||batch_sources::run(request,request_id)).await.map_err(|_|"Batch inspection could not finish.".to_string())?
+}
+#[tauri::command]
+fn cancel_batch_inspection(request_id:String){batch_sources::cancel(&request_id);}
+
+#[tauri::command]
+fn classify_desktop_batch_titles(identity:source_identity::SourceIdentity,titles:Vec<String>)->Result<Vec<bool>,String>{
+    if titles.len()>500||identity.aliases.len()>80||titles.iter().any(|s|s.len()>4096){return Err("Invalid batch title input.".into());}
+    Ok(titles.iter().map(|title|source_identity::batch_identity(title,&identity)==source_identity::Evidence::Exact).collect())
 }
 
 #[tauri::command]
@@ -6491,6 +6559,9 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             classify_desktop_sources,
+            inspect_batch_release,
+            cancel_batch_inspection,
+            classify_desktop_batch_titles,
             schedule_updates::get_desktop_schedule_alerts,
             schedule_updates::configure_desktop_schedule_alerts,
             reminder_scheduler::get_desktop_reminder_state,
@@ -7022,7 +7093,7 @@ mod tests {
     #[test]
     fn playback_source_uses_valid_magnet() {
         let hash = "0123456789abcdef0123456789abcdef01234567";
-        let request = PlaybackRequest {
+        let request = PlaybackRequest { source_identity: None, batch_selection: None,
             progress_context: None,
             magnet: format!("magnet:?xt=urn:btih:{}", hash),
             info_hash: None,
@@ -7193,7 +7264,7 @@ mod tests {
 
     #[test]
     fn playback_source_rebuilds_valid_magnet_from_info_hash() {
-        let request = PlaybackRequest {
+        let request = PlaybackRequest { source_identity: None, batch_selection: None,
             progress_context: None,
             magnet: "magnet:?xt=urn:btih:".to_string(),
             info_hash: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
@@ -7216,7 +7287,7 @@ mod tests {
     }
 
     fn playback_request_for_episode(episode: &str) -> PlaybackRequest {
-        PlaybackRequest {
+        PlaybackRequest { source_identity: None, batch_selection: None,
             progress_context: None,
             magnet: "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567".to_string(),
             info_hash: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
@@ -7324,7 +7395,7 @@ mod tests {
 
     #[test]
     fn playback_source_rejects_missing_hash_and_url() {
-        let request = PlaybackRequest {
+        let request = PlaybackRequest { source_identity: None, batch_selection: None,
             progress_context: None,
             magnet: "magnet:?xt=urn:btih:".to_string(),
             info_hash: Some(String::new()),

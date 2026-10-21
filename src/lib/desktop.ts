@@ -1,4 +1,6 @@
 import type { SeriesArtworkDescriptor } from './desktopArtwork';
+import type { SourceIdentity } from './desktopSourceIdentity';
+import type { BatchSelection } from './desktopBatchSources';
 import { historyArchiveReady, archiveRecentSources, archiveProgress, archiveTitles, archiveTitle, historyIdentity, saveArchiveEpisode, setArchiveEpisodeWatched, clearArchiveHistory, hydrateHistoryEpisode, queueHistoryWrite } from './desktopHistoryArchive';
 import { SCHEDULE_ALERT_STATE_KEY, scheduleStateForBackup } from './desktopScheduleState';
 import { loadStoredSession } from './supabaseAuth';
@@ -10,6 +12,8 @@ import { readHideEpisodeSpoilers } from './desktopSpoilers';
 import { DESKTOP_AVAILABILITY_KEY, importDesktopAvailabilityRecords } from './desktopAvailability';
 
 export type LocalPlaybackSource = {
+  sourceIdentity?:SourceIdentity;
+  batchSelection?:BatchSelection;
   identity?: string;
   trackingEpoch?: number;
   lastPlayedAt?: number;
@@ -1229,6 +1233,8 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
           baseline: source.watchedCoverage || { intervals: [], furthest: source.resumeSeconds || 0, lastPosition: source.resumeSeconds || 0, duration: source.durationSeconds || 0 },
         },
         magnet: source.magnet,
+          source_identity: source.sourceIdentity || null,
+          batch_selection: source.batchSelection || null,
         torrent_url: source.torrentUrl || '',
         info_hash: source.infoHash || '',
         title: source.title,

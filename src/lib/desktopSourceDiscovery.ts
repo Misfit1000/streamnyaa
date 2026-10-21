@@ -24,6 +24,11 @@ export function sourceSearchPlan(identity: SourceIdentity, episode?: number, aud
   for (const page of [1, 2, 3]) for (const category of ['1_2', '1_3', '1_4']) for (const query of queries) {
     jobs.push({ query, category, page, scope: episodeScoped ? 'episode' : 'title', ...(episodeScoped ? { episode } : {}) });
   }
+  if(episodeScoped&&aliases.length){
+    const packs=sourceSearchPlan(identity,undefined,audioSuffix);
+    jobs.splice(Math.min(2,jobs.length),0,...packs.splice(0,1));
+    jobs.push(...packs);
+  }
   return jobs;
 }
 
