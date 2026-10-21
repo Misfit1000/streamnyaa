@@ -59,6 +59,11 @@ try{
   for(const index of [1,2]){
     await api(`/torrents/${id}/update_only_files`,{only_files:[index]},clientBase);
     const response=await fetch(`${clientBase}/torrents/${id}/stream/${index}`,{signal:AbortSignal.timeout(10000)});assert.ok(response.ok);const bytes=Buffer.from(await response.arrayBuffer());assert.equal(createHash('sha256').update(bytes).digest('hex'),createHash('sha256').update(fixture).digest('hex'));
+    const decoded=await new Promise((resolve,reject)=>{
+      const player=spawn(path.resolve('desktop/src-tauri/bin/mpv.com'),['--no-config','--vo=null','--ao=null','--length=0.15','--term-status-msg=','--term-playing-msg=STREAMNYAA_BATCH_FIXTURE_PLAYING',`${clientBase}/torrents/${id}/stream/${index}`],{windowsHide:true,stdio:['ignore','pipe','pipe']});
+      let output='';player.stdout.on('data',chunk=>output+=chunk);player.stderr.on('data',chunk=>output+=chunk);const deadline=setTimeout(()=>{player.kill();reject(Error('Local fixture decoding timed out.'));},15000);
+      player.once('error',error=>{clearTimeout(deadline);reject(error);});player.once('exit',code=>{clearTimeout(deadline);resolve({code,output});});
+    });assert.equal(decoded.code,0,decoded.output);assert.ok(decoded.output.includes('STREAMNYAA_BATCH_FIXTURE_PLAYING'),decoded.output);
     const current=await api(`/torrents/${id}`,undefined,clientBase);assert.equal(current.info_hash||current.details?.info_hash,hash);
     assert.deepEqual(current.files.filter(file=>file.included).map((_,position)=>current.files.indexOf(current.files.filter(file=>file.included)[position])),[index]);
     if(index===1&&process.argv.includes('--native')){
@@ -66,6 +71,6 @@ try{
       const code=await new Promise((resolve,reject)=>{command.on('error',reject);command.on('exit',resolve);});await fs.writeFile(path.resolve('.validation/batch-native-fixture.log'),log);assert.equal(code,0);assert.equal(leecher.exitCode,null,'Inspection must leave active transfer engine running');
     }
   }
-  const evidence={...fixtureRecord,passed:true,metadataOnlyDidNotAddDownload:true,selectedIndices:[1,2],sameTorrentId:id,enginePid:engine.pid,externalProvidersContacted:false,elapsedNote:'Local fixture only; not a public-provider benchmark.'};
+  const evidence={...fixtureRecord,passed:true,metadataOnlyDidNotAddDownload:true,selectedIndices:[1,2],sameTorrentId:id,bundledMpvDecodedBothFiles:true,enginePid:engine.pid,externalProvidersContacted:false,elapsedNote:'Local fixture only; not a public-provider benchmark.'};
   await fs.writeFile(path.resolve('.validation/batch-engine-results.json'),JSON.stringify(evidence,null,2));console.log(evidence);
 }catch(error){await fs.writeFile(path.resolve('.validation/batch-engine-error.log'),stderr);console.error(stderr.slice(-8000));throw error;}finally{for(const socket of sockets)socket.destroy();metadataPeer.close();tracker.closeAllConnections();tracker.close();leecher?.kill();engine.kill();await Promise.race([new Promise(resolve=>engine.once('exit',resolve)),pause(2000)]);}
