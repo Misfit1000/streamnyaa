@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
+import { generationFeedback, generationJobLabel } from '../lib/adminGeneration';
 
 function Metric({ label, value, detail }: { label: string; value: string | number; detail: string }) {
   return (
@@ -67,10 +68,12 @@ export default function AdminDashboard() {
   const queryClient=useQueryClient();
   const [jobIds,setJobIds]=useState<string[]>([]);
   const [visible,setVisible]=useState(document.visibilityState!=='hidden');
+  const [clock,setClock]=useState(Date.now());
   const account=useRef(user?.id);account.current=user?.id;
   useEffect(()=>{const update=()=>setVisible(document.visibilityState!=='hidden');document.addEventListener('visibilitychange',update);return()=>document.removeEventListener('visibilitychange',update);},[]);
+  useEffect(()=>{if(!visible)return;setClock(Date.now());const timer=setInterval(()=>setClock(Date.now()),30_000);return()=>clearInterval(timer);},[visible]);
   useEffect(()=>{
-    setJobIds([]);setActionMessage('');setActionError('');
+    setJobIds([]);setActionMessage('');setActionError('');setBusyAction('');
     queryClient.removeQueries({predicate:query=>['admin-summary','admin-jobs','admin-draft'].includes(String(query.queryKey[0]))&&query.queryKey[1]!==user?.id});
     try{if(user?.id)setJobIds(JSON.parse(localStorage.getItem(`streamnyaa.admin.jobs.${user.id}`)||'[]').filter((id:unknown)=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id)).slice(0,4));}catch{/* Optional status restoration. */}
   },[user?.id,queryClient]);
@@ -96,8 +99,8 @@ export default function AdminDashboard() {
     refetchInterval:query=>visible&&query.state.data?.jobs?.some((job:any)=>job.active)?5000:false});
   useEffect(()=>{
     const current=jobs.data?.jobs;if(!current?.length)return;
-    const published=current.reduce((count:number,job:any)=>count+job.published.length,0),active=current.some((job:any)=>job.active);
-    setActionMessage(active?`Publication job running. ${published} article${published===1?'':'s'} durably published so far.`:`${published} article${published===1?'':'s'} published. ${current.map((job:any)=>job.reason||job.status).join(' ')}`);
+    const active=current.some((job:any)=>job.active);
+    setActionMessage(generationFeedback(current));
     if(!active){setJobIds([]);try{if(user?.id)localStorage.removeItem(`streamnyaa.admin.jobs.${user.id}`);}catch{/* Optional status restoration. */}void summary.refetch();void queryClient.invalidateQueries({predicate:query=>String(query.queryKey[0]).startsWith('blog')});}
   },[jobs.data]);
 
@@ -141,6 +144,7 @@ export default function AdminDashboard() {
     setActionError('');
     setActionMessage('');
     setBusyAction(mode === 'both' ? 'generate-both' : 'generate');
+    setActionMessage('Starting draft preparation…');
 
     try {
       const response = await fetch('/api/admin/generate-blog', {
@@ -156,12 +160,12 @@ export default function AdminDashboard() {
       if(account.current!==owner)return;
       const accepted=(result.jobs||[]).map((job:any)=>job.id);setJobIds(accepted);
       try{localStorage.setItem(`streamnyaa.admin.jobs.${owner}`,JSON.stringify(accepted));}catch{/* Status remains in memory. */}
-      setActionMessage('Publication job accepted. Evidence and quality checks run before anything is published.');
+      setActionMessage(generationFeedback(result.jobs||[]));
       summary.refetch();
     } catch (error) {
       if(account.current===owner)setActionError(error instanceof Error ? error.message : 'Generation failed.');
     } finally {
-      setBusyAction('');
+      if(account.current===owner)setBusyAction('');
     }
   };
 
@@ -275,13 +279,13 @@ export default function AdminDashboard() {
             <Metric label="Articles" value={articleCount} detail="Posts stored in the archive" />
             <Metric label="Admins" value={adminEmails.length} detail="People with console access" />
             <Metric label="Schedule" value="Daily" detail={data?.cronSchedule || 'Daily article check'} />
-            <Metric label="Writer" value={data?.config?.geminiConfigured ? 'Ready' : 'Check'} detail={data?.config?.geminiConfigured ? 'Article key is configured' : 'Article key is missing'} />
+            <Metric label="Writer" value={data?.config?.geminiConfigured ? 'Configured' : 'Check'} detail={data?.config?.geminiConfigured ? 'Model access is checked when a draft runs' : 'Article key is missing'} />
           </section>
 
-          {actionMessage ? <div className="mt-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm font-semibold text-emerald-300">{actionMessage}</div> : null}
-          {actionError ? <div className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm font-semibold text-red-400">{actionError}</div> : null}
+          {actionMessage ? <div role="status" aria-live="polite" className="mt-6 rounded-lg border border-border bg-secondary/20 p-4 text-sm font-semibold text-foreground">{actionMessage}</div> : null}
+          {actionError ? <div role="alert" className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm font-semibold text-red-400">{actionError}</div> : null}
           {jobs.isError&&<p role="status" className="mt-3 text-sm text-amber-200">Publication status could not refresh. <button className="underline" onClick={()=>void jobs.refetch()}>Retry status</button></p>}
-          {!!data?.jobs?.length&&<div className="mt-3 space-y-2 text-xs text-muted-foreground">{data.jobs.slice(0,3).map((job:any)=><div key={job.id} className="flex flex-wrap items-center justify-between gap-2"><span>{job.kind} · {job.status}{job.reason?` · ${job.reason}`:''}</span>{['pending','failed'].includes(job.status)&&<button className="font-semibold text-primary underline" disabled={Boolean(busyAction)} onClick={()=>void resumeJob(job.id)}>Resume job</button>}</div>)}</div>}
+          {!!data?.jobs?.length&&<div className="mt-3 space-y-2 text-xs text-muted-foreground">{data.jobs.slice(0,3).map((job:any)=><div key={job.id} className="flex flex-wrap items-center justify-between gap-2"><span>{job.kind} · {formatDate(job.createdAt)} · {generationJobLabel(job)}{job.stage&&job.active?` · ${job.stage}`:''}{job.reason?` · ${job.reason}`:''}{job.retryAt>clock?` · Retry after ${formatDate(new Date(job.retryAt).toISOString())}`:''}</span>{(['pending','failed'].includes(job.status)||job.resumeRequired)&&<button className="min-h-9 font-semibold text-primary underline disabled:opacity-50" disabled={Boolean(busyAction)||job.active||job.retryAt>clock} onClick={()=>void resumeJob(job.id)}>{job.retryAt>clock?'Waiting for provider':'Resume job'}</button>}</div>)}</div>}
 
           <AdminPublicationReview key={user.id} accountId={user.id} token={session?.access_token||''} jobs={data?.jobs||[]} automaticEnabled={Boolean(data?.publicationPolicy?.automaticEnabled)} onAccepted={ids=>{if(account.current!==user.id)return;setJobIds(ids);void summary.refetch();}} />
 

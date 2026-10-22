@@ -19,6 +19,10 @@ export async function enqueueGeneration(kind:'daily'|'weekly',limit=2,now=Date.n
   let run=created?.[0] as GenerationRun|undefined;
   if(!run){const rows=await supabaseRest(`blog_generation_runs?idempotency_key=eq.${encodeURIComponent(key)}&select=*&limit=1`);run=rows?.[0];}
   if(!run)throw Error('The persistent publication job could not be created.');
+  if(mode==='review'&&run.status==='pending'&&run.checkpoint?.resumeRequired&&!(run.checkpoint?.retryAt>now)){
+    const changed=await supabaseRest(`blog_generation_runs?id=eq.${run.id}&status=eq.pending`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({reason:null,checkpoint:{...run.checkpoint,resumeRequired:false},updated_at:new Date().toISOString()})});
+    run=changed?.[0]||run;
+  }
   if(mode==='review'&&!run.checkpoint?.reviewRejected&&['pending','failed','skipped','awaiting_review'].includes(run.status)){
     const changed=await supabaseRest(`blog_generation_runs?id=eq.${run.id}&status=eq.${run.status}`,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({publication_mode:'review',checkpoint:{...run.checkpoint,limit:kind==='weekly'?1:Math.min(2,Math.max(1,limit))}})});
     run=changed?.[0]||run;
@@ -38,7 +42,8 @@ export async function generationStatus(ids?:string[]){
   const filter=ids?.length?`&id=in.(${ids.filter(id=>/^[a-f0-9-]{36}$/i.test(id)).join(',')})`:'';
   const rows=await supabaseRest(`blog_generation_runs?select=id,kind,publication_mode,status,reason,checkpoint,created_at,updated_at,lease_until&order=created_at.desc&limit=12${filter}`,{signal:AbortSignal.timeout(5000)});
   return (rows||[]).map((row:GenerationRun)=>({id:row.id,kind:row.kind,publicationMode:row.publication_mode,status:row.status,reason:row.reason,createdAt:row.created_at,updatedAt:row.updated_at,
-    published:row.checkpoint?.published||[],reviewApproved:row.checkpoint?.reviewDecision?.approved===true,active:row.status==='running'||row.status==='pending'&&!row.checkpoint?.resumeRequired,retryAt:row.checkpoint?.retryAt}));
+    published:row.checkpoint?.published||[],reviewApproved:row.checkpoint?.reviewDecision?.approved===true,active:row.status==='running'&&(!row.lease_until||Date.parse(row.lease_until)>Date.now())||row.status==='pending'&&!row.checkpoint?.resumeRequired,
+    stage:row.checkpoint?.stage,failure:row.checkpoint?.lastFailure,resumeRequired:Boolean(row.checkpoint?.resumeRequired||row.status==='running'&&row.lease_until&&Date.parse(row.lease_until)<=Date.now()),retryAt:row.checkpoint?.retryAt}));
 }
 export function validateEditorial(raw:any,brief:EvidenceBrief,recent:any[]=[]):string[]{
   const errors:string[]=[],paragraphs=raw?.paragraphs,sections=raw?.sections||[];
@@ -61,7 +66,9 @@ export function validateEditorial(raw:any,brief:EvidenceBrief,recent:any[]=[]):s
   if(brief.kind==='news'&&!text.toLowerCase().includes(brief.subject.toLowerCase()))errors.push('The article does not identify the affected installment.');
   const primaryText=brief.sources.filter(source=>source.primary).map(source=>`${source.text} ${source.publishedAt||''}`).join(' ').toLowerCase();
   const evidence=brief.kind==='news'?`${primaryText} ${brief.subject.toLowerCase()}`:[primaryText,...brief.facts,brief.headline,JSON.stringify(brief.ranking||{}),JSON.stringify(brief.charts||[])].join(' ').toLowerCase();
-  for(const number of text.match(/\b\d+(?:[.,:]\d+)*\b/g)||[])if(!evidence.includes(number))errors.push(`Unsupported numeric claim: ${number}`);
+  const numericEvidence=evidence.replace(/\b\d{1,3}(?:,\d{3})+\b/g,value=>value.replace(/,/g,''));
+  const evidenceNumbers=new Set(numericEvidence.match(/\b\d+(?:[.:]\d+)*\b/g)||[]);
+  for(const number of text.match(/\b\d+(?:[.,:]\d+)*\b/g)||[])if(!evidenceNumbers.has(number.replace(/,/g,'')))errors.push(`Unsupported numeric claim: ${number}`);
   if(brief.kind==='news')for(const [claim,confirmation] of [[/\b(died|death|passed away)\b/i,/\b(died|death|passed away)\b|死去|逝去|訃報/i],[/\b(cancelled|canceled|cancellation)\b/i,/cancel|中止|打ち切り/i],[/\b(replaced|replacement)\b/i,/replac|交代|降板/i]] as [RegExp,RegExp][])if(claim.test(text)&&!confirmation.test(primaryText))errors.push('A sensitive claim lacks explicit primary confirmation.');
   for(const block of blocks){const words=String(block.text||'').toLowerCase().split(/\s+/);for(let i=0;i+16<=words.length;i+=4){const phrase=words.slice(i,i+16).join(' ');if(primaryText.includes(phrase)&&!brief.subject.toLowerCase().includes(phrase))errors.push('Source prose was copied instead of synthesized.');}}
   for(const match of text.matchAll(/[“"]([^”"]{18,})[”"]/g))if(!evidence.includes(match[1].toLowerCase()))errors.push('A quoted passage is not present in the evidence.');
@@ -103,11 +110,21 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
   const state={published:[],next:0,limit:run.kind==='weekly'?1:2,...run.checkpoint,resumeRequired:false};
   try{
     if(state.retryAt&&state.retryAt>Date.now()){await save(run,token,'pending',{...state,resumeRequired:true},'Waiting for the provider retry deadline.');return;}
+    delete state.lastFailure;delete state.retryAt;
     const transport=new EditorialTransport(deadline);
-    if(!state.briefs){
+    const resumeActivity=state.activityPending||state.stage==='Activity report discovery'&&Array.isArray(state.briefs)&&!state.briefs.length;
+    if(!Array.isArray(state.briefs)||resumeActivity){
       state.stage='Evidence discovery';
       if(run.kind==='weekly'){const brief=await rankingBrief(transport,'weekly-ranking',Date.parse(run.created_at));state.briefs=brief?[brief]:[];}
-      else{state.discovery ||= {};state.briefs=await discoverNews(transport,state.discovery,async()=>{await save(run,token,'running',state);});if(!state.briefs.length){state.stage='Activity report discovery';const brief=await rankingBrief(transport,'data-report');state.briefs=brief?[brief]:[];}}
+      else{
+        if(!resumeActivity){state.discovery ||= {};const briefs=await discoverNews(transport,state.discovery,async()=>{await save(run,token,'running',state);});if(briefs.length)state.briefs=briefs;else state.activityPending=true;}
+        if(state.activityPending||resumeActivity){
+          state.stage='Activity report discovery';state.activityPending=true;
+          await save(run,token,'running',state);
+          const brief=await rankingBrief(transport,'data-report',Date.parse(run.created_at));
+          state.briefs=brief?[brief]:[];delete state.activityPending;
+        }
+      }
       await save(run,token,'running',state);
     }
     if(!state.briefs.length){await save(run,token,'skipped',state,'No recent primary-confirmed story or sufficiently complete activity report passed the evidence gate.');return;}
@@ -150,6 +167,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
     if(status===429||status===403)state.retryAt=Math.max(Date.now()+300000,/^\d+$/.test(header)?Date.now()+Number(header)*1000:Date.parse(header)||0);
     const paused=/budget reached|time budget/i.test(reason)||status===429||status>=500||['TimeoutError','AbortError'].includes((error as Error).name);
     if(paused)state.retryAt=Math.max(state.retryAt||0,Date.now()+30000);
+    state.lastFailure={stage:state.stage||'Publishing',provider:(error as any).provider||undefined,status:status||undefined,at:new Date().toISOString(),retryAt:state.retryAt};
     await save(run,token,paused?'pending':'failed',{...state,resumeRequired:paused},reason).catch(()=>undefined);
   }
 }

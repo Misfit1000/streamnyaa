@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { supabaseRest } from './adminAuth.js';
 
-export type SharedSnapshot<T> = { value: T; fetchedAt: number; stale: boolean; persistenceError?: string };
+export type SharedSnapshot<T> = { value: T; fetchedAt: number; stale: boolean; persistenceError?: string; refreshError?: unknown };
 const memory = new Map<string, SharedSnapshot<unknown>>();
 const flights = new Map<string, Promise<SharedSnapshot<unknown>>>();
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -65,7 +65,7 @@ export async function publicSnapshot<T>(key: string, ttlSeconds: number, load: (
       memory.set(key, result); while (memory.size > 100) memory.delete(memory.keys().next().value!);
       return result;
     } catch (error) {
-      if (prior && Date.now() - prior.fetchedAt < 60 * 86_400_000) return { ...prior, stale: true, ...(persistenceError ? { persistenceError } : {}) };
+      if (prior && Date.now() - prior.fetchedAt < 60 * 86_400_000) return { ...prior, stale: true, refreshError: error, ...(persistenceError ? { persistenceError } : {}) };
       throw error;
     } finally {
       if (token) await supabaseRest(`site_snapshot_leases?key=eq.${encodeURIComponent(key)}&token=eq.${token}`, { method: 'DELETE', signal: AbortSignal.timeout(2000) }).catch(() => undefined);

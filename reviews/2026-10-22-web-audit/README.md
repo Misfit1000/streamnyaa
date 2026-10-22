@@ -72,3 +72,13 @@ The integrated frontend run passed 669 tests (105 files). Final focused checks c
 An open candidate Home tab was kept across replacement of its hashed assets. Clicking Downloads recovered by one reload into `/nyaa`, with the page and navigation available. A controlled 503 source outage then rendered one Retry status and zero “No matching sources found” messages (`source-outage.jpg`). Web source searches now delegate automatic recovery to the shared coordinator, respecting Retry-After rather than issuing a default immediate retry.
 
 Production Admin access was available: the existing Control room and read-only Refresh worked. No Generate, Resume, approve/reject, account deletion or article mutation was performed. Existing production editorial jobs still report provider discovery outages/skips; this website repair intentionally preserves that review gate.
+
+## Publishing recovery follow-up
+
+Production Admin Generate was reproduced: it reached the worker but failed during AniList activity discovery with HTTP 500. Two rows labeled only `daily · pending` were separate dated runs, not evidence of duplicate publication. No article was published during reproduction.
+
+The repair replaces the failing global media-trend query with bounded per-title daily-history requests, retaining the same request budget, pacing and worker deadline. Completed five-title batches are cached independently so Resume does not restart completed work. Live bounded checks confirmed candidate metadata and per-title daily records were available; automated fixtures cover failure/restart and real date filtering. The inspected candidate sample and missing-day rules are disclosed; instantaneous trending only selects candidates, never supplies the ranking values.
+
+An interrupted daily activity fallback now remains unfinished even when news discovery returned an empty list. Generate reactivates a paused same-day run after its provider deadline and retains its discovery checkpoint. Saved provider/stage/status/retry details survive failure. Admin distinguishes queued/running/paused/private-review/skipped jobs, dates historical jobs, disables early Resume, and no longer presents zero published articles as success. Configured credentials are not described as proven model access. Numeric validation accepts genuine thousands separators while rejecting substring matches.
+
+Verification: TypeScript; 671 frontend tests across 106 files; 18 publishing/review/Calendar/gateway regressions; 19 web/account/route contracts. Private review remains required. Production deployment and a recovered private-draft run are verified separately below; no automatic-publication switch is enabled by these changes.

@@ -34,13 +34,13 @@ export class EditorialTransport{
         lookup:((_host:any,options:any,callback:any)=>options?.all?callback(null,pinned):callback(null,pinned[0].address,pinned[0].family)) as any},incoming=>resolve(new Response(Readable.toWeb(incoming) as any,{status:incoming.statusCode,headers:incoming.headers as any})));
       request.on('error',reject);request.end();
     }):await fetch(url,{...init,signal});
-    }catch{throw Object.assign(Error(`The editorial request to ${host} timed out or could not connect. Saved work can resume later.`),{status:503});}})();
-    if(!response.ok&&!(init.redirect==='manual'&&response.status>=300&&response.status<400))throw Object.assign(Error(`Evidence provider returned ${response.status}.`),{status:response.status,retryAfter:response.headers.get('retry-after')});
+    }catch{throw Object.assign(Error(`The editorial request to ${host} timed out or could not connect. Saved work can resume later.`),{status:503,provider:host});}})();
+    if(!response.ok&&!(init.redirect==='manual'&&response.status>=300&&response.status<400))throw Object.assign(Error(`Evidence provider ${host} returned HTTP ${response.status}.`),{status:response.status,provider:host,retryAfter:response.headers.get('retry-after')});
     return response;
   }
   async graph(query:string,variables:any){
     const response=await this.fetch('https://graphql.anilist.co',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,variables})},2100);
-    const value=await response.json();if(value.errors?.length)throw Error('AniList could not verify editorial data.');return value;
+    const value=await response.json();if(value.errors?.length)throw Object.assign(Error('AniList could not verify editorial data.'),{status:502,provider:'graphql.anilist.co'});return value;
   }
   async document(input:string,allowed:string[]):Promise<{url:string;text:string;links:string[];publishedAt?:string}>{
     let vetted=await safeEvidenceUrl(input,allowed),url=vetted.url;
@@ -64,15 +64,15 @@ const fields='id idMal title{romaji english} format status episodes genres avera
 export type DiscoveryCheckpoint={media?:any[];feedIndex?:number;leads?:{item:any;news:any}[];leadIndex?:number;briefs?:EvidenceBrief[];rejections?:{url:string;reason:string}[]};
 export async function discoverNews(transport:EditorialTransport,state:DiscoveryCheckpoint={},checkpoint:()=>Promise<void>=async()=>{}):Promise<EvidenceBrief[]>{
   if(!state.media){
-    const catalog=await publicSnapshot<any>('editorial:candidates:v1',3600,()=>transport.graph(`query{active:Page(perPage:12){media(type:ANIME,status:RELEASING,sort:TRENDING_DESC,isAdult:false){${fields}}} upcoming:Page(perPage:12){media(type:ANIME,status:NOT_YET_RELEASED,sort:POPULARITY_DESC,isAdult:false){${fields}}}}`,{}));
-    if(catalog.stale)throw Object.assign(Error('Current editorial candidates could not refresh.'),{status:503});
+    const catalog=await publicSnapshot<any>('editorial:candidates:v2',3600,()=>transport.graph(`query{active:Page(perPage:3){media(type:ANIME,status:RELEASING,sort:TRENDING_DESC,isAdult:false){${fields}}} upcoming:Page(perPage:3){media(type:ANIME,status:NOT_YET_RELEASED,sort:POPULARITY_DESC,isAdult:false){${fields}}}}`,{}),value=>Array.isArray(value?.data?.active?.media)&&Array.isArray(value?.data?.upcoming?.media));
+    if(catalog.stale)throw catalog.refreshError||Object.assign(Error('Current editorial candidate refresh is still pending.'),{status:503});
     state.media=[...(catalog.value?.data?.active?.media||[]).slice(0,3),...(catalog.value?.data?.upcoming?.media||[]).slice(0,3)];await checkpoint();
   }
   const media=state.media,leads=state.leads ||= [];
   for(state.feedIndex ||= 0;state.feedIndex<media.length;){
     const item=media[state.feedIndex];
     if(item.idMal){const source=await publicSnapshot<any>(`editorial:news:${item.idMal}`,3600,async()=>{const response=await transport.fetch(`https://api.tenrai.org/v1/anime/${item.idMal}/news`);const json=await response.json();if(!Array.isArray(json.data))throw Error('Invalid news discovery response.');return json;});
-      if(source.stale)throw Object.assign(Error(`News evidence for MAL ${item.idMal} could not refresh.`),{status:503});
+      if(source.stale)throw source.refreshError||Object.assign(Error(`News evidence for MAL ${item.idMal} could not refresh.`),{status:503});
       for(const news of source.value.data.slice(0,8)){const age=Date.now()-Date.parse(news.date||'');if(age>=0&&age<=48*3600_000&&/announce|confirm|season|film|movie|trailer|delay|postpon|cancel|cast|replace|died|dies|death|passed away|industry|studio|release/i.test(news.title||'')&&!leads.some(lead=>lead.news.url===news.url))leads.push({item,news});}
     }
     state.feedIndex++;await checkpoint();
@@ -114,21 +114,32 @@ export function calculateRanking(records:any[],period:{start:number;end:number},
 }
 export async function rankingBrief(transport:EditorialTransport,kind:'weekly-ranking'|'data-report',now=Date.now()):Promise<EvidenceBrief|undefined>{
   const period=precedingWeek(now),periodKey=new Date(period.end).toISOString().slice(0,10);
-  const snapshot=await publicSnapshot<any[]>(`editorial:daily-activity:${periodKey}`,86400,async()=>{
-    const found=new Set<number>();
-    for(let page=1;page<=3;page++){const candidates=await transport.graph(`query($start:Int!,$end:Int!,$page:Int!){Page(page:$page,perPage:50){pageInfo{hasNextPage} mediaTrends(date_greater:$start,date_lesser:$end,sort:TRENDING_DESC){mediaId}}}`,{start:period.start/1000-1,end:period.end/1000,page});for(const row of candidates.data?.Page?.mediaTrends||[])found.add(row.mediaId);if(!candidates.data?.Page?.pageInfo?.hasNextPage||found.size>=50)break;}
-    const ids=[...found].slice(0,50),records:any[]=[];
-    if(!ids.length)return records;
-    for(let page=1;page<=8;page++){const result=await transport.graph(`query($ids:[Int],$start:Int!,$end:Int!,$page:Int!){Page(page:$page,perPage:50){pageInfo{hasNextPage} mediaTrends(mediaId_in:$ids,date_greater:$start,date_lesser:$end,sort:DATE_DESC){mediaId date trending popularity media{id idMal type title{english romaji} coverImage{extraLarge large}}}}}`,{ids,start:period.start/1000-1,end:period.end/1000,page});records.push(...(result.data?.Page?.mediaTrends||[]).filter((row:any)=>row.media?.type==='ANIME'));if(!result.data?.Page?.pageInfo?.hasNextPage)break;}
-    return records;
-  });
-  if(snapshot.stale)return;
-  const previous=await readPublicSnapshot<Ranking>(`editorial:ranking:${new Date(period.start).toISOString().slice(0,10)}`),ranking=calculateRanking(snapshot.value,period,previous?.value);
-  if(ranking.eligibleCount<13)return;
+  // Page.mediaTrends intermittently fails upstream. Media.trends supplies the
+  // same recorded daily metric through bounded, independently reusable batches.
+  const snapshot=await publicSnapshot<{ids:number[];records:any[]}>(`editorial:daily-activity:v2:${periodKey}`,86400,async()=>{
+    const candidates=await publicSnapshot<any>(`editorial:activity-candidates:v2:${periodKey}`,86400,()=>transport.graph(`query EditorialActivityCandidates{Page(perPage:50){media(type:ANIME,sort:TRENDING_DESC,isAdult:false){id}}}`,{}),value=>Array.isArray(value?.data?.Page?.media));
+    if(candidates.stale)throw candidates.refreshError||Object.assign(Error('Activity candidate discovery is awaiting a fresh response.'),{status:503});
+    const ids=[...new Set<number>(candidates.value.data.Page.media.map((media:any)=>media.id).filter((id:any)=>Number.isSafeInteger(id)&&id>0))].slice(0,50),records:any[]=[];
+    for(let offset=0;offset<ids.length;offset+=5){
+      const batch=ids.slice(offset,offset+5),key=fingerprint(batch.join(','));
+      const history=await publicSnapshot<any>(`editorial:activity-history:v2:${key}`,86400,()=>transport.graph(`query EditorialActivityHistory{${batch.map((id,index)=>`m${index}:Media(id:${id},type:ANIME){id idMal type title{english romaji} coverImage{extraLarge large} trends(perPage:21,sort:DATE_DESC){nodes{mediaId date trending popularity}}}`).join(' ')}}`,{}),value=>Boolean(value?.data)&&batch.every((id,index)=>value.data[`m${index}`]?.id===id&&Array.isArray(value.data[`m${index}`]?.trends?.nodes)));
+      if(history.stale)throw history.refreshError||Object.assign(Error('Daily activity history is awaiting a fresh response.'),{status:503});
+      for(let index=0;index<batch.length;index++){
+        const {trends,...media}=history.value.data[`m${index}`];
+        for(const row of trends.nodes)if(row.mediaId===media.id&&Number.isFinite(row.date)&&row.date*1000>=period.start&&row.date*1000<period.end&&Number.isFinite(row.trending)&&row.trending>=0)records.push({...row,media});
+      }
+    }
+    return {ids,records};
+  },value=>Array.isArray(value?.ids)&&Array.isArray(value?.records));
+  if(snapshot.stale)throw snapshot.refreshError||Object.assign(Error('Daily activity report is awaiting a fresh response.'),{status:503});
+  const previous=await readPublicSnapshot<Ranking>(`editorial:ranking:${new Date(period.start).toISOString().slice(0,10)}`),ranking=calculateRanking(snapshot.value.records,period,previous?.value);
+  if(ranking.eligibleCount<(kind==='weekly-ranking'?13:5))return;
+  ranking.candidateCount=snapshot.value.ids.length;ranking.candidateIds=[...snapshot.value.ids].sort((a,b)=>a-b);
+  ranking.coverage=`Up to 50 anime discovered through the AniList catalog's trending list; ${ranking.candidateCount} candidates inspected, ${ranking.eligibleCount} with at least four recorded days. Ranking uses recorded daily activity over the preceding seven complete UTC days, not the instantaneous trending order. Missing days are excluded, not zero-filled. This bounded sample does not measure worldwide views, streams or sales.`;
   await writePublicSnapshot(`editorial:ranking:${periodKey}`,ranking,Date.now(),604800);
   const source:EvidenceSource={id:'anilist-activity',title:'AniList daily media activity',url:'https://docs.anilist.co/reference/object/mediatrend',retrievedAt:new Date(snapshot.fetchedAt).toISOString(),text:JSON.stringify(ranking),primary:true};
   const ids=new Set([...ranking.rows,...ranking.honorableMentions].map(row=>row.id));
-  const items=[...new Map(snapshot.value.filter(row=>ids.has(row.mediaId)).map(row=>[row.mediaId,toMediaItem(row.media)])).values()];
+  const items=[...new Map(snapshot.value.records.filter(row=>ids.has(row.mediaId)).map(row=>[row.mediaId,toMediaItem(row.media)])).values()];
   return{kind,subject:'AniList weekly activity',headline:kind==='weekly-ranking'?`AniList weekly activity: Top 10 for the week ending ${periodKey}`:`What seven days of AniList activity show through ${periodKey}`,fingerprint:fingerprint(`${kind}:${periodKey}`),sources:[source],items,facts:[ranking.method,ranking.coverage],ranking,
     charts:[{title:'Mean recorded daily AniList activity',unit:'activity',values:ranking.rows.map(row=>({label:row.title,value:Math.round(row.mean*100)/100,days:row.days}))}]};
 }
