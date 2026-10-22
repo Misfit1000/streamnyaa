@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {calculateRanking,type EvidenceBrief} from '../api/_shared/publishingData.ts';
 import {prepareEditorialBrief,periodLabel,reportNovelty} from '../api/_shared/editorialPolicy.ts';
-import {validateEditorial,enqueueManualGeneration,runGeneration} from '../api/_shared/publishing.ts';
+import {validateEditorial,enqueueManualGeneration,runGeneration,generationStatus} from '../api/_shared/publishing.ts';
 import {publicActivityEvidence} from '../src/lib/activityEvidence.ts';
 import {articleFromEditorialDraft,publicArticleContent} from '../src/lib/editorialPresentation.ts';
 import blog from '../api/blog.ts';
@@ -47,6 +47,12 @@ test('manual identities are qualified by authenticated owner and valid request I
   const original=globalThis.fetch,keys=['SUPABASE_URL','SUPABASE_SECRET_KEY'] as const,old=keys.map(k=>process.env[k]);process.env.SUPABASE_URL='https://manual.test';process.env.SUPABASE_SECRET_KEY='fixture';const bodies:any[]=[];
   globalThis.fetch=(async(input:any,init:any={})=>{const url=String(input);if(url.includes('blog_publication_settings'))return Response.json([{automatic_enabled:true}]);const body=JSON.parse(init.body);bodies.push(body);return Response.json([{id:body.p_key,origin:'manual',publication_mode:'review'}]);}) as any;
   try{const id='00000000-0000-0000-0000-000000000123';assert.equal((await enqueueManualGeneration('owner-a',id)).id,(await enqueueManualGeneration('owner-a',id)).id);assert.notEqual((await enqueueManualGeneration('owner-a',id)).id,(await enqueueManualGeneration('owner-b',id)).id);await assert.rejects(enqueueManualGeneration('owner','invalid'),/request ID/);assert.ok(bodies.every(b=>b.p_origin==='manual'));}
+  finally{globalThis.fetch=original;keys.forEach((k,i)=>old[i]===undefined?delete process.env[k]:process.env[k]=old[i]);}
+});
+test('status polling reads compact checkpoint projections rather than drafts or captured observations',async()=>{
+  const original=globalThis.fetch,keys=['SUPABASE_URL','SUPABASE_SECRET_KEY'] as const,old=keys.map(k=>process.env[k]);process.env.SUPABASE_URL='https://status.test';process.env.SUPABASE_SECRET_KEY='fixture';
+  globalThis.fetch=(async(input:any)=>{const select=new URL(String(input)).searchParams.get('select')!;assert.ok(!select.split(',').includes('checkpoint'));assert.ok(select.includes('writer:checkpoint->modelWork->request'));return Response.json([{id:'job',kind:'daily',origin:'manual',editorial_version:3,status:'skipped',reason:'No article published. Most recent draft rejection: No eligible new story: this activity period has already been covered.',published:[],stage:'Activity report discovery',resumeRequired:false,writer:{model:'gemini-2.5-flash'}}]);}) as any;
+  try{const [status]=await generationStatus();assert.equal(status.origin,'manual');assert.equal(status.editorialVersion,3);assert.match(status.reason!,/^No eligible new story:/);assert.equal(status.writer.model,'gemini-2.5-flash');assert.equal(status.active,false);}
   finally{globalThis.fetch=original;keys.forEach((k,i)=>old[i]===undefined?delete process.env[k]:process.env[k]=old[i]);}
 });
 

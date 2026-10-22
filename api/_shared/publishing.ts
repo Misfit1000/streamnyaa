@@ -57,8 +57,9 @@ export async function enqueueGeneration(kind:'daily'|'weekly',limit=2,now=Date.n
 }
 export async function generationStatus(ids?:string[]){
   const filter=ids?.length?`&id=in.(${ids.filter(id=>/^[a-f0-9-]{36}$/i.test(id)).join(',')})`:'';
-  const rows=await supabaseRest(`blog_generation_runs?select=id,kind,origin,editorial_version,publication_mode,status,reason,checkpoint,created_at,updated_at,lease_until&order=created_at.desc&limit=12${filter}`,{signal:AbortSignal.timeout(5000)});
-  return (rows||[]).map((row:GenerationRun)=>({id:row.id,kind:row.kind,origin:row.origin,editorialVersion:row.editorial_version||2,publicationMode:row.publication_mode,status:row.status,reason:row.reason,createdAt:row.created_at,updatedAt:row.updated_at,
+  const rows=await supabaseRest(`blog_generation_runs?select=id,kind,origin,editorial_version,publication_mode,status,reason,created_at,updated_at,lease_until,published:checkpoint->published,reviewDecision:checkpoint->reviewDecision,stage:checkpoint->>stage,lastFailure:checkpoint->lastFailure,writer:checkpoint->modelWork->request,resumeRequired:checkpoint->resumeRequired,retryAt:checkpoint->retryAt&order=created_at.desc&limit=12${filter}`,{signal:AbortSignal.timeout(5000)});
+  const normalized=(rows||[]).map((row:any)=>({...row,checkpoint:row.checkpoint||{published:row.published,reviewDecision:row.reviewDecision,stage:row.stage,lastFailure:row.lastFailure,modelWork:{request:row.writer},resumeRequired:row.resumeRequired,retryAt:row.retryAt}}));
+  return normalized.map((row:GenerationRun)=>({id:row.id,kind:row.kind,origin:row.origin,editorialVersion:row.editorial_version||2,publicationMode:row.publication_mode,status:row.status,reason:row.editorial_version===3?row.reason?.replace(/^No article published\. Most recent draft rejection: (?=No eligible new story:)/,''):row.reason,createdAt:row.created_at,updatedAt:row.updated_at,
     published:row.checkpoint?.published||[],reviewApproved:row.checkpoint?.reviewDecision?.approved===true,active:row.status==='running'&&(!row.lease_until||Date.parse(row.lease_until)>Date.now())||row.status==='pending'&&!row.checkpoint?.resumeRequired&&Date.parse(row.updated_at)>Date.now()-300000,
     stage:row.checkpoint?.stage,failure:row.checkpoint?.lastFailure,writer:row.checkpoint?.modelWork?.request,resumeRequired:Boolean(row.checkpoint?.resumeRequired||row.status==='running'&&row.lease_until&&Date.parse(row.lease_until)<=Date.now()||row.status==='pending'&&Date.parse(row.updated_at)<=Date.now()-300000),retryAt:row.checkpoint?.retryAt||row.checkpoint?.modelWork?.request?.retryAt}));
 }
@@ -171,7 +172,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
       if(run.editorial_version===3){
         prepareEditorialBrief(brief);
         const novelty=reportNovelty(brief,previousReport?[previousReport]:[]);
-        if(novelty){state.rejections=[...(state.rejections||[]),{fingerprint:brief.fingerprint,reason:[novelty]}].slice(-4);state.next++;delete state.draft;delete state.modelWork;await save(run,token,'running',state);continue;}
+        if(novelty){state.skips=[...(state.skips||[]),novelty].slice(-4);state.next++;delete state.draft;delete state.modelWork;await save(run,token,'running',state);continue;}
       }
       const articleSlug=`${slug(brief.headline)}-${brief.fingerprint.slice(0,8)}`;
       if(brief.kind==='news'&&!brief.sources.some(source=>source.primary&&Date.parse(source.publishedAt||'')>=Date.now()-7*86400_000)){
@@ -204,7 +205,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
       state.published.push(articleSlug);state.next++;delete state.draft;delete state.modelWork;delete state.approvedRevision;delete state.reviewRevision;await save(run,token,'running',state);recent.unshift(post);if(post.ranking)previousReport=post;
     }
     const rejection=state.rejections?.at(-1)?.reason?.join(' ');
-    await save(run,token,state.published.length?'published':'skipped',state,state.published.length?undefined:rejection?`No article published. Most recent draft rejection: ${rejection}`.slice(0,800):'Candidates were already covered; no new article was published.');
+    await save(run,token,state.published.length?'published':'skipped',state,state.published.length?undefined:rejection?`No article published. Most recent draft rejection: ${rejection}`.slice(0,800):state.skips?.at(-1)||'Candidates were already covered; no new article was published.');
   }catch(error){
     const status=(error as any).status,header=String((error as any).retryAfter||''),reason=`${state.stage||'Publishing'}: ${String((error as Error).message||'Publication failed.')}`.slice(0,800);
     if(status===429||status===403)state.retryAt=Math.max(Date.now()+300000,/^\d+$/.test(header)?Date.now()+Number(header)*1000:Date.parse(header)||0);

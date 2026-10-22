@@ -1,7 +1,7 @@
 export type AdminGenerationJob={id:string;kind:string;origin?:'manual'|'scheduled';editorialVersion?:number;status:string;active:boolean;stage?:string;reason?:string;createdAt?:string;updatedAt?:string;retryAt?:number;resumeRequired?:boolean;published:string[]};
 export function generationJobLabel(job:AdminGenerationJob){
  if(job.status==='awaiting_review')return 'Ready for review';
- if(job.status==='skipped')return 'No eligible article';
+ if(job.status==='skipped')return job.editorialVersion===3?'No eligible new story':'No eligible article';
  if(job.status==='running')return job.active?'Running':'Paused';
  if(job.status==='pending')return job.active?'Queued':'Paused';
  return job.status==='failed'?'Failed':job.status==='published'?'Published':job.status;
