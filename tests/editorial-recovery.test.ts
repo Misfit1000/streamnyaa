@@ -85,3 +85,10 @@ test('report dates, rounded recorded means and punctuation inside quoted titles 
  assert.ok(validateEditorial({...draft,paragraphs:[{...draft.paragraphs[0],text:draft.paragraphs[0].text.replace('2457.86','2457.87')},draft.paragraphs[1]]},brief).some(error=>/Unsupported numeric claim: 2457.87/.test(error)));
  assert.ok(validateEditorial({...draft,excerpt:draft.excerpt.replace(title,'An unsupported statement about viewers')},brief).some(error=>/quoted passage/.test(error)));
 });
+
+test('model outages retain provider status and retry information without claiming publication',async()=>{
+ const oldFetch=globalThis.fetch,oldKey=process.env.GEMINI_API_KEY;process.env.GEMINI_API_KEY='fixture';
+ globalThis.fetch=(async()=>new Response('Controlled model outage',{status:503,headers:{'Retry-After':'60'}})) as any;
+ try{const {authorBrief}=await import('../api/_shared/publishing.ts');await assert.rejects(authorBrief({kind:'data-report'} as any,[],Date.now()+120000),(error:any)=>error.status===503&&error.provider==='generativelanguage.googleapis.com'&&error.retryAfter==='60');}
+ finally{globalThis.fetch=oldFetch;if(oldKey===undefined)delete process.env.GEMINI_API_KEY;else process.env.GEMINI_API_KEY=oldKey;}
+});

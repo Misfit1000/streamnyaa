@@ -116,6 +116,14 @@ export default function AdminDashboard() {
   const storedAdmins = data?.admins?.stored || [];
   const recentArticles = data?.recentArticles || [];
 
+  const trackAcceptedJobs=(ids:string[],acceptedJobs?:any[])=>{
+    // A resumed run keeps its ID. Replace its previous terminal cache before
+    // subscribing, otherwise that old result can immediately stop polling.
+    queryClient.setQueryData(['admin-jobs',user?.id,...ids],{jobs:acceptedJobs||ids.map(id=>({id,status:'pending',active:true,published:[]}))});
+    setJobIds(ids);
+    try{localStorage.setItem(`streamnyaa.admin.jobs.${user?.id}`,JSON.stringify(ids));}catch{/* Optional status restoration. */}
+  };
+
   if (loading) return <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">Checking admin access...</div>;
   if (!user) return <Navigate to="/login/admin" replace />;
 
@@ -158,8 +166,7 @@ export default function AdminDashboard() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Generation failed.');
       if(account.current!==owner)return;
-      const accepted=(result.jobs||[]).map((job:any)=>job.id);setJobIds(accepted);
-      try{localStorage.setItem(`streamnyaa.admin.jobs.${owner}`,JSON.stringify(accepted));}catch{/* Status remains in memory. */}
+      const accepted=(result.jobs||[]).map((job:any)=>job.id);trackAcceptedJobs(accepted,result.jobs||[]);
       setActionMessage(generationFeedback(result.jobs||[]));
       summary.refetch();
     } catch (error) {
@@ -175,8 +182,9 @@ export default function AdminDashboard() {
     try{
       const response=await fetch('/api/admin/generate-blog',{method:'POST',headers:{Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({jobId:id})});
       if(!response.ok)throw Error('The publication job could not resume.');
+      const result=await response.json();
       if(account.current!==owner)return;
-      setJobIds([id]);try{localStorage.setItem(`streamnyaa.admin.jobs.${owner}`,JSON.stringify([id]));}catch{/* In-memory status remains available. */}
+      trackAcceptedJobs([id],result.jobs);
       setActionMessage('Resume accepted. Publication still requires evidence, quality checks and a durable save.');
     }catch(error){if(account.current===owner)setActionError(error instanceof Error?error.message:'The job could not resume.');}
     finally{if(account.current===owner)setBusyAction('');}
@@ -287,7 +295,7 @@ export default function AdminDashboard() {
           {jobs.isError&&<p role="status" className="mt-3 text-sm text-amber-200">Publication status could not refresh. <button className="underline" onClick={()=>void jobs.refetch()}>Retry status</button></p>}
           {!!data?.jobs?.length&&<div className="mt-3 space-y-2 text-xs text-muted-foreground">{data.jobs.slice(0,3).map((job:any)=><div key={job.id} className="flex flex-wrap items-center justify-between gap-2"><span>{job.kind} · {formatDate(job.createdAt)} · {generationJobLabel(job)}{job.stage&&job.active?` · ${job.stage}`:''}{job.reason?` · ${job.reason}`:''}{job.retryAt>clock?` · Retry after ${formatDate(new Date(job.retryAt).toISOString())}`:''}</span>{(['pending','failed'].includes(job.status)||job.resumeRequired)&&<button className="min-h-9 font-semibold text-primary underline disabled:opacity-50" disabled={Boolean(busyAction)||job.active||job.retryAt>clock} onClick={()=>void resumeJob(job.id)}>{job.retryAt>clock?'Waiting for provider':'Resume job'}</button>}</div>)}</div>}
 
-          <AdminPublicationReview key={user.id} accountId={user.id} token={session?.access_token||''} jobs={data?.jobs||[]} automaticEnabled={Boolean(data?.publicationPolicy?.automaticEnabled)} onAccepted={ids=>{if(account.current!==user.id)return;setJobIds(ids);void summary.refetch();}} />
+          <AdminPublicationReview key={user.id} accountId={user.id} token={session?.access_token||''} jobs={data?.jobs||[]} automaticEnabled={Boolean(data?.publicationPolicy?.automaticEnabled)} onAccepted={ids=>{if(account.current!==user.id)return;trackAcceptedJobs(ids);void summary.refetch();}} />
 
           <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_380px]">
             <div className="space-y-6">

@@ -9,18 +9,23 @@ const job={id:'00000000-0000-0000-0000-000000000002',kind:'daily',status:'pendin
 const summary={generatedBlogArticles:4,admins:{env:[],stored:[],tableReady:true},jobs:[],config:{geminiConfigured:true},publicationPolicy:{automaticEnabled:false}};
 afterEach(()=>{cleanup();vi.unstubAllGlobals();localStorage.clear();});
 it('Generate acknowledges the saved job, follows status and reports a private draft instead of zero published',async()=>{
- let release!:(response:Response)=>void;
+ let release!:(response:Response)=>void,readStatus!:(response:Response)=>void;
  const fetcher=vi.fn(async(input:any,init?:RequestInit)=>{
   if(init?.method==='POST')return await new Promise<Response>(resolve=>{release=resolve;});
-  if(String(input).includes('generation-status'))return new Response(JSON.stringify({jobs:[{...job,status:'awaiting_review',active:false,resumeRequired:true}]}));
+  if(String(input).includes('generation-status'))return await new Promise<Response>(resolve=>{readStatus=resolve;});
   return new Response(JSON.stringify(summary));
  });vi.stubGlobal('fetch',fetcher);
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ client.setQueryData(['admin-jobs','owner',job.id],{jobs:[{...job,status:'skipped',active:false,reason:'An old finished attempt.'}]});
  render(<MemoryRouter><QueryClientProvider client={client}><AdminDashboard/></QueryClientProvider></MemoryRouter>);
  await screen.findByText('Configured');const button=screen.getByRole('button',{name:'Generate'});
  fireEvent.click(button);expect(button.hasAttribute('disabled')).toBe(true);
  expect(screen.getByRole('status').textContent).toContain('Starting draft preparation');
  release(new Response(JSON.stringify({accepted:true,jobs:[job]}),{status:202}));
+ await waitFor(()=>expect(readStatus).toBeDefined());
+ expect(screen.getByRole('status').textContent).toContain('Draft preparation is running');
+ expect(localStorage.getItem('streamnyaa.admin.jobs.owner')).toContain(job.id);
+ readStatus(new Response(JSON.stringify({jobs:[{...job,status:'awaiting_review',active:false,resumeRequired:true}]})));
  await screen.findByText(/A draft is saved privately and ready for review/);
  expect(fetcher.mock.calls.filter(call=>call[1]?.method==='POST')).toHaveLength(1);
  expect(fetcher.mock.calls.some(call=>String(call[0]).includes(job.id))).toBe(true);
