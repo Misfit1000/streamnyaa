@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { articleHtml, scriptJson } from '../api/_shared/blogHtml.ts';
 import { BLOG_POSTS } from '../src/api/blogShared.ts';
 import blog from '../api/blog.ts';
+import {load} from 'cheerio';
 
 const post:any={...BLOG_POSTS[0],articleSlug:'confirmed-release-fixture',qualityVersion:2,articleStatus:'published',
   generatedAt:'2026-10-19T12:00:00Z',updatedAt:'2026-10-19T12:00:00Z',items:[],
@@ -29,6 +30,14 @@ test('embedded JSON and head metadata cannot terminate scripts or inject tags',(
   const html=articleHtml(hostile,'/blog/confirmed-release-fixture');
   assert.doesNotMatch(html,/<script>alert\(1\)<\/script>|<img src=x/);
   assert.equal(JSON.parse(scriptJson({v:'</script>\u2028'})).v,'</script>\u2028');
+});
+test('future articles have one visible headline/summary and omit raw observations from normal bootstrap',()=>{
+  const future={...post,qualityVersion:3,activityEvidence:{observations:[{privateFixtureMarker:'raw-observations-live-at-evidence-endpoint'}]},items:[{id:1,mal_id:1,title:'Fixture Anime',image:'https://image.test/fixture.jpg',genres:[],studios:[]}]};
+  const html=articleHtml(future as any,'/blog/'+future.articleSlug),$=load(html),root=$('#root');
+  assert.equal(root.find('h1').length,1);assert.equal(root.find('h2').filter((_,el)=>$(el).text()===post.article.headline).length,0);
+  assert.equal(root.text().split(post.article.excerpt).length-1,1);assert.match(root.text(),/The confirmed article body/);assert.doesNotMatch(html,/raw-observations-live-at-evidence-endpoint/);
+  const bootstrap=JSON.parse($('#streamnyaa-article').text());assert.equal(bootstrap.post.hasActivityEvidence,true);assert.equal(bootstrap.post.activityEvidence,undefined);
+  const legacy=load(articleHtml({...future,qualityVersion:2} as any,'/blog/'+future.articleSlug));assert.equal(legacy('#root h2').filter((_,el)=>legacy(el).text()===post.article.headline).length,1);
 });
 
 test('HTML reads are GET-only and distinguish outage, absence and canonical redirects without generation',async()=>{

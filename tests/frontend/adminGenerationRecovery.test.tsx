@@ -18,7 +18,7 @@ it('Generate acknowledges the saved job, follows status and reports a private dr
  const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
  client.setQueryData(['admin-jobs','owner',job.id],{jobs:[{...job,status:'skipped',active:false,reason:'An old finished attempt.'}]});
  render(<MemoryRouter><QueryClientProvider client={client}><AdminDashboard/></QueryClientProvider></MemoryRouter>);
- await screen.findByText('Configured');const button=screen.getByRole('button',{name:'Generate'});
+ await screen.findByText(/Access checked when writing/);const button=screen.getByRole('button',{name:'Generate'});
  fireEvent.click(button);expect(button.hasAttribute('disabled')).toBe(true);
  expect(screen.getByRole('status').textContent).toContain('Starting draft preparation');
  release(new Response(JSON.stringify({accepted:true,jobs:[job]}),{status:202}));
@@ -54,4 +54,21 @@ it('shows a saved draft as written and never offers Resume for an approval gate'
  render(<MemoryRouter><QueryClientProvider client={client}><AdminDashboard/></QueryClientProvider></MemoryRouter>);
  await screen.findByText(/Draft written\. Generate saves a private draft/);
  expect(screen.getByRole('button',{name:'Review saved draft'})).toBeTruthy();expect(screen.queryByRole('button',{name:'Resume job'})).toBeNull();client.clear();
+});
+it('reuses a persisted manual request after a lost response, then assigns a new ID to the next deliberate run',async()=>{
+ const bodies:any[]=[];let fail=true;
+ vi.stubGlobal('fetch',vi.fn(async(_input:any,init?:RequestInit)=>{
+  if(init?.method==='POST'){bodies.push(JSON.parse(String(init.body)));if(fail){fail=false;throw new TypeError('Controlled lost response');}return new Response(JSON.stringify({accepted:true,jobs:[{...job,status:'awaiting_review',active:false}]}),{status:202});}
+  return new Response(JSON.stringify(summary));
+ }));
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const ui=()=> <MemoryRouter><QueryClientProvider client={client}><AdminDashboard/></QueryClientProvider></MemoryRouter>;
+ const first=render(ui());await screen.findByText(/Access checked when writing/);
+ fireEvent.click(screen.getByRole('button',{name:'Generate'}));await screen.findByText('Controlled lost response');
+ const pending=JSON.parse(localStorage.getItem('streamnyaa.admin.request.owner')!);expect(pending.id).toBe(bodies[0].requestId);
+ first.unmount();client.clear();render(ui());await screen.findByText(/Access checked when writing/);
+ fireEvent.click(screen.getByRole('button',{name:'Generate'}));await waitFor(()=>expect(bodies).toHaveLength(2));
+ expect(bodies[1].requestId).toBe(bodies[0].requestId);await waitFor(()=>expect(localStorage.getItem('streamnyaa.admin.request.owner')).toBeNull());
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Generate'}).hasAttribute('disabled')).toBe(false));
+ fireEvent.click(screen.getByRole('button',{name:'Generate'}));await waitFor(()=>expect(bodies).toHaveLength(3));expect(bodies[2].requestId).not.toBe(bodies[1].requestId);client.clear();
 });

@@ -41,7 +41,7 @@ function Metric({ label, value, detail }: { label: string; value: string | numbe
   );
 }
 
-function HealthRow({ title, ready, detail }: { title: string; ready: boolean; detail: string }) {
+function HealthRow({ title, ready, detail, checked=false }: { title: string; ready: boolean; detail: string; checked?:boolean }) {
   return (
     <div className="grid grid-cols-[24px_1fr_auto] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
       {ready ? <CheckCircle2 className="h-5 w-5 text-emerald-300" /> : <AlertTriangle className="h-5 w-5 text-amber-300" />}
@@ -50,7 +50,7 @@ function HealthRow({ title, ready, detail }: { title: string; ready: boolean; de
         <span className="mt-0.5 block text-xs text-muted-foreground">{detail}</span>
       </span>
       <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${ready ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' : 'border-amber-500/20 bg-amber-500/10 text-amber-300'}`}>
-        {ready ? 'Ready' : 'Check'}
+        {ready ? checked?'Read verified':'Configured' : 'Check'}
       </span>
     </div>
   );
@@ -70,10 +70,13 @@ export default function AdminDashboard() {
   const [visible,setVisible]=useState(document.visibilityState!=='hidden');
   const [clock,setClock]=useState(Date.now());
   const account=useRef(user?.id);account.current=user?.id;
+  const manualRequest=useRef<{id:string;mode:'one'|'both'}|null>(null),manualInFlight=useRef(false);
   useEffect(()=>{const update=()=>setVisible(document.visibilityState!=='hidden');document.addEventListener('visibilitychange',update);return()=>document.removeEventListener('visibilitychange',update);},[]);
   useEffect(()=>{if(!visible)return;setClock(Date.now());const timer=setInterval(()=>setClock(Date.now()),30_000);return()=>clearInterval(timer);},[visible]);
   useEffect(()=>{
     setJobIds([]);setActionMessage('');setActionError('');setBusyAction('');
+    manualRequest.current=null;manualInFlight.current=false;
+    try{const saved=JSON.parse(localStorage.getItem(`streamnyaa.admin.request.${user?.id}`)||'null');if(saved&&/^[a-f0-9-]{36}$/i.test(saved.id)&&['one','both'].includes(saved.mode))manualRequest.current=saved;}catch{/* Optional retry restoration. */}
     queryClient.removeQueries({predicate:query=>['admin-summary','admin-jobs','admin-draft'].includes(String(query.queryKey[0]))&&query.queryKey[1]!==user?.id});
     try{if(user?.id)setJobIds(JSON.parse(localStorage.getItem(`streamnyaa.admin.jobs.${user.id}`)||'[]').filter((id:unknown)=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id)).slice(0,4));}catch{/* Optional status restoration. */}
   },[user?.id,queryClient]);
@@ -148,8 +151,12 @@ export default function AdminDashboard() {
   }
 
   const triggerGemini = async (mode: 'one' | 'both') => {
-    if (!session?.access_token) return;
+    if (!session?.access_token||busyAction||manualInFlight.current) return;
+    if(manualRequest.current&&manualRequest.current.mode!==mode){setActionError('Retry the previous generation request using the same one/two-draft button so a lost response cannot create a duplicate.');return;}
     const owner=user?.id;
+    manualInFlight.current=true;
+    manualRequest.current ||= {id:crypto.randomUUID(),mode};
+    try{localStorage.setItem(`streamnyaa.admin.request.${owner}`,JSON.stringify(manualRequest.current));}catch{/* In-memory retry still works. */}
     setActionError('');
     setActionMessage('');
     setBusyAction(mode === 'both' ? 'generate-both' : 'generate');
@@ -162,18 +169,19 @@ export default function AdminDashboard() {
           Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode,requestId:manualRequest.current.id }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Generation failed.');
       if(account.current!==owner)return;
+      manualRequest.current=null;try{localStorage.removeItem(`streamnyaa.admin.request.${owner}`);}catch{/* Optional restoration. */}
       const accepted=(result.jobs||[]).map((job:any)=>job.id);trackAcceptedJobs(accepted,result.jobs||[]);
       setActionMessage(generationFeedback(result.jobs||[]));
       summary.refetch();
     } catch (error) {
       if(account.current===owner)setActionError(error instanceof Error ? error.message : 'Generation failed.');
     } finally {
-      if(account.current===owner)setBusyAction('');
+      if(account.current===owner){setBusyAction('');manualInFlight.current=false;}
     }
   };
 
@@ -382,7 +390,7 @@ export default function AdminDashboard() {
                 <div className="overflow-hidden rounded-lg border border-border bg-background/35">
                   <HealthRow title="Article archive" ready={archiveReady} detail={archiveReady ? 'Database archive is configured.' : 'Database archive is missing.'} />
                   <HealthRow title="Backup path" ready={backupReady} detail={backupReady ? 'GitHub fallback is configured.' : 'GitHub fallback is not configured.'} />
-                  <HealthRow title="Admin table" ready={tableReady} detail={tableReady ? 'Admin access table is ready.' : 'Admin table setup is needed.'} />
+                  <HealthRow title="Admin table" ready={tableReady} checked detail={tableReady ? 'Admin access table read succeeded.' : 'Admin table setup is needed.'} />
                   <HealthRow title="Gemini generation" ready={Boolean(data?.config?.geminiConfigured)} detail={data?.config?.geminiConfigured ? 'Article generation key is configured.' : 'Article generation key is missing.'} />
                   <HealthRow title="Production URL" ready={Boolean(data?.config?.productionUrl)} detail={data?.config?.productionUrl || 'Production URL not reported.'} />
                 </div>

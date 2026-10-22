@@ -185,6 +185,8 @@ export interface BlogArticleContent {
 }
 
 export type BlogPostData = BlogPostDefinition & {
+  activityEvidence?: import('./editorialTypes').ActivityEvidence;
+  hasActivityEvidence?: boolean;
   qualityVersion?: number;
   contentKind?: 'news' | 'data-report' | 'weekly-ranking';
   sources?: {id:string;title:string;url:string;publishedAt?:string;retrievedAt?:string;primary?:boolean}[];

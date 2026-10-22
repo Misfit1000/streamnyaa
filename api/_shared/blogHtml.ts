@@ -2,12 +2,14 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import type { BlogPostData } from '../../src/api/blogShared.js';
+import {publicArticleContent} from '../../src/lib/editorialPresentation.js';
 
 const require = createRequire(path.join(process.cwd(),'package.json'));
 const escape = (value:unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export const scriptJson = (value:unknown) => JSON.stringify(value).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
 
 export function articleHtml(post:BlogPostData, requestPath:string) {
+  post=publicArticleContent(post);
   const renderer=require(path.join(process.cwd(),'api/_generated/blog-renderer.cjs'));
   const article=renderer.renderArticle(post,requestPath);
   const canonical='https://www.streamnyaa.xyz'+article.canonicalPath;

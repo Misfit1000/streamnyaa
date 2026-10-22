@@ -4,15 +4,17 @@ export function editorialModel(){
   return model;
 }
 const provider='generativelanguage.googleapis.com';
-export type ModelRequestState={model?:string;attempts?:number;failures?:number;retryAt?:number;retryAfter?:string;lastAttemptAt?:string;lastStatus?:number;lastCode?:string;lastMessage?:string;finishReason?:string;usage?:{input?:number;output?:number;thinking?:number}};
+export type ModelRequestState={model?:string;editorialVersion?:number;attempts?:number;failures?:number;retryAt?:number;retryAfter?:string;lastAttemptAt?:string;lastStatus?:number;lastCode?:string;lastMessage?:string;finishReason?:string;usage?:{input?:number;output?:number;thinking?:number}};
 export type ModelRequestBudget={requests:number;limit:number};
 type Runtime={now:()=>number;sleep:(ms:number)=>Promise<void>};
 const runtime:Runtime={now:Date.now,sleep:ms=>new Promise(resolve=>setTimeout(resolve,ms))};
 const backoff=[30_000,60_000,120_000,300_000];
 const sourceIds={type:'ARRAY',items:{type:'STRING'}};
 const articleSchema={type:'OBJECT',properties:{headline:{type:'STRING'},excerpt:{type:'STRING'},paragraphs:{type:'ARRAY',maxItems:12,items:{type:'OBJECT',properties:{text:{type:'STRING'},sourceIds},required:['text','sourceIds']}},sections:{type:'ARRAY',maxItems:6,items:{type:'OBJECT',properties:{heading:{type:'STRING'},body:{type:'STRING'},sourceIds},required:['heading','body','sourceIds']}},rejectReason:{type:'STRING'}},required:['headline','excerpt','paragraphs','sections']};
-export function editorialGenerationConfig(model:string){
-  return{temperature:.35,maxOutputTokens:8192,responseMimeType:'application/json',...(model.startsWith('gemini-2.5-')?{thinkingConfig:{thinkingBudget:2048},responseSchema:articleSchema}:{})};
+export function editorialGenerationConfig(model:string,version=2){
+  const schema=structuredClone(articleSchema);
+  if(version===3){(schema.properties.paragraphs.items.properties as any).findingIds=sourceIds;(schema.properties.sections.items.properties as any).findingIds=sourceIds;}
+  return{temperature:.35,maxOutputTokens:8192,responseMimeType:'application/json',...(model.startsWith('gemini-2.5-')?{thinkingConfig:{thinkingBudget:2048},responseSchema:schema}:{})};
 }
 function retryDeadline(header:string|null,now:number){if(!header)return 0;return /^\d+(?:\.\d+)?$/.test(header)?now+Number(header)*1000:Date.parse(header)||0;}
 function modelError(state:ModelRequestState){
@@ -30,7 +32,7 @@ export async function requestEditorialModel(prompt:string,deadline:number,state:
     await onCheckpoint();
     let response:Response|undefined,result:any;
     try{
-      response=await fetch(`https://${provider}/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',signal:AbortSignal.timeout(Math.min(60_000,Math.max(1,deadline-time.now()-5000))),headers:{'Content-Type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY!},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:editorialGenerationConfig(model)})});
+      response=await fetch(`https://${provider}/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',signal:AbortSignal.timeout(Math.min(60_000,Math.max(1,deadline-time.now()-5000))),headers:{'Content-Type':'application/json','x-goog-api-key':process.env.GEMINI_API_KEY!},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:editorialGenerationConfig(model,state.editorialVersion)})});
       result=await response.json().catch(()=>undefined);
     }catch(error){state.lastStatus=503;state.lastCode=(error as Error).name==='TimeoutError'?'TIMEOUT':'CONNECTION_ERROR';state.lastMessage='The request timed out or could not connect.';}
     if(response?.ok&&result&&typeof result==='object'){

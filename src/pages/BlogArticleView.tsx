@@ -3,6 +3,7 @@ import { ArrowLeft, BarChart3, CalendarClock, CheckCircle2, ExternalLink, HelpCi
 import Seo from '../components/Seo';
 import AdSenseAd from '../components/AdSenseAd';
 import ArticleEvidence, { ArticleCitations } from '../components/ArticleEvidence';
+import EditorialArticleBody from '../components/EditorialArticleBody';
 import { articlePath, BLOG_POSTS, getBlogPost } from '../api/blog';
 import type { BlogMediaItem, BlogPostData, BlogPostDefinition } from '../api/blog';
 import { animePath } from '../lib/slug';
@@ -207,6 +208,7 @@ export default function BlogArticleView({ post, definition }: {post: BlogPostDat
               <div className="border border-border rounded-2xl p-6 bg-secondary/40 text-muted-foreground">No current entries are available for this article yet. Try refreshing again shortly.</div>
             ) : (
               <>
+                {post.qualityVersion===3?<><EditorialArticleBody post={post}/><AdSenseAd/></>:<>
                 {image && heroAnime ? (
                   isGeminiArticle ? (
                     <div className="relative min-h-[340px] overflow-hidden rounded-2xl border border-primary/30 bg-secondary">
@@ -263,6 +265,7 @@ export default function BlogArticleView({ post, definition }: {post: BlogPostDat
                 </section> : null}
 
                 <ArticleEvidence post={post}/>
+                </>}
                 {takeaways.length ? <section className="grid gap-3 sm:grid-cols-2">
                   {takeaways.map((item) => <div key={item.label} className="border border-border bg-secondary/30 rounded-2xl p-4">
                     <div className="flex items-center gap-2 text-xs font-black uppercase text-primary mb-2"><CheckCircle2 className="w-4 h-4" />{editorialLabel(item.label)}</div>

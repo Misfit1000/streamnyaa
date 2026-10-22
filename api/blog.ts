@@ -3,6 +3,8 @@ import { latestPublishedBlogPost, readPublishedArticle } from './blogArchive.js'
 import { articleHtml } from './_shared/blogHtml.js';
 import { publicSnapshot } from './_shared/publicSnapshots.js';
 import { EditorialTransport, toMediaItem } from './_shared/publishingData.js';
+import {publicActivityEvidence} from '../src/lib/activityEvidence.js';
+import {publicArticleContent} from '../src/lib/editorialPresentation.js';
 
 const memory=new Map<string,{at:number;value:BlogPostData}>(),flights=new Map<string,Promise<BlogPostData>>();
 async function readPost(slug:string):Promise<BlogPostData>{
@@ -55,6 +57,16 @@ export default async function handler(req:any,res:any){
   if(req.method!=='GET')return res.status(405).json({error:'Blog reads require GET. Use authenticated publishing jobs for generation.'});
   if(req.query.force||req.query.manual)return res.status(405).json({error:'Generation is available through authenticated Admin jobs only.'});
   const slug=String(Array.isArray(req.query.slug)?req.query.slug[0]:req.query.slug||'');
-  try{const value=getBlogPost(slug)?await getCachedBlogPost(slug):await readPublishedArticle(slug);if(!value)throw Object.assign(Error('Article not found.'),{status:404});res.setHeader('Cache-Control',value.articleStatus==='stale'?'no-store':'public, max-age=60, s-maxage=300, stale-while-revalidate=600');return res.status(200).json(value);}
+  if(req.query.evidence==='1'){
+    try{
+      if(!/^[a-z0-9][a-z0-9-]{0,220}$/.test(slug)||getBlogPost(slug))return res.status(404).json({error:'Published evidence not found.'});
+      const post=await readPublishedArticle(slug);
+      if(!post||post.articleStatus!=='published'||post.qualityVersion!==3||!post.activityEvidence)return res.status(404).json({error:'Published evidence not found.'});
+      const evidence=publicActivityEvidence(post.activityEvidence);if(!evidence)throw Error('Invalid saved observations.');
+      res.setHeader('Cache-Control','public, max-age=300, s-maxage=3600');
+      return res.status(200).json({articleSlug:post.articleSlug,evidence});
+    }catch{res.setHeader('Cache-Control','no-store');return res.status(503).json({error:'Saved article evidence is temporarily unavailable.'});}
+  }
+  try{const value=getBlogPost(slug)?await getCachedBlogPost(slug):await readPublishedArticle(slug);if(!value)throw Object.assign(Error('Article not found.'),{status:404});res.setHeader('Cache-Control',value.articleStatus==='stale'?'no-store':'public, max-age=60, s-maxage=300, stale-while-revalidate=600');return res.status(200).json(publicArticleContent(value));}
   catch(error){res.setHeader('Cache-Control','no-store');return res.status((error as any).status||503).json({error:(error as Error).message});}
 }

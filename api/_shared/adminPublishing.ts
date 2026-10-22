@@ -1,10 +1,11 @@
 import { waitUntil } from '@vercel/functions';
 import { envAdminEmails, requireAdmin, supabaseBaseUrl, supabaseRest, supabaseSecretKey } from './adminAuth.js';
-import { enqueueGeneration, generationStatus, runGenerationBatch } from './publishing.js';
+import { enqueueManualGeneration, generationStatus, runGenerationBatch } from './publishing.js';
 import { publicationPolicy, draftRevision } from './publicationReview.js';
 import { editorialModel } from './editorialModel.js';
 
 export async function generateBlog(req:any,res:any){
+  res.setHeader('Cache-Control','no-store');
   if(req.method!=='POST')return res.status(405).json({error:'Method not allowed'});
   try{
     const auth=await requireAdmin(req);if('error'in auth)return res.status(auth.status).json({error:auth.error});
@@ -13,11 +14,11 @@ export async function generateBlog(req:any,res:any){
       const rows=await supabaseRest(`blog_generation_runs?id=eq.${id}&select=*&limit=1`);const prior=rows?.[0];if(!prior)return res.status(404).json({error:'Job not found.'});
       if(['failed','pending'].includes(prior.status))await supabaseRest(`blog_generation_runs?id=eq.${id}&status=eq.${prior.status}`,{method:'PATCH',body:JSON.stringify({status:'pending',checkpoint:{...prior.checkpoint,resumeRequired:false}})});
       ids=[id];
-    }else ids=[(await enqueueGeneration('daily',req.body?.mode==='both'?2:1,Date.now(),'review')).id];
+    }else ids=[(await enqueueManualGeneration(auth.user.id,String(req.body?.requestId||''),req.body?.mode==='both'?2:1)).id];
     const work=runGenerationBatch(ids).catch(error=>console.error('Publication worker stopped:',String(error?.message||'Unknown error').slice(0,200)));
     waitUntil(work);
     return res.status(202).json({accepted:true,jobs:await generationStatus(ids)});
-  }catch(error){return res.status(503).json({error:(error as Error).message||'Publishing storage is not available.'});}
+  }catch(error){return res.status((error as any).status===400?400:503).json({error:(error as Error).message||'Publishing storage is not available.'});}
 }
 export async function reviewBlog(req:any,res:any){
   res.setHeader('Cache-Control','no-store');
