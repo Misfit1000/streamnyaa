@@ -77,3 +77,11 @@ test('an interrupted activity fallback retries discovery instead of treating its
   assert.equal(calls,2);assert.equal(run.checkpoint.activityPending,undefined);assert.equal(run.checkpoint.briefs[0].kind,'data-report');assert.equal(run.checkpoint.discovery.feedIndex,6);
  }finally{globalThis.fetch=original;EditorialTransport.prototype.graph=originalGraph;if(oldUrl===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=oldUrl;if(oldKey===undefined)delete process.env.SUPABASE_SECRET_KEY;else process.env.SUPABASE_SECRET_KEY=oldKey;}
 });
+
+test('report dates, rounded recorded means and punctuation inside quoted titles are supported, invented values still fail',()=>{
+ const title='An Official Anime Season 2',brief:any={kind:'data-report',subject:'Daily activity',headline:'Recorded daily activity',facts:[],sources:[{id:'activity',primary:true,text:JSON.stringify({title})}],ranking:{start:'2026-10-15T00:00:00.000Z',end:'2026-10-22T00:00:00.000Z',rows:[],honorableMentions:[{title,mean:2457.857142857143}]}};
+ const draft={headline:'Recorded anime activity across the inspected period',excerpt:`The provider records for October 15 through October 22, 2026 include "${title}." Their coverage limits what this report can establish.`,paragraphs:[{text:'One inspected title recorded mean daily activity of 2457.86 in this period. That value is rounded from the supplied daily records; it is a measure of recorded catalog activity and does not count streaming audiences or revenue.',sourceIds:['activity']},{text:'The sample is limited to inspected titles with enough daily records. Missing days remain gaps rather than evidence of no activity, and this comparison does not establish how the title performed outside the named catalog or recording period.',sourceIds:['activity']}],sections:[]};
+ assert.deepEqual(validateEditorial(draft,brief),[]);
+ assert.ok(validateEditorial({...draft,paragraphs:[{...draft.paragraphs[0],text:draft.paragraphs[0].text.replace('2457.86','2457.87')},draft.paragraphs[1]]},brief).some(error=>/Unsupported numeric claim: 2457.87/.test(error)));
+ assert.ok(validateEditorial({...draft,excerpt:draft.excerpt.replace(title,'An unsupported statement about viewers')},brief).some(error=>/quoted passage/.test(error)));
+});

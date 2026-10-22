@@ -68,10 +68,18 @@ export function validateEditorial(raw:any,brief:EvidenceBrief,recent:any[]=[]):s
   const evidence=brief.kind==='news'?`${primaryText} ${brief.subject.toLowerCase()}`:[primaryText,...brief.facts,brief.headline,JSON.stringify(brief.ranking||{}),JSON.stringify(brief.charts||[])].join(' ').toLowerCase();
   const numericEvidence=evidence.replace(/\b\d{1,3}(?:,\d{3})+\b/g,value=>value.replace(/,/g,''));
   const evidenceNumbers=new Set(numericEvidence.match(/\b\d+(?:[.:]\d+)*\b/g)||[]);
+  if(brief.kind!=='news'&&brief.ranking){
+    // Calendar prose and two-decimal display values are exact transformations
+    // of the supplied records, rather than new model-generated statistics.
+    for(const value of [brief.ranking.start,brief.ranking.end]){
+      const date=new Date(value);if(Number.isFinite(date.getTime()))for(const part of [date.getUTCFullYear(),date.getUTCMonth()+1,date.getUTCDate()]){evidenceNumbers.add(String(part));evidenceNumbers.add(String(part).padStart(2,'0'));}
+    }
+    for(const row of [...brief.ranking.rows,...brief.ranking.honorableMentions])if(Number.isFinite(row.mean))evidenceNumbers.add(String(Math.round(row.mean*100)/100));
+  }
   for(const number of text.match(/\b\d+(?:[.,:]\d+)*\b/g)||[])if(!evidenceNumbers.has(number.replace(/,/g,'')))errors.push(`Unsupported numeric claim: ${number}`);
   if(brief.kind==='news')for(const [claim,confirmation] of [[/\b(died|death|passed away)\b/i,/\b(died|death|passed away)\b|死去|逝去|訃報/i],[/\b(cancelled|canceled|cancellation)\b/i,/cancel|中止|打ち切り/i],[/\b(replaced|replacement)\b/i,/replac|交代|降板/i]] as [RegExp,RegExp][])if(claim.test(text)&&!confirmation.test(primaryText))errors.push('A sensitive claim lacks explicit primary confirmation.');
   for(const block of blocks){const words=String(block.text||'').toLowerCase().split(/\s+/);for(let i=0;i+16<=words.length;i+=4){const phrase=words.slice(i,i+16).join(' ');if(primaryText.includes(phrase)&&!brief.subject.toLowerCase().includes(phrase))errors.push('Source prose was copied instead of synthesized.');}}
-  for(const match of text.matchAll(/[“"]([^”"]{18,})[”"]/g))if(!evidence.includes(match[1].toLowerCase()))errors.push('A quoted passage is not present in the evidence.');
+  for(const match of text.matchAll(/[“"]([^”"]{18,})[”"]/g))if(!evidence.includes(match[1].toLowerCase().replace(/[.,;:!?]+$/,'')))errors.push('A quoted passage is not present in the evidence.');
   const sentences=text.toLowerCase().split(/[.!?]\s+/).map(value=>value.trim()).filter(value=>value.split(/\s+/).length>=10);
   if(new Set(sentences).size<sentences.length)errors.push('Repeated sentences.');
   for(const prior of recent){const old=[...(prior.article?.paragraphs||[]),...(prior.article?.sections||[]).map((section:any)=>section.body)].join(' ').toLowerCase();
@@ -161,7 +169,8 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
       await supabaseRest(`blog_publication_claims?fingerprint=eq.${brief.fingerprint}&run_id=eq.${run.id}`,{method:'PATCH',signal:AbortSignal.timeout(5000),body:JSON.stringify({published_at:now})});
       state.published.push(articleSlug);state.next++;delete state.draft;delete state.approvedRevision;delete state.reviewRevision;await save(run,token,'running',state);recent.unshift(post);
     }
-    await save(run,token,state.published.length?'published':'skipped',state,state.published.length?undefined:'Candidates were duplicates or failed editorial quality checks.');
+    const rejection=state.rejections?.at(-1)?.reason?.join(' ');
+    await save(run,token,state.published.length?'published':'skipped',state,state.published.length?undefined:rejection?`No article published. Most recent draft rejection: ${rejection}`.slice(0,800):'Candidates were already covered; no new article was published.');
   }catch(error){
     const status=(error as any).status,header=String((error as any).retryAfter||''),reason=`${state.stage||'Publishing'}: ${String((error as Error).message||'Publication failed.')}`.slice(0,800);
     if(status===429||status===403)state.retryAt=Math.max(Date.now()+300000,/^\d+$/.test(header)?Date.now()+Number(header)*1000:Date.parse(header)||0);
