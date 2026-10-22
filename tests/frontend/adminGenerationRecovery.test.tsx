@@ -42,3 +42,8 @@ it('dates and provider deadlines distinguish old paused jobs and prevent prematu
  expect(generationFeedback([paused])).toContain('Retry after');expect(generationFeedback([paused])).not.toContain('0 articles');
  expect(generationJobLabel({...paused,status:'skipped'})).toBe('No eligible article');client.clear();
 });
+it('explains automatic Gemini retry while keeping a paused job distinct',()=>{
+ const retrying={...job,stage:'Waiting for Gemini retry',retryAt:Date.now()+30000};
+ expect(generationFeedback([retrying])).toContain('will retry automatically');
+ expect(generationFeedback([{...retrying,active:false,resumeRequired:true}])).toContain('Generation paused');
+});

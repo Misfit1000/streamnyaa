@@ -2,6 +2,7 @@ import { waitUntil } from '@vercel/functions';
 import { envAdminEmails, requireAdmin, supabaseBaseUrl, supabaseRest, supabaseSecretKey } from './adminAuth.js';
 import { enqueueGeneration, generationStatus, runGenerationBatch } from './publishing.js';
 import { publicationPolicy, draftRevision } from './publicationReview.js';
+import { editorialModel } from './editorialModel.js';
 
 export async function generateBlog(req:any,res:any){
   if(req.method!=='POST')return res.status(405).json({error:'Method not allowed'});
@@ -68,6 +69,6 @@ export async function summary(req:any,res:any){
     const [articles,admins,jobs]=await Promise.all([articleSummary(),supabaseRest('admin_users?select=email,created_at,created_by&order=created_at.desc').then(rows=>({rows,ready:true,message:''})).catch(error=>({rows:[],ready:false,message:String(error.message)})),generationStatus().catch(()=>[])]);
     return res.status(200).json({adminEmail:auth.user.email,generatedBlogArticles:articles.count,recentArticles:articles.recent,jobs,publicationPolicy:await publicationPolicy(),lastSuccessfulPublication:jobs.find((job:any)=>job.status==='published')?.updatedAt,
       cronSchedule:'Daily 00:00–00:59 UTC · 05:45–06:44 Nepal time',admins:{env:envAdminEmails(),stored:admins.rows,tableReady:admins.ready,setupMessage:admins.message},
-      archive:{supabaseConfigured:Boolean(supabaseBaseUrl()&&supabaseSecretKey()),githubFallbackConfigured:Boolean(process.env.GITHUB_ARTICLE_TOKEN||process.env.GH_ARTICLE_TOKEN)},config:{geminiConfigured:Boolean(process.env.GEMINI_API_KEY),smtpExpected:true,productionUrl:'https://www.streamnyaa.xyz'}});
+      archive:{supabaseConfigured:Boolean(supabaseBaseUrl()&&supabaseSecretKey()),githubFallbackConfigured:Boolean(process.env.GITHUB_ARTICLE_TOKEN||process.env.GH_ARTICLE_TOKEN)},config:{geminiConfigured:Boolean(process.env.GEMINI_API_KEY),geminiModel:editorialModel(),smtpExpected:true,productionUrl:'https://www.streamnyaa.xyz'}});
   }catch(error){return res.status(503).json({error:(error as Error).message||'Admin summary could not load.'});}
 }

@@ -115,6 +115,7 @@ export default function AdminDashboard() {
   const envAdminEmails = data?.admins?.env || [];
   const storedAdmins = data?.admins?.stored || [];
   const recentArticles = data?.recentArticles || [];
+  const displayJobs=(data?.jobs||[]).map((job:any)=>jobs.data?.jobs?.find((current:any)=>current.id===job.id)||job);
 
   const trackAcceptedJobs=(ids:string[],acceptedJobs?:any[])=>{
     // A resumed run keeps its ID. Replace its previous terminal cache before
@@ -287,13 +288,13 @@ export default function AdminDashboard() {
             <Metric label="Articles" value={articleCount} detail="Posts stored in the archive" />
             <Metric label="Admins" value={adminEmails.length} detail="People with console access" />
             <Metric label="Schedule" value="Daily" detail={data?.cronSchedule || 'Daily article check'} />
-            <Metric label="Writer" value={data?.config?.geminiConfigured ? 'Configured' : 'Check'} detail={data?.config?.geminiConfigured ? 'Model access is checked when a draft runs' : 'Article key is missing'} />
+            <Metric label="Writer" value={data?.config?.geminiConfigured ? 'Configured' : 'Check'} detail={data?.config?.geminiConfigured ? `${data?.config?.geminiModel||'Gemini'} · Access checked when writing` : 'Article key is missing'} />
           </section>
 
           {actionMessage ? <div role="status" aria-live="polite" className="mt-6 rounded-lg border border-border bg-secondary/20 p-4 text-sm font-semibold text-foreground">{actionMessage}</div> : null}
           {actionError ? <div role="alert" className="mt-6 rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-sm font-semibold text-red-400">{actionError}</div> : null}
           {jobs.isError&&<p role="status" className="mt-3 text-sm text-amber-200">Publication status could not refresh. <button className="underline" onClick={()=>void jobs.refetch()}>Retry status</button></p>}
-          {!!data?.jobs?.length&&<div className="mt-3 space-y-2 text-xs text-muted-foreground">{data.jobs.slice(0,3).map((job:any)=><div key={job.id} className="flex flex-wrap items-center justify-between gap-2"><span>{job.kind} · {formatDate(job.createdAt)} · {generationJobLabel(job)}{job.stage&&job.active?` · ${job.stage}`:''}{job.reason?` · ${job.reason}`:''}{job.retryAt>clock?` · Retry after ${formatDate(new Date(job.retryAt).toISOString())}`:''}</span>{(['pending','failed'].includes(job.status)||job.resumeRequired)&&<button className="min-h-9 font-semibold text-primary underline disabled:opacity-50" disabled={Boolean(busyAction)||job.active||job.retryAt>clock} onClick={()=>void resumeJob(job.id)}>{job.retryAt>clock?'Waiting for provider':'Resume job'}</button>}</div>)}</div>}
+          {!!displayJobs.length&&<div className="mt-3 space-y-2 text-xs text-muted-foreground">{displayJobs.slice(0,3).map((job:any)=><div key={job.id} className="flex flex-wrap items-center justify-between gap-2"><span>{job.kind} · {formatDate(job.createdAt)} · {generationJobLabel(job)}{job.stage&&job.active?` · ${job.stage}`:''}{job.reason?` · ${job.reason}`:''}{job.retryAt>clock?` · Retry after ${formatDate(new Date(job.retryAt).toISOString())}`:''}</span>{(['pending','failed'].includes(job.status)||job.resumeRequired)&&<button className="min-h-9 font-semibold text-primary underline disabled:opacity-50" disabled={Boolean(busyAction)||job.active||job.retryAt>clock} onClick={()=>void resumeJob(job.id)}>{job.retryAt>clock?'Waiting for provider':'Resume job'}</button>}</div>)}</div>}
 
           <AdminPublicationReview key={user.id} accountId={user.id} token={session?.access_token||''} jobs={data?.jobs||[]} automaticEnabled={Boolean(data?.publicationPolicy?.automaticEnabled)} onAccepted={ids=>{if(account.current!==user.id)return;trackAcceptedJobs(ids);void summary.refetch();}} />
 

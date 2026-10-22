@@ -8,7 +8,9 @@ export function generationJobLabel(job:AdminGenerationJob){
 }
 export function generationFeedback(jobs:AdminGenerationJob[],now=Date.now()){
  const published=jobs.reduce((count,job)=>count+job.published.length,0),prefix=published?`${published} article${published===1?'':'s'} durably published. `:'';
- if(jobs.some(job=>job.active))return prefix+`Draft preparation is running${jobs.find(job=>job.active)?.stage?` · ${jobs.find(job=>job.active)!.stage}`:''}. New drafts still require editorial review.`;
+ const active=jobs.find(job=>job.active);
+ if(active?.retryAt&&active.retryAt>now&&active.stage?.includes('Gemini'))return prefix+`Gemini is temporarily unavailable. This running job will retry automatically after ${new Date(active.retryAt).toLocaleTimeString()}. Completed work is saved.`;
+ if(active)return prefix+`Draft preparation is running${active.stage?` · ${active.stage}`:''}. New drafts still require editorial review.`;
  if(jobs.some(job=>job.status==='awaiting_review'))return prefix+'A draft is saved privately and ready for review. Open it below to approve or reject it.';
  const paused=jobs.filter(job=>['pending','failed'].includes(job.status)||job.resumeRequired);
  if(paused.length){const retryAt=Math.max(...paused.map(job=>job.retryAt||0)),reason=[...new Set(paused.map(job=>job.reason).filter(Boolean))].join(' ');return prefix+`Generation paused. ${reason}${retryAt>now?` Retry after ${new Date(retryAt).toLocaleString()}.`:' Resume the saved job to retry.'}`;}
