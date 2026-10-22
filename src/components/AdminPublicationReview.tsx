@@ -11,8 +11,10 @@ export default function AdminPublicationReview({accountId,token,jobs,automaticEn
     catch(error){setError((error as Error).message);}finally{setBusy(false);}
   }
   const approved=jobs.find(job=>job.status==='published'&&job.reviewApproved);
+  const awaitingReview=jobs.filter(job=>job.status==='awaiting_review');
   return <div className="mt-3 space-y-3 text-sm">
-    <div className="flex flex-wrap gap-3">{jobs.filter(job=>job.status==='awaiting_review').map(job=><button key={job.id} type="button" className="font-semibold text-primary underline" onClick={()=>{setJobId(job.id);setError('');setReason('');}}>Review saved draft</button>)}
+    {!!awaitingReview.length&&<p role="status" className="rounded-lg border border-primary/25 bg-primary/5 p-3">Draft written. Generate saves a private draft; approval publishes it. Review the saved draft below.</p>}
+    <div className="flex flex-wrap gap-3">{awaitingReview.map(job=><button key={job.id} type="button" className="font-semibold text-primary underline" onClick={()=>{setJobId(job.id);setError('');setReason('');}}>Review saved draft</button>)}
       {!automaticEnabled&&approved&&<button type="button" disabled={busy} className="font-semibold text-primary underline" onClick={()=>void act(approved.id,'enable-automatic')}>Enable automatic publishing after acceptance</button>}</div>
     {error&&<p role="alert" className="text-red-400">{error}</p>}
     {jobId&&<section aria-label="Private draft review" className="rounded-lg border border-border bg-background/45 p-4">

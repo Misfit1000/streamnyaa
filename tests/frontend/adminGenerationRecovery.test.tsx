@@ -47,3 +47,11 @@ it('explains automatic Gemini retry while keeping a paused job distinct',()=>{
  expect(generationFeedback([retrying])).toContain('will retry automatically');
  expect(generationFeedback([{...retrying,active:false,resumeRequired:true}])).toContain('Generation paused');
 });
+it('shows a saved draft as written and never offers Resume for an approval gate',async()=>{
+ const ready={...job,status:'awaiting_review',active:false,resumeRequired:true};
+ vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({...summary,jobs:[ready]}))));
+ const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ render(<MemoryRouter><QueryClientProvider client={client}><AdminDashboard/></QueryClientProvider></MemoryRouter>);
+ await screen.findByText(/Draft written\. Generate saves a private draft/);
+ expect(screen.getByRole('button',{name:'Review saved draft'})).toBeTruthy();expect(screen.queryByRole('button',{name:'Resume job'})).toBeNull();client.clear();
+});
