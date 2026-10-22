@@ -12,7 +12,7 @@ test('metadata and source gateways load as emitted Node ESM without a TypeScript
   const parent=path.resolve('.validation'); mkdirSync(parent,{recursive:true});
   const root=mkdtempSync(path.join(parent,'gateway-esm-'));
   try {
-    for (const file of ['api/stream-sources.ts','api/nyaa.ts','api/_shared/requestReuse.ts','api/_shared/publicCalendar.ts','api/_shared/publicSnapshots.ts','api/_shared/adminAuth.js','src/lib/calendarModel.ts','src/lib/malMetadataProvider.ts','src/lib/desktopSourceIdentity.ts']) {
+    for (const file of ['api/stream-sources.ts','api/nyaa.ts','api/_shared/requestReuse.ts','api/_shared/publicCalendar.ts','api/_shared/publicSnapshots.ts','api/_shared/adminAuth.js','src/lib/calendarModel.ts','src/lib/scheduleTiming.ts','src/lib/malMetadataProvider.ts','src/lib/desktopSourceIdentity.ts']) {
       const output=path.join(root,file.replace(/\.ts$/,'.js')); mkdirSync(path.dirname(output),{recursive:true});
       writeFileSync(output,transformSync(readFileSync(file,'utf8'),{loader:'ts',format:'esm',target:'node22'}).code);
     }

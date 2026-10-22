@@ -2,7 +2,8 @@ import React from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { normalizeScheduleTrack, reconcileCalendarRecords, scheduleProviderIds } from '../../src/lib/calendarModel';
-import { groupScheduleEpisodes } from '../../src/lib/schedulePresentation';
+import { groupScheduleEpisodes, scheduleBroadcastState } from '../../src/lib/schedulePresentation';
+import { webScheduleSections } from '../../src/lib/webSchedulePresentation';
 import DesktopDragRail from '../../src/components/DesktopDragRail';
 import ScheduleDelayBadge from '../../src/components/ScheduleDelayBadge';
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
@@ -28,6 +29,27 @@ it('hydrates exact provider routes without duplicate cards or losing a verified 
   const records=reconcileCalendarRecords([unresolved,linked],[{...unresolved,scheduleFetchedAt:now+1}]);
   expect(records).toHaveLength(1);expect(records[0].anilist_id).toBe(12);expect(groupScheduleEpisodes(records)).toHaveLength(1);
   expect(reconcileCalendarRecords([linked],[{...linked,anilist_id:99,canonicalId:'anilist:99',scheduleId:'anilist:99:episode-2:dub'}])).toHaveLength(2);
+});
+it('does not turn provider disagreement or an unchanged status refresh into a reschedule',()=>{
+  const base=normalizeScheduleTrack({...row,airingStatus:'unaired',delayedText:''},{websites:{anilist:'anilist.co/anime/12'}},now)!;
+  const anilist={...base,scheduleProvider:'anilist' as const,airingAt:base.airingAt-3600};
+  expect(reconcileCalendarRecords([anilist],[{...base,scheduleFetchedAt:now+1}])[0].scheduleStatus).toBe('scheduled');
+  const poisoned={...base,scheduleStatus:'rescheduled',previousAiringAt:base.airingAt*1000};
+  expect(scheduleBroadcastState(poisoned).kind).toBe('normal');
+  const repaired=reconcileCalendarRecords([poisoned],[{...base,scheduleFetchedAt:now+2}])[0];
+  expect(repaired.scheduleStatus).toBe('scheduled');
+  expect(repaired.previousAiringAt).toBeFalsy();
+  const sections=webScheduleSections([poisoned],{weekStart:now-86400000,weekEnd:now+7*86400000,dayStart:now-86400000,dayEnd:now+86400000,today:true,dayLabel:'Today',now:now-1},false);
+  expect(sections.map(section=>section.title)).not.toContain('Schedule changes');
+});
+it('retains the genuine previous time across repeated ordinary refreshes',()=>{
+  const base=normalizeScheduleTrack({...row,airingStatus:'unaired',delayedText:''},{websites:{anilist:'anilist.co/anime/12'}},now)!;
+  const moved={...base,airingAt:base.airingAt+3600,scheduleFetchedAt:now+1};
+  let saved=reconcileCalendarRecords([base],[moved])[0];
+  for(let i=2;i<5;i++) saved=reconcileCalendarRecords([saved],[{...moved,scheduleFetchedAt:now+i}])[0];
+  expect(saved).toMatchObject({scheduleStatus:'rescheduled',previousAiringAt:base.airingAt*1000,airingAt:moved.airingAt});
+  expect(scheduleBroadcastState(saved).detail).not.toMatch(/Moved from (.+) to \1\./);
+  expect(reconcileCalendarRecords([base],[{...base,airingAt:base.airingAt+30,scheduleFetchedAt:now+1}])[0].scheduleStatus).toBe('scheduled');
 });
 it('renders every update and supports the last item through keyboard scrolling',()=>{
   const view=render(<DesktopDragRail label="Recent schedule changes" compact>{Array.from({length:20},(_,i)=><div key={i}>Update {i+1}</div>)}</DesktopDragRail>);

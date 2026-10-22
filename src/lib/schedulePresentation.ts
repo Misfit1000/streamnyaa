@@ -4,6 +4,7 @@ function desktopCanonicalAnimeId(anime: any): string {
 }
 
 import { desktopPosterCandidates } from './desktopArtwork';
+import { scheduleTimeChanged } from './scheduleTiming.js';
 
 export const scheduleTrackLabel = (row: any) => row.releaseTrack === 'dub' ? 'Dub' : row.releaseTrack === 'sub' ? 'Sub' : 'Original';
 export function sameScheduleAnime(a: any, b: any) {
@@ -117,8 +118,9 @@ export function scheduleBroadcastState(anime: any, airingMs = airingAtMs(anime))
     };
   }
 
-  if (explicitRescheduled || /\b(rescheduled|reschedule|moved to|new time)\b/.test(statusText)) {
-    const previousAiringMs = airingAtMs({ airingAt: anime?.previousAiringAt });
+  const previousAiringMs = airingAtMs({ airingAt: anime?.previousAiringAt });
+  const unchangedRevision = previousAiringMs > 0 && airingMs > 0 && !scheduleTimeChanged(previousAiringMs, airingMs);
+  if (!unchangedRevision && (explicitRescheduled || /\b(rescheduled|reschedule|moved to|new time)\b/.test(statusText))) {
     return {
       kind: 'rescheduled',
       label: 'Rescheduled',
@@ -162,7 +164,7 @@ export function scheduleBroadcastState(anime: any, airingMs = airingAtMs(anime))
   };
 }
 
-function formatAiringTime(ms: number) { return new Date(ms).toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }); }
+function formatAiringTime(ms: number) { return new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit' }); }
 
 /** Both native milliseconds and provider seconds are accepted at this boundary. */
 export function scheduleInRange(row: any, start: number, end: number) {

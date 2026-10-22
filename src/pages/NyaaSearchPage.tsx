@@ -1,6 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { searchNyaa } from '../api/nyaa';
+import { useSearchParams } from 'react-router-dom';
+import { buildSourceIdentity } from '../lib/desktopSourceIdentity';
+import { useWebSources } from '../lib/useWebSources';
+import { webAudioMatches } from '../lib/webSources';
+import WebSourceProgress from '../components/WebSourceProgress';
+import WebBatchDownloads from '../components/WebBatchDownloads';
 import { fetchAnimeDetails, fetchAnimeEpisodes, searchAnime } from '../api/jikan';
 import { Search, Loader2, Download, HardDrive, AlertTriangle, Link as LinkIcon } from 'lucide-react';
 import Seo from '../components/Seo';
@@ -13,10 +18,6 @@ import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQuality
 import { isDesktopApp } from '../lib/desktop';
 
 const DESKTOP_SOURCE_PRESETS = SOURCE_PRESETS.filter((preset) => preset.sourceFilter !== 'batch');
-
-function isBatchSource(title = '') {
-  return /\b(batch|complete|season pack|complete season|collection)\b/i.test(title);
-}
 
 function releaseTrackerText(anime: any, selectedEpisode?: string) {
   const nextEpisode = anime?.nextAiringEpisode?.episode;
@@ -32,35 +33,36 @@ function releaseTrackerText(anime: any, selectedEpisode?: string) {
 export default function NyaaSearchPage() {
   const { session, user } = useAuth();
   const desktop = isDesktopApp();
-  const [query, setQuery] = useState('');
-  const [searchInput, setSearchInput] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const query = searchParams.get('q') || '';
+  const [searchInput, setSearchInput] = useState(query);
+  const [confirmedSelection, setConfirmedSelection] = useState<{id:number;query:string} | null>(null);
+  const confirmedAnimeId = confirmedSelection?.query === query ? confirmedSelection.id : null;
+  const setConfirmedAnimeId = (id:number | null) => setConfirmedSelection(id ? {id,query} : null);
+  const [includeUncertain, setIncludeUncertain] = useState(false);
+  const [audio, setAudio] = useState<'sub' | 'dub' | 'all'>('all');
+  const [notice, setNotice] = useState('');
+  useEffect(() => { setSearchInput(query); setConfirmedAnimeId(null); setShowAllSources(false); }, [query]);
   const [category, setCategory] = useState('1_0');
   const [filter, setFilter] = useState('0');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
   const [sortBy, setSortBy] = useState<'best' | 'seeders' | 'size' | 'date'>('best');
   const [sortDirection, setSortDirection] = useState<'desc' | 'asc'>('desc');
   const [showAllSources, setShowAllSources] = useState(false);
-  const [animeLookupQuery, setAnimeLookupQuery] = useState('');
-  const [selectedEpisode, setSelectedEpisode] = useState('');
+  const animeLookupQuery = query;
+  const selectedEpisode = /^[1-9]\d{0,3}$/.test(searchParams.get('ep') || '') ? searchParams.get('ep')! : '';
+  const setSelectedEpisode = (value: string) => { const next = new URLSearchParams(searchParams); if(value) next.set('ep',value); else next.delete('ep'); setSearchParams(next); };
 
-  const sourceQuery = useQuery({
-    retry: false,
-    queryKey: ['nyaaSearch', query, category, filter, showAllSources],
-    queryFn: ({signal}) => searchNyaa(query, category, filter, '1', { pages: showAllSources ? 3 : 1, wide: showAllSources, signal }),
-    enabled: query.trim().length >= 2,
-  });
-
-  const { data: torrents, isLoading } = sourceQuery;
   const { data: animeMatchData } = useQuery({
     queryKey: ['downloadSearchAnimeMatch', animeLookupQuery],
-    queryFn: () => searchAnime(animeLookupQuery, 1),
+    queryFn: ({signal}) => searchAnime(animeLookupQuery, 1, '', '', '', '', '', {signal}),
     enabled: animeLookupQuery.trim().length >= 2 && category.startsWith('1_'),
   });
   const matchedAnime = animeMatchData?.data?.[0];
   const { data: matchedAnimeDetails } = useQuery({
     queryKey: ['anime', matchedAnime?.mal_id ? String(matchedAnime.mal_id) : ''],
-    queryFn: () => fetchAnimeDetails(String(matchedAnime!.mal_id)),
-    enabled: Boolean(matchedAnime?.mal_id),
+    queryFn: ({signal}) => fetchAnimeDetails(String(matchedAnime!.mal_id), {signal}),
+    enabled: Boolean(confirmedAnimeId && matchedAnime?.mal_id === confirmedAnimeId),
   });
   const matchedAnimeFull = matchedAnimeDetails?.data || matchedAnime;
   const availableEpisodeCount = matchedAnimeFull?.nextAiringEpisode?.episode
@@ -70,51 +72,40 @@ export default function NyaaSearchPage() {
   const episodePage = selectedEpisodeNumber ? Math.max(1, Math.ceil(selectedEpisodeNumber / 100)) : 1;
   const { data: matchedEpisodeData } = useQuery({
     queryKey: ['download-search-episodes', matchedAnimeFull?.mal_id, episodePage],
-    queryFn: () => fetchAnimeEpisodes(String(matchedAnimeFull!.mal_id), episodePage),
+    queryFn: ({signal}) => fetchAnimeEpisodes(String(matchedAnimeFull!.mal_id), episodePage, {signal}),
     enabled: Boolean(matchedAnimeFull?.mal_id && selectedEpisodeNumber),
   });
 
+  const confirmed = Boolean(confirmedAnimeId && matchedAnimeFull?.mal_id === confirmedAnimeId && category.startsWith('1_'));
+  const identity = useMemo(() => confirmed ? buildSourceIdentity(matchedAnimeFull) : undefined, [confirmed, matchedAnimeFull]);
+  const sourceQuery = useWebSources({ identity, query, category, filter, episode: selectedEpisodeNumber });
+  const { isLoading } = sourceQuery;
+  const torrents = sourceQuery.data?.items;
   const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setShowAllSources(false);
-    setSelectedEpisode('');
-    setAnimeLookupQuery(searchInput.trim());
-    setQuery(searchInput);
+    e.preventDefault(); setConfirmedAnimeId(null); setShowAllSources(false);
+    setSearchParams(searchInput.trim() ? { q: searchInput.trim() } : {});
   };
-
   const handleEpisodeChange = (value: string) => {
-    setShowAllSources(false);
-    setSelectedEpisode(value);
-    const baseTitle = matchedAnimeFull?.title_english || matchedAnimeFull?.title_romaji || matchedAnimeFull?.title || animeLookupQuery || searchInput;
-    setQuery(value ? `${baseTitle} ${value.padStart(2, '0')}` : baseTitle);
+    setShowAllSources(false); setConfirmedAnimeId(matchedAnimeFull?.mal_id || null); setSelectedEpisode(value);
   };
-
   const applyPreset = (preset: typeof SOURCE_PRESETS[number]) => {
-    const baseTitle = matchedAnimeFull?.title_english || matchedAnimeFull?.title_romaji || matchedAnimeFull?.title || animeLookupQuery || searchInput;
-    const episodePart = selectedEpisode ? ` ${selectedEpisode.padStart(2, '0')}` : '';
-    const nextQuery = `${baseTitle}${episodePart} ${preset.query}`.trim();
-    setSearchInput(nextQuery);
-    setQuery(nextQuery);
-    setFilter('0');
-    setCategory('1_2');
-    setSourceFilter((preset.sourceFilter || '') as TorrentSourceFilter);
-    setShowAllSources(false);
+    setSourceFilter((preset.sourceFilter || '') as TorrentSourceFilter); setAudio(preset.type); setShowAllSources(false);
   };
 
-  const recordDownloadAction = (torrent: any, action: 'copy' | 'open') => {
+  const recordDownloadAction = (torrent: any, action: 'copy' | 'open', episode: string | null = selectedEpisode || null) => {
     saveDownloadHistory({
       title: torrent.title,
       magnet: torrent.magnet,
-      animeTitle: matchedAnimeFull?.title || animeLookupQuery || searchInput || undefined,
-      animeId: matchedAnimeFull?.mal_id || matchedAnimeFull?.id,
-      episode: selectedEpisode || null,
+      animeTitle: confirmed ? matchedAnimeFull?.title : query || undefined,
+      animeId: confirmed ? matchedAnimeFull?.mal_id : undefined,
+      episode,
       action,
       size: torrent.size,
       seeders: torrent.seeders,
     }, session);
   };
 
-  const filteredTorrents = useMemo(() => [...(torrents || [])].filter((torrent) => !isBatchSource(torrent.title)).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
+  const filteredTorrents = useMemo(() => [...(torrents || [])].filter(torrent => (!category.startsWith('1_') || torrent.matchTier !== 'batch') && (includeUncertain || torrent.matchTier !== 'uncertain') && webAudioMatches(torrent.title, audio)).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
     if (sortBy === 'best') {
       if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
       if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;
@@ -131,7 +122,7 @@ export default function NyaaSearchPage() {
     const aTime = Date.parse(a.pubDate || '0') || 0;
     const bTime = Date.parse(b.pubDate || '0') || 0;
     return sortDirection === 'asc' ? aTime - bTime : bTime - aTime;
-  }), [filter, showAllSources, sortBy, sortDirection, sourceFilter, torrents]);
+  }), [sortBy, sortDirection, sourceFilter, torrents, includeUncertain, audio, category]);
   const visibleTorrents = useMemo(() => showAllSources ? filteredTorrents : filteredTorrents.slice(0, 5), [filteredTorrents, showAllSources]);
   const hiddenSourceCount = Math.max(filteredTorrents.length - visibleTorrents.length, 0);
   const faqItems = [
@@ -269,7 +260,8 @@ export default function NyaaSearchPage() {
               referrerPolicy="no-referrer"
             />
             <div className="min-w-0">
-              <p className="text-xs font-black uppercase tracking-wider text-primary">Matched anime</p>
+              <p className="text-xs font-black uppercase tracking-wider text-primary">{confirmed ? 'Selected anime' : 'Suggested anime — confirm before matching'}</p>
+              <button type="button" onClick={() => setConfirmedAnimeId(confirmed ? null : matchedAnimeFull.mal_id)} className="mt-2 rounded-lg border border-primary/30 px-3 py-2 text-sm font-bold text-primary">{confirmed ? 'Return to free-text search' : 'Match this anime'}</button>
               <h2 className="mt-1 line-clamp-1 text-xl font-black text-foreground">{matchedAnimeFull.title}</h2>
               <div className={`mt-2 flex flex-wrap gap-2 text-xs font-bold ${desktop ? 'text-white/52' : 'text-muted-foreground'}`}>
                 <span className={`rounded-full px-2.5 py-1 ${desktop ? 'border border-white/10 bg-white/[0.05]' : 'bg-secondary'}`}>Score {matchedAnimeFull.score || 'N/A'}</span>
@@ -289,8 +281,8 @@ export default function NyaaSearchPage() {
                         : 'border border-border bg-background/70 text-foreground'
                     }`}
                   >
-                    <option value="">Any aired episode</option>
-                    {Array.from({ length: availableEpisodeCount }, (_, index) => {
+                    <option value="">All episodes / title search</option>
+                    {Array.from({ length: Math.min(availableEpisodeCount, 9999) }, (_, index) => {
                       const episodeNumber = index + 1;
                       const episodeInfo = matchedEpisodeData?.data?.find((episode: any) => episode.mal_id === episodeNumber);
                       const label = episodeInfo?.title ? `Episode ${episodeNumber} - ${episodeInfo.title}` : `Episode ${episodeNumber}`;
@@ -300,9 +292,11 @@ export default function NyaaSearchPage() {
                         </option>
                       );
                     })}
+                    {selectedEpisodeNumber && selectedEpisodeNumber > availableEpisodeCount ? <option value={selectedEpisode}>Episode {selectedEpisode} — metadata pending</option> : null}
                   </select>
                 </label>
               ) : null}
+              <form className="mt-3 flex items-end gap-2" onSubmit={event => { event.preventDefault(); const value = String(new FormData(event.currentTarget).get('episode') || ''); if (/^[1-9]\d{0,3}$/.test(value)) handleEpisodeChange(value); }}><label className="text-xs font-bold">Jump to episode<input key={selectedEpisode || 'all'} type="number" name="episode" min="1" max="9999" required defaultValue={selectedEpisode} className="mt-1 block w-28 rounded-lg border border-border bg-background p-2"/></label><button className="rounded-lg border border-border px-3 py-2 text-sm font-bold">Go</button></form>
             </div>
           </div>
         ) : null}
@@ -373,6 +367,12 @@ export default function NyaaSearchPage() {
         </div>
       </div>
 
+      <div className="mx-auto mb-4 flex max-w-5xl flex-wrap items-center gap-3 text-sm">
+        <label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={includeUncertain} onChange={event => setIncludeUncertain(event.target.checked)}/>Include uncertain matches</label>
+        <label>Audio <select aria-label="Audio" value={audio} onChange={event => setAudio(event.target.value as typeof audio)} className="rounded-lg border border-border bg-background p-2"><option value="all">All audio</option><option value="sub">Sub</option><option value="dub">Dub / dual audio</option></select></label>
+      </div>
+      {notice && <p role="status" className="mx-auto mb-4 max-w-5xl text-sm text-muted-foreground">{notice}</p>}
+      <div className="mx-auto max-w-5xl"><WebSourceProgress data={sourceQuery.data} fetching={sourceQuery.isFetching} retry={() => void sourceQuery.refetch()}/></div>
       <DataStatus label="Source results" error={sourceQuery.isError} retry={() => void sourceQuery.refetch()}/>
       {isLoading ? (
         <div className="flex justify-center py-20">
@@ -383,13 +383,13 @@ export default function NyaaSearchPage() {
           <Search className="mx-auto mb-4 h-14 w-14 text-white/28" />
           <p className="text-xl font-black text-white">Search sources by anime title</p>
           <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-white/52">
-            Enter an anime title or episode number to search source metadata. The desktop app will stay idle until you search.
+            Enter an anime title or episode number to search source metadata. Source lookup starts when you submit a search.
           </p>
         </div>
       ) : filteredTorrents.length === 0 ? (
           <div className={`mx-auto max-w-3xl rounded-3xl px-6 py-14 text-center ${desktop ? 'border border-white/8 bg-white/[0.04]' : 'border border-border bg-secondary/25'}`}>
           <HardDrive className={`mx-auto mb-4 h-14 w-14 ${desktop ? 'text-white/30' : 'text-muted-foreground'}`} />
-          <p className={`text-xl font-black ${desktop ? 'text-white' : 'text-foreground'}`}>No matching sources found</p>
+          <p className={`text-xl font-black ${desktop ? 'text-white' : 'text-foreground'}`}>{sourceQuery.data?.complete ? 'No matching individual sources found' : 'No matching sources in the pages checked yet'}</p>
           <p className={`mx-auto mt-2 max-w-xl text-sm leading-6 ${desktop ? 'text-white/52' : 'text-muted-foreground'}`}>
             Try the romanized or English title, remove strict quality filters, or search the episode number without a leading zero.
           </p>
@@ -418,14 +418,14 @@ export default function NyaaSearchPage() {
             ) : null}
             <button
               type="button"
-              onClick={() => setShowAllSources(true)}
+              onClick={() => setIncludeUncertain(true)}
               className={`rounded-full px-3 py-1.5 text-xs font-black ${
                 desktop
                   ? 'border border-white/10 bg-black/35 text-white/78 hover:border-primary/40 hover:text-white'
                   : 'border border-border bg-background/60 text-foreground hover:border-primary/40 hover:text-primary'
               }`}
             >
-              Try wider source search
+              Show uncertain matches
             </button>
           </div>
         </div>
@@ -436,14 +436,14 @@ export default function NyaaSearchPage() {
           }`}>
             <div>
               <p className={`text-sm font-black ${desktop ? 'text-white' : 'text-foreground'}`}>
-                {showAllSources ? 'All source files are visible' : 'Showing the best source files first'}
+                {showAllSources ? 'All found source files are visible' : 'Showing the best source files first'}
               </p>
               <p className={`mt-1 text-xs ${desktop ? 'text-white/48' : 'text-muted-foreground'}`}>
                 {showAllSources
                   ? `${filteredTorrents.length} matching files are listed below.`
                   : hiddenSourceCount
                     ? `${hiddenSourceCount} more matching files are hidden to keep the page clean.`
-                    : 'These are all the matching files found for this search.'}
+                    : 'These are the matching files found so far for this search.'}
               </p>
             </div>
             {filteredTorrents.length > 0 ? (
@@ -479,6 +479,7 @@ export default function NyaaSearchPage() {
                       {sourceFreshnessLabel(torrent)}
                     </span>
                   </div>
+                  <p className="mb-2 text-xs text-muted-foreground">{torrent.matchTier === 'uncertain' ? 'Uncertain match — ' : ''}{torrent.matchReason}</p>
                   <h4 className={`text-[15px] font-bold break-all leading-tight mb-3 transition-colors ${
                     desktop ? 'text-white group-hover:text-primary' : 'text-foreground group-hover:text-primary'
                   }`}>
@@ -520,8 +521,7 @@ export default function NyaaSearchPage() {
                   </a>
                   <button
                     onClick={() => {
-                      navigator.clipboard?.writeText(torrent.magnet);
-                      recordDownloadAction(torrent, 'copy');
+                      void navigator.clipboard.writeText(torrent.magnet).then(() => { recordDownloadAction(torrent, 'copy'); setNotice('Magnet link copied.'); }).catch(() => setNotice('Copy failed. Open the release in your torrent client instead.'));
                     }}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2.5 rounded-xl font-bold text-sm transition-all shadow-sm shadow-primary/25"
                   >
@@ -539,6 +539,7 @@ export default function NyaaSearchPage() {
         </div>
       )}
 
+      {query.trim().length >= 2 && category.startsWith('1_') && <div className="mx-auto max-w-5xl"><WebBatchDownloads key={query + (identity?.animeId || '')} identity={identity} query={query} initial={torrents} audio={audio} onAction={(item, action) => recordDownloadAction(item, action, null)}/></div>}
       <section className={`mx-auto mt-12 max-w-5xl pt-8 ${desktop ? 'border-t border-white/8' : 'border-t border-border'}`}>
         <h2 className={`text-2xl font-black ${desktop ? 'text-white' : 'text-foreground'}`}>Anime download search FAQ</h2>
         <div className="mt-5 grid gap-4 md:grid-cols-3">

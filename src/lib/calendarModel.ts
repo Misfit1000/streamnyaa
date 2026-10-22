@@ -1,3 +1,4 @@
+import { scheduleTimeChanged } from './scheduleTiming.js';
 export type ReleaseTrack = 'original' | 'sub' | 'dub';
 export type CalendarRecord = {
   canonicalId: string; anilist_id?: number; mal_id?: number; title: string; image?: string;
@@ -101,6 +102,12 @@ export function reconcileCalendarRecords(previous: CalendarRecord[], incoming: C
   const rows = new Map<string, CalendarRecord>();
   for (const original of source) {
     const row = { ...original }, route = row.sourceRoute && routes.get(row.sourceRoute);
+    // Repair snapshots produced by the old merge: refreshing a changed status
+    // used to replace the genuine previous date with the unchanged current one.
+    if (row.scheduleStatus === 'rescheduled' && row.previousAiringAt && row.airingAt
+      && !scheduleTimeChanged(time(row.previousAiringAt), time(row.airingAt))) {
+      row.scheduleStatus = 'scheduled'; row.previousAiringAt = undefined;
+    }
     if (route && route.aids.size <= 1 && route.mids.size <= 1) {
       row.anilist_id ||= [...route.aids][0]; row.mal_id ||= [...route.mids][0];
     }
@@ -124,8 +131,16 @@ export function reconcileCalendarRecords(previous: CalendarRecord[], incoming: C
       next.score = old.score ?? row.score; next.type = old.type || row.type;
     }
     if (next.scheduleStatus === 'scheduled' && next.airingAt > 0
-      && (old.airingAt && Math.abs(old.airingAt - next.airingAt) >= 60 || old.scheduleStatus !== 'scheduled')) {
-      next.scheduleStatus = 'rescheduled'; next.previousAiringAt = old.airingAt * 1000 || old.previousAiringAt;
+      && old.scheduleProvider === row.scheduleProvider && row.scheduleFetchedAt > old.scheduleFetchedAt) {
+      // A disagreement between providers is not a chronological revision.
+      const previousTime = time(old.airingAt) || time(old.previousAiringAt);
+      if (scheduleTimeChanged(previousTime, time(next.airingAt))) {
+        next.scheduleStatus = 'rescheduled'; next.previousAiringAt = previousTime;
+      } else if (old.scheduleStatus === 'rescheduled'
+        && scheduleTimeChanged(time(old.previousAiringAt), time(next.airingAt))) {
+        // Ordinary refreshes retain the real move rather than moving it again.
+        next.scheduleStatus = 'rescheduled'; next.previousAiringAt = old.previousAiringAt;
+      }
     }
     rows.set(key, next);
   }
