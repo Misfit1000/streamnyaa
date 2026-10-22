@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Calendar, ChevronRight, Clock, RefreshCw, TrendingUp } from 'lucide-react';
-import { fetchRecentEpisodes, fetchSchedule, fetchSeasonalAnime, fetchUpcomingAnime } from '../api/jikan';
+import { fetchSchedule } from '../api/jikan';
+import { catalogOptions, catalogRequest } from '../api/webCatalog';
+import DataStatus from '../components/DataStatus';
 import AdSenseAd from '../components/AdSenseAd';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
@@ -23,49 +25,51 @@ function AnimeGridSkeleton({ count = 10 }: { count?: number }) {
 }
 
 export default function Home() {
-  const { myList } = useStore();
+  const { myList, nsfwMode } = useStore();
+  const [recentBefore] = useState(() => Math.floor(Date.now() / 60_000) * 60);
   const [recentlyViewed, setRecentlyViewed] = useState<RecentAnime[]>([]);
   const seasonalSection=useNearViewport();
   const upcomingSection=useNearViewport();
+  const scoreSection=useNearViewport<HTMLDivElement>();
   const localTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'your local time', []);
 
   useEffect(() => {
     setRecentlyViewed(getRecentAnime(6));
   }, []);
 
-  const { data: seasonalData, isLoading: seasonalLoading } = useQuery({
-    queryKey: ['seasonalAnime'],
-    queryFn: fetchSeasonalAnime,
-  });
+  const seasonal = useInfiniteQuery(catalogOptions(catalogRequest(new URLSearchParams('sort=trending'), nsfwMode)));
+  const seasonalData = seasonal.data?.pages[0], seasonalLoading = seasonal.isLoading;
+  const score = useInfiniteQuery({ ...catalogOptions(catalogRequest(new URLSearchParams('sort=score&status=airing'), nsfwMode)), enabled: scoreSection.eligible });
   const topSeasonScores = useMemo(() => {
-    return [...(seasonalData?.data || [])]
+    return [...(score.data?.pages[0]?.data || [])]
       .filter((anime: any) => Number(anime.score) > 0)
       .sort((a: any, b: any) => Number(b.score || 0) - Number(a.score || 0))
       .slice(0, 6);
-  }, [seasonalData]);
+  }, [score.data]);
 
-  const { data: recentData, isLoading: recentLoading } = useQuery({
-    queryKey: ['recentEpisodes'],
-    queryFn: fetchRecentEpisodes,
-  });
+  const recent = useInfiniteQuery(catalogOptions(catalogRequest(new URLSearchParams(`sort=recent&before=${recentBefore}`), nsfwMode)));
+  const recentData = recent.data?.pages[0], recentLoading = recent.isLoading;
 
-  const { data: upcomingData, isLoading: upcomingLoading } = useQuery({
-    queryKey: ['upcomingAnime'],
-    queryFn: fetchUpcomingAnime,
+  const upcoming = useInfiniteQuery({
+    ...catalogOptions(catalogRequest(new URLSearchParams('sort=upcoming'), nsfwMode)),
     enabled: upcomingSection.eligible,
   });
+  const upcomingData = upcoming.data?.pages[0], upcomingLoading = upcoming.isLoading;
+  const [clock, setClock] = useState(Date.now());
+  useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 60_000); return () => clearInterval(timer); }, []);
 
-  const todayStart = new Date();
+  const todayStart = new Date(clock);
   todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date();
+  const todayEnd = new Date(clock);
   todayEnd.setHours(23, 59, 59, 999);
   const todayStartSeconds = Math.floor(todayStart.getTime() / 1000);
   const todayEndSeconds = Math.floor(todayEnd.getTime() / 1000);
 
-  const { data: scheduleData, isLoading: scheduleLoading } = useQuery({
-    queryKey: ['todaySchedule', todayStartSeconds, todayEndSeconds],
-    queryFn: () => fetchSchedule(1, todayStartSeconds, todayEndSeconds),
+  const schedule = useQuery({
+    queryKey: ['todaySchedule', todayStartSeconds, todayEndSeconds, nsfwMode],
+    queryFn: ({signal}) => fetchSchedule(1, todayStartSeconds, todayEndSeconds, {signal}),
   });
+  const scheduleData = schedule.data, scheduleLoading = schedule.isLoading;
 
   const homeJsonLd = {
     '@context': 'https://schema.org',
@@ -95,7 +99,7 @@ export default function Home() {
         jsonLd={homeJsonLd}
       />
 
-      <Spotlight animeList={seasonalData?.data || []} />
+      <Spotlight animeList={seasonalData?.data || []} loading={seasonal.isPending} error={seasonal.isError} retry={() => void seasonal.refetch()}/>
 
       <main className="container mx-auto mt-14 grid grid-cols-1 gap-12 px-4 md:px-10 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-16">
@@ -108,10 +112,11 @@ export default function Home() {
                 Recently updated
               </h2>
               </div>
-              <Link to="/search?sort=recent" className="flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary">
+              <Link to={`/search?sort=recent&before=${recentBefore}`} className="flex items-center gap-1 text-sm font-semibold text-muted-foreground transition-colors hover:text-primary">
                 View All <ChevronRight className="h-4 w-4" />
               </Link>
             </div>
+            <DataStatus label="Recent episodes" error={recent.isError} fetching={recent.isFetching && !recent.isLoading} empty={!recent.isPending && !recentData?.data.length} retry={() => void recent.refetch()}/>
             <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {recentLoading ? (
                 <AnimeGridSkeleton />
@@ -126,6 +131,7 @@ export default function Home() {
           <AdSenseAd />
 
           <section ref={seasonalSection.ref}>
+            <DataStatus label="Trending anime" error={seasonal.isError} fetching={seasonal.isFetching && !seasonal.isLoading} empty={!seasonal.isPending && !seasonalData?.data.length} retry={() => void seasonal.refetch()}/>
             <div className="mb-7 flex items-end justify-between gap-4">
               <div>
                 <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">This season</p>
@@ -150,6 +156,7 @@ export default function Home() {
           </section>
 
           <section ref={upcomingSection.ref}>
+            <DataStatus label="Upcoming anime" error={upcoming.isError} fetching={upcoming.isFetching && !upcoming.isLoading} empty={upcomingSection.eligible && !upcoming.isPending && !upcomingData?.data.length} retry={() => void upcoming.refetch()}/>
             <div className="mb-7 flex items-end justify-between gap-4">
               <div>
                 <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-primary">Next up</p>
@@ -175,7 +182,7 @@ export default function Home() {
         </div>
 
         <aside className="space-y-8">
-          <div className="overflow-hidden rounded-3xl bg-[linear-gradient(145deg,rgba(225,29,72,0.13),rgba(255,255,255,0.045)_48%,rgba(255,255,255,0.02)),rgba(255,255,255,0.035)] p-5 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl">
+          <div ref={scoreSection.ref} className="overflow-hidden rounded-3xl bg-[linear-gradient(145deg,rgba(225,29,72,0.13),rgba(255,255,255,0.045)_48%,rgba(255,255,255,0.02)),rgba(255,255,255,0.035)] p-5 shadow-xl shadow-black/10 ring-1 ring-white/[0.06] backdrop-blur-2xl">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">Score board</p>
@@ -186,7 +193,7 @@ export default function Home() {
               </Link>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {seasonalLoading ? (
+              {score.isLoading || !scoreSection.eligible ? (
                 Array.from({ length: 6 }, (_, index) => (
                   <div key={`top-score-skeleton-${index}`} className="aspect-[2/3] animate-pulse rounded-2xl bg-secondary/60" />
                 ))
@@ -211,6 +218,7 @@ export default function Home() {
                 </Link>
               ))}
             </div>
+            <DataStatus label="Airing scores" error={score.isError} empty={!score.isPending && !topSeasonScores.length} retry={() => void score.refetch()}/>
             <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
               <Link to="/search?sort=trending&status=airing" className="rounded-2xl bg-white/[0.05] p-3 font-bold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary">
                 Season feed
@@ -267,6 +275,7 @@ export default function Home() {
             </div>
 
             <div className="max-h-[680px] space-y-3 overflow-y-auto pr-2 custom-scrollbar">
+              <DataStatus label="Today's schedule" error={schedule.isError} retry={() => void schedule.refetch()}/>
               {scheduleData?.data?.length === 0 ? (
                 <div className="py-4 text-center text-sm text-muted-foreground">No episodes scheduled for today.</div>
               ) : scheduleLoading ? (

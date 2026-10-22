@@ -24,5 +24,7 @@ export function articleHtml(post:BlogPostData, requestPath:string) {
     +`<script id="streamnyaa-jsonld" type="application/ld+json">${scriptJson(article.jsonLd)}</script>`;
   const bootstrap=scriptJson({path:requestPath,post});
   if(bootstrap.length>2*1024*1024)throw Error('Article exceeds the public rendering limit.');
-  return html.replace('</head>',head+'</head>').replace('<div id="root"></div>',`<div id="root">${article.body}</div><script id="streamnyaa-article" type="application/json">${bootstrap}</script>`);
+  const root = html.includes('<!--streamnyaa-app-start-->') ? /<!--streamnyaa-app-start-->[\s\S]*?<!--streamnyaa-app-end-->/ : /<div id="root"><\/div>/;
+  if (!root.test(html)) throw Error('The article rendering shell is incompatible.');
+  return html.replace('</head>',()=>head+'</head>').replace(root,()=>`<div id="root">${article.body}</div><script id="streamnyaa-article" type="application/json">${bootstrap}</script>`);
 }

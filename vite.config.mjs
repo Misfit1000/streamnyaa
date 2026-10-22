@@ -10,6 +10,7 @@ const seoComponentPath = path.resolve(__dirname, 'src/components/Seo.tsx');
 const desktopSeoComponentPath = path.resolve(__dirname, 'src/components/SeoDesktop.tsx');
 
 export default defineConfig({
+  define: { __STREAMNYAA_WEB_BUILD__: JSON.stringify(process.env.VERCEL_GIT_COMMIT_SHA || process.env.STREAMNYAA_BUILD_REVISION || 'local') },
   plugins: [react(), tailwindcss()],
   publicDir: isDesktopTarget ? false : path.resolve(__dirname, 'public'),
   resolve: {
@@ -47,6 +48,7 @@ export default defineConfig({
         },
       }
     : {
+        manifest: true,
         target: 'es2022',
         cssCodeSplit: true,
         rollupOptions: {

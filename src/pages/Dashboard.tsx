@@ -81,7 +81,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    const localHistory = getDownloadHistory(8);
+    const localHistory = getDownloadHistory(8, user?.id || '__guest__');
     setDownloadHistory(localHistory.slice(0, 6));
     setHistoryState(session?.access_token ? 'loading' : 'local');
 

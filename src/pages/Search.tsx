@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { searchAnime, fetchGenres } from '../api/jikan';
+import { fetchGenres } from '../api/jikan';
+import { catalogOptions, catalogRequest, mediaKey, uniqueMedia } from '../api/webCatalog';
+import DataStatus from '../components/DataStatus';
+import { useStore } from '../store/useStore';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
 import { slugifyTitle } from '../lib/slug';
@@ -39,52 +42,23 @@ const DESKTOP_EXPLORE_FALLBACK = [
   },
 ];
 
-function animeKey(anime: any) {
-  return String(anime?.mal_id || anime?.id || anime?.title || '');
-}
-
-function uniqueAnimeList(items: any[]) {
-  const seen = new Set<string>();
-  return items.filter((anime) => {
-    const key = animeKey(anime);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 export default function Search() {
   const desktop = isDesktopApp();
   const [searchParams, setSearchParams] = useSearchParams();
   
   const [query, setQuery] = useState(searchParams.get('q') || '');
-  const [type, setType] = useState(searchParams.get('type') || '');
-  const [status, setStatus] = useState(searchParams.get('status') || '');
-  const [rating, setRating] = useState(searchParams.get('rating') || '');
-  const [genre, setGenre] = useState(searchParams.get('genre') || '');
-
-  const { data: genresData } = useQuery({
-    queryKey: ['genres'],
-    queryFn: fetchGenres,
-  });
-
-  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = useInfiniteQuery({
-    queryKey: ['search', query, type, rating, genre, searchParams.get('sort'), status],
-    queryFn: ({ pageParam = 1 }) => searchAnime(query, pageParam as number, type, rating, genre, searchParams.get('sort') || '', status),
-    initialPageParam: 1,
-    placeholderData: (previous) => previous,
-    getNextPageParam: (lastPage, allPages) => {
-      return lastPage.pagination.has_next_page ? allPages.length + 1 : undefined;
-    }
-  });
-
-  const allAnimes = useMemo(
-    () => uniqueAnimeList(data?.pages.flatMap((page) => page.data) || []),
-    [data?.pages],
-  );
-  const visibleAnimes = desktop && !query && allAnimes.length === 0 && !isLoading
-    ? DESKTOP_EXPLORE_FALLBACK
-    : allAnimes;
+  const nsfwMode = useStore(state => state.nsfwMode);
+  const type = searchParams.get('type') || '', status = searchParams.get('status') || '';
+  const rating = searchParams.get('rating') || '', genre = searchParams.get('genre') || '';
+  const committedQuery = searchParams.get('q') || '';
+  const request = useMemo(() => catalogRequest(searchParams, nsfwMode), [searchParams.toString(), nsfwMode]);
+  const genresQuery = useQuery({ queryKey: ['genres', nsfwMode], queryFn: fetchGenres });
+  const genresData = genresQuery.data;
+  const results = useInfiniteQuery(catalogOptions(request));
+  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = results;
+  const allAnimes = useMemo(() => uniqueMedia(data?.pages.flatMap(page => page.data) || []), [data]);
+  const visibleAnimes = desktop && !committedQuery && allAnimes.length === 0 && !isLoading && !results.isError
+    ? DESKTOP_EXPLORE_FALLBACK : allAnimes;
   const sort = searchParams.get('sort') || '';
   const hasSimpleGenreFilter = Boolean(genre) && !query && !type && !status && !rating;
   const hasPopularFilter = sort === 'popular' && !query && !genre && !type && !status && !rating;
@@ -105,24 +79,29 @@ export default function Search() {
       : 'Search anime on StreamNyaa by title, genre, type, status, and rating with clean anime pages and source search options.';
   const activeFilterCount = [type, status, rating, genre, sort].filter(Boolean).length;
 
+  useEffect(() => { setQuery(committedQuery); }, [committedQuery]);
   useEffect(() => {
-    setQuery(searchParams.get('q') || '');
-    setType(searchParams.get('type') || '');
-    setStatus(searchParams.get('status') || '');
-    setRating(searchParams.get('rating') || '');
-    setGenre(searchParams.get('genre') || '');
-  }, [searchParams]);
+    if (query.trim() === committedQuery) return;
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams);
+      if (query.trim()) params.set('q', query.trim()); else params.delete('q');
+      params.delete('before'); setSearchParams(params, { replace: true });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, committedQuery, searchParams, setSearchParams]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const params = new URLSearchParams();
-    if (query) params.append('q', query);
-    if (type) params.append('type', type);
-    if (status) params.append('status', status);
-    if (rating) params.append('rating', rating);
-    if (genre) params.append('genre', genre);
+    const params = new URLSearchParams(searchParams);
+    params.delete('q');
+    params.delete('before');
+    if (query) params.set('q', query.trim());
+    if (type) params.set('type', type);
+    if (status) params.set('status', status);
+    if (rating) params.set('rating', rating);
+    if (genre) params.set('genre', genre);
     const currentSort = searchParams.get('sort');
-    if (currentSort) params.append('sort', currentSort);
+    if (currentSort) params.set('sort', currentSort);
     setSearchParams(params);
   };
 
@@ -140,6 +119,7 @@ export default function Search() {
         description={seoDescription}
         canonicalPath={canonicalPath}
       />
+      {!desktop && <h1 className="mb-5 text-2xl font-black">{request.query ? 'Search anime' : ({recent:'Recently updated',trending:'Trending now',upcoming:'Upcoming anime',score:'Strongest airing picks',popular:'Popular anime',search:'Browse anime'})[request.feed]}</h1>}
       {desktop ? (
         <div className="mb-8 rounded-3xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))] p-6 shadow-2xl shadow-black/20">
           <div className="flex flex-wrap items-end justify-between gap-4">
@@ -218,7 +198,7 @@ export default function Search() {
                 <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Genre</label>
                 <select 
                   value={genre} 
-                  onChange={(e) => { setGenre(e.target.value); handleFilterChange('genre', e.target.value); }}
+                  onChange={(e) => { handleFilterChange('genre', e.target.value); }}
                   className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
                 >
                   <option value="">All</option>
@@ -247,35 +227,11 @@ export default function Search() {
             </button>
           </form>
 
-          {isLoading ? (
-            <div className="flex justify-center py-20">
-              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : visibleAnimes.length === 0 ? (
-            <div className="text-center py-20 text-muted-foreground">
-              No anime found matching your criteria.
-            </div>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
-                {visibleAnimes.map((anime: any, index: number) => (
-                  <AnimeCard key={`search-${animeKey(anime)}-${index}`} anime={anime} />
-                ))}
-              </div>
-
-              {hasNextPage && (
-                <div className="mt-12 flex justify-center">
-                  <button
-                    onClick={() => fetchNextPage()}
-                    disabled={isFetchingNextPage}
-                    className="bg-secondary hover:bg-secondary/80 text-foreground px-8 py-3 rounded-full font-medium transition-colors disabled:opacity-50"
-                  >
-                    {isFetchingNextPage ? 'Loading...' : 'Load More'}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
+          <DataStatus label="Anime results" error={results.isError} fetching={results.isFetching && !isLoading && !isFetchingNextPage} retry={() => void results.refetch()}/>
+          {isLoading ? <div role="status" className="py-20 text-center text-muted-foreground">Loading anime…</div>
+            : visibleAnimes.length === 0 ? <div className="py-20 text-center text-muted-foreground">{results.isError ? 'Anime results are temporarily unavailable.' : hasNextPage ? 'No matching titles in this page. More results are available below.' : 'No anime found matching your criteria.'}</div>
+            : <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6">{visibleAnimes.map((anime: any) => <AnimeCard key={mediaKey(anime)} anime={anime}/>)}</div>}
+          {hasNextPage && <div className="mt-10 flex justify-center"><button onClick={() => void fetchNextPage()} disabled={isFetchingNextPage} className="rounded-full bg-secondary px-8 py-3 font-medium disabled:opacity-50">{isFetchingNextPage ? 'Loading…' : results.isFetchNextPageError ? 'Retry next page' : 'Load More'}</button></div>}
         </div>
       </div>
     </div>

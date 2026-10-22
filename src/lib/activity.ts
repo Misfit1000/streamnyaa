@@ -21,6 +21,7 @@ export type DownloadHistoryEntry = {
   animeId?: number | string;
   episode?: number | string | null;
   action: 'copy' | 'open';
+  ownerId?: string;
   size?: string;
   seeders?: string | number;
   createdAt: string;
@@ -28,6 +29,7 @@ export type DownloadHistoryEntry = {
 
 const RECENT_ANIME_KEY = 'streamnyaa.recentAnime';
 const DOWNLOAD_HISTORY_KEY = 'streamnyaa.downloadHistory';
+const LEGACY_DOWNLOAD_OWNER = 'streamnyaa.downloadHistory.legacyOwner.v1';
 
 function readList<T>(key: string): T[] {
   try {
@@ -68,8 +70,12 @@ export function saveRecentAnime(anime: any) {
   writeList(RECENT_ANIME_KEY, [nextItem, ...existing].slice(0, 12));
 }
 
-export function getDownloadHistory(limit = 8) {
-  return readList<DownloadHistoryEntry>(DOWNLOAD_HISTORY_KEY).slice(0, limit);
+export function getDownloadHistory(limit = 8, owner?: string) {
+  const rows = readList<DownloadHistoryEntry>(DOWNLOAD_HISTORY_KEY);
+  if (!owner) return rows.slice(0, limit);
+  let legacyOwner: string | null = null;
+  try { legacyOwner = localStorage.getItem(LEGACY_DOWNLOAD_OWNER); if (!legacyOwner) { localStorage.setItem(LEGACY_DOWNLOAD_OWNER, owner); legacyOwner = owner; } } catch { /* Do not expose unowned rows when storage is unavailable. */ }
+  return rows.filter(row => row.ownerId ? row.ownerId === owner : legacyOwner === owner).slice(0, limit);
 }
 
 function normalizeRemoteHistory(row: any): DownloadHistoryEntry | null {
@@ -130,11 +136,12 @@ async function readRemoteHistory(session: AuthSession, limit: number) {
 export async function saveDownloadHistory(entry: Omit<DownloadHistoryEntry, 'id' | 'createdAt'>, session?: AuthSession | null) {
   const nextItem: DownloadHistoryEntry = {
     ...entry,
+    ownerId: session?.user?.id || '__guest__',
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     createdAt: new Date().toISOString(),
   };
-  const existing = readList<DownloadHistoryEntry>(DOWNLOAD_HISTORY_KEY).filter((item) => item.magnet !== nextItem.magnet || item.action !== nextItem.action);
-  writeList(DOWNLOAD_HISTORY_KEY, [nextItem, ...existing].slice(0, 30));
+  const existing = readList<DownloadHistoryEntry>(DOWNLOAD_HISTORY_KEY).filter(item => item.ownerId !== nextItem.ownerId || item.magnet !== nextItem.magnet || item.action !== nextItem.action);
+  writeList(DOWNLOAD_HISTORY_KEY, [...[nextItem, ...existing.filter(item => item.ownerId === nextItem.ownerId)].slice(0,30), ...existing.filter(item => item.ownerId !== nextItem.ownerId)]);
 
   await syncLocalDownloadHistoryToAccount(session);
 }
@@ -156,7 +163,7 @@ async function uploadHistory(session: AuthSession, owner?: string) {
   const markerKey = owner ? `streamnyaa.downloadHistory.synced.v1:${owner}` : null;
   const acknowledged = new Set(markerKey ? readList<string>(markerKey) : []);
   for (;;) {
-    const entries = getDownloadHistory(30).filter(entry => !acknowledged.has(JSON.stringify(entry)));
+    const entries = getDownloadHistory(30, owner).filter(entry => !acknowledged.has(JSON.stringify(entry)));
     if (!entries.length) return;
     const response = await accountApiFetch('/api/download-history', {
         method: 'POST',
@@ -168,7 +175,7 @@ async function uploadHistory(session: AuthSession, owner?: string) {
     });
     if (!response.ok || (await response.json())?.ok !== true) return;
     entries.forEach(entry => acknowledged.add(JSON.stringify(entry)));
-    if (markerKey) writeList(markerKey, getDownloadHistory(30).map(entry => JSON.stringify(entry)).filter(entry => acknowledged.has(entry)));
+    if (markerKey) writeList(markerKey, getDownloadHistory(30, owner).map(entry => JSON.stringify(entry)).filter(entry => acknowledged.has(entry)));
     // Include actions saved while this batch was in flight without concurrent writes.
   }
 }

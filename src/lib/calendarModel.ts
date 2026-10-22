@@ -8,7 +8,8 @@ export type CalendarRecord = {
 };
 export type PublicCalendar = { version: 1; data: CalendarRecord[]; complete: boolean; cursor?: string; stale: boolean;
   fetchedAt: number; providers: Record<string, { fetchedAt: number; stale: boolean; error?: string }>;
-  persistenceError?: string; retryAt?: number };
+  persistenceError?: string; retryAt?: number; pendingIdentities?: number; initialSnapshot?: boolean;
+  continuation?: { schedulePage: number; identityOffset: number; scheduleComplete: boolean; identitiesComplete: boolean } };
 const positive = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : undefined;
 export function isCalendarRecord(value: any): value is CalendarRecord {
   return value && typeof value==='object' && typeof value.title==='string' && value.title.length<=1000
@@ -22,6 +23,26 @@ export function isPublicCalendar(value: any): value is PublicCalendar {
   return value?.version===1 && Array.isArray(value.data) && value.data.length<=1500 && value.data.every(isCalendarRecord)
     && typeof value.complete==='boolean' && typeof value.stale==='boolean' && Number.isFinite(value.fetchedAt)
     && value.providers && Object.values(value.providers).every((state:any)=>Number.isFinite(state.fetchedAt)&&typeof state.stale==='boolean');
+}
+/** Conflicting mappings are coverage gaps, never evidence for merging titles. */
+export function calendarIdentityCoverage(rows: CalendarRecord[]) {
+  const aids=new Map<number,Set<number>>(),mids=new Map<number,Set<number>>(),routes=new Map<string,Set<string>>();
+  for(const row of rows){
+    if(row.anilist_id&&row.mal_id){
+      const a=aids.get(row.anilist_id)||new Set<number>();a.add(row.mal_id);aids.set(row.anilist_id,a);
+      const m=mids.get(row.mal_id)||new Set<number>();m.add(row.anilist_id);mids.set(row.mal_id,m);
+    }
+    if(row.sourceRoute&&(row.anilist_id||row.mal_id)){const ids=routes.get(row.sourceRoute)||new Set<string>();ids.add(row.canonicalId);routes.set(row.sourceRoute,ids);}
+  }
+  const pending=new Set<string>(),unresolved=new Set<CalendarRecord>();
+  for(const row of rows){
+    const conflictingAid=row.anilist_id&&(aids.get(row.anilist_id)?.size||0)>1;
+    const conflictingMal=row.mal_id&&(mids.get(row.mal_id)?.size||0)>1;
+    if(!row.anilist_id&&!row.mal_id||conflictingAid||conflictingMal||row.sourceRoute&&(routes.get(row.sourceRoute)?.size||0)>1){
+      unresolved.add(row);pending.add(row.sourceRoute|| (conflictingMal?`mal:${row.mal_id}`:row.canonicalId));
+    }
+  }
+  return {pendingCount:pending.size,unresolved};
 }
 const time = (value: unknown) => {
   if (!value || /^0001-/.test(String(value))) return 0;
@@ -60,24 +81,53 @@ export function normalizeScheduleTrack(row: any, detail: any, fetchedAt: number)
     scheduleStatus: status || 'scheduled', scheduleReason: String(row.delayedText || ''), scheduleFetchedAt: fetchedAt,
     scheduleProvider:'animeschedule', scheduleId:`${canonicalId}:episode-${episode}:${track}`, sourceRoute: route };
 }
-/** Missing pages and fresh AniList originals cannot resolve explicit track delays. */
+/** Canonicalize the entire set first: hydration order cannot leave a legacy alias behind. */
 export function reconcileCalendarRecords(previous: CalendarRecord[], incoming: CalendarRecord[], now = Date.now()) {
-  const rows:CalendarRecord[] = [];
-  for (const row of [...previous.filter(row => row?.scheduleId && row.scheduleFetchedAt >= now - 60 * 86400_000),...incoming]) {
-    const oldIndex = rows.findIndex(old => !(old.anilist_id&&row.anilist_id&&old.anilist_id!==row.anilist_id)&&!(old.mal_id&&row.mal_id&&old.mal_id!==row.mal_id)&&old.airingEpisode === row.airingEpisode && old.releaseTrack === row.releaseTrack
-      && (old.canonicalId === row.canonicalId || old.sourceRoute && old.sourceRoute === row.sourceRoute
-        || old.mal_id && row.mal_id === old.mal_id && !(row.anilist_id && old.anilist_id && row.anilist_id !== old.anilist_id)));
-    const old = rows[oldIndex];
-    if (old && (old.scheduleFetchedAt > row.scheduleFetchedAt || old.scheduleProvider === 'animeschedule' && row.scheduleProvider === 'anilist')) continue;
-    const next = { ...old, ...row, image: row.image || old?.image };
-    next.anilist_id=row.anilist_id||old?.anilist_id;next.mal_id=row.mal_id||old?.mal_id;
-    next.canonicalId=next.anilist_id?`anilist:${next.anilist_id}`:next.mal_id?`mal:${next.mal_id}`:row.canonicalId;
-    next.scheduleId=`${next.canonicalId}:episode-${next.airingEpisode}:${next.releaseTrack}`;
-    if (old && next.scheduleStatus === 'scheduled' && next.airingAt > 0
+  const source = [...previous.filter(row => row?.scheduleId && row.scheduleFetchedAt >= now - 60 * 86400_000), ...incoming];
+  const routes = new Map<string, { aids: Set<number>; mids: Set<number> }>();
+  const malLinks = new Map<number, Set<number>>();
+  const aidLinks = new Map<number, Set<number>>();
+  for (const row of source) {
+    if (row.sourceRoute) {
+      const ids = routes.get(row.sourceRoute) || { aids: new Set<number>(), mids: new Set<number>() };
+      if (row.anilist_id) ids.aids.add(row.anilist_id); if (row.mal_id) ids.mids.add(row.mal_id);
+      routes.set(row.sourceRoute, ids);
+    }
+    if (row.anilist_id && row.mal_id) {
+      const ids = malLinks.get(row.mal_id) || new Set<number>(); ids.add(row.anilist_id); malLinks.set(row.mal_id, ids);
+      const mids = aidLinks.get(row.anilist_id) || new Set<number>(); mids.add(row.mal_id); aidLinks.set(row.anilist_id, mids);
+    }
+  }
+  const rows = new Map<string, CalendarRecord>();
+  for (const original of source) {
+    const row = { ...original }, route = row.sourceRoute && routes.get(row.sourceRoute);
+    if (route && route.aids.size <= 1 && route.mids.size <= 1) {
+      row.anilist_id ||= [...route.aids][0]; row.mal_id ||= [...route.mids][0];
+    }
+    const equivalent = row.mal_id && malLinks.get(row.mal_id);
+    if (!row.anilist_id && equivalent && equivalent.size === 1) row.anilist_id = [...equivalent][0];
+    const malEquivalent = row.anilist_id && aidLinks.get(row.anilist_id);
+    if (!row.mal_id && malEquivalent && malEquivalent.size === 1) row.mal_id = [...malEquivalent][0];
+    row.canonicalId = row.anilist_id ? 'anilist:' + row.anilist_id : row.mal_id ? 'mal:' + row.mal_id : row.canonicalId;
+    row.scheduleId = row.canonicalId + ':episode-' + row.airingEpisode + ':' + row.releaseTrack;
+    // Conflicting explicit provider IDs remain separate even if one namespace agrees.
+    const key = row.scheduleId + (malEquivalent && malEquivalent.size > 1 ? ':mal-' + (row.mal_id || 'unknown') : '');
+    const old = rows.get(key);
+    if (!old) { rows.set(key, row); continue; }
+    const providerWins = old.scheduleProvider === 'animeschedule' && row.scheduleProvider === 'anilist';
+    if (providerWins || old.scheduleProvider === row.scheduleProvider && old.scheduleFetchedAt > row.scheduleFetchedAt) {
+      rows.set(key, { ...row, ...old, images: old.images || row.images, image: old.image || row.image }); continue;
+    }
+    const next: CalendarRecord = { ...old, ...row, image: row.image || old.image };
+    if (row.scheduleProvider === 'animeschedule' && old.scheduleProvider === 'anilist') {
+      next.title = old.title || row.title; next.images = old.images || row.images;
+      next.score = old.score ?? row.score; next.type = old.type || row.type;
+    }
+    if (next.scheduleStatus === 'scheduled' && next.airingAt > 0
       && (old.airingAt && Math.abs(old.airingAt - next.airingAt) >= 60 || old.scheduleStatus !== 'scheduled')) {
       next.scheduleStatus = 'rescheduled'; next.previousAiringAt = old.airingAt * 1000 || old.previousAiringAt;
     }
-    if (oldIndex >= 0) rows[oldIndex] = next; else rows.push(next);
+    rows.set(key, next);
   }
-  return rows.sort((a,b) => b.scheduleFetchedAt-a.scheduleFetchedAt).slice(0,1500);
+  return [...rows.values()].sort((a,b) => b.scheduleFetchedAt-a.scheduleFetchedAt).slice(0,1500);
 }

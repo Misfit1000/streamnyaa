@@ -20,7 +20,7 @@ export default function MangaDetails() {
     }
   };
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['manga', id],
     queryFn: () => fetchMangaDetails(id!),
     enabled: !!id,
@@ -35,12 +35,12 @@ export default function MangaDetails() {
     );
   }
 
-  if (error) {
+  if (error && !data?.data) {
     return (
       <div className="min-h-screen flex items-center justify-center text-center p-4">
         <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-8 max-w-md">
           <p className="text-red-500 font-bold mb-4">{error.message || 'An error occurred while fetching details.'}</p>
-          <Link to="/" className="text-sm font-semibold text-primary hover:underline">Return Home</Link>
+          <button className="mr-4 text-sm font-semibold text-primary underline" onClick={() => void refetch()}>Retry</button><Link to="/" className="text-sm font-semibold text-primary hover:underline">Return Home</Link>
         </div>
       </div>
     );

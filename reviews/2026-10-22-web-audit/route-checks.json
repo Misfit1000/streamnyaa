@@ -1,0 +1,102 @@
+[
+  {
+    "path": "/anime/popular",
+    "title": "Popular Anime",
+    "nav": 1
+  },
+  {
+    "path": "/anime/genre/action",
+    "title": "Action Anime",
+    "nav": 1
+  },
+  {
+    "path": "/anime/season/fall-2026",
+    "title": "Fall 2026 Anime",
+    "nav": 1
+  },
+  {
+    "path": "/anime/101-fixture-anime-1",
+    "title": "Fixture Anime 1",
+    "nav": 1
+  },
+  {
+    "path": "/anime/101-fixture-anime-1/downloads?ep=4",
+    "title": "Fixture Anime 1",
+    "nav": 1
+  },
+  {
+    "path": "/manga/101-fixture",
+    "title": "Fixture Anime 1",
+    "nav": 1
+  },
+  {
+    "path": "/my-list",
+    "title": "My List",
+    "nav": 1
+  },
+  {
+    "path": "/blog",
+    "title": "Anime notes worth opening",
+    "nav": 1
+  },
+  {
+    "path": "/blog/popular-anime-right-now",
+    "title": "Local article fixture",
+    "nav": 1
+  },
+  {
+    "path": "/nyaa",
+    "title": "Anime Download Search",
+    "nav": 1
+  },
+  {
+    "path": "/login",
+    "title": "Welcome back",
+    "nav": 1
+  },
+  {
+    "path": "/login/admin",
+    "title": "Admin sign in",
+    "nav": 1
+  },
+  {
+    "path": "/reset-password",
+    "title": "Reset your password",
+    "nav": 1
+  },
+  {
+    "path": "/dashboard",
+    "title": "Welcome back",
+    "nav": 1
+  },
+  {
+    "path": "/admin",
+    "title": "Admin sign in",
+    "nav": 1
+  },
+  {
+    "path": "/about",
+    "title": "About StreamNyaa",
+    "nav": 1
+  },
+  {
+    "path": "/privacy-policy",
+    "title": "Privacy Policy",
+    "nav": 1
+  },
+  {
+    "path": "/terms",
+    "title": "Terms of Use",
+    "nav": 1
+  },
+  {
+    "path": "/disclaimer",
+    "title": "Disclaimer",
+    "nav": 1
+  },
+  {
+    "path": "/unavailable-fixture-route",
+    "title": "Page not found",
+    "nav": 1
+  }
+]

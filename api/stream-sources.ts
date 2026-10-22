@@ -124,18 +124,20 @@ async function cachedJson(cacheKey: string, ttlSeconds: number, fetcher: () => P
 
 async function fetchAniList(req: any, ttlSeconds: number, usage: RequestUsage) {
   const body = await readBody(req);
-  if (!body?.query || typeof body.query !== 'string') throw new Error('AniList query is required.');
+  if (!body?.query || typeof body.query !== 'string') throw new UpstreamMetadataError('AniList query is required.', 400);
 
   return cachedJson(`anilist:v2:${JSON.stringify(body)}`, ttlSeconds, async () => {
     const response = await usage.fetch(ANILIST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(12_000),
     });
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
     if (!response.ok || data?.errors?.length) {
-      throw new Error(data?.errors?.[0]?.message || `AniList returned ${response.status}`);
+      throw new UpstreamMetadataError(data?.errors?.[0]?.message || `AniList returned ${response.status}`, response.ok ? 502 : response.status, response.headers.get('retry-after'));
     }
+    if (!data?.data) throw new UpstreamMetadataError('AniList returned an incomplete response.', 502);
     return data;
   }, usage);
 }
@@ -349,7 +351,7 @@ export default async function handler(req: any, res: any) {
     if (error instanceof UpstreamMetadataError) {
       status = error.status;
       if (error.retryAfter) res.setHeader('Retry-After', error.retryAfter);
-      return res.status(error.status).json({error:error.message, provider:'tenrai', retryable:error.status === 429 || error.status >= 500 && error.status !== 501});
+      return res.status(error.status).json({error:error.message, provider:provider === 'jikan' ? 'tenrai' : provider, retryable:error.status === 429 || error.status >= 500 && error.status !== 501});
     }
     status = Number(error?.status)||500;
     if(error?.retryAt)res.setHeader('Retry-After',String(Math.max(1,Math.ceil((error.retryAt-Date.now())/1000))));

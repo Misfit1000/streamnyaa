@@ -55,6 +55,6 @@ export default async function handler(req:any,res:any){
   if(req.method!=='GET')return res.status(405).json({error:'Blog reads require GET. Use authenticated publishing jobs for generation.'});
   if(req.query.force||req.query.manual)return res.status(405).json({error:'Generation is available through authenticated Admin jobs only.'});
   const slug=String(Array.isArray(req.query.slug)?req.query.slug[0]:req.query.slug||'');
-  try{const value=await getCachedBlogPost(slug);res.setHeader('Cache-Control',value.articleStatus==='stale'?'no-store':'public, max-age=60, s-maxage=300, stale-while-revalidate=600');return res.status(200).json(value);}
+  try{const value=getBlogPost(slug)?await getCachedBlogPost(slug):await readPublishedArticle(slug);if(!value)throw Object.assign(Error('Article not found.'),{status:404});res.setHeader('Cache-Control',value.articleStatus==='stale'?'no-store':'public, max-age=60, s-maxage=300, stale-while-revalidate=600');return res.status(200).json(value);}
   catch(error){res.setHeader('Cache-Control','no-store');return res.status((error as any).status||503).json({error:(error as Error).message});}
 }

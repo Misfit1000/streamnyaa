@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, Link } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import Layout from './components/Layout';
 import Home from './pages/Home';
@@ -78,6 +78,7 @@ export default function App() {
                 <Route path="privacy-policy" element={<PrivacyPolicy />} />
                 <Route path="terms" element={<Terms />} />
                 <Route path="disclaimer" element={<Disclaimer />} />
+                <Route path="*" element={<section className="container mx-auto px-5 py-16"><h1 className="text-2xl font-bold">Page not found</h1><Link to="/" className="mt-4 inline-block text-primary underline">Back to Home</Link></section>} />
               </Route>
               </Routes>
             </Suspense>

@@ -1,4 +1,5 @@
 type MediaLike = {
+  anilist_id?: number | string | null;
   mal_id?: number | string | null;
   id?: number | string | null;
   title?: string | null;
@@ -24,7 +25,7 @@ export function slugifyTitle(title: string | null | undefined): string {
 }
 
 export function mediaSlug(media: MediaLike): string {
-  const id = extractNumericId(media.mal_id ?? media.id);
+  const id = media.mal_id ? extractNumericId(media.mal_id) : media.anilist_id ? `anilist-${media.anilist_id}` : extractNumericId(media.id);
   const title = media.title || media.title_english || media.title_romaji || media.name;
   return id + '-' + slugifyTitle(title);
 }

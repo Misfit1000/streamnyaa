@@ -1,4 +1,4 @@
-import { isCalendarRecord, normalizeScheduleTrack, reconcileCalendarRecords, type CalendarRecord, type PublicCalendar } from '../../src/lib/calendarModel.js';
+import { calendarIdentityCoverage, isCalendarRecord, normalizeScheduleTrack, reconcileCalendarRecords, scheduleProviderIds, type CalendarRecord, type PublicCalendar } from '../../src/lib/calendarModel.js';
 import { publicSnapshot, readPublicSnapshot, readPublicSnapshots } from './publicSnapshots.js';
 import { supabaseRest } from './adminAuth.js';
 import type { RequestUsage } from './requestReuse.js';
@@ -18,6 +18,7 @@ async function json(url: string, init: RequestInit, usage: RequestUsage, deadlin
 }
 export async function publicCalendar(req: any, usage: RequestUsage): Promise<PublicCalendar> {
   const deadline=Date.now()+18_000;
+  const progressive=req.query.progressive==='1';
   const start=Number(req.query.start), end=Number(req.query.end);
   if (!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<=0||end<=start||end-start>8*86400||Math.abs(start-Date.now()/1000)>14*86400) throw Object.assign(Error('Calendar requires a current window of at most eight days.'),{status:400});
   const [rawPage='1',rawRoute='0']=String(req.query.cursor||'1:0').split(':');
@@ -26,7 +27,16 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
   const from=Math.floor(start/86400)*86400, until=Math.ceil(end/86400)*86400;
   const providers:PublicCalendar['providers']={}, incoming:CalendarRecord[]=[];
   let nextPage=0,nextOffset=offset,retryAt=0,persistenceError:string|undefined;
-  const key=`calendar-records:${from}:${until}`, priorRead=readPublicSnapshot<CalendarRecord[]>(key);
+  const key=`calendar-records:${from}:${until}`, prior=await readPublicSnapshot<CalendarRecord[]>(key);
+  if(prior)prior.value=Array.isArray(prior.value)?prior.value.filter(isCalendarRecord):[];
+  if(progressive&&!req.query.cursor&&prior?.value?.length){
+    const data=reconcileCalendarRecords([],prior.value), states:PublicCalendar['providers']={};
+    for(const row of data){const fetchedAt=Math.min(states[row.scheduleProvider]?.fetchedAt||Infinity,row.scheduleFetchedAt);
+      states[row.scheduleProvider]={fetchedAt,stale:fetchedAt+(row.scheduleProvider==='anilist'?180_000:900_000)<Date.now()};}
+    return {version:1,data,providers:states,fetchedAt:Math.min(...Object.values(states).map(state=>state.fetchedAt)),stale:Object.values(states).some(state=>state.stale),complete:false,cursor:'1:0',initialSnapshot:true,
+      pendingIdentities:calendarIdentityCoverage(data).pendingCount,
+      continuation:{schedulePage:1,identityOffset:0,scheduleComplete:false,identitiesComplete:false}};
+  }
   const anilistPass=(async()=>{
   if(page){
     try{
@@ -42,11 +52,11 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
     }catch(error){retryAt=Math.max(retryAt,(error as any).retryAt||0);providers.anilist={fetchedAt:0,stale:true,error:(error as Error).message};}
   }
   })();
-  const prior=await priorRead;
-  if(prior)prior.value=Array.isArray(prior.value)?prior.value.filter(isCalendarRecord):[];
+  if(progressive&&!req.query.cursor)await anilistPass;
+  const deferTracks=progressive&&!req.query.cursor&&incoming.length>0;
   const token=process.env.ANIMESCHEDULE_TOKEN||process.env.ANIMESCHEDULE_API_TOKEN;
   let routesRemain=false;
-  if(token){
+  if(token&&!deferTracks){
     try{
       const weeks=[isoWeek(start*1000),isoWeek((end-1)*1000)].filter((week,index,all)=>all.findIndex(other=>other.year===week.year&&other.week===week.week)===index);
       const feed:any[]=[];let fetchedAt=Date.now(),stale=false;
@@ -58,16 +68,24 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
       const routes=[...new Set(relevantFeed.sort((a,b)=>Number(/delayed|break|postpon/i.test(b.airingStatus||''))-Number(/delayed|break|postpon/i.test(a.airingStatus||''))).map(row=>String(row.route||'')).filter(route=>/^[a-z0-9-]{1,240}$/.test(route)))];
       const details=new Map<string,any>();
       const cached=await readPublicSnapshots<any>(routes.map(route=>`animeschedule:anime:${route}`));
-      for(const route of routes){const detail=cached.get(`animeschedule:anime:${route}`);if(detail&&detail.fetchedAt+86400_000>Date.now()&&detail.value?.route===route)details.set(route,detail.value);}
+      for(const route of routes){const detail=cached.get(`animeschedule:anime:${route}`);if(detail&&detail.value?.route===route&&(detail.fetchedAt+86400_000>Date.now()||Object.keys(scheduleProviderIds(detail.value)).length))details.set(route,detail.value);}
+      const priority=Number(req.query.priorityDay)||start;
+      const unresolved=routes.filter(route=>!details.has(route)).sort((a,b)=>{
+        const distance=(route:string)=>Math.min(...relevantFeed.filter(row=>row.route===route).map(row=>Math.abs(Date.parse(row.episodeDate)-priority*1000)));
+        return distance(a)-distance(b)||a.localeCompare(b);
+      });
       nextOffset=offset;
+      const batch=progressive?unresolved.slice(0,req.query.cursor?6:0):routes.slice(offset,offset+(req.query.cursor?6:0));
+      routesRemain=progressive?unresolved.length>0:offset<routes.length;
       // First paint uses the real schedule and shared identity snapshots. New
       // identity discovery belongs to bounded continuation, not that paint.
-      for(const route of routes.slice(offset,offset+(req.query.cursor?6:0))){
+      for(const route of batch){
         if (Date.now()>deadline-5000) break;
-        try{if(!details.has(route)){const detail=await publicSnapshot<any>(`animeschedule:anime:${route}`,86400,()=>fetchSchedule(`/anime/${route}`),value=>value&&typeof value==='object'&&!Array.isArray(value)&&value.route===route);if(!detail.stale)details.set(route,detail.value);}}catch(error){if([403,429].includes((error as any).status))throw error;/* Unresolved identities stay provider-qualified. */}
+        try{if(!details.has(route)){const detail=await publicSnapshot<any>(`animeschedule:anime:${route}`,86400,()=>fetchSchedule(`/anime/${route}`),value=>value&&typeof value==='object'&&!Array.isArray(value)&&value.route===route);if(!detail.stale)details.set(route,detail.value);}}catch(error){retryAt=Math.max(retryAt,(error as any).retryAt||Date.now()+60000);throw error;}
         nextOffset++;
       }
-      nextOffset=Math.min(routes.length,nextOffset);routesRemain=nextOffset<routes.length;
+      if(!progressive)nextOffset=Math.min(routes.length,nextOffset);
+      routesRemain=progressive?unresolved.some(route=>!details.has(route)):nextOffset<routes.length;
       for(const row of relevantFeed){const saved=prior?.value?.find(old=>old.sourceRoute===row.route);const detail=details.get(row.route)||row;
         const normalized=normalizeScheduleTrack(row,detail,fetchedAt);if(!normalized)continue;
         if(!normalized.anilist_id&&!normalized.mal_id&&saved&&(saved.anilist_id||saved.mal_id)){
@@ -76,12 +94,15 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
         incoming.push(normalized);
       }
     }catch(error){retryAt=Math.max(retryAt,(error as any).retryAt||0);providers.animeschedule={fetchedAt:0,stale:true,error:(error as Error).message};}
-  }else providers.animeschedule={fetchedAt:0,stale:true,error:'Release-track updates are not configured.'};
+  }else if(deferTracks){routesRemain=true;providers.animeschedule={fetchedAt:0,stale:false};}
+  else providers.animeschedule={fetchedAt:0,stale:true,error:'Release-track updates are not configured.'};
   await anilistPass;
   if(!incoming.length&&!prior?.value?.length)throw Object.assign(Error('The airing schedule is temporarily unavailable.'),{status:503,retryAt:Date.now()+30000});
   let records=reconcileCalendarRecords(prior?.value||[],incoming);
   if(incoming.length){try{const merged=await supabaseRest('rpc/merge_calendar_snapshot',{method:'POST',signal:AbortSignal.timeout(4000),body:JSON.stringify({p_key:key,p_rows:records})});if(Array.isArray(merged))records=reconcileCalendarRecords([],merged.filter(isCalendarRecord));}catch{persistenceError='Shared Calendar persistence is temporarily unavailable.';}}
   const times=Object.values(providers).map(p=>p.fetchedAt).filter(Boolean),stale=Object.values(providers).some(p=>p.stale);
-  return {version:1,data:records,providers,fetchedAt:times.length?Math.min(...times):prior?.fetchedAt||Date.now(),stale,complete:!nextPage&&!routesRemain&&!stale,
+  const pendingIdentities=calendarIdentityCoverage(records).pendingCount;
+  return {version:1,data:records,pendingIdentities,
+    continuation:{schedulePage:nextPage,identityOffset:nextOffset,scheduleComplete:!nextPage,identitiesComplete:!routesRemain&&!pendingIdentities},providers,fetchedAt:times.length?Math.min(...times):prior?.fetchedAt||Date.now(),stale,complete:!nextPage&&!routesRemain&&!pendingIdentities&&!stale,
     ...((nextPage||routesRemain)?{cursor:`${nextPage}:${nextOffset}`} : {}),...(persistenceError?{persistenceError}:{}),...(stale?{retryAt:Math.max(Date.now()+60000,retryAt)}:{})};
 }

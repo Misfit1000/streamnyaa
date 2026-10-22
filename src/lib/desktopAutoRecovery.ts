@@ -10,7 +10,7 @@ export function installDesktopAutoRecovery(client: QueryClient) {
   type RecoveryError = { code?: string; provider?: string; retryAt?: number; retryAfterMs?: number; retryable?: boolean };
   const providerFor = (prefix: string, error?: RecoveryError | null) => error?.provider
     || (/episode/i.test(prefix) ? 'tenrai' : /source|nyaa/i.test(prefix) ? 'nyaa' : 'anilist');
-  const publicDataQuery = (prefix: string) => (/anime|episode|source|schedule|season|trending|popular|explore|search|catalog|installments/i.test(prefix)
+  const publicDataQuery = (prefix: string) => (/anime|episode|source|nyaa|schedule|season|trending|popular|explore|search|catalog|installments/i.test(prefix)
     && !/auth|account|login|profile/i.test(prefix)) || prefix === 'desktop-broadcast-reference';
   const tick = () => {
     if (navigator.onLine === false || document.visibilityState === 'hidden') return;
@@ -53,7 +53,9 @@ export function installDesktopAutoRecovery(client: QueryClient) {
         if (busy.has(provider)) continue;
         busy.add(provider);
         previous.at = Date.now() + recoveryDelay(++previous.attempt);
-        void client.refetchQueries({ queryKey: query.queryKey, exact: true, type: 'active' }, { cancelRefetch: false });
+        const recover = prefix === 'schedule-public' ? query.meta?.recover : undefined;
+        if (typeof recover === 'function') recover();
+        else void client.refetchQueries({ queryKey: query.queryKey, exact: true, type: 'active' }, { cancelRefetch: false });
       }
     }
   };

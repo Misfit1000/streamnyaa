@@ -65,16 +65,16 @@ export default function AnimeDetails() {
 
   const [epPage, setEpPage] = useState(0);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['anime', id],
-    queryFn: () => fetchAnimeDetails(id!),
+    queryFn: ({signal}) => fetchAnimeDetails(id!, {signal}),
     enabled: !!id,
     retry: false
   });
 
   const { data: episodesData, isLoading: episodesLoading } = useQuery({
-    queryKey: ['episodes', id, epPage],
-    queryFn: () => fetchAnimeEpisodes(id!, epPage + 1),
+    queryKey: ['episodes', data?.data?.mal_id, epPage],
+    queryFn: ({signal}) => fetchAnimeEpisodes(String(data!.data.mal_id), epPage + 1, {signal}),
     enabled: !!id,
   });
 
@@ -99,12 +99,12 @@ export default function AnimeDetails() {
     </div>;
   }
 
-  if (error) {
+  if (error && !data?.data) {
     return (
       <div className="min-h-screen flex items-center justify-center text-center p-4">
         <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-8 max-w-md">
           <p className="text-red-500 font-bold mb-4">{error.message || 'An error occurred while fetching details.'}</p>
-          <Link to="/" className="text-sm font-semibold text-primary hover:underline">Return Home</Link>
+          <button className="mr-4 text-sm font-semibold text-primary underline" onClick={() => void refetch()}>Retry</button><Link to="/" className="text-sm font-semibold text-primary hover:underline">Return Home</Link>
         </div>
       </div>
     );
@@ -124,12 +124,14 @@ export default function AnimeDetails() {
   const downloadOptionsAvailable = canShowDownloadOptions(anime, detailEpisodes);
   const latestAiredEpisode = knownAiredEpisodeCount(anime, detailEpisodes);
   const episodeCountText = anime.episodes ? `${anime.episodes} episodes` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} episodes aired so far` : 'episode count not confirmed';
-  const malScoreText = anime.score ? `MAL Score ${anime.score}` : 'MAL Score N/A';
-  const malPopularityText = anime.popularity ? `#${anime.popularity.toLocaleString()}` : 'N/A';
+  const scoreProvider = anime.metadataProvider === 'tenrai' ? 'MAL' : 'AniList';
+  const malScoreText = anime.score ? `${scoreProvider} Score ${anime.score}` : `${scoreProvider} Score N/A`;
+  const malPopularityText = anime.popularity ? anime.popularityKind === 'rank' ? `#${anime.popularity.toLocaleString()} on MAL` : `${anime.popularity.toLocaleString()} AniList users` : 'N/A';
   const seoDescription = `${anime.title} anime details with synopsis, genres, ${episodeCountText}, status, related anime, recommendations, and download source search options.`;
   const mainStudio = studios[0];
   const animeImage = anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url;
-  const updatedLabel = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const retrievedAt = Number(data?.streamnyaa?.fetchedAt);
+  const updatedLabel = retrievedAt > 0 ? new Date(retrievedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'retrieval time unavailable';
   const jsonLd = [
     {
       '@context': 'https://schema.org',
@@ -396,7 +398,7 @@ export default function AnimeDetails() {
                   { label: 'Status', value: statusLabel },
                   { label: 'Episodes', value: anime.episodes ? `${anime.episodes} eps` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} aired` : 'TBA' },
                   { label: 'Format', value: anime.year ? `${anime.type || 'Anime'} - ${anime.year}` : anime.type || 'Anime' },
-                  { label: 'MAL score', value: anime.score ? `${anime.score}/10` : 'N/A' },
+                  { label: `${scoreProvider} score`, value: anime.score ? `${anime.score}/10` : 'N/A' },
                   { label: 'Popularity', value: malPopularityText },
                   { label: 'Studio', value: mainStudio || 'TBA' },
                   { label: 'Genres', value: genres.slice(0, 2).join(', ') || 'TBA' },

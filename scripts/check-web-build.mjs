@@ -23,6 +23,13 @@ for (const asset of referencedAssets) {
     throw new Error(`Web build references a missing asset: ${asset}`);
   }
 }
+const manifest = JSON.parse(readFileSync(path.join(distDir, '.vite/manifest.json'), 'utf8'));
+for (const [key, chunk] of Object.entries(manifest)) {
+  if (!existsSync(path.join(distDir, chunk.file))) throw Error(`Missing route chunk for ${key}`);
+  for (const dependency of [...(chunk.imports || []), ...(chunk.dynamicImports || [])]) {
+    if (!manifest[dependency] || !existsSync(path.join(distDir, manifest[dependency].file))) throw Error(`Missing dependency ${dependency} for ${key}`);
+  }
+}
 
 const javascriptFiles = readdirSync(assetsDir)
   .filter((name) => name.endsWith('.js'))

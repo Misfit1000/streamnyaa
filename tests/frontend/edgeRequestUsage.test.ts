@@ -21,7 +21,7 @@ describe('history request reduction', () => {
     await (await import('../../src/lib/activity')).syncLocalDownloadHistoryToAccount(session());
     expect(api).toHaveBeenCalledTimes(1);
     await sync(session('b'));
-    expect(api).toHaveBeenCalledTimes(2);
+    expect(api).toHaveBeenCalledTimes(1);
   });
 
   it.each([500, 200])('does not acknowledge failed or local-only responses (%s)', async (status) => {

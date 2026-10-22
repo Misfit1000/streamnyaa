@@ -11,30 +11,21 @@ export function articlePath(post: Pick<BlogPostData, 'slug' | 'title' | 'article
   return '/blog/' + generatedSlug;
 }
 
-export async function fetchBlogPost(slug: string, preview = false): Promise<BlogPostData> {
+export async function fetchBlogPost(slug: string, preview = false, signal?: AbortSignal): Promise<BlogPostData> {
   const params = new URLSearchParams({ slug, articleRev: '2026-05-06-daily-v2' });
   if (preview) params.set('preview', '1');
   const response = await fetch('/api/blog?' + params.toString(), {
     headers: { Accept: 'application/json' },
+    signal,
   });
 
-  if (response.status === 404) throw new Error('Blog post not found');
-  if (!response.ok) throw new Error('Blog post request failed');
+  if (!response.ok) throw Object.assign(new Error(response.status === 404 ? 'Blog post not found' : 'Published articles are temporarily unavailable.'), {status:response.status});
 
   return response.json();
 }
 
-export async function fetchBlogPostByArticleSlug(articleSlug: string): Promise<BlogPostData> {
-  const archived = await fetch('/api/blog-archive?slug=' + encodeURIComponent(articleSlug), {
-    headers: { Accept: 'application/json' },
-  });
-  if (archived.ok) return archived.json();
-
-  const geminiPosts = BLOG_POSTS.filter((post) => post.articleKind === 'gemini');
-  const posts = await Promise.all(geminiPosts.map((post) => fetchBlogPost(post.slug)));
-  const match = posts.find((post) => articlePath(post).replace('/blog/', '') === articleSlug);
-  if (!match) throw new Error('Blog post not found');
-  return match;
+export async function fetchBlogPostByArticleSlug(articleSlug: string, signal?: AbortSignal): Promise<BlogPostData> {
+  return fetchBlogPost(articleSlug, false, signal);
 }
 
 export async function fetchArchivedBlogPosts(summary = false): Promise<BlogPostData[]> {
@@ -58,7 +49,7 @@ export interface BlogArchivePage {
   };
 }
 
-export async function fetchArchivedBlogPostPage(page = 1, limit = 12): Promise<BlogArchivePage> {
+export async function fetchArchivedBlogPostPage(page = 1, limit = 12, signal?: AbortSignal): Promise<BlogArchivePage> {
   const params = new URLSearchParams({
     summary: '1',
     page: String(page),
@@ -66,12 +57,10 @@ export async function fetchArchivedBlogPostPage(page = 1, limit = 12): Promise<B
   });
   const response = await fetch('/api/blog-archive?' + params.toString(), {
     headers: { Accept: 'application/json' },
+    signal,
   });
   if (!response.ok) {
-    return {
-      posts: [],
-      pagination: { page, limit, total: 0, totalPages: 1, hasNextPage: false, hasPreviousPage: page > 1 },
-    };
+    throw Object.assign(new Error('The article archive is temporarily unavailable.'), {status:response.status});
   }
   const data = await response.json();
   return {

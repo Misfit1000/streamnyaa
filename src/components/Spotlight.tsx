@@ -26,7 +26,7 @@ interface Anime {
 
 const imageFor = (anime?: Anime) => anime?.images?.jpg?.large_image_url || anime?.images?.jpg?.image_url || anime?.banner_image || '';
 
-export default function Spotlight({ animeList }: { animeList: Anime[] }) {
+export default function Spotlight({ animeList, loading = false, error = false, retry }: { animeList: Anime[]; loading?: boolean; error?: boolean; retry?: () => void }) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
@@ -38,7 +38,8 @@ export default function Spotlight({ animeList }: { animeList: Anime[] }) {
   }, [animeList]);
 
   if (!animeList?.length) {
-    return <div className="mx-auto mt-4 h-[520px] w-full max-w-[calc(100%-24px)] animate-pulse rounded-[28px] bg-secondary md:max-w-[calc(100%-80px)]" />;
+    return loading ? <div aria-label="Loading featured anime" className="mx-auto mt-4 h-[520px] w-full max-w-[calc(100%-24px)] animate-pulse rounded-[28px] bg-secondary md:max-w-[calc(100%-80px)]" />
+      : <div role="status" className="container mx-auto mt-6 rounded-2xl border border-border bg-secondary/20 p-6 text-muted-foreground">{error ? 'Featured anime could not refresh. Other sections remain available.' : 'No featured airing titles are currently available.'}{error && retry && <button className="ml-3 min-h-10 text-primary underline" onClick={retry}>Retry</button>}</div>;
   }
 
   const currentAnime = animeList[currentIndex] || animeList[0];

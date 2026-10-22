@@ -187,7 +187,7 @@ export function scheduleNextRelease(tracks: any[], now: number) {
 export function scheduleDelayLabel(tracks: any[]) {
   const delayed = tracks.filter(track => scheduleBroadcastState(track).kind === 'delayed');
   if (!delayed.length) return '';
-  return delayed.length === tracks.length ? 'Delayed' : `${delayed.map(scheduleTrackLabel).join(' + ')} delayed`;
+  return delayed.length === tracks.length ? 'Delayed' : `${[...new Set(delayed.map(scheduleTrackLabel))].join(' + ')} delayed`;
 }
 
 export function scheduleTitleCount(rows: any[]) {

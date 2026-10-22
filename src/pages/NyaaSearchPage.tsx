@@ -4,6 +4,7 @@ import { searchNyaa } from '../api/nyaa';
 import { fetchAnimeDetails, fetchAnimeEpisodes, searchAnime } from '../api/jikan';
 import { Search, Loader2, Download, HardDrive, AlertTriangle, Link as LinkIcon } from 'lucide-react';
 import Seo from '../components/Seo';
+import DataStatus from '../components/DataStatus';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
 import type { TorrentSourceFilter } from '../lib/torrentBadges';
 import { useAuth } from '../context/AuthContext';
@@ -42,12 +43,14 @@ export default function NyaaSearchPage() {
   const [animeLookupQuery, setAnimeLookupQuery] = useState('');
   const [selectedEpisode, setSelectedEpisode] = useState('');
 
-  const { data: torrents, isLoading } = useQuery({
+  const sourceQuery = useQuery({
+    retry: false,
     queryKey: ['nyaaSearch', query, category, filter, showAllSources],
-    queryFn: () => searchNyaa(query, category, filter, '1', { pages: showAllSources ? 3 : 1, wide: showAllSources }),
+    queryFn: ({signal}) => searchNyaa(query, category, filter, '1', { pages: showAllSources ? 3 : 1, wide: showAllSources, signal }),
     enabled: query.trim().length >= 2,
   });
 
+  const { data: torrents, isLoading } = sourceQuery;
   const { data: animeMatchData } = useQuery({
     queryKey: ['downloadSearchAnimeMatch', animeLookupQuery],
     queryFn: () => searchAnime(animeLookupQuery, 1),
@@ -370,11 +373,12 @@ export default function NyaaSearchPage() {
         </div>
       </div>
 
+      <DataStatus label="Source results" error={sourceQuery.isError} retry={() => void sourceQuery.refetch()}/>
       {isLoading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="w-10 h-10 text-primary animate-spin" />
         </div>
-      ) : query.trim().length < 2 ? (
+      ) : sourceQuery.isError && !torrents?.length ? null : query.trim().length < 2 ? (
         <div className="mx-auto max-w-3xl rounded-3xl border border-border bg-[#111318] px-6 py-14 text-center">
           <Search className="mx-auto mb-4 h-14 w-14 text-white/28" />
           <p className="text-xl font-black text-white">Search sources by anime title</p>
@@ -491,7 +495,7 @@ export default function NyaaSearchPage() {
                       {torrent.leechers} LE
                     </span>
                     <span className={`px-2 py-0.5 rounded-full ${desktop ? 'border border-white/10 bg-black/35 text-white/52' : 'bg-background border border-border'}`}>{torrent.category}</span>
-                    <span className="opacity-70">{new Date(torrent.pubDate).toLocaleDateString()}</span>
+                    <span className="opacity-70">{Number.isFinite(Date.parse(torrent.pubDate)) ? new Date(torrent.pubDate).toLocaleDateString() : 'Date unavailable'}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {getTorrentBadges(torrent).map((badge) => (

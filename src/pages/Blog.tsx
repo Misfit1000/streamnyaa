@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Loader2, Newspaper, Sparkles, TrendingUp } from 'lucide-react';
 import Seo from '../components/Seo';
 import { articlePath, BLOG_POSTS, fetchArchivedBlogPostPage } from '../api/blog';
 import type { BlogPostData } from '../api/blog';
 import AdSenseAd from '../components/AdSenseAd';
+import DataStatus from '../components/DataStatus';
 
 const sortedPosts = [...BLOG_POSTS].sort((a, b) => b.sortRank - a.sortRank);
 const guidePosts = sortedPosts.filter((post) => post.articleKind !== 'gemini');
@@ -37,12 +38,14 @@ function visiblePages(currentPage: number, totalPages: number) {
 }
 
 export default function Blog() {
-  const [page, setPage] = useState(1);
+  const [params, setParams] = useSearchParams();
+  const requestedPage = Number(params.get('page'));
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const archive = useQuery({
     queryKey: ['blog-archive-summary-page', page],
-    queryFn: () => fetchArchivedBlogPostPage(page, POSTS_PER_PAGE),
+    queryFn: ({signal}) => fetchArchivedBlogPostPage(page, POSTS_PER_PAGE, signal),
     placeholderData: (previousData) => previousData,
-    staleTime: 1000 * 60 * 60 * 24,
+    staleTime: 300_000,
   });
   const archivedPosts = archive.data?.posts || [];
   const pagination = archive.data?.pagination || {
@@ -62,8 +65,10 @@ export default function Blog() {
   const pageNumbers = visiblePages(page, pagination.totalPages);
   const goToPage = (nextPage: number) => {
     const clamped = Math.min(Math.max(1, nextPage), pagination.totalPages);
-    setPage(clamped);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const next = new URLSearchParams(params);
+    if (clamped === 1) next.delete('page'); else next.set('page', String(clamped));
+    setParams(next);
+    window.scrollTo({ top: 0, behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   };
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -127,6 +132,7 @@ export default function Blog() {
       ) : null}
 
       <AdSenseAd />
+      <DataStatus label="Published articles" error={archive.isError} fetching={archive.isFetching && !archive.isLoading} retry={() => void archive.refetch()}/>
 
       <section className="mt-8 grid gap-8 xl:grid-cols-[1fr_390px]">
         <main>
@@ -152,7 +158,7 @@ export default function Blog() {
               </Link>
             ))}
 
-            {!archive.isLoading && !latestPosts.length && !featured ? (
+            {!archive.isLoading && !archive.isError && !latestPosts.length && !featured ? (
               <div className="rounded-xl border border-border bg-[var(--glass)] p-5 text-sm text-muted-foreground">No generated stories are available yet. The guide articles are ready below.</div>
             ) : null}
           </div>

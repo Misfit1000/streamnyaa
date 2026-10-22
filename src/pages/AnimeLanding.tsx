@@ -4,23 +4,12 @@ import { ArrowLeft, CalendarDays, Filter, Flame, Loader2 } from 'lucide-react';
 import { fetchAnimeSeason, searchAnime } from '../api/jikan';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';
+import DataStatus from '../components/DataStatus';
+import { mediaKey, uniqueMedia } from '../api/webCatalog';
+import { useStore } from '../store/useStore';
 import { animePath } from '../lib/slug';
 
 const seasonNames = ['winter', 'spring', 'summer', 'fall'];
-
-function animeKey(anime: any) {
-  return String(anime?.mal_id || anime?.id || anime?.title || '');
-}
-
-function uniqueAnimeList(items: any[]) {
-  const seen = new Set<string>();
-  return items.filter((anime) => {
-    const key = animeKey(anime);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
 
 function titleCase(value: string) {
   return value.replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -35,6 +24,7 @@ function parseSeasonSlug(value = '') {
 
 export default function AnimeLanding() {
   const location = useLocation();
+  const adult = useStore(state => state.nsfwMode);
   const { genre, seasonSlug } = useParams<{ genre?: string; seasonSlug?: string }>();
   const season = parseSeasonSlug(seasonSlug);
   const isGenrePage = Boolean(genre);
@@ -52,23 +42,24 @@ export default function AnimeLanding() {
       ? `Browse popular ${titleCase(season!.season)} ${season!.year} anime with StreamNyaa title pages, episode context, and download search.`
       : 'Browse popular anime on StreamNyaa with title pages, episode context, related anime, and download search options.';
 
-  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = useInfiniteQuery({
-    queryKey: ['anime-landing', location.pathname, genreName, season?.season, season?.year],
-    queryFn: ({ pageParam = 1 }) => {
-      if (isSeasonPage) return fetchAnimeSeason(season!.season, season!.year, pageParam as number);
-      if (isGenrePage) return searchAnime('', pageParam as number, '', '', genreName, 'popular');
-      return searchAnime('', pageParam as number, '', '', '', 'popular');
+  const results = useInfiniteQuery({
+    queryKey: ['anime-landing', location.pathname, genreName, season?.season, season?.year, adult],
+    queryFn: ({ pageParam = 1, signal }) => {
+      if (isSeasonPage) return fetchAnimeSeason(season!.season, season!.year, pageParam as number, { signal });
+      if (isGenrePage) return searchAnime('', pageParam as number, '', '', genreName, 'popular', '', { signal });
+      return searchAnime('', pageParam as number, '', '', '', 'popular', '', { signal });
     },
     initialPageParam: 1,
-    getNextPageParam: (lastPage, allPages) => lastPage.pagination?.has_next_page ? allPages.length + 1 : undefined,
+    getNextPageParam: (lastPage, allPages) => lastPage.pagination?.has_next_page && !allPages.slice(0,-1).some(page => page.data.length && page.data.map(mediaKey).join(',') === lastPage.data.map(mediaKey).join(',')) ? allPages.length + 1 : undefined,
   });
 
-  const items = uniqueAnimeList(data?.pages.flatMap((page) => page.data) || []);
+  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = results;
+  const items = uniqueMedia(data?.pages.flatMap((page) => page.data) || []);
   const seasonHighlights = {
     airing: items.filter((anime: any) => anime.status === 'RELEASING').slice(0, 4),
     highestScore: [...items].filter((anime: any) => Number(anime.score) > 0).sort((a: any, b: any) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4),
-    upcoming: items.filter((anime: any) => anime.status === 'NOT_YET_AIRED').slice(0, 4),
-    hiddenGems: [...items].filter((anime: any) => Number(anime.score) > 0 && Number(anime.popularity || 0) > 1500).sort((a: any, b: any) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4),
+    upcoming: items.filter((anime: any) => ['NOT_YET_RELEASED','NOT_YET_AIRED'].includes(anime.status)).slice(0, 4),
+    hiddenGems: [...items].filter((anime: any) => Number(anime.score) > 0 && Number(anime.popularity || 0) > 0 && Number(anime.popularity) < 1500).sort((a: any, b: any) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4),
   };
 
   const Icon = isGenrePage ? Filter : isSeasonPage ? CalendarDays : Flame;
@@ -133,7 +124,7 @@ export default function AnimeLanding() {
               <p className="mt-1 text-xs text-muted-foreground">{group.text}</p>
               <div className="mt-4 space-y-2">
                 {group.items.length ? group.items.map((anime: any) => (
-                  <Link key={`${group.title}-${animeKey(anime)}`} to={animePath(anime)} className="group grid grid-cols-[42px_1fr] gap-3 rounded-xl bg-background/45 p-2 transition-colors hover:bg-primary/10">
+                  <Link key={`${group.title}-${mediaKey(anime)}`} to={animePath(anime)} className="group grid grid-cols-[42px_1fr] gap-3 rounded-xl bg-background/45 p-2 transition-colors hover:bg-primary/10">
                     <img src={anime.images?.jpg?.image_url || anime.images?.jpg?.large_image_url} alt={anime.title} className="h-14 w-10 rounded-lg object-cover" loading="lazy" referrerPolicy="no-referrer" />
                     <span className="min-w-0">
                       <span className="block line-clamp-1 text-sm font-black text-foreground group-hover:text-primary">{anime.title}</span>
@@ -149,19 +140,20 @@ export default function AnimeLanding() {
         </section>
       ) : null}
 
+      <DataStatus label="Anime listings" error={results.isError} retry={() => void results.refetch()}/>
       {isLoading ? (
         <div className="flex justify-center py-24">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-border bg-secondary/20 p-10 text-center text-muted-foreground">
-          No anime found for this landing page yet.
+          {results.isError ? 'Anime listings are temporarily unavailable.' : 'No anime found for this landing page yet.'}
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
             {items.map((anime: any, index: number) => (
-              <AnimeCard key={`${location.pathname}-${animeKey(anime)}-${index}`} anime={anime} />
+              <AnimeCard key={`${location.pathname}-${mediaKey(anime)}-${index}`} anime={anime} />
             ))}
           </div>
           {hasNextPage && (

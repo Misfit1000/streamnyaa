@@ -326,7 +326,12 @@ const fetchWithLocalMetadataCache = async (
     if (!response.ok) {
       if (response.status === 429 || response.status >= 500) markProviderCooldown(provider, response);
       if (stale) return jsonResponse(stale.value, 'local-stale', stale.savedAt);
-      return response;
+      const header = response.headers.get('retry-after') || '';
+      const retryAt = /^\d+$/.test(header) ? Date.now() + Number(header) * 1000 : Date.parse(header) || undefined;
+      throw new DesktopDataError({ provider, statusCode: response.status, origin: 'provider', retryAt,
+        code: response.status === 429 ? 'rate-limited' : [401,403].includes(response.status) ? 'access-denied' : [400,404,501].includes(response.status) ? 'invalid' : 'error',
+        retryable: response.status === 429 || response.status >= 500 && response.status !== 501,
+        message: 'Anime information is temporarily unavailable. Please try again shortly.' });
     }
 
     const json = await readValidatedMetadataJson(provider, response);
@@ -398,15 +403,14 @@ export const fetchAniList = async (body: Record<string, unknown>, ttlSeconds = 2
       });
     }
 
+    const timeout = AbortSignal.timeout(18_000);
     const gatewayResponse = await fetch(`/api/stream-sources?provider=anilist&ttl=${ttlSeconds}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal:ownedSignal,
-    }).catch(error => {if(ownedSignal?.aborted)throw error;return null;});
-
-    if (gatewayResponse && (gatewayResponse.ok || [400,401,403,404,429,501].includes(gatewayResponse.status))) return gatewayResponse;
-    return fetchAniListDirect(body,ownedSignal);
+      signal: ownedSignal ? AbortSignal.any([ownedSignal, timeout]) : timeout,
+    });
+    return gatewayResponse;
   },options.signal);
 };
 
@@ -435,7 +439,7 @@ export const fetchJikanPath = async (path: string, ttlSeconds = 21600, options: 
     }
 
     const gatewayResponse = await fetch(`/api/stream-sources?provider=tenrai&ttl=${ttlSeconds}&path=${encodeURIComponent(validPath)}`, { signal: ownedSignal }).catch(error => {if(ownedSignal?.aborted)throw error;return null;});
-    if (gatewayResponse && (gatewayResponse.ok || [400,401,403,404,429,501].includes(gatewayResponse.status))) return gatewayResponse;
+    if (gatewayResponse) return gatewayResponse;
     return fetchJikanPathDirect(validPath, ownedSignal);
   },options.signal);
 };
@@ -536,6 +540,8 @@ export const fetchAniDbAnimeMetadata = async (aid: number, ttlSeconds = 604800) 
 };
 
 export const mapAnilistToJikan = (m: any) => ({
+  metadataProvider: 'anilist',
+  popularityKind: 'list-count',
   id: m.id,
   mal_id: m.idMal || null,
   anilist_id: m.id,
@@ -624,6 +630,8 @@ export const mapAnilistToJikan = (m: any) => ({
 });
 
 const mapJikanDetailToAnime = (item: any) => ({
+  metadataProvider: 'tenrai',
+  popularityKind: 'rank',
   id: item.mal_id,
   mal_id: item.mal_id,
   anilist_id: null,
@@ -966,7 +974,7 @@ const animeDetailsCandidateScore = (
 
 export const fetchAnimeDetails = async (id: string, options: AnimeDetailsLookupOptions = {}) => {
   const routeNumericId = toPositiveInt(id);
-  const preferredAniListId = toPositiveInt(options.anilistId);
+  const preferredAniListId = toPositiveInt(options.anilistId) || Number(/^anilist-(\d+)(?:-|$)/.exec(id)?.[1]) || null;
   const preferredMalId = toPositiveInt(options.malId) || (preferredAniListId ? null : routeNumericId);
   const titleHint = String(options.routeTitle || titleHintFromRoute(id) || '').trim();
 

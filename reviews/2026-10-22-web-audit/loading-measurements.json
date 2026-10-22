@@ -1,0 +1,4385 @@
+[
+  {
+    "label": "baseline-home-cold",
+    "route": "/",
+    "firstUsable": 518,
+    "domContentLoaded": 134,
+    "requests": 10,
+    "apiRequests": 3,
+    "transferBytes": 331603,
+    "longTaskMs": 53,
+    "raw": {
+      "route": "/",
+      "firstUsable": 517.5,
+      "routeUsable": 425.69999998807907,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4175/",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 160.89999997615814,
+          "navigationId": 9024,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 0.8999999761581421,
+          "domainLookupStart": 4.099999964237213,
+          "domainLookupEnd": 4.099999964237213,
+          "connectStart": 4.099999964237213,
+          "secureConnectionStart": 0,
+          "connectEnd": 4.699999988079071,
+          "requestStart": 4.800000011920929,
+          "responseStart": 31.899999976158142,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 31.899999976158142,
+          "responseEnd": 32.5,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 92,
+          "domContentLoadedEventStart": 121,
+          "domContentLoadedEventEnd": 134.19999998807907,
+          "domComplete": 159.5999999642372,
+          "loadEventStart": 160.80000001192093,
+          "loadEventEnd": 160.89999997615814,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 252,
+          "duration": 0,
+          "navigationId": 9024,
+          "paintTime": 221.0999999642372,
+          "presentationTime": 252
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 252,
+          "duration": 0,
+          "navigationId": 9024,
+          "paintTime": 221.0999999642372,
+          "presentationTime": 252
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4175/assets/index-VM-l8fFu.js",
+          "duration": 36.89999997615814,
+          "transferSize": 133524,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4175/assets/web-vendor-Cqav__hV.js",
+          "duration": 50.700000047683716,
+          "transferSize": 18077,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4175/assets/index-Bel4uhzg.css",
+          "duration": 45.10000002384186,
+          "transferSize": 22701,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4175/assets/web-motion-5bYI8l-Q.js",
+          "duration": 40.69999998807907,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4175/assets/web-query-CQfm4aOy.js",
+          "duration": 48.30000001192093,
+          "transferSize": 11039,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4175/api/stream-sources?provider=anilist&ttl=900",
+          "duration": 71.69999998807907,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4175/api/stream-sources?provider=anilist&ttl=300",
+          "duration": 66.80000001192093,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4175/api/stream-sources?provider=anilist&ttl=180",
+          "duration": 67.80000001192093,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4175/fixture-banner.svg",
+          "duration": 11.599999964237213,
+          "transferSize": 630,
+          "encodedBodySize": 330,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4175/fixture-poster.svg",
+          "duration": 7.099999964237213,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 159.5999999642372,
+          "duration": 53
+        }
+      ]
+    }
+  },
+  {
+    "label": "candidate-home-cold",
+    "route": "/",
+    "firstUsable": 456,
+    "domContentLoaded": 128,
+    "requests": 12,
+    "apiRequests": 4,
+    "transferBytes": 372870,
+    "longTaskMs": 200,
+    "raw": {
+      "route": "/",
+      "firstUsable": 456.10000002384186,
+      "routeUsable": 376.5,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4176/",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 225,
+          "navigationId": 4318,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.2000000476837158,
+          "domainLookupStart": 3.900000035762787,
+          "domainLookupEnd": 3.900000035762787,
+          "connectStart": 3.900000035762787,
+          "secureConnectionStart": 0,
+          "connectEnd": 5.300000011920929,
+          "requestStart": 5.5,
+          "responseStart": 11,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 11,
+          "responseEnd": 11.5,
+          "transferSize": 2415,
+          "encodedBodySize": 2115,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 89.10000002384186,
+          "domContentLoadedEventStart": 115.10000002384186,
+          "domContentLoadedEventEnd": 127.80000001192093,
+          "domComplete": 223.80000001192093,
+          "loadEventStart": 224.9000000357628,
+          "loadEventEnd": 225,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "low"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 108,
+          "duration": 0,
+          "navigationId": 4318,
+          "paintTime": 88.5,
+          "presentationTime": 108
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 108,
+          "duration": 0,
+          "navigationId": 4318,
+          "paintTime": 88.5,
+          "presentationTime": 108
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4176/assets/index-5ufz5eLv.js",
+          "duration": 36.10000002384186,
+          "transferSize": 136727,
+          "encodedBodySize": 136427,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4176/assets/web-query-BdNCjuTy.js",
+          "duration": 39.60000002384186,
+          "transferSize": 11049,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4176/assets/web-vendor-BHFxXjgK.js",
+          "duration": 53.19999998807907,
+          "transferSize": 18092,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4176/assets/index-YpcexO2Y.css",
+          "duration": 49.69999998807907,
+          "transferSize": 22787,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4176/assets/web-motion-5bYI8l-Q.js",
+          "duration": 43,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4176/logo.svg",
+          "duration": 7.5,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4176/logo.svg",
+          "duration": 3.600000023841858,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4176/api/stream-sources?provider=anilist&ttl=900",
+          "duration": 78.60000002384186,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4176/api/stream-sources?provider=anilist&ttl=300",
+          "duration": 78.89999997615814,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4176/api/stream-sources?provider=anilist&ttl=180",
+          "duration": 78.60000002384186,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4176/api/stream-sources?provider=anilist&ttl=900",
+          "duration": 78.19999998807907,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4176/fixture-banner.svg",
+          "duration": 3.5,
+          "transferSize": 630,
+          "encodedBodySize": 330,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4176/fixture-poster.svg",
+          "duration": 18.69999998807907,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 129.4000000357628,
+          "duration": 94
+        },
+        {
+          "start": 458,
+          "duration": 50
+        },
+        {
+          "start": 772.5,
+          "duration": 56
+        }
+      ]
+    }
+  },
+  {
+    "label": "baseline-home-warm",
+    "route": "/",
+    "firstUsable": 182,
+    "domContentLoaded": 81,
+    "requests": 4,
+    "apiRequests": 1,
+    "transferBytes": 41203,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/",
+      "firstUsable": 182.0999999642372,
+      "routeUsable": 115.29999995231628,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4175/",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 106.89999997615814,
+          "navigationId": 4254,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.399999976158142,
+          "domainLookupStart": 7.199999988079071,
+          "domainLookupEnd": 7.199999988079071,
+          "connectStart": 7.199999988079071,
+          "secureConnectionStart": 0,
+          "connectEnd": 8.599999964237213,
+          "requestStart": 8.800000011920929,
+          "responseStart": 10.399999976158142,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 10.399999976158142,
+          "responseEnd": 11.399999976158142,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 23.099999964237213,
+          "unloadEventEnd": 23.099999964237213,
+          "domInteractive": 67,
+          "domContentLoadedEventStart": 72.69999998807907,
+          "domContentLoadedEventEnd": 80.80000001192093,
+          "domComplete": 106.30000001192093,
+          "loadEventStart": 106.80000001192093,
+          "loadEventEnd": 106.89999997615814,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 160,
+          "duration": 0,
+          "navigationId": 4254,
+          "paintTime": 126.39999997615814,
+          "presentationTime": 160
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 160,
+          "duration": 0,
+          "navigationId": 4254,
+          "paintTime": 126.39999997615814,
+          "presentationTime": 160
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4175/assets/index-VM-l8fFu.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4175/assets/web-vendor-Cqav__hV.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4175/assets/web-query-CQfm4aOy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4175/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4175/assets/index-Bel4uhzg.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4175/fixture-banner.svg",
+          "duration": 11,
+          "transferSize": 630,
+          "encodedBodySize": 330,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4175/fixture-poster.svg",
+          "duration": 12,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4175/logo.svg",
+          "duration": 38.89999997615814,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4175/logo.svg",
+          "duration": 10.600000023841858,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4175/api/stream-sources?provider=anilist&ttl=300",
+          "duration": 75.39999997615814,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-home-warm",
+    "route": "/",
+    "firstUsable": 208,
+    "domContentLoaded": 107,
+    "requests": 3,
+    "apiRequests": 1,
+    "transferBytes": 40789,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/",
+      "firstUsable": 208,
+      "routeUsable": 118.10000002384186,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4176/",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 174.0999999642372,
+          "navigationId": 2823,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.0999999642372131,
+          "domainLookupStart": 8.699999988079071,
+          "domainLookupEnd": 8.699999988079071,
+          "connectStart": 8.699999988079071,
+          "secureConnectionStart": 0,
+          "connectEnd": 10.399999976158142,
+          "requestStart": 10.5,
+          "responseStart": 12.399999976158142,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 12.399999976158142,
+          "responseEnd": 13.599999964237213,
+          "transferSize": 2415,
+          "encodedBodySize": 2115,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 39,
+          "unloadEventEnd": 39,
+          "domInteractive": 90.5,
+          "domContentLoadedEventStart": 95.30000001192093,
+          "domContentLoadedEventEnd": 106.80000001192093,
+          "domComplete": 173.39999997615814,
+          "loadEventStart": 174.0999999642372,
+          "loadEventEnd": 174.0999999642372,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "low"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 208,
+          "duration": 0,
+          "navigationId": 2823,
+          "paintTime": 169,
+          "presentationTime": 208
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 208,
+          "duration": 0,
+          "navigationId": 2823,
+          "paintTime": 169,
+          "presentationTime": 208
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4176/assets/index-5ufz5eLv.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 136427,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4176/assets/web-vendor-BHFxXjgK.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4176/assets/web-query-BdNCjuTy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4176/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4176/assets/index-YpcexO2Y.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4176/fixture-banner.svg",
+          "duration": 15.699999988079071,
+          "transferSize": 630,
+          "encodedBodySize": 330,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4176/fixture-poster.svg",
+          "duration": 16,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4176/logo.svg",
+          "duration": 3.200000047683716,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4176/api/stream-sources?provider=anilist&ttl=300",
+          "duration": 82,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4176/logo.svg",
+          "duration": 8.5,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-search-cold",
+    "route": "/search",
+    "firstUsable": 1123,
+    "domContentLoaded": 571,
+    "requests": 11,
+    "apiRequests": 2,
+    "transferBytes": 261538,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/search",
+      "firstUsable": 1122.800000011921,
+      "routeUsable": 663.2000000476837,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4177/search?sort=recent",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 604,
+          "navigationId": 7613,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.5999999642372131,
+          "domainLookupStart": 5,
+          "domainLookupEnd": 5.399999976158142,
+          "connectStart": 5.399999976158142,
+          "secureConnectionStart": 0,
+          "connectEnd": 5.800000011920929,
+          "requestStart": 5.899999976158142,
+          "responseStart": 16,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 16,
+          "responseEnd": 16.69999998807907,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 459.89999997615814,
+          "domContentLoadedEventStart": 563.8000000119209,
+          "domContentLoadedEventEnd": 571.3999999761581,
+          "domComplete": 603.8999999761581,
+          "loadEventStart": 603.8999999761581,
+          "loadEventEnd": 604,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 632,
+          "duration": 0,
+          "navigationId": 7613,
+          "paintTime": 610.5999999642372,
+          "presentationTime": 632
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 956,
+          "duration": 0,
+          "navigationId": 7613,
+          "paintTime": 923,
+          "presentationTime": 956
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4177/assets/index-VM-l8fFu.js",
+          "duration": 477,
+          "transferSize": 133524,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/index-Bel4uhzg.css",
+          "duration": 421.9000000357628,
+          "transferSize": 22701,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/web-motion-5bYI8l-Q.js",
+          "duration": 432.60000002384186,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/web-query-CQfm4aOy.js",
+          "duration": 448.10000002384186,
+          "transferSize": 11039,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/web-vendor-Cqav__hV.js",
+          "duration": 454,
+          "transferSize": 18077,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/Search-kXc8d88o.js",
+          "duration": 68.19999998807907,
+          "transferSize": 3195,
+          "encodedBodySize": 2895,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/funnel-CCv0IMFg.js",
+          "duration": 31.399999976158142,
+          "transferSize": 613,
+          "encodedBodySize": 313,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4177/logo.svg",
+          "duration": 15.600000023841858,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/logo.svg",
+          "duration": 3.5,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/api/stream-sources?provider=anilist&ttl=86400",
+          "duration": 79.30000001192093,
+          "transferSize": 361,
+          "encodedBodySize": 61,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4177/api/stream-sources?provider=anilist&ttl=1800",
+          "duration": 79.80000001192093,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4177/fixture-poster.svg",
+          "duration": 4.600000023841858,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-search-cold",
+    "route": "/search",
+    "firstUsable": 811,
+    "domContentLoaded": 327,
+    "requests": 11,
+    "apiRequests": 2,
+    "transferBytes": 265215,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/search",
+      "firstUsable": 811.3000000119209,
+      "routeUsable": 655.5,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4178/search?sort=recent",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 354.39999997615814,
+          "navigationId": 9674,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.100000023841858,
+          "domainLookupStart": 6.199999988079071,
+          "domainLookupEnd": 6.600000023841858,
+          "connectStart": 6.600000023841858,
+          "secureConnectionStart": 0,
+          "connectEnd": 8,
+          "requestStart": 8.100000023841858,
+          "responseStart": 12.300000011920929,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 12.300000011920929,
+          "responseEnd": 13.199999988079071,
+          "transferSize": 2415,
+          "encodedBodySize": 2115,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 156.30000001192093,
+          "domContentLoadedEventStart": 322.5,
+          "domContentLoadedEventEnd": 327.39999997615814,
+          "domComplete": 353.39999997615814,
+          "loadEventStart": 354.39999997615814,
+          "loadEventEnd": 354.39999997615814,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "low"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 176,
+          "duration": 0,
+          "navigationId": 9674,
+          "paintTime": 159.30000001192093,
+          "presentationTime": 176
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 176,
+          "duration": 0,
+          "navigationId": 9674,
+          "paintTime": 159.30000001192093,
+          "presentationTime": 176
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4178/assets/index-5ufz5eLv.js",
+          "duration": 262.69999998807907,
+          "transferSize": 136727,
+          "encodedBodySize": 136427,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/web-query-BdNCjuTy.js",
+          "duration": 101.5,
+          "transferSize": 11049,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/web-vendor-BHFxXjgK.js",
+          "duration": 117.5,
+          "transferSize": 18092,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/web-motion-5bYI8l-Q.js",
+          "duration": 162,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/index-YpcexO2Y.css",
+          "duration": 116.80000001192093,
+          "transferSize": 22787,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/Search-BJ0ty7dX.js",
+          "duration": 37.30000001192093,
+          "transferSize": 3347,
+          "encodedBodySize": 3047,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/funnel-CdaV1Wq-.js",
+          "duration": 23.399999976158142,
+          "transferSize": 612,
+          "encodedBodySize": 312,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4178/logo.svg",
+          "duration": 8.900000035762787,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/logo.svg",
+          "duration": 1.9000000357627869,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/api/stream-sources?provider=anilist&ttl=86400",
+          "duration": 73.30000001192093,
+          "transferSize": 361,
+          "encodedBodySize": 61,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4178/api/stream-sources?provider=anilist&ttl=300",
+          "duration": 87.80000001192093,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4178/fixture-poster.svg",
+          "duration": 3.800000011920929,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-search-warm",
+    "route": "/search",
+    "firstUsable": 547,
+    "domContentLoaded": 173,
+    "requests": 1,
+    "apiRequests": 0,
+    "transferBytes": 2832,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/search",
+      "firstUsable": 546.5999999642372,
+      "routeUsable": 415.5,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4177/search?sort=recent",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 219,
+          "navigationId": 206,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.0999999642372131,
+          "domainLookupStart": 5.800000011920929,
+          "domainLookupEnd": 6.199999988079071,
+          "connectStart": 6.199999988079071,
+          "secureConnectionStart": 0,
+          "connectEnd": 6.599999964237213,
+          "requestStart": 6.699999988079071,
+          "responseStart": 11.300000011920929,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 11.300000011920929,
+          "responseEnd": 12.5,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 28.5,
+          "unloadEventEnd": 28.5,
+          "domInteractive": 132.0999999642372,
+          "domContentLoadedEventStart": 151.80000001192093,
+          "domContentLoadedEventEnd": 173.0999999642372,
+          "domComplete": 218.89999997615814,
+          "loadEventStart": 218.89999997615814,
+          "loadEventEnd": 219,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 244,
+          "duration": 0,
+          "navigationId": 206,
+          "paintTime": 222.39999997615814,
+          "presentationTime": 244
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 624,
+          "duration": 0,
+          "navigationId": 206,
+          "paintTime": 571.8000000119209,
+          "presentationTime": 624
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4177/assets/index-VM-l8fFu.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/web-vendor-Cqav__hV.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/web-query-CQfm4aOy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/index-Bel4uhzg.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/Search-kXc8d88o.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 2895,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4177/assets/funnel-CCv0IMFg.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 313,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4177/logo.svg",
+          "duration": 8.5,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/logo.svg",
+          "duration": 4.199999988079071,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4177/fixture-poster.svg",
+          "duration": 4.600000023841858,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-search-warm",
+    "route": "/search",
+    "firstUsable": 524,
+    "domContentLoaded": 89,
+    "requests": 2,
+    "apiRequests": 1,
+    "transferBytes": 40159,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/search",
+      "firstUsable": 524.3000000119209,
+      "routeUsable": 451.60000002384186,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4178/search?sort=recent",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 124.30000001192093,
+          "navigationId": 3000,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 4.700000047683716,
+          "domainLookupStart": 7.900000035762787,
+          "domainLookupEnd": 7.900000035762787,
+          "connectStart": 7.900000035762787,
+          "secureConnectionStart": 0,
+          "connectEnd": 8.800000011920929,
+          "requestStart": 8.800000011920929,
+          "responseStart": 10.200000047683716,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 10.200000047683716,
+          "responseEnd": 12.800000011920929,
+          "transferSize": 2415,
+          "encodedBodySize": 2115,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 27.80000001192093,
+          "unloadEventEnd": 27.80000001192093,
+          "domInteractive": 73.10000002384186,
+          "domContentLoadedEventStart": 78.60000002384186,
+          "domContentLoadedEventEnd": 88.60000002384186,
+          "domComplete": 123,
+          "loadEventStart": 124.30000001192093,
+          "loadEventEnd": 124.30000001192093,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "low"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 112,
+          "duration": 0,
+          "navigationId": 3000,
+          "paintTime": 89.40000003576279,
+          "presentationTime": 112
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 112,
+          "duration": 0,
+          "navigationId": 3000,
+          "paintTime": 89.40000003576279,
+          "presentationTime": 112
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4178/assets/index-5ufz5eLv.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 136427,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/web-vendor-BHFxXjgK.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/web-query-BdNCjuTy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/index-YpcexO2Y.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/Search-BJ0ty7dX.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 3047,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4178/assets/funnel-CdaV1Wq-.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 312,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4178/logo.svg",
+          "duration": 6.600000023841858,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/logo.svg",
+          "duration": 4.199999988079071,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4178/api/stream-sources?provider=anilist&ttl=300",
+          "duration": 78.69999998807907,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4178/fixture-poster.svg",
+          "duration": 2.900000035762787,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-calendar-cold",
+    "route": "/schedule",
+    "firstUsable": 565,
+    "domContentLoaded": 109,
+    "requests": 13,
+    "apiRequests": 2,
+    "transferBytes": 256265,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/schedule",
+      "firstUsable": 565.4000000357628,
+      "routeUsable": 486.80000001192093,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4179/schedule",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 141.30000001192093,
+          "navigationId": 1066,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1,
+          "domainLookupStart": 4.400000035762787,
+          "domainLookupEnd": 4.800000011920929,
+          "connectStart": 4.800000011920929,
+          "secureConnectionStart": 0,
+          "connectEnd": 5.300000011920929,
+          "requestStart": 5.300000011920929,
+          "responseStart": 8.699999988079071,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 8.699999988079071,
+          "responseEnd": 10.100000023841858,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 80.60000002384186,
+          "domContentLoadedEventStart": 104,
+          "domContentLoadedEventEnd": 109.40000003576279,
+          "domComplete": 141.30000001192093,
+          "loadEventStart": 141.30000001192093,
+          "loadEventEnd": 141.30000001192093,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "low"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 152,
+          "duration": 0,
+          "navigationId": 1066,
+          "paintTime": 131.19999998807907,
+          "presentationTime": 152
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 472,
+          "duration": 0,
+          "navigationId": 1066,
+          "paintTime": 446.30000001192093,
+          "presentationTime": 472
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4179/assets/index-VM-l8fFu.js",
+          "duration": 26.80000001192093,
+          "transferSize": 133524,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4179/assets/web-vendor-Cqav__hV.js",
+          "duration": 32.200000047683716,
+          "transferSize": 18077,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4179/assets/web-query-CQfm4aOy.js",
+          "duration": 36.200000047683716,
+          "transferSize": 11039,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4179/assets/index-Bel4uhzg.css",
+          "duration": 51.700000047683716,
+          "transferSize": 22701,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4179/assets/web-motion-5bYI8l-Q.js",
+          "duration": 51.90000003576279,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4179/assets/Schedule-CKp68j-2.js",
+          "duration": 36.700000047683716,
+          "transferSize": 4047,
+          "encodedBodySize": 3747,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4179/assets/schedulePresentation-CkrKtIIf.js",
+          "duration": 34.5,
+          "transferSize": 2399,
+          "encodedBodySize": 2099,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4179/assets/loader-circle-BI_DA7AQ.js",
+          "duration": 22.799999952316284,
+          "transferSize": 557,
+          "encodedBodySize": 257,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4179/assets/Schedule-CbtO-aHD.css",
+          "duration": 8.199999988079071,
+          "transferSize": 644,
+          "encodedBodySize": 344,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4179/logo.svg",
+          "duration": 8.300000011920929,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4179/logo.svg",
+          "duration": 1.600000023841858,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4179/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180",
+          "duration": 63.5,
+          "transferSize": 14190,
+          "encodedBodySize": 13890,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4179/fixture-poster.svg",
+          "duration": 8.600000023841858,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4179/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180&cursor=0%3A0",
+          "duration": 68.10000002384186,
+          "transferSize": 14174,
+          "encodedBodySize": 13874,
+          "initiatorType": "fetch"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-calendar-cold",
+    "route": "/schedule",
+    "firstUsable": 0,
+    "domContentLoaded": 114,
+    "requests": 10,
+    "apiRequests": 0,
+    "transferBytes": 231695,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/schedule",
+      "firstUsable": 0,
+      "routeUsable": 0,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4180/schedule",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 178.69999998807907,
+          "navigationId": 3725,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 2.099999964237213,
+          "domainLookupStart": 6.099999964237213,
+          "domainLookupEnd": 6.399999976158142,
+          "connectStart": 6.399999976158142,
+          "secureConnectionStart": 0,
+          "connectEnd": 8.5,
+          "requestStart": 8.599999964237213,
+          "responseStart": 11.800000011920929,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 11.800000011920929,
+          "responseEnd": 12.699999988079071,
+          "transferSize": 2415,
+          "encodedBodySize": 2115,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 78.5,
+          "domContentLoadedEventStart": 103.80000001192093,
+          "domContentLoadedEventEnd": 114.30000001192093,
+          "domComplete": 178.5,
+          "loadEventStart": 178.69999998807907,
+          "loadEventEnd": 178.69999998807907,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "low"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 132,
+          "duration": 0,
+          "navigationId": 3725,
+          "paintTime": 115,
+          "presentationTime": 132
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 132,
+          "duration": 0,
+          "navigationId": 3725,
+          "paintTime": 115,
+          "presentationTime": 132
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4180/assets/index-5ufz5eLv.js",
+          "duration": 31.100000023841858,
+          "transferSize": 136727,
+          "encodedBodySize": 136427,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4180/assets/web-vendor-BHFxXjgK.js",
+          "duration": 33.19999998807907,
+          "transferSize": 18092,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4180/assets/web-query-BdNCjuTy.js",
+          "duration": 37,
+          "transferSize": 11049,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4180/assets/web-motion-5bYI8l-Q.js",
+          "duration": 39.80000001192093,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4180/assets/index-YpcexO2Y.css",
+          "duration": 45.59999996423721,
+          "transferSize": 22787,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4180/assets/Schedule-CWowP7bR.js",
+          "duration": 40.30000001192093,
+          "transferSize": 4932,
+          "encodedBodySize": 4632,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4180/assets/schedulePresentation-rBaGc9Hq.js",
+          "duration": 39.90000003576279,
+          "transferSize": 2412,
+          "encodedBodySize": 2112,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4180/assets/loader-circle-Dkbmkm4n.js",
+          "duration": 28,
+          "transferSize": 556,
+          "encodedBodySize": 256,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4180/assets/Schedule-CbtO-aHD.css",
+          "duration": 26.100000023841858,
+          "transferSize": 644,
+          "encodedBodySize": 344,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4180/logo.svg",
+          "duration": 10,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4180/logo.svg",
+          "duration": 3.399999976158142,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-compare-cold",
+    "route": "/compare",
+    "firstUsable": 410,
+    "domContentLoaded": 90,
+    "requests": 11,
+    "apiRequests": 0,
+    "transferBytes": 226748,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/compare",
+      "firstUsable": 410.4000000357628,
+      "routeUsable": 350.80000001192093,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4181/compare",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 110.10000002384186,
+          "navigationId": 9766,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 0.9000000357627869,
+          "domainLookupStart": 4,
+          "domainLookupEnd": 4.400000035762787,
+          "connectStart": 4.400000035762787,
+          "secureConnectionStart": 0,
+          "connectEnd": 4.900000035762787,
+          "requestStart": 4.900000035762787,
+          "responseStart": 7.700000047683716,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 7.700000047683716,
+          "responseEnd": 8.200000047683716,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 61.700000047683716,
+          "domContentLoadedEventStart": 84.60000002384186,
+          "domContentLoadedEventEnd": 90.30000001192093,
+          "domComplete": 110.10000002384186,
+          "loadEventStart": 110.10000002384186,
+          "loadEventEnd": 110.10000002384186,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 132,
+          "duration": 0,
+          "navigationId": 9766,
+          "paintTime": 117.80000001192093,
+          "presentationTime": 132
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 452,
+          "duration": 0,
+          "navigationId": 9766,
+          "paintTime": 420,
+          "presentationTime": 452
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4181/assets/index-VM-l8fFu.js",
+          "duration": 21.899999976158142,
+          "transferSize": 133524,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/web-vendor-Cqav__hV.js",
+          "duration": 25.69999998807907,
+          "transferSize": 18077,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/web-query-CQfm4aOy.js",
+          "duration": 31.900000035762787,
+          "transferSize": 11039,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/web-motion-5bYI8l-Q.js",
+          "duration": 32,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/index-Bel4uhzg.css",
+          "duration": 35.09999996423721,
+          "transferSize": 22701,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/loader-circle-BI_DA7AQ.js",
+          "duration": 8.5,
+          "transferSize": 557,
+          "encodedBodySize": 257,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/AnimeCompare-Ds4FnEK9.js",
+          "duration": 36.19999998807907,
+          "transferSize": 4321,
+          "encodedBodySize": 4021,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/trophy-DGkPsNhD.js",
+          "duration": 24,
+          "transferSize": 1107,
+          "encodedBodySize": 807,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/circle-check-CC2JvenA.js",
+          "duration": 29.19999998807907,
+          "transferSize": 573,
+          "encodedBodySize": 273,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/arrow-right-D2wUKNnD.js",
+          "duration": 30.799999952316284,
+          "transferSize": 565,
+          "encodedBodySize": 265,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/logo.svg",
+          "duration": 11.099999964237213,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4181/logo.svg",
+          "duration": 1.9000000357627869,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-compare-cold",
+    "route": "/compare",
+    "firstUsable": 446,
+    "domContentLoaded": 118,
+    "requests": 8,
+    "apiRequests": 0,
+    "transferBytes": 228346,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/compare",
+      "firstUsable": 446,
+      "routeUsable": 366.60000002384186,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4182/compare",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 152.30000001192093,
+          "navigationId": 7336,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 0.8999999761581421,
+          "domainLookupStart": 4.399999976158142,
+          "domainLookupEnd": 4.399999976158142,
+          "connectStart": 4.399999976158142,
+          "secureConnectionStart": 0,
+          "connectEnd": 4.899999976158142,
+          "requestStart": 5,
+          "responseStart": 8.599999964237213,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 8.599999964237213,
+          "responseEnd": 9.300000011920929,
+          "transferSize": 2415,
+          "encodedBodySize": 2115,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 79.80000001192093,
+          "domContentLoadedEventStart": 109.80000001192093,
+          "domContentLoadedEventEnd": 117.89999997615814,
+          "domComplete": 151.19999998807907,
+          "loadEventStart": 152.19999998807907,
+          "loadEventEnd": 152.30000001192093,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 140,
+          "duration": 0,
+          "navigationId": 7336,
+          "paintTime": 119.69999998807907,
+          "presentationTime": 140
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 140,
+          "duration": 0,
+          "navigationId": 7336,
+          "paintTime": 119.69999998807907,
+          "presentationTime": 140
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4182/assets/index-5ufz5eLv.js",
+          "duration": 31.19999998807907,
+          "transferSize": 136727,
+          "encodedBodySize": 136427,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/web-query-BdNCjuTy.js",
+          "duration": 43.5,
+          "transferSize": 11049,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/web-vendor-BHFxXjgK.js",
+          "duration": 44.60000002384186,
+          "transferSize": 18092,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/web-motion-5bYI8l-Q.js",
+          "duration": 38.30000001192093,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/index-YpcexO2Y.css",
+          "duration": 54.69999998807907,
+          "transferSize": 22787,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/copy-D0bNDxfi.js",
+          "duration": 23.599999964237213,
+          "transferSize": 609,
+          "encodedBodySize": 309,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/AnimeCompare-COHJTvw-.js",
+          "duration": 35.5,
+          "transferSize": 4586,
+          "encodedBodySize": 4286,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4182/logo.svg",
+          "duration": 9.400000035762787,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4182/logo.svg",
+          "duration": 2.100000023841858,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-compare-warm",
+    "route": "/compare",
+    "firstUsable": 391,
+    "domContentLoaded": 57,
+    "requests": 0,
+    "apiRequests": 0,
+    "transferBytes": 2203,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/compare",
+      "firstUsable": 391.39999997615814,
+      "routeUsable": 345.7999999523163,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4181/compare",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 83.10000002384186,
+          "navigationId": 8368,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.100000023841858,
+          "domainLookupStart": 5.399999976158142,
+          "domainLookupEnd": 5.800000011920929,
+          "connectStart": 5.800000011920929,
+          "secureConnectionStart": 0,
+          "connectEnd": 6.300000011920929,
+          "requestStart": 6.399999976158142,
+          "responseStart": 7.100000023841858,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 7.100000023841858,
+          "responseEnd": 7.699999988079071,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 14.199999988079071,
+          "unloadEventEnd": 14.199999988079071,
+          "domInteractive": 45.69999998807907,
+          "domContentLoadedEventStart": 50.39999997615814,
+          "domContentLoadedEventEnd": 57.30000001192093,
+          "domComplete": 83,
+          "loadEventStart": 83,
+          "loadEventEnd": 83.10000002384186,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 104,
+          "duration": 0,
+          "navigationId": 8368,
+          "paintTime": 87.80000001192093,
+          "presentationTime": 104
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 436,
+          "duration": 0,
+          "navigationId": 8368,
+          "paintTime": 398.10000002384186,
+          "presentationTime": 436
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4181/assets/index-VM-l8fFu.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/web-vendor-Cqav__hV.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/web-query-CQfm4aOy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/index-Bel4uhzg.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/AnimeCompare-Ds4FnEK9.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 4021,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/loader-circle-BI_DA7AQ.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 257,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/trophy-DGkPsNhD.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 807,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/circle-check-CC2JvenA.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 273,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/assets/arrow-right-D2wUKNnD.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 265,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4181/logo.svg",
+          "duration": 9.899999976158142,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4181/logo.svg",
+          "duration": 16.400000035762787,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-compare-warm",
+    "route": "/compare",
+    "firstUsable": 391,
+    "domContentLoaded": 68,
+    "requests": 0,
+    "apiRequests": 0,
+    "transferBytes": 2415,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/compare",
+      "firstUsable": 391.2999999523163,
+      "routeUsable": 336.69999998807907,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4182/compare",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 94.5,
+          "navigationId": 2967,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.0999999642372131,
+          "domainLookupStart": 5.5,
+          "domainLookupEnd": 5.5,
+          "connectStart": 5.5,
+          "secureConnectionStart": 0,
+          "connectEnd": 6.199999988079071,
+          "requestStart": 6.299999952316284,
+          "responseStart": 7.899999976158142,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 7.899999976158142,
+          "responseEnd": 9.5,
+          "transferSize": 2415,
+          "encodedBodySize": 2115,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 17.799999952316284,
+          "unloadEventEnd": 17.799999952316284,
+          "domInteractive": 54.799999952316284,
+          "domContentLoadedEventStart": 61.09999996423721,
+          "domContentLoadedEventEnd": 68,
+          "domComplete": 94.29999995231628,
+          "loadEventStart": 94.39999997615814,
+          "loadEventEnd": 94.5,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 84,
+          "duration": 0,
+          "navigationId": 2967,
+          "paintTime": 68.5,
+          "presentationTime": 84
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 84,
+          "duration": 0,
+          "navigationId": 2967,
+          "paintTime": 68.5,
+          "presentationTime": 84
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4182/assets/index-5ufz5eLv.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 136427,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/web-vendor-BHFxXjgK.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/web-query-BdNCjuTy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/index-YpcexO2Y.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/AnimeCompare-COHJTvw-.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 4286,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4182/assets/copy-D0bNDxfi.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 309,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4182/logo.svg",
+          "duration": 4.600000023841858,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4182/logo.svg",
+          "duration": 1.9000000357627869,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-blog-cold",
+    "route": "/blog",
+    "firstUsable": 440,
+    "domContentLoaded": 114,
+    "requests": 14,
+    "apiRequests": 1,
+    "transferBytes": 229777,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/blog",
+      "firstUsable": 440.39999997615814,
+      "routeUsable": 359,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4183/blog",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 135.19999998807907,
+          "navigationId": 1867,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.0999999642372131,
+          "domainLookupStart": 3.399999976158142,
+          "domainLookupEnd": 3.699999988079071,
+          "connectStart": 3.699999988079071,
+          "secureConnectionStart": 0,
+          "connectEnd": 4.5,
+          "requestStart": 4.599999964237213,
+          "responseStart": 9.199999988079071,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 9.199999988079071,
+          "responseEnd": 9.899999976158142,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 83.39999997615814,
+          "domContentLoadedEventStart": 108.19999998807907,
+          "domContentLoadedEventEnd": 114.09999996423721,
+          "domComplete": 135.0999999642372,
+          "loadEventStart": 135.0999999642372,
+          "loadEventEnd": 135.19999998807907,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 156,
+          "duration": 0,
+          "navigationId": 1867,
+          "paintTime": 136.29999995231628,
+          "presentationTime": 156
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 512,
+          "duration": 0,
+          "navigationId": 1867,
+          "paintTime": 458.5,
+          "presentationTime": 512
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4183/assets/index-VM-l8fFu.js",
+          "duration": 36.19999998807907,
+          "transferSize": 133524,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/web-vendor-Cqav__hV.js",
+          "duration": 20.200000047683716,
+          "transferSize": 18077,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/web-query-CQfm4aOy.js",
+          "duration": 56.200000047683716,
+          "transferSize": 11039,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/web-motion-5bYI8l-Q.js",
+          "duration": 56.60000002384186,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/index-Bel4uhzg.css",
+          "duration": 56.5,
+          "transferSize": 22701,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/Blog-8W4yPeyu.js",
+          "duration": 45.89999997615814,
+          "transferSize": 3652,
+          "encodedBodySize": 3352,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/blog-CenfjzcU.js",
+          "duration": 36.19999998807907,
+          "transferSize": 2954,
+          "encodedBodySize": 2654,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/loader-circle-BI_DA7AQ.js",
+          "duration": 33.60000002384186,
+          "transferSize": 557,
+          "encodedBodySize": 257,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/newspaper-CmYLjkE5.js",
+          "duration": 33.80000001192093,
+          "transferSize": 649,
+          "encodedBodySize": 349,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/sparkles-u1XlCH48.js",
+          "duration": 35.700000047683716,
+          "transferSize": 690,
+          "encodedBodySize": 390,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/calendar-days-qt1vh_o5.js",
+          "duration": 46,
+          "transferSize": 669,
+          "encodedBodySize": 369,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/arrow-right-D2wUKNnD.js",
+          "duration": 45.59999996423721,
+          "transferSize": 565,
+          "encodedBodySize": 265,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/logo.svg",
+          "duration": 31.299999952316284,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/logo.svg",
+          "duration": 3.300000011920929,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/api/blog-archive?summary=1&page=1&limit=10",
+          "duration": 74,
+          "transferSize": 416,
+          "encodedBodySize": 116,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4183/logo.svg",
+          "duration": 2.600000023841858,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-blog-cold",
+    "route": "/blog",
+    "firstUsable": 429,
+    "domContentLoaded": 94,
+    "requests": 15,
+    "apiRequests": 1,
+    "transferBytes": 233841,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/blog",
+      "firstUsable": 429.0999999642372,
+      "routeUsable": 371.19999998807907,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4184/blog",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 121.30000001192093,
+          "navigationId": 6643,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1,
+          "domainLookupStart": 3.800000011920929,
+          "domainLookupEnd": 3.800000011920929,
+          "connectStart": 3.800000011920929,
+          "secureConnectionStart": 0,
+          "connectEnd": 4.300000011920929,
+          "requestStart": 4.399999976158142,
+          "responseStart": 7.699999988079071,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 7.699999988079071,
+          "responseEnd": 8.399999976158142,
+          "transferSize": 2416,
+          "encodedBodySize": 2116,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 60.59999996423721,
+          "domContentLoadedEventStart": 89.09999996423721,
+          "domContentLoadedEventEnd": 94.19999998807907,
+          "domComplete": 120.19999998807907,
+          "loadEventStart": 121.30000001192093,
+          "loadEventEnd": 121.30000001192093,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 76,
+          "duration": 0,
+          "navigationId": 6643,
+          "paintTime": 60.30000001192093,
+          "presentationTime": 76
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 76,
+          "duration": 0,
+          "navigationId": 6643,
+          "paintTime": 60.30000001192093,
+          "presentationTime": 76
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4184/assets/index-Cb-U9-Z_.js",
+          "duration": 38.69999998807907,
+          "transferSize": 136737,
+          "encodedBodySize": 136437,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/web-query-BdNCjuTy.js",
+          "duration": 24.400000035762787,
+          "transferSize": 11049,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/web-vendor-BHFxXjgK.js",
+          "duration": 32.40000003576279,
+          "transferSize": 18092,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/web-motion-5bYI8l-Q.js",
+          "duration": 29.5,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/index-YpcexO2Y.css",
+          "duration": 35.19999998807907,
+          "transferSize": 22787,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/Blog-DTvE7RFe.js",
+          "duration": 6.5,
+          "transferSize": 3853,
+          "encodedBodySize": 3553,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/blog-DgreTsPL.js",
+          "duration": 6.199999988079071,
+          "transferSize": 988,
+          "encodedBodySize": 688,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/newspaper-BYVLxnXl.js",
+          "duration": 6,
+          "transferSize": 649,
+          "encodedBodySize": 349,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/loader-circle-DRatxkzA.js",
+          "duration": 8.199999988079071,
+          "transferSize": 558,
+          "encodedBodySize": 258,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/sparkles-DTHz3S1V.js",
+          "duration": 8.300000011920929,
+          "transferSize": 691,
+          "encodedBodySize": 391,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/calendar-days-BMXqLRSc.js",
+          "duration": 8.399999976158142,
+          "transferSize": 669,
+          "encodedBodySize": 369,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/arrow-right-C-PLmS_W.js",
+          "duration": 10.300000011920929,
+          "transferSize": 566,
+          "encodedBodySize": 266,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/blogShared-Brx7ZH4v.js",
+          "duration": 11.100000023841858,
+          "transferSize": 2289,
+          "encodedBodySize": 1989,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/logo.svg",
+          "duration": 7.5,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/logo.svg",
+          "duration": 2,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/api/blog-archive?summary=1&page=1&limit=10",
+          "duration": 86,
+          "transferSize": 416,
+          "encodedBodySize": 116,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4184/logo.svg",
+          "duration": 33.69999998807907,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-blog-warm",
+    "route": "/blog",
+    "firstUsable": 405,
+    "domContentLoaded": 75,
+    "requests": 1,
+    "apiRequests": 1,
+    "transferBytes": 2619,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/blog",
+      "firstUsable": 404.9000000357628,
+      "routeUsable": 342.2000000476837,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4183/blog",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 93.5,
+          "navigationId": 2634,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.100000023841858,
+          "domainLookupStart": 4.800000011920929,
+          "domainLookupEnd": 5.100000023841858,
+          "connectStart": 5.100000023841858,
+          "secureConnectionStart": 0,
+          "connectEnd": 5.600000023841858,
+          "requestStart": 5.600000023841858,
+          "responseStart": 24.30000001192093,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 24.30000001192093,
+          "responseEnd": 26.69999998807907,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 32.69999998807907,
+          "unloadEventEnd": 32.69999998807907,
+          "domInteractive": 62.90000003576279,
+          "domContentLoadedEventStart": 66.69999998807907,
+          "domContentLoadedEventEnd": 74.80000001192093,
+          "domComplete": 93.5,
+          "loadEventStart": 93.5,
+          "loadEventEnd": 93.5,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 116,
+          "duration": 0,
+          "navigationId": 2634,
+          "paintTime": 94.40000003576279,
+          "presentationTime": 116
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 460,
+          "duration": 0,
+          "navigationId": 2634,
+          "paintTime": 416.10000002384186,
+          "presentationTime": 460
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4183/assets/index-VM-l8fFu.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/web-vendor-Cqav__hV.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/web-query-CQfm4aOy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/index-Bel4uhzg.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/Blog-8W4yPeyu.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 3352,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/blog-CenfjzcU.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 2654,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/newspaper-CmYLjkE5.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 349,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/loader-circle-BI_DA7AQ.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 257,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/sparkles-u1XlCH48.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 390,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/calendar-days-qt1vh_o5.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 369,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/assets/arrow-right-D2wUKNnD.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 265,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4183/logo.svg",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4183/logo.svg",
+          "duration": 6.800000011920929,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/logo.svg",
+          "duration": 7.5,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4183/logo.svg",
+          "duration": 23.099999964237213,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4183/api/blog-archive?summary=1&page=1&limit=10",
+          "duration": 100.39999997615814,
+          "transferSize": 416,
+          "encodedBodySize": 116,
+          "initiatorType": "fetch"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-blog-rebuilt-reload",
+    "route": "/blog",
+    "firstUsable": 388,
+    "domContentLoaded": 64,
+    "requests": 1,
+    "apiRequests": 1,
+    "transferBytes": 2832,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/blog",
+      "firstUsable": 387.89999997615814,
+      "routeUsable": 335.89999997615814,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4184/blog",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 91.29999995231628,
+          "navigationId": 4479,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 0.8999999761581421,
+          "domainLookupStart": 4.799999952316284,
+          "domainLookupEnd": 4.799999952316284,
+          "connectStart": 4.799999952316284,
+          "secureConnectionStart": 0,
+          "connectEnd": 5.799999952316284,
+          "requestStart": 5.799999952316284,
+          "responseStart": 10.199999988079071,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 10.199999988079071,
+          "responseEnd": 11,
+          "transferSize": 2416,
+          "encodedBodySize": 2116,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 17.099999964237213,
+          "unloadEventEnd": 17.099999964237213,
+          "domInteractive": 52.19999998807907,
+          "domContentLoadedEventStart": 56.89999997615814,
+          "domContentLoadedEventEnd": 63.89999997615814,
+          "domComplete": 91.09999996423721,
+          "loadEventStart": 91.29999995231628,
+          "loadEventEnd": 91.29999995231628,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 84,
+          "duration": 0,
+          "navigationId": 4479,
+          "paintTime": 64.59999996423721,
+          "presentationTime": 84
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 84,
+          "duration": 0,
+          "navigationId": 4479,
+          "paintTime": 64.59999996423721,
+          "presentationTime": 84
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4184/assets/index-Cb-U9-Z_.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 136437,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/web-vendor-BHFxXjgK.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/web-query-BdNCjuTy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/index-YpcexO2Y.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/Blog-DTvE7RFe.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 3553,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/blog-DgreTsPL.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 688,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/newspaper-BYVLxnXl.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 349,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/loader-circle-DRatxkzA.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 258,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/sparkles-DTHz3S1V.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 391,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/calendar-days-BMXqLRSc.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 369,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/arrow-right-C-PLmS_W.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 266,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/assets/blogShared-Brx7ZH4v.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 1989,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4184/logo.svg",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4184/logo.svg",
+          "duration": 3.600000023841858,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/logo.svg",
+          "duration": 3.200000047683716,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4184/logo.svg",
+          "duration": 8.300000011920929,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4184/api/blog-archive?summary=1&page=1&limit=10",
+          "duration": 68.5,
+          "transferSize": 416,
+          "encodedBodySize": 116,
+          "initiatorType": "fetch"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-calendar-final-cold",
+    "route": "/schedule",
+    "firstUsable": 576,
+    "domContentLoaded": 101,
+    "requests": 13,
+    "apiRequests": 2,
+    "transferBytes": 256265,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/schedule",
+      "firstUsable": 576.1999999880791,
+      "routeUsable": 507.89999997615814,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4185/schedule",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 132.19999998807907,
+          "navigationId": 4487,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.4000000357627869,
+          "domainLookupStart": 5.600000023841858,
+          "domainLookupEnd": 5.600000023841858,
+          "connectStart": 5.600000023841858,
+          "secureConnectionStart": 0,
+          "connectEnd": 6.199999988079071,
+          "requestStart": 6.300000011920929,
+          "responseStart": 9,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 9,
+          "responseEnd": 9.699999988079071,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 68.80000001192093,
+          "domContentLoadedEventStart": 93.60000002384186,
+          "domContentLoadedEventEnd": 100.5,
+          "domComplete": 132.10000002384186,
+          "loadEventStart": 132.10000002384186,
+          "loadEventEnd": 132.19999998807907,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 148,
+          "duration": 0,
+          "navigationId": 4487,
+          "paintTime": 123.10000002384186,
+          "presentationTime": 148
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 480,
+          "duration": 0,
+          "navigationId": 4487,
+          "paintTime": 432.4000000357628,
+          "presentationTime": 480
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4185/assets/index-VM-l8fFu.js",
+          "duration": 27.19999998807907,
+          "transferSize": 133524,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/web-vendor-Cqav__hV.js",
+          "duration": 37,
+          "transferSize": 18077,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/web-query-CQfm4aOy.js",
+          "duration": 39.90000003576279,
+          "transferSize": 11039,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/web-motion-5bYI8l-Q.js",
+          "duration": 32.69999998807907,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/index-Bel4uhzg.css",
+          "duration": 43.19999998807907,
+          "transferSize": 22701,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/Schedule-CKp68j-2.js",
+          "duration": 8.800000011920929,
+          "transferSize": 4047,
+          "encodedBodySize": 3747,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/loader-circle-BI_DA7AQ.js",
+          "duration": 5.199999988079071,
+          "transferSize": 557,
+          "encodedBodySize": 257,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/schedulePresentation-CkrKtIIf.js",
+          "duration": 6.299999952316284,
+          "transferSize": 2399,
+          "encodedBodySize": 2099,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/Schedule-CbtO-aHD.css",
+          "duration": 8.800000011920929,
+          "transferSize": 644,
+          "encodedBodySize": 344,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4185/logo.svg",
+          "duration": 5.900000035762787,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/logo.svg",
+          "duration": 2,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180",
+          "duration": 67.10000002384186,
+          "transferSize": 14190,
+          "encodedBodySize": 13890,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4185/fixture-poster.svg",
+          "duration": 3.899999976158142,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4185/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180&cursor=0%3A0",
+          "duration": 76.30000001192093,
+          "transferSize": 14174,
+          "encodedBodySize": 13874,
+          "initiatorType": "fetch"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-calendar-final-cold",
+    "route": "/schedule",
+    "firstUsable": 569,
+    "domContentLoaded": 106,
+    "requests": 13,
+    "apiRequests": 2,
+    "transferBytes": 260702,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/schedule",
+      "firstUsable": 568.6000000238419,
+      "routeUsable": 494.69999998807907,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4186/schedule",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 141.30000001192093,
+          "navigationId": 8904,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1,
+          "domainLookupStart": 4.200000047683716,
+          "domainLookupEnd": 4.600000023841858,
+          "connectStart": 4.600000023841858,
+          "secureConnectionStart": 0,
+          "connectEnd": 5.100000023841858,
+          "requestStart": 5.200000047683716,
+          "responseStart": 7.900000035762787,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 7.900000035762787,
+          "responseEnd": 8.900000035762787,
+          "transferSize": 2416,
+          "encodedBodySize": 2116,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 76.70000004768372,
+          "domContentLoadedEventStart": 100.80000001192093,
+          "domContentLoadedEventEnd": 106.30000001192093,
+          "domComplete": 141.10000002384186,
+          "loadEventStart": 141.30000001192093,
+          "loadEventEnd": 141.30000001192093,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 100,
+          "duration": 0,
+          "navigationId": 8904,
+          "paintTime": 76.10000002384186,
+          "presentationTime": 100
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 100,
+          "duration": 0,
+          "navigationId": 8904,
+          "paintTime": 76.10000002384186,
+          "presentationTime": 100
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4186/assets/index-Cb-U9-Z_.js",
+          "duration": 34.80000001192093,
+          "transferSize": 136737,
+          "encodedBodySize": 136437,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/web-query-BdNCjuTy.js",
+          "duration": 34,
+          "transferSize": 11049,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/web-motion-5bYI8l-Q.js",
+          "duration": 39.30000001192093,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/web-vendor-BHFxXjgK.js",
+          "duration": 44.69999998807907,
+          "transferSize": 18092,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/index-YpcexO2Y.css",
+          "duration": 49.5,
+          "transferSize": 22787,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/Schedule-Ccvzhkzl.js",
+          "duration": 4,
+          "transferSize": 4933,
+          "encodedBodySize": 4633,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/loader-circle-DRatxkzA.js",
+          "duration": 4.700000047683716,
+          "transferSize": 558,
+          "encodedBodySize": 258,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/schedulePresentation-CH259v9w.js",
+          "duration": 5.5,
+          "transferSize": 2412,
+          "encodedBodySize": 2112,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/Schedule-CbtO-aHD.css",
+          "duration": 6,
+          "transferSize": 644,
+          "encodedBodySize": 344,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4186/logo.svg",
+          "duration": 5.400000035762787,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/logo.svg",
+          "duration": 1.7999999523162842,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180&progressive=1&priorityDay=1792606500",
+          "duration": 67.30000001192093,
+          "transferSize": 14190,
+          "encodedBodySize": 13890,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4186/fixture-poster.svg",
+          "duration": 2.799999952316284,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4186/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180&progressive=1&priorityDay=1792606500&cursor=0%3A0",
+          "duration": 67.69999998807907,
+          "transferSize": 14174,
+          "encodedBodySize": 13874,
+          "initiatorType": "fetch"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-calendar-final-warm",
+    "route": "/schedule",
+    "firstUsable": 605,
+    "domContentLoaded": 76,
+    "requests": 3,
+    "apiRequests": 2,
+    "transferBytes": 31196,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/schedule",
+      "firstUsable": 604.5,
+      "routeUsable": 541,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4185/schedule",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 99.10000002384186,
+          "navigationId": 8053,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1,
+          "domainLookupStart": 6,
+          "domainLookupEnd": 6,
+          "connectStart": 6,
+          "secureConnectionStart": 0,
+          "connectEnd": 7.600000023841858,
+          "requestStart": 7.800000011920929,
+          "responseStart": 8.699999988079071,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 8.699999988079071,
+          "responseEnd": 9.699999988079071,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 19,
+          "unloadEventEnd": 19,
+          "domInteractive": 63.60000002384186,
+          "domContentLoadedEventStart": 69.80000001192093,
+          "domContentLoadedEventEnd": 76,
+          "domComplete": 98.90000003576279,
+          "loadEventStart": 99,
+          "loadEventEnd": 99.10000002384186,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 116,
+          "duration": 0,
+          "navigationId": 8053,
+          "paintTime": 96.19999998807907,
+          "presentationTime": 116
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 516,
+          "duration": 0,
+          "navigationId": 8053,
+          "paintTime": 474.30000001192093,
+          "presentationTime": 516
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4185/assets/index-VM-l8fFu.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/web-vendor-Cqav__hV.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/web-query-CQfm4aOy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/index-Bel4uhzg.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/Schedule-CKp68j-2.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 3747,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/schedulePresentation-CkrKtIIf.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 2099,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/loader-circle-BI_DA7AQ.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 257,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4185/assets/Schedule-CbtO-aHD.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 344,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4185/logo.svg",
+          "duration": 5.699999988079071,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/logo.svg",
+          "duration": 2.100000023841858,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4185/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180",
+          "duration": 93.09999996423721,
+          "transferSize": 14190,
+          "encodedBodySize": 13890,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4185/fixture-poster.svg",
+          "duration": 14.399999976158142,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4185/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180&cursor=0%3A0",
+          "duration": 80.10000002384186,
+          "transferSize": 14174,
+          "encodedBodySize": 13874,
+          "initiatorType": "fetch"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-calendar-final-warm",
+    "route": "/schedule",
+    "firstUsable": 540,
+    "domContentLoaded": 90,
+    "requests": 3,
+    "apiRequests": 2,
+    "transferBytes": 31409,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/schedule",
+      "firstUsable": 540.4000000357628,
+      "routeUsable": 464.19999998807907,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4186/schedule",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 132.9000000357628,
+          "navigationId": 6075,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 2.700000047683716,
+          "domainLookupStart": 11.200000047683716,
+          "domainLookupEnd": 11.200000047683716,
+          "connectStart": 11.200000047683716,
+          "secureConnectionStart": 0,
+          "connectEnd": 12.200000047683716,
+          "requestStart": 12.300000011920929,
+          "responseStart": 13.300000011920929,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 13.300000011920929,
+          "responseEnd": 14.200000047683716,
+          "transferSize": 2416,
+          "encodedBodySize": 2116,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 28.400000035762787,
+          "unloadEventEnd": 28.400000035762787,
+          "domInteractive": 76.40000003576279,
+          "domContentLoadedEventStart": 83.20000004768372,
+          "domContentLoadedEventEnd": 89.80000001192093,
+          "domComplete": 132.70000004768372,
+          "loadEventStart": 132.9000000357628,
+          "loadEventEnd": 132.9000000357628,
+          "type": "reload",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 104,
+          "duration": 0,
+          "navigationId": 6075,
+          "paintTime": 77.30000001192093,
+          "presentationTime": 104
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 104,
+          "duration": 0,
+          "navigationId": 6075,
+          "paintTime": 77.30000001192093,
+          "presentationTime": 104
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4186/assets/index-Cb-U9-Z_.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 136437,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/web-vendor-BHFxXjgK.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/web-query-BdNCjuTy.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/web-motion-5bYI8l-Q.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/index-YpcexO2Y.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/Schedule-Ccvzhkzl.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 4633,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/schedulePresentation-CH259v9w.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 2112,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/loader-circle-DRatxkzA.js",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 258,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4186/assets/Schedule-CbtO-aHD.css",
+          "duration": 0,
+          "transferSize": 0,
+          "encodedBodySize": 344,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4186/logo.svg",
+          "duration": 4.800000011920929,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/logo.svg",
+          "duration": 4.199999988079071,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4186/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180&progressive=1&priorityDay=1792606500",
+          "duration": 70.59999996423721,
+          "transferSize": 14190,
+          "encodedBodySize": 13890,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4186/fixture-poster.svg",
+          "duration": 7.600000023841858,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4186/api/stream-sources?provider=calendar&start=1792606500&end=1793211300&ttl=180&progressive=1&priorityDay=1792606500&cursor=0%3A0",
+          "duration": 73.5,
+          "transferSize": 14174,
+          "encodedBodySize": 13874,
+          "initiatorType": "fetch"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "baseline-home-final-cold",
+    "route": "/",
+    "firstUsable": 492,
+    "domContentLoaded": 148,
+    "requests": 11,
+    "apiRequests": 3,
+    "transferBytes": 332229,
+    "longTaskMs": 0,
+    "raw": {
+      "route": "/",
+      "firstUsable": 492.30000001192093,
+      "routeUsable": 408.5,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4187/",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 184.9000000357628,
+          "navigationId": 2001,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1,
+          "domainLookupStart": 6,
+          "domainLookupEnd": 6,
+          "connectStart": 6,
+          "secureConnectionStart": 0,
+          "connectEnd": 6.600000023841858,
+          "requestStart": 7,
+          "responseStart": 11.200000047683716,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 11.200000047683716,
+          "responseEnd": 12.700000047683716,
+          "transferSize": 2203,
+          "encodedBodySize": 1903,
+          "decodedBodySize": 5206,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 84,
+          "domContentLoadedEventStart": 140.20000004768372,
+          "domContentLoadedEventEnd": 147.9000000357628,
+          "domComplete": 182.10000002384186,
+          "loadEventStart": 184.9000000357628,
+          "loadEventEnd": 184.9000000357628,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "high"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 244,
+          "duration": 0,
+          "navigationId": 2001,
+          "paintTime": 205.60000002384186,
+          "presentationTime": 244
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 244,
+          "duration": 0,
+          "navigationId": 2001,
+          "paintTime": 205.60000002384186,
+          "presentationTime": 244
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4187/assets/index-VM-l8fFu.js",
+          "duration": 61.19999998807907,
+          "transferSize": 133524,
+          "encodedBodySize": 133224,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4187/assets/web-vendor-Cqav__hV.js",
+          "duration": 65.59999996423721,
+          "transferSize": 18077,
+          "encodedBodySize": 17777,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4187/assets/index-Bel4uhzg.css",
+          "duration": 46.30000001192093,
+          "transferSize": 22701,
+          "encodedBodySize": 22401,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4187/assets/web-query-CQfm4aOy.js",
+          "duration": 68.5,
+          "transferSize": 11039,
+          "encodedBodySize": 10739,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4187/assets/web-motion-5bYI8l-Q.js",
+          "duration": 69,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4187/logo.svg",
+          "duration": 11.800000011920929,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4187/logo.svg",
+          "duration": 1.800000011920929,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4187/api/stream-sources?provider=anilist&ttl=900",
+          "duration": 79.79999995231628,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4187/api/stream-sources?provider=anilist&ttl=300",
+          "duration": 79.89999997615814,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4187/api/stream-sources?provider=anilist&ttl=180",
+          "duration": 80,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4187/fixture-poster.svg",
+          "duration": 3.900000035762787,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4187/fixture-banner.svg",
+          "duration": 2.199999988079071,
+          "transferSize": 630,
+          "encodedBodySize": 330,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": []
+    }
+  },
+  {
+    "label": "candidate-home-final-cold",
+    "route": "/",
+    "firstUsable": 468,
+    "domContentLoaded": 127,
+    "requests": 12,
+    "apiRequests": 4,
+    "transferBytes": 372881,
+    "longTaskMs": 52,
+    "raw": {
+      "route": "/",
+      "firstUsable": 468.30000001192093,
+      "routeUsable": 378.39999997615814,
+      "navigation": [
+        {
+          "name": "http://127.0.0.1:4188/",
+          "entryType": "navigation",
+          "startTime": 0,
+          "duration": 185.10000002384186,
+          "navigationId": 9250,
+          "initiatorType": "navigation",
+          "deliveryType": "",
+          "nextHopProtocol": "http/1.1",
+          "renderBlockingStatus": "non-blocking",
+          "contentType": "text/html",
+          "contentEncoding": "gzip",
+          "workerStart": 0,
+          "workerRouterEvaluationStart": 0,
+          "workerCacheLookupStart": 0,
+          "workerMatchedSourceType": "",
+          "workerFinalSourceType": "",
+          "redirectStart": 0,
+          "redirectEnd": 0,
+          "fetchStart": 1.100000023841858,
+          "domainLookupStart": 4.100000023841858,
+          "domainLookupEnd": 4.400000035762787,
+          "connectStart": 4.400000035762787,
+          "secureConnectionStart": 0,
+          "connectEnd": 4.900000035762787,
+          "requestStart": 5,
+          "responseStart": 6.800000011920929,
+          "firstInterimResponseStart": 0,
+          "finalResponseHeadersStart": 6.800000011920929,
+          "responseEnd": 7.5,
+          "transferSize": 2416,
+          "encodedBodySize": 2116,
+          "decodedBodySize": 5601,
+          "responseStatus": 200,
+          "serverTiming": [],
+          "unloadEventStart": 0,
+          "unloadEventEnd": 0,
+          "domInteractive": 90.80000001192093,
+          "domContentLoadedEventStart": 121,
+          "domContentLoadedEventEnd": 127.30000001192093,
+          "domComplete": 183.69999998807907,
+          "loadEventStart": 185.10000002384186,
+          "loadEventEnd": 185.10000002384186,
+          "type": "navigate",
+          "redirectCount": 0,
+          "activationStart": 0,
+          "criticalCHRestart": 0,
+          "notRestoredReasons": null,
+          "confidence": {
+            "randomizedTriggerRate": 0.4994798,
+            "value": "low"
+          }
+        }
+      ],
+      "paint": [
+        {
+          "name": "first-paint",
+          "entryType": "paint",
+          "startTime": 128,
+          "duration": 0,
+          "navigationId": 9250,
+          "paintTime": 93.19999998807907,
+          "presentationTime": 128
+        },
+        {
+          "name": "first-contentful-paint",
+          "entryType": "paint",
+          "startTime": 128,
+          "duration": 0,
+          "navigationId": 9250,
+          "paintTime": 93.19999998807907,
+          "presentationTime": 128
+        }
+      ],
+      "resources": [
+        {
+          "name": "http://127.0.0.1:4188/assets/index-Cb-U9-Z_.js",
+          "duration": 63.60000002384186,
+          "transferSize": 136737,
+          "encodedBodySize": 136437,
+          "initiatorType": "script"
+        },
+        {
+          "name": "http://127.0.0.1:4188/assets/web-vendor-BHFxXjgK.js",
+          "duration": 43.69999998807907,
+          "transferSize": 18092,
+          "encodedBodySize": 17792,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4188/assets/web-query-BdNCjuTy.js",
+          "duration": 20.400000035762787,
+          "transferSize": 11049,
+          "encodedBodySize": 10749,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4188/assets/web-motion-5bYI8l-Q.js",
+          "duration": 40.80000001192093,
+          "transferSize": 31455,
+          "encodedBodySize": 31155,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4188/assets/index-YpcexO2Y.css",
+          "duration": 62.90000003576279,
+          "transferSize": 22787,
+          "encodedBodySize": 22487,
+          "initiatorType": "link"
+        },
+        {
+          "name": "http://127.0.0.1:4188/logo.svg",
+          "duration": 15.600000023841858,
+          "transferSize": 626,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4188/logo.svg",
+          "duration": 6.5,
+          "transferSize": 0,
+          "encodedBodySize": 326,
+          "initiatorType": "other"
+        },
+        {
+          "name": "http://127.0.0.1:4188/api/stream-sources?provider=anilist&ttl=900",
+          "duration": 71.80000001192093,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4188/api/stream-sources?provider=anilist&ttl=300",
+          "duration": 70.5,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4188/api/stream-sources?provider=anilist&ttl=180",
+          "duration": 71.30000001192093,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4188/api/stream-sources?provider=anilist&ttl=900",
+          "duration": 76.80000001192093,
+          "transferSize": 37115,
+          "encodedBodySize": 36815,
+          "initiatorType": "fetch"
+        },
+        {
+          "name": "http://127.0.0.1:4188/fixture-poster.svg",
+          "duration": 6.600000023841858,
+          "transferSize": 629,
+          "encodedBodySize": 329,
+          "initiatorType": "img"
+        },
+        {
+          "name": "http://127.0.0.1:4188/fixture-banner.svg",
+          "duration": 3.399999976158142,
+          "transferSize": 630,
+          "encodedBodySize": 330,
+          "initiatorType": "img"
+        }
+      ],
+      "longTasks": [
+        {
+          "start": 130.9000000357628,
+          "duration": 52
+        }
+      ]
+    }
+  }
+]

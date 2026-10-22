@@ -6,6 +6,7 @@ import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volu
 import { useMemo, useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';
+import DataStatus from '../components/DataStatus';
 import { getTorrentBadges, torrentBadgeClassName, torrentMatchesSourceFilter } from '../lib/torrentBadges';
 import type { TorrentSourceFilter } from '../lib/torrentBadges';
 import { useAuth } from '../context/AuthContext';
@@ -79,9 +80,9 @@ export default function AnimeDownloads() {
   const [showAllSources, setShowAllSources] = useState(false);
   const [desktopNotice, setDesktopNotice] = useState<{ tone: 'loading' | 'success' | 'error'; text: string } | null>(null);
 
-  const { data, isLoading: animeLoading } = useQuery({
+  const { data, isLoading: animeLoading, error: animeError, refetch: retryAnime } = useQuery({
     queryKey: ['anime', id],
-    queryFn: () => fetchAnimeDetails(id!),
+    queryFn: ({signal}) => fetchAnimeDetails(id!, {signal}),
     enabled: !!id,
   });
 
@@ -89,18 +90,19 @@ export default function AnimeDownloads() {
   const downloadSearchAvailable = canSearchDownloads(anime);
 
   const { data: episodeData } = useQuery({
-    queryKey: ['anime-download-episodes', id, episodePage],
-    queryFn: () => fetchAnimeEpisodes(id!, episodePage),
-    enabled: !!id && !!anime,
+    queryKey: ['anime-download-episodes', anime?.mal_id, episodePage],
+    queryFn: ({signal}) => fetchAnimeEpisodes(String(anime!.mal_id), episodePage, {signal}),
+    enabled: Boolean(anime?.mal_id),
   });
 
   const currentEpisodePageItems = episodeData?.data || [];
   const airedEpisodeCount = knownAiredEpisodeCount(anime, currentEpisodePageItems);
   const resolvedEpisodeNumber = selectedEpisodeNumber || (airedEpisodeCount > 0 ? airedEpisodeCount : null);
 
-  const { data: torrents, isLoading: torrentsLoading } = useQuery({
+  const { data: torrents, isLoading: torrentsLoading, isError: torrentsError, isFetching: torrentsRefreshing, refetch: retryTorrents } = useQuery({
+    retry: false,
     queryKey: ['nyaa-download', anime?.title, resolvedEpisodeNumber, downloadFilter, typeParam, audioFilter, showAllSources],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const romaji = anime?.title_romaji;
       const english = anime?.title_english;
       const native = anime?.title;
@@ -120,7 +122,7 @@ export default function AnimeDownloads() {
         if (ep) query += ` ${ep}`;
         if (effectiveDownloadFilter && effectiveDownloadFilter !== 'RAW') query += ` ${effectiveDownloadFilter}`;
         if (isDub) query += ' dub';
-        return await searchNyaa(query, effectiveDownloadFilter === 'RAW' ? '1_4' : '1_2', '0', '1', { pages: showAllSources ? 2 : 1, wide: showAllSources });
+        return await searchNyaa(query, effectiveDownloadFilter === 'RAW' ? '1_4' : '1_2', '0', '1', { pages: showAllSources ? 2 : 1, wide: showAllSources, signal });
       };
 
       const trySearches = async (epNumStr: string) => {
@@ -197,6 +199,7 @@ export default function AnimeDownloads() {
     );
   }
 
+  if (animeError && !anime) return <div className="container mx-auto px-4 py-16"><DataStatus label="Anime details" error retry={() => void retryAnime()}/></div>;
   if (!anime) return <div className="text-center py-20">Anime not found</div>;
 
   if (!downloadSearchAvailable) {
@@ -513,12 +516,13 @@ export default function AnimeDownloads() {
         </div>
       </div>
 
+      <DataStatus label="Source results" error={torrentsError} fetching={torrentsRefreshing && !torrentsLoading} retry={() => void retryTorrents()} />
       {torrentsLoading ? (
         <div className="py-20 flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
             <p className="text-muted-foreground font-medium">Searching sources for {audioFilter === 'dub' ? 'dubbed' : 'subbed'} {downloadFilter || 'episode'} releases...</p>
         </div>
-      ) : sortedTorrents.length === 0 ? (
+      ) : torrentsError && !torrents?.length ? null : sortedTorrents.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-8 md:p-12 rounded-3xl text-center flex flex-col items-center">
           <HardDrive className="w-16 h-16 text-muted-foreground mb-4" />
           <p className="text-xl font-bold text-foreground mb-2">No Sources Found</p>
@@ -643,7 +647,7 @@ export default function AnimeDownloads() {
                     }`}>
                       {/\b(dub|dubbed|dual[\s-]?audio|multi[\s-]?audio|english[\s-]?audio|eng[\s-]?dub)\b/i.test(torrent.title) ? 'Dub' : 'Sub'}
                     </span>
-                    <span className="opacity-70">{new Date(torrent.pubDate).toLocaleDateString()}</span>
+                    <span className="opacity-70">{Number.isFinite(Date.parse(torrent.pubDate)) ? new Date(torrent.pubDate).toLocaleDateString() : 'Date unavailable'}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {getTorrentBadges(torrent).map((badge) => (

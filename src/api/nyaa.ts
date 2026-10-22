@@ -1,5 +1,5 @@
 import { fetchDesktopSourceApi, isDesktopApp } from '../lib/desktop';
-import { desktopDataError } from '../lib/desktopData';
+import { DesktopDataError, desktopDataError } from '../lib/desktopData';
 import { parseSourceEpisode } from '../lib/desktopSourceIdentity';
 import { sharedPublicResponse } from '../lib/publicBrowserCache';
 
@@ -218,7 +218,14 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
     } else {
       const response = await sharedPublicResponse(`source:v2:${cacheKey}`,options.maxAgeMs??SEARCH_CACHE_TTL,
         signal=>fetch(url.toString(),{signal}),options.signal,Array.isArray);
-      if (!response.ok) throw new Error('Failed to fetch from /api/nyaa');
+      if (!response.ok) {
+        const header=response.headers.get('retry-after')||'';
+        throw new DesktopDataError({provider:'nyaa',origin:'provider',statusCode:response.status,
+          code:response.status===429?'rate-limited':[401,403].includes(response.status)?'access-denied':[400,404,501].includes(response.status)?'invalid':'error',
+          retryable:response.status===429||response.status>=500&&response.status!==501,
+          retryAt:/^\d+$/.test(header)?Date.now()+Number(header)*1000:Date.parse(header)||undefined,
+          message:'Source search is temporarily unavailable. Please try again shortly.'});
+      }
 
       sourceCacheStatus = response.headers.get('X-Source-Cache') || '';
       complete = response.headers.get('X-Source-Complete') !== 'false';
@@ -230,9 +237,7 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
 
     if (!Array.isArray(data)) {
       if (staleCached) return staleResult();
-      if (desktop) throw desktopDataError('nyaa', new Error('Source provider returned an invalid response.'));
-      console.error('Source search returned an invalid response shape.');
-      return [];
+      throw desktopDataError('nyaa', new Error('Source provider returned an invalid response.'));
     }
 
     const results: NyaaItem[] = [];
@@ -275,6 +280,7 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
 
     if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
     const deduped = dedupeNyaaItems(results);
+    if (!desktop && !complete && !deduped.length) throw desktopDataError('nyaa', new Error('Source search could not finish. Please retry.'),503);
     // A completed empty response is authoritative for this exact query; failures retain stale data.
     if (complete && sourceCacheStatus !== 'STALE') inMemorySearchCache.set(cacheKey, { items: deduped, savedAt: sourceFetchedAt });
     while (inMemorySearchCache.size > SEARCH_CACHE_MAX_ENTRIES) {
@@ -289,10 +295,6 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
   const handledRequest = request.catch((error) => {
     if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
     if (staleCached) return staleResult(error);
-    if (!desktopRuntime) {
-      console.error('Source search failed:', String((error as Error)?.message || 'unknown error').slice(0, 160));
-      return [];
-    }
     throw desktopDataError('nyaa', error);
   });
   return searchResultUnlessAborted(handledRequest, options.signal);

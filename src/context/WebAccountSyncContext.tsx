@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 import {
   fetchAccountSync,
@@ -32,6 +32,9 @@ type SyncJournal = {
 import { AccountSyncContext } from './accountSyncShared';
 const PUSH_DEBOUNCE_MS = 900;
 const JOURNAL_PREFIX = 'streamnyaa.accountSync.v2.';
+const OWNER_KEY = 'streamnyaa.web.accountProjectionOwner.v1';
+const guestOwner = '__guest__';
+const memoryJournals = new Map<string, SyncJournal>();
 
 function storeAnimeId(anime: any) {
   return String(anime?.mal_id ?? anime?.id ?? anime?.title ?? '').trim();
@@ -61,6 +64,7 @@ function emptyJournal(): SyncJournal {
 
 function loadJournal(userId: string): SyncJournal {
   try {
+    if (memoryJournals.has(userId)) return structuredClone(memoryJournals.get(userId)!);
     const parsed = JSON.parse(localStorage.getItem(journalKey(userId)) || 'null');
     return {
       library: parsed?.library && typeof parsed.library === 'object' ? parsed.library : {},
@@ -72,7 +76,8 @@ function loadJournal(userId: string): SyncJournal {
 }
 
 function saveJournal(userId: string, journal: SyncJournal) {
-  localStorage.setItem(journalKey(userId), JSON.stringify(journal));
+  memoryJournals.set(userId, structuredClone(journal));
+  try { localStorage.setItem(journalKey(userId), JSON.stringify(journal)); } catch { /* Retain the current session when browser storage is unavailable. */ }
 }
 
 function librarySignature(item: Pick<AccountLibraryItem, 'animeTitle' | 'anime' | 'bookmarked' | 'liked' | 'deletedAt'>) {
@@ -225,14 +230,37 @@ export function WebAccountSyncProvider({ children }: { children: React.ReactNode
   const applyingRemoteRef = useRef(false);
   const pushTimerRef = useRef<number | null>(null);
   const userId = user?.id || session?.user?.id || '';
+  const owner = userId || guestOwner;
+  const activeOwner = useRef(''), generation = useRef(0);
+  const [preparedOwner, setPreparedOwner] = useState('');
+  useLayoutEffect(() => {
+    let previous = activeOwner.current;
+    try { previous ||= localStorage.getItem(OWNER_KEY) || ''; } catch { /* Memory ownership still fences this session. */ }
+    generation.current++; initialSyncedRef.current = false;
+    if (pushTimerRef.current) window.clearTimeout(pushTimerRef.current);
+    applyingRemoteRef.current = true;
+    try {
+      if (previous && previous !== owner) {
+        captureLocalChanges(previous);
+        const saved = loadJournal(owner);
+        applyLibraryToStore(Object.values(saved.library)); applyWatchHistory(Object.values(saved.watchHistory));
+      }
+      // On first migration, preserve the surviving projection under its current owner.
+      activeOwner.current = owner;
+      try { localStorage.setItem(OWNER_KEY, owner); } catch { /* Optional persistence. */ }
+      setPreparedOwner(owner);
+    } finally { applyingRemoteRef.current = false; }
+  }, [owner]);
 
   const pushCurrentState = useCallback(async () => {
-    if (!session?.access_token || !userId || !initialSyncedRef.current) return;
+    if (!session?.access_token || !userId || activeOwner.current !== userId || !initialSyncedRef.current) return;
+    const epoch = generation.current;
     const journal = captureLocalChanges(userId);
     await replaceAccountSyncData(session, {
       library: Object.values(journal.library),
       watchHistory: Object.values(journal.watchHistory),
     });
+    if (generation.current !== epoch || activeOwner.current !== userId) return;
     setState('synced');
     setMessage('Your profile, library, favorites, and watch progress are synced.');
     setLastSyncedAt(Date.now());
@@ -244,6 +272,7 @@ export function WebAccountSyncProvider({ children }: { children: React.ReactNode
     if (pushTimerRef.current) window.clearTimeout(pushTimerRef.current);
     pushTimerRef.current = window.setTimeout(() => {
       void pushCurrentState().catch((error) => {
+        if (activeOwner.current !== userId) return;
         setState('unavailable');
         setMessage(error instanceof Error ? error.message : 'Local changes are saved and will retry.');
       });
@@ -251,13 +280,15 @@ export function WebAccountSyncProvider({ children }: { children: React.ReactNode
   }, [pushCurrentState, session?.access_token, userId]);
 
   const syncNow = useCallback(async () => {
-    if (!session?.access_token || !userId) return;
+    if (!session?.access_token || !userId || preparedOwner !== userId || activeOwner.current !== userId) return;
+    const epoch = generation.current;
     setState('syncing');
     setMessage('Syncing profile, library, favorites, and watch progress...');
     initialSyncedRef.current = false;
     try {
       const local = captureLocalChanges(userId);
       const remote = await fetchAccountSync(session);
+      if (generation.current !== epoch || activeOwner.current !== userId) return;
       const merged: SyncJournal = {
         library: mergeByKey(local.library, remote.library, (item) => item.animeId),
         watchHistory: mergeByKey(local.watchHistory, remote.watchHistory, (item) => item.key),
@@ -271,6 +302,7 @@ export function WebAccountSyncProvider({ children }: { children: React.ReactNode
         library: Object.values(merged.library),
         watchHistory: Object.values(merged.watchHistory),
       });
+      if (generation.current !== epoch || activeOwner.current !== userId) return;
       initialSyncedRef.current = true;
       setState('synced');
       setMessage(user?.email
@@ -278,12 +310,13 @@ export function WebAccountSyncProvider({ children }: { children: React.ReactNode
         : 'Core account data is synced.');
       setLastSyncedAt(Date.now());
     } catch (error) {
+      if (generation.current !== epoch || activeOwner.current !== userId) return;
       applyingRemoteRef.current = false;
       initialSyncedRef.current = true;
       setState('unavailable');
       setMessage(error instanceof Error ? error.message : 'Local changes are saved and will retry.');
     }
-  }, [session, user?.email, userId]);
+  }, [session, user?.email, userId, preparedOwner]);
 
   useEffect(() => {
     if (!session?.access_token || !userId) {
@@ -298,7 +331,7 @@ export function WebAccountSyncProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     if (!session?.access_token || !userId) return undefined;
-    const unsubscribeStore = useStore.subscribe(() => schedulePush());
+    const unsubscribeStore = useStore.subscribe((next, previous) => { if (next.myList !== previous.myList || next.likedAnimes !== previous.likedAnimes || next.likes !== previous.likes) schedulePush(); });
     const unsubscribeProgress = subscribeDesktopWatchProgress(() => schedulePush());
     const retryOnline = () => void syncNow();
     window.addEventListener('online', retryOnline);
@@ -311,7 +344,7 @@ export function WebAccountSyncProvider({ children }: { children: React.ReactNode
   }, [schedulePush, session?.access_token, syncNow, userId]);
 
   const value = useMemo<AccountSyncContextValue>(() => ({ state, message, lastSyncedAt, syncNow }), [lastSyncedAt, message, state, syncNow]);
-  return <AccountSyncContext.Provider value={value}>{children}</AccountSyncContext.Provider>;
+  return <AccountSyncContext.Provider value={value}>{preparedOwner === owner ? children : <p role="status" className="p-8 text-muted-foreground">Loading account data…</p>}</AccountSyncContext.Provider>;
 }
 
 export function useAccountSync() {

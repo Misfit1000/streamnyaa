@@ -1,7 +1,11 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 
-const port = 4179;
+// Do not mistake a developer's already running fixture for this build.
+const probe=createServer();
+await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));
+const port=probe.address().port;
+await new Promise(resolve=>probe.close(resolve));
 const origin = `http://127.0.0.1:${port}`;
 const routes = [
   '/',
@@ -37,9 +41,12 @@ server.stderr.on('data', (chunk) => { output += chunk.toString(); });
 async function waitForServer() {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
+    if(server.exitCode!==null)throw Error(`Local production server exited.\n${output}`);
     try {
-      const response = await fetch(origin);
-      if (response.ok) return;
+      if(output.includes(`Server running on http://localhost:${port}`)) {
+        const response = await fetch(origin);
+        if (response.ok) return;
+      }
     } catch {
       // The server is still starting.
     }

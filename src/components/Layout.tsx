@@ -1,12 +1,14 @@
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
 import { useStore } from '../store/useStore';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
+import RouteErrorBoundary from './RouteErrorBoundary';
 import { Cat } from 'lucide-react';
 import RouteSeo from './RouteSeo';
 
 export default function Layout() {
   const theme = useStore((state) => state.theme);
+  const location = useLocation();
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -21,7 +23,9 @@ export default function Layout() {
       <Navbar />
       <RouteSeo />
       <main>
-        <Outlet />
+        <RouteErrorBoundary key={location.key}>
+          <Suspense fallback={<div role="status" className="container mx-auto min-h-[40vh] px-5 py-16 text-muted-foreground">Loading page…</div>}><Outlet /></Suspense>
+        </RouteErrorBoundary>
       </main>
 
       <footer className="mt-20 border-t border-[var(--glass-border)] bg-secondary/25 py-12 shadow-inner shadow-black/10 backdrop-blur-2xl">

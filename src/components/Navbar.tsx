@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Search, Menu, X, Moon, Sun, Bookmark, Cat, UserCircle, ChevronDown } from 'lucide-react';
 import { useStore } from '../store/useStore';
-import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
@@ -19,7 +18,10 @@ export default function Navbar() {
   const filterRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const queryClient = useQueryClient();
+  const location = useLocation();
+  const navRef = useRef<HTMLElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -33,7 +35,8 @@ export default function Navbar() {
 
   useEffect(() => {
     setIsMenuOpen(false);
-  }, [searchParams]);
+    setShowFilters(false);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     setSearchQuery(searchParams.get('q') || '');
@@ -41,6 +44,16 @@ export default function Navbar() {
     setFilterStatus(searchParams.get('status') || '');
     setFilterRating(searchParams.get('rating') || '');
   }, [searchParams]);
+
+  useEffect(() => {
+    const outside = (event: PointerEvent) => { if (navRef.current && !navRef.current.contains(event.target as Node)) { setIsMenuOpen(false); setShowFilters(false); } };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') {
+      if (isMenuOpen) { setIsMenuOpen(false); menuButtonRef.current?.focus(); }
+      else if (showFilters) { setShowFilters(false); filterButtonRef.current?.focus(); }
+    } };
+    document.addEventListener('pointerdown', outside); document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+  }, [isMenuOpen, showFilters]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +72,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-[var(--glass-border)] bg-background/78 shadow-lg shadow-black/5 backdrop-blur-2xl">
+    <nav ref={navRef} className="sticky top-0 z-50 w-full border-b border-[var(--glass-border)] bg-background/78 shadow-lg shadow-black/5 backdrop-blur-2xl">
       <div className="container mx-auto px-4 md:px-8 h-16 flex items-center justify-between gap-3 xl:gap-5">
         <div className="flex shrink-0 items-center gap-4 xl:gap-6">
           <Link to="/" className="text-xl sm:text-2xl font-black text-primary flex items-center gap-2 tracking-tighter shrink-0">
@@ -96,6 +109,8 @@ export default function Navbar() {
             </button>
             <button 
               type="button" 
+              ref={filterButtonRef}
+              aria-expanded={showFilters}
               onClick={() => setShowFilters(!showFilters)}
               className={`absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-full text-[10px] uppercase tracking-widest flex items-center gap-1 font-bold transition-all ${showFilters || filterType || filterStatus || filterRating ? 'bg-primary/20 text-primary' : 'hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
             >
@@ -167,7 +182,7 @@ export default function Navbar() {
           <button 
             onClick={() => {
               toggleNsfwMode();
-              queryClient.invalidateQueries();
+
             }}
             className={`text-xs px-3 py-1.5 rounded-full font-bold uppercase transition-colors ${nsfwMode ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 'bg-green-500/10 text-green-500 border border-transparent hover:bg-green-500/20'}`}
           >
@@ -183,6 +198,8 @@ export default function Navbar() {
             <UserCircle className="w-5 h-5" />
           </Link>
           <button 
+            ref={menuButtonRef}
+            aria-expanded={isMenuOpen}
             onClick={() => setIsMenuOpen(!isMenuOpen)}
             className="xl:hidden p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground"
             aria-label={isMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}

@@ -97,6 +97,6 @@ let channel:BroadcastChannel|undefined;
 const shared=new PublicRequestCache(browserDisk,browserLock,key=>channel?.postMessage(key));
 if(typeof window!=='undefined'&&window.BroadcastChannel){try{channel=new window.BroadcastChannel('streamnyaa-public-v1');channel.onmessage=event=>{if(typeof event.data==='string')shared.invalidateMemory(event.data);};}catch{/* Optional tab coordination. */}}
 export async function sharedPublicResponse(key:string,maxAge:number,fetcher:(signal:AbortSignal)=>Promise<Response>,signal?:AbortSignal,validate?:(value:unknown)=>boolean){
- if(!/^(?:metadata:(?:anilist|tenrai|tmdb|animeschedule|anidb):|source:v2:|calendar:v1:)/.test(key))throw new Error('Only public resource requests may use this cache.');
+ if(!/^(?:metadata:(?:anilist|tenrai|tmdb|animeschedule|anidb):|source:v2:|calendar:v[12]:)/.test(key))throw new Error('Only public resource requests may use this cache.');
  return shared.request(key,maxAge,fetcher,signal,validate);
 }

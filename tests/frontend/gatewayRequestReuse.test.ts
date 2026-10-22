@@ -118,7 +118,7 @@ describe('metadata freshness', () => {
     expect(fetch).toHaveBeenCalledTimes(2); expect(a.headers['Cache-Control']).toBe('no-store');
     fetch.mockResolvedValue(new Response(JSON.stringify({ data: {}, errors: [{ message: 'Rate limited' }] })));
     const failedBody = { query: 'query{Media(id:3){id}}' };
-    expect((await metadata(handler, { provider: 'anilist' }, failedBody)).statusCode).toBe(500);
+    expect((await metadata(handler, { provider: 'anilist' }, failedBody)).statusCode).toBe(502);
     await metadata(handler, { provider: 'anilist' }, failedBody); expect(fetch).toHaveBeenCalledTimes(4);
   });
 });

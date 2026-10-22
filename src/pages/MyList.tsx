@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import { useDialogFocus } from '../lib/useDialogFocus';
 import { useStore } from '../store/useStore';
 import AnimeCard from '../components/AnimeCard';
 import { Bookmark, Trash2, SlidersHorizontal, AlertTriangle, Heart } from 'lucide-react';
@@ -8,6 +9,9 @@ export default function MyList() {
   const { myList, likedAnimes, clearMyList, isLiked, isInMyList } = useStore();
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'title-asc' | 'title-desc' | 'score-desc' | 'score-asc'>('date-desc');
   const [showConfirmClear, setShowConfirmClear] = useState(false);
+  const dialog = useRef<HTMLDivElement>(null);
+  const closeDialog = useCallback(() => setShowConfirmClear(false), []);
+  useDialogFocus(showConfirmClear, dialog, closeDialog);
   const [filterFavorites, setFilterFavorites] = useState(false);
   const [filterBookmarks, setFilterBookmarks] = useState(true);
 
@@ -60,7 +64,7 @@ export default function MyList() {
           </div>
           <div>
             <h1 className="text-3xl font-bold text-foreground">My List</h1>
-            <p className="text-muted-foreground text-sm">Your bookmarked ({combinedList.length})</p>
+            <p className="text-muted-foreground text-sm">{myList.length} bookmarks · {(likedAnimes || []).length} favorites</p>
           </div>
         </div>
 
@@ -110,11 +114,11 @@ export default function MyList() {
       </div>
 
       {showConfirmClear && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="bg-card border border-border p-6 rounded-2xl max-w-sm w-full shadow-2xl relative animate-in fade-in zoom-in duration-200">
+        <div onMouseDown={event => { if (event.target === event.currentTarget) closeDialog(); }} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby="clear-list-title" className="bg-card border border-border p-6 rounded-2xl max-w-sm w-full shadow-2xl relative animate-in fade-in zoom-in duration-200">
             <div className="flex items-center gap-3 mb-4 text-red-500">
               <AlertTriangle className="w-6 h-6" />
-              <h3 className="text-lg font-bold">Clear My List?</h3>
+              <h3 id="clear-list-title" className="text-lg font-bold">Clear My List?</h3>
             </div>
             <p className="text-muted-foreground mb-6">
               Are you sure you want to remove all items from your list? This will clear both bookmarked and favorited anime. This action cannot be undone.
@@ -146,7 +150,7 @@ export default function MyList() {
           <h3 className="text-xl font-medium text-foreground mb-2">Your list is empty</h3>
           <p className="text-muted-foreground">Add anime to your list or favorite them to keep track of titles you want to follow.</p>
         </div>
-      ) : (
+      ) : sortedList.length === 0 ? <p role="status" className="py-12 text-center text-muted-foreground">No titles match these filters. Adjust Bookmarks or Favorites above.</p> : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 md:gap-5">
           {sortedList.map((anime) => (
             <AnimeCard key={`list-${animeIdentity(anime)}`} anime={anime as any} />

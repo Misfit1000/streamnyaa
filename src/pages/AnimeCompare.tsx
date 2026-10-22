@@ -1,360 +1,67 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, BarChart3, CheckCircle2, Gauge, GitCompare, Layers3, Loader2, Search, Tags, Trophy } from 'lucide-react';
-import { fetchAnimeDetails, searchAnime } from '../api/jikan';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { ArrowLeftRight, Copy, Search, X } from 'lucide-react';
+import { fetchAnimeDetails } from '../api/jikan';
+import { catalogOptions, catalogRequest } from '../api/webCatalog';
+import { compareIdentity, comparisonFacts, comparableFacts, parseCompareIdentity } from '../lib/comparisonFacts';
+import { useStore } from '../store/useStore';
 import Seo from '../components/Seo';
+import DataStatus from '../components/DataStatus';
 import { animePath } from '../lib/slug';
 
-function formatStatus(status?: string) {
-  return status ? status.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unknown';
-}
-
-function formatNumber(value?: number | null) {
-  return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : 'N/A';
-}
-
-function listNames(items?: Array<{ name: string }>) {
-  return (items || []).map((item) => item.name).filter(Boolean);
-}
-
-function winnerLabel(aValue?: number | null, bValue?: number | null, lowerIsBetter = false) {
-  const a = Number(aValue || 0);
-  const b = Number(bValue || 0);
-  if (!a && !b) return 'Even';
-  if (a === b) return 'Even';
-  const aWins = lowerIsBetter ? a < b : a > b;
-  return aWins ? 'left' : 'right';
-}
-
-function comparisonPercent(value?: number | null, other?: number | null, lowerIsBetter = false) {
-  const current = Number(value || 0);
-  const alternate = Number(other || 0);
-  if (!current && !alternate) return 50;
-  if (!alternate) return 88;
-  if (!current) return 12;
-  const total = current + alternate;
-  const percent = lowerIsBetter ? (alternate / total) * 100 : (current / total) * 100;
-  return Math.max(12, Math.min(88, Math.round(percent)));
-}
-
-function SearchBox({
-  label,
-  selected,
-  onSelect,
-}: {
-  label: string;
-  selected: any;
-  onSelect: (anime: any) => void;
-}) {
-  const [term, setTerm] = useState('');
-  const activeTerm = term.trim();
-  const { data, isFetching } = useQuery({
-    queryKey: ['compare-search', label, activeTerm],
-    queryFn: () => searchAnime(activeTerm, 1),
-    enabled: activeTerm.length >= 2,
-    staleTime: 1000 * 60 * 10,
-  });
-
-  return (
-    <div className="rounded-3xl border border-[var(--glass-border)] bg-[var(--glass)] p-4 shadow-xl shadow-black/10 backdrop-blur-2xl">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">{label}</p>
-          <h2 className="text-lg font-black text-foreground">{selected?.title || 'Pick an anime'}</h2>
-        </div>
-        {selected?.images?.jpg?.image_url ? (
-          <img src={selected.images.jpg.image_url} alt={selected.title} className="h-16 w-12 rounded-xl object-cover" loading="lazy" referrerPolicy="no-referrer" />
-        ) : null}
-      </div>
-
-      <div className="relative">
-        <input
-          value={term}
-          onChange={(event) => setTerm(event.target.value)}
-          placeholder="Search anime title..."
-          className="w-full rounded-2xl border border-border bg-background/70 px-4 py-3 pl-11 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary"
-        />
-        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        {isFetching ? <Loader2 className="absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-primary" /> : null}
-      </div>
-
-      <div className="mt-4 grid gap-2">
-        {activeTerm.length < 2 ? (
-          <div className="rounded-2xl border border-dashed border-border bg-background/35 p-4 text-sm text-muted-foreground">
-            Type at least two letters to search.
-          </div>
-        ) : null}
-        {(data?.data || []).slice(0, 5).map((anime: any) => (
-          <button
-            key={`${label}-${anime.mal_id}`}
-            type="button"
-            onClick={() => onSelect(anime)}
-            className={`grid grid-cols-[44px_1fr_auto] items-center gap-3 rounded-2xl border p-2 text-left transition-colors ${
-              selected?.mal_id === anime.mal_id
-                ? 'border-primary/45 bg-primary/10'
-                : 'border-transparent bg-background/45 hover:border-primary/30 hover:bg-primary/5'
-            }`}
-          >
-            <img src={anime.images?.jpg?.image_url || anime.images?.jpg?.large_image_url} alt={anime.title} className="h-14 w-11 rounded-xl object-cover" loading="lazy" referrerPolicy="no-referrer" />
-            <span className="min-w-0">
-              <span className="block line-clamp-1 text-sm font-black text-foreground">{anime.title}</span>
-              <span className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span>{anime.score ? `${anime.score}/10` : 'No score'}</span>
-                <span>{formatStatus(anime.status)}</span>
-              </span>
-            </span>
-            {selected?.mal_id === anime.mal_id ? <CheckCircle2 className="h-5 w-5 text-primary" /> : <ArrowRight className="h-4 w-4 text-muted-foreground" />}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  left,
-  right,
-  winner,
-  leftValue,
-  rightValue,
-  lowerIsBetter = false,
-  detail,
-}: {
-  label: string;
-  left: string;
-  right: string;
-  winner?: 'left' | 'right' | 'Even';
-  leftValue?: number | null;
-  rightValue?: number | null;
-  lowerIsBetter?: boolean;
-  detail?: string;
-}) {
-  const leftPercent = comparisonPercent(leftValue, rightValue, lowerIsBetter);
-  const rightPercent = comparisonPercent(rightValue, leftValue, lowerIsBetter);
-  const hasBars = typeof leftValue === 'number' || typeof rightValue === 'number';
-
-  return (
-    <div className="overflow-hidden rounded-3xl border border-white/[0.08] bg-[linear-gradient(135deg,rgba(255,255,255,0.055),rgba(255,255,255,0.018))] p-4 shadow-lg shadow-black/10">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">{label}</p>
-          {detail ? <p className="mt-1 text-xs text-muted-foreground">{detail}</p> : null}
-        </div>
-        <span className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-wider ${
-          winner === 'left' || winner === 'right'
-            ? 'bg-primary/10 text-primary'
-            : 'bg-secondary text-muted-foreground'
-        }`}>
-          {winner === 'Even' ? 'Even' : winner === 'left' ? 'Anime A leads' : winner === 'right' ? 'Anime B leads' : 'Compare'}
-        </span>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-end">
-        <div className={`rounded-2xl border p-3 ${winner === 'left' ? 'border-primary/25 bg-primary/10 text-primary' : 'border-border bg-background/45 text-foreground'}`}>
-          <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">Anime A</p>
-          <p className="mt-1 text-2xl font-black">{left}</p>
-          {hasBars ? (
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-background/80">
-              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${leftPercent}%` }} />
-            </div>
-          ) : null}
-        </div>
-
-        <div className="hidden h-12 w-12 items-center justify-center rounded-full border border-border bg-background/70 text-muted-foreground md:flex">
-          <GitCompare className="h-5 w-5" />
-        </div>
-
-        <div className={`rounded-2xl border p-3 text-left md:text-right ${winner === 'right' ? 'border-primary/25 bg-primary/10 text-primary' : 'border-border bg-background/45 text-foreground'}`}>
-          <p className="text-[11px] font-black uppercase tracking-wider text-muted-foreground">Anime B</p>
-          <p className="mt-1 text-2xl font-black">{right}</p>
-          {hasBars ? (
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-background/80">
-              <div className="ml-auto h-full rounded-full bg-primary transition-all" style={{ width: `${rightPercent}%` }} />
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AnimeHero({ anime, side }: { anime: any; side: 'left' | 'right' }) {
-  const image = anime?.images?.jpg?.large_image_url || anime?.images?.jpg?.image_url;
-  return (
-    <div className="relative overflow-hidden rounded-3xl border border-[var(--glass-border)] bg-[var(--glass)] shadow-xl shadow-black/10">
-      {image ? <img src={image} alt="" className="absolute inset-0 h-full w-full object-cover opacity-20 blur-xl" loading="lazy" referrerPolicy="no-referrer" /> : null}
-      <div className="relative grid gap-4 p-5 sm:grid-cols-[112px_1fr]">
-        {image ? <img src={image} alt={anime.title} className="h-40 w-28 rounded-2xl object-cover shadow-lg shadow-black/30" loading="lazy" referrerPolicy="no-referrer" /> : null}
-        <div className="min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">{side === 'left' ? 'Anime A' : 'Anime B'}</p>
-          <h2 className="mt-2 line-clamp-2 text-2xl font-black text-foreground">{anime.title}</h2>
-          <p className="mt-2 line-clamp-3 text-sm leading-6 text-muted-foreground">{anime.synopsis || 'Synopsis not available.'}</p>
-          <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-muted-foreground">
-            <span className="rounded-full bg-background/70 px-2.5 py-1">Score {anime.score || 'N/A'}</span>
-            <span className="rounded-full bg-background/70 px-2.5 py-1">{formatStatus(anime.status)}</span>
-            <span className="rounded-full bg-background/70 px-2.5 py-1">{anime.episodes || 'TBA'} eps</span>
-          </div>
-          <Link to={animePath(anime)} className="mt-4 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-black text-primary-foreground transition-colors hover:bg-primary/90">
-            Open page
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
+function TitleSelector({ label, selected, onSelect, onClear }: { label: string; selected: any; onSelect: (anime: any) => void; onClear: () => void }) {
+  const id = useId(), [input, setInput] = useState(''), [term, setTerm] = useState(''), [open, setOpen] = useState(false), [active, setActive] = useState(-1);
+  const adult = useStore(state => state.nsfwMode), container = useRef<HTMLDivElement>(null), field = useRef<HTMLInputElement>(null);
+  useEffect(() => { const timer = setTimeout(() => { setTerm(input.trim()); setActive(-1); }, 300); return () => clearTimeout(timer); }, [input]);
+  useEffect(() => { const outside = (event: PointerEvent) => { if (!container.current?.contains(event.target as Node)) setOpen(false); }; document.addEventListener('pointerdown', outside); return () => document.removeEventListener('pointerdown', outside); }, []);
+  const request = useMemo(() => catalogRequest(new URLSearchParams({ q: term }), adult), [term, adult]);
+  const query = useInfiniteQuery({ ...catalogOptions(request), enabled: open && term.length >= 2 });
+  const items = query.data?.pages[0]?.data.slice(0, 6) || [];
+  const choose = (anime: any) => { onSelect(anime); setOpen(false); setInput(''); setTerm(''); field.current?.focus(); };
+  return <div ref={container} className="relative min-w-0 rounded-xl border border-border bg-secondary/20 p-4">
+    <div className="mb-3 flex items-center justify-between gap-3"><label htmlFor={id} className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{label}</label>{selected && <button type="button" aria-label={`Clear ${label.toLowerCase()}`} onClick={() => { onClear(); setInput(''); setTerm(''); field.current?.focus(); }} className="rounded p-2 hover:bg-secondary"><X className="h-4 w-4" /></button>}</div>
+    {selected && <div className="mb-3 flex min-h-20 gap-3"><img src={selected.images?.jpg?.large_image_url || selected.images?.jpg?.image_url || '/logo.svg'} onError={event => { event.currentTarget.onerror = null; event.currentTarget.src = '/logo.svg'; }} alt="" className="h-20 w-14 shrink-0 rounded object-cover" /><div className="min-w-0"><h2 className="font-bold leading-snug">{selected.title || 'Loading title…'}</h2>{Boolean(selected.mal_id || selected.anilist_id) && <Link className="mt-2 inline-block text-xs text-primary underline" to={animePath(selected)}>Open title page</Link>}</div></div>}
+    <div className="relative"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><input id={id} ref={field} role="combobox" aria-autocomplete="list" aria-expanded={open && term.length >= 2} aria-controls={`${id}-results`} aria-activedescendant={active >= 0 && items[active] ? `${id}-option-${active}` : undefined}
+      value={input} onFocus={() => setOpen(true)} onChange={event => { setInput(event.target.value); setOpen(true); }} placeholder="Search an anime…" className="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-sm"
+      onKeyDown={event => { if (event.key === 'Escape') { setOpen(false); setActive(-1); } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setOpen(true); setActive(index => Math.max(0, Math.min(items.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1)))); } else if (event.key === 'Enter') { event.preventDefault(); if (open && active >= 0 && items[active]) choose(items[active]); else { setTerm(input.trim()); setOpen(true); } } }} /></div>
+    {open && term.length >= 2 && <div className="absolute inset-x-0 top-full z-30 mt-1 rounded-xl border border-border bg-background p-2 shadow-xl">
+      <DataStatus label="Matching titles" error={query.isError} fetching={query.isFetching} empty={!query.isPending && !items.length} retry={() => void query.refetch()} />
+      <ul id={`${id}-results`} role="listbox" aria-label={`${label} matches`}>{items.map((anime: any, index: number) => <li key={compareIdentity(anime)} id={`${id}-option-${index}`} role="option" aria-selected={active === index}><button tabIndex={-1} type="button" onClick={() => choose(anime)} className={`flex min-h-12 w-full items-center gap-3 rounded px-3 py-2 text-left text-sm hover:bg-secondary ${active === index ? 'bg-secondary' : ''}`}><img src={anime.images?.jpg?.image_url || '/logo.svg'} alt="" className="h-12 w-8 shrink-0 rounded object-cover" /><span>{anime.title}</span></button></li>)}</ul>
+    </div>}
+  </div>;
 }
 
 export default function AnimeCompare() {
-  const [leftPick, setLeftPick] = useState<any>(null);
-  const [rightPick, setRightPick] = useState<any>(null);
-
-  const { data: leftDetails, isFetching: leftLoading } = useQuery({
-    queryKey: ['anime', leftPick?.mal_id ? String(leftPick.mal_id) : ''],
-    queryFn: () => fetchAnimeDetails(String(leftPick!.mal_id)),
-    enabled: Boolean(leftPick?.mal_id),
-  });
-  const { data: rightDetails, isFetching: rightLoading } = useQuery({
-    queryKey: ['anime', rightPick?.mal_id ? String(rightPick.mal_id) : ''],
-    queryFn: () => fetchAnimeDetails(String(rightPick!.mal_id)),
-    enabled: Boolean(rightPick?.mal_id),
-  });
-
-  const left = leftDetails?.data || leftPick;
-  const right = rightDetails?.data || rightPick;
-  const leftGenres = listNames(left?.genres);
-  const rightGenres = listNames(right?.genres);
-  const sharedGenres = useMemo(() => leftGenres.filter((genre) => rightGenres.includes(genre)), [leftGenres, rightGenres]);
-  const leftStudios = listNames(left?.studios);
-  const rightStudios = listNames(right?.studios);
-  const isReady = Boolean(left && right);
-
-  return (
-    <div className="container mx-auto px-4 py-10 md:px-10">
-      <Seo
-        title="Anime Comparison Tool | StreamNyaa"
-        description="Compare two anime by score, popularity, genres, studio, episode count, status, and quick viewing context on StreamNyaa."
-        canonicalPath="/compare"
-      />
-
-      <header className="mx-auto mb-8 max-w-4xl text-center">
-        <p className="mb-3 text-[11px] font-black uppercase tracking-[0.22em] text-primary">Anime comparison</p>
-        <h1 className="text-4xl font-black tracking-tight text-foreground md:text-6xl">Compare two anime side by side</h1>
-        <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-muted-foreground md:text-base">
-          Pick two titles and compare score, popularity, genres, studio, episode count, and airing status in one clean view.
-        </p>
-      </header>
-
-      <section className="grid gap-5 lg:grid-cols-2">
-        <SearchBox label="First title" selected={leftPick} onSelect={setLeftPick} />
-        <SearchBox label="Second title" selected={rightPick} onSelect={setRightPick} />
-      </section>
-
-      {(leftLoading || rightLoading) && isReady ? (
-        <div className="mt-8 flex items-center justify-center gap-3 rounded-2xl border border-border bg-secondary/20 p-5 text-sm font-bold text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          Loading full comparison details...
-        </div>
-      ) : null}
-
-      {isReady ? (
-        <section className="mt-10 space-y-8">
-          <div className="grid gap-5 lg:grid-cols-2">
-            <AnimeHero anime={left} side="left" />
-            <AnimeHero anime={right} side="right" />
-          </div>
-
-          <div className="overflow-hidden rounded-[2rem] border border-[var(--glass-border)] bg-[linear-gradient(135deg,rgba(225,29,72,0.10),rgba(14,165,233,0.07),rgba(255,255,255,0.025)),var(--glass)] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl">
-            <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-primary">
-                  <Gauge className="h-4 w-4" />
-                  Core stats
-                </div>
-                <h2 className="text-2xl font-black text-foreground md:text-3xl">Performance snapshot</h2>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-                  A cleaner read of reception, reach, episode size, production, and current release state.
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs font-black">
-                <span className="rounded-2xl bg-background/65 px-3 py-2 text-foreground">A: {left.title}</span>
-                <span className="rounded-2xl bg-background/65 px-3 py-2 text-foreground">B: {right.title}</span>
-              </div>
-            </div>
-            <div className="grid gap-4 xl:grid-cols-2">
-              <StatCard label="Score" left={left.score ? `${left.score}/10` : 'N/A'} right={right.score ? `${right.score}/10` : 'N/A'} leftValue={left.score} rightValue={right.score} winner={winnerLabel(left.score, right.score) as any} detail="Audience score signal" />
-              <StatCard label="Popularity" left={formatNumber(left.popularity)} right={formatNumber(right.popularity)} leftValue={left.popularity} rightValue={right.popularity} lowerIsBetter winner={winnerLabel(left.popularity, right.popularity, true) as any} detail="Lower rank number is stronger" />
-              <StatCard label="Episodes" left={left.episodes ? `${left.episodes}` : 'TBA'} right={right.episodes ? `${right.episodes}` : 'TBA'} leftValue={left.episodes} rightValue={right.episodes} winner={winnerLabel(left.episodes, right.episodes) as any} detail="Confirmed or listed episode count" />
-              <StatCard label="Status" left={formatStatus(left.status)} right={formatStatus(right.status)} detail="Current release state" />
-              <StatCard label="Studio" left={leftStudios.slice(0, 2).join(', ') || 'TBA'} right={rightStudios.slice(0, 2).join(', ') || 'TBA'} detail="Main production studio listing" />
-            </div>
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
-            <div className="rounded-3xl border border-[var(--glass-border)] bg-[var(--glass)] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
-              <div className="mb-4 flex items-center gap-2">
-                <Tags className="h-5 w-5 text-primary" />
-                <h2 className="text-xl font-black text-foreground">Genre overlap</h2>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {sharedGenres.length ? sharedGenres.map((genre) => (
-                  <span key={genre} className="rounded-full bg-primary/10 px-3 py-1.5 text-sm font-black text-primary">{genre}</span>
-                )) : (
-                  <span className="rounded-full border border-border bg-background/55 px-3 py-1.5 text-sm font-bold text-muted-foreground">No shared genres listed</span>
-                )}
-              </div>
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <div>
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-muted-foreground">{left.title}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {leftGenres.map((genre) => <span key={`left-${genre}`} className="rounded-full bg-secondary px-2.5 py-1 text-xs font-bold">{genre}</span>)}
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-muted-foreground">{right.title}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {rightGenres.map((genre) => <span key={`right-${genre}`} className="rounded-full bg-secondary px-2.5 py-1 text-xs font-bold">{genre}</span>)}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-[var(--glass-border)] bg-[linear-gradient(135deg,rgba(225,29,72,0.14),rgba(14,165,233,0.08)),var(--glass)] p-5 shadow-xl shadow-black/10 backdrop-blur-2xl">
-              <div className="mb-4 flex items-center gap-2">
-                <Trophy className="h-5 w-5 text-primary" />
-                <h2 className="text-xl font-black text-foreground">Quick read</h2>
-              </div>
-              <div className="space-y-3 text-sm leading-6 text-muted-foreground">
-                <p>
-                  <span className="font-black text-foreground">{winnerLabel(left.score, right.score) === 'left' ? left.title : winnerLabel(left.score, right.score) === 'right' ? right.title : 'Both titles'}</span>
-                  {' '}has the stronger score signal based on available metadata.
-                </p>
-                <p>
-                  <span className="font-black text-foreground">{winnerLabel(left.popularity, right.popularity, true) === 'left' ? left.title : winnerLabel(left.popularity, right.popularity, true) === 'right' ? right.title : 'Both titles'}</span>
-                  {' '}has the stronger popularity rank signal.
-                </p>
-                <p>
-                  Shared genres: <span className="font-black text-foreground">{sharedGenres.length ? sharedGenres.join(', ') : 'none listed'}</span>.
-                </p>
-              </div>
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                <Link to={animePath(left, '/downloads')} className="rounded-2xl bg-background/65 p-3 text-sm font-black text-foreground transition-colors hover:bg-primary/10 hover:text-primary">
-                  {left.title} downloads
-                </Link>
-                <Link to={animePath(right, '/downloads')} className="rounded-2xl bg-background/65 p-3 text-sm font-black text-foreground transition-colors hover:bg-primary/10 hover:text-primary">
-                  {right.title} downloads
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <section className="mt-10 rounded-3xl border border-dashed border-border bg-secondary/20 p-8 text-center text-muted-foreground">
-          <Layers3 className="mx-auto mb-3 h-8 w-8 text-primary" />
-          Choose one anime on each side to start the comparison.
-        </section>
-      )}
-    </div>
-  );
+  const [params, setParams] = useSearchParams(), [differences, setDifferences] = useState(false), [feedback, setFeedback] = useState('');
+  const picks = useRef(new Map<string, any>()), adult = useStore(state => state.nsfwMode);
+  const a = params.get('a'), b = params.get('b'), leftId = parseCompareIdentity(a), rightId = parseCompareIdentity(b);
+  const leftQuery = useQuery({ queryKey: ['anime', leftId?.route, adult], queryFn: ({ signal }) => fetchAnimeDetails(leftId!.route, { signal, anilistId: leftId?.provider === 'anilist' ? leftId.id : undefined, malId: leftId?.provider === 'mal' ? leftId.id : undefined }), enabled: Boolean(leftId), retry: false });
+  const rightQuery = useQuery({ queryKey: ['anime', rightId?.route, adult], queryFn: ({ signal }) => fetchAnimeDetails(rightId!.route, { signal, anilistId: rightId?.provider === 'anilist' ? rightId.id : undefined, malId: rightId?.provider === 'mal' ? rightId.id : undefined }), enabled: Boolean(rightId), retry: false });
+  const left = leftQuery.data?.data || picks.current.get(a || ''), right = rightQuery.data?.data || picks.current.get(b || '');
+  const select = (side: 'a' | 'b', anime?: any) => { const next = new URLSearchParams(params); if (anime) { const id = compareIdentity(anime); picks.current.set(id, anime); next.set(side, id); } else next.delete(side); setParams(next); setFeedback(''); };
+  const rows = comparisonFacts(left).map((fact, index) => ({ left: fact, right: comparisonFacts(right)[index] })).filter(row => !differences || !row.left.known || !row.right.known || !comparableFacts(row.left, row.right) || row.left.value !== row.right.value);
+  const genreNames = (anime: any): string[] => (anime?.genres || []).map((genre: any) => typeof genre === 'string' ? genre : genre.name).filter(Boolean);
+  const shared = genreNames(left).filter(genre => genreNames(right).includes(genre));
+  const copy = async () => { try { await navigator.clipboard.writeText(window.location.href); setFeedback('Comparison link copied.'); } catch { setFeedback('Copy this page’s address to share the comparison.'); } };
+  return <div className="container mx-auto max-w-6xl px-4 py-8 md:px-10">
+    <Seo title="Compare Anime | StreamNyaa" description="Compare anime facts side by side: scores, episode counts, status, studios and genres, with clearly labeled data sources." canonicalPath="/compare" />
+    <header className="mb-6 flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-2xl font-black md:text-3xl">Compare anime</h1><p className="mt-2 text-sm text-muted-foreground">Two titles, their facts, and the differences that matter to you.</p></div><div className="flex gap-2">
+      <button className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm disabled:opacity-40" disabled={!a && !b} onClick={() => { const next = new URLSearchParams(params); next.delete('a'); next.delete('b'); if (a) next.set('b', a); if (b) next.set('a', b); setParams(next); }}><ArrowLeftRight className="h-4 w-4" />Swap</button>
+      <button className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm disabled:opacity-40" disabled={!a && !b} onClick={() => void copy()}><Copy className="h-4 w-4" />Share</button>
+    </div></header>
+    <div className="grid gap-4 md:grid-cols-2"><div><TitleSelector label="First title" selected={left || (leftId ? { title: 'Loading title…' } : null)} onSelect={anime => select('a', anime)} onClear={() => select('a')} /><DataStatus label="First title details" error={leftQuery.isError} fetching={Boolean(leftId) && leftQuery.isFetching} retry={() => void leftQuery.refetch()} /></div><div><TitleSelector label="Second title" selected={right || (rightId ? { title: 'Loading title…' } : null)} onSelect={anime => select('b', anime)} onClear={() => select('b')} /><DataStatus label="Second title details" error={rightQuery.isError} fetching={Boolean(rightId) && rightQuery.isFetching} retry={() => void rightQuery.refetch()} /></div></div>
+    {(a && !leftId || b && !rightId) && <p role="status" className="my-4 text-sm text-muted-foreground">A title link is invalid. Choose that title again.</p>}
+    <p role="status" className="my-3 text-sm text-muted-foreground">{feedback}</p>
+    {left && right ? <section className="mt-6">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold">Side by side</h2><label className="flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" checked={differences} onChange={event => setDifferences(event.target.checked)} className="accent-primary" />Show differences</label></div>
+      {shared.length > 0 && <p className="mb-4 text-sm text-muted-foreground">Shared genres: <span className="text-foreground">{shared.join(' · ')}</span></p>}
+      <div className="overflow-x-auto rounded-xl border border-border" role="region" aria-label="Anime comparison table" tabIndex={0}><table className="w-full min-w-[520px] text-sm"><caption className="sr-only">Facts for {left.title} and {right.title}. Unknown values are not estimates.</caption><thead className="border-b border-border bg-secondary/40"><tr><th scope="col" className="w-1/5 p-4 text-left">Fact</th><th scope="col" className="w-2/5 p-4 text-left">{left.title}</th><th scope="col" className="w-2/5 p-4 text-left">{right.title}</th></tr></thead><tbody>
+        {rows.map(row => <tr key={row.left.label} className="border-b border-border last:border-0"><th scope="row" className="p-4 text-left font-medium text-muted-foreground">{row.left.label}</th>{[row.left, row.right].map((fact, index) => <td key={index} className="p-4 align-top leading-relaxed">{fact.value}{fact.provider && fact.known && <span className="mt-1 block text-xs text-muted-foreground">{fact.provider === 'anilist' ? 'AniList' : 'MyAnimeList via Tenrai'}</span>}</td>)}</tr>)}
+        {!rows.length && <tr><td colSpan={3} className="p-6 text-muted-foreground">The available facts match.</td></tr>}
+      </tbody></table></div>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">Scores and popularity reflect their named providers. Counts and ranks measure different things; neither establishes a better anime.</p>
+      <div className="mt-5 flex flex-wrap gap-3"><Link className="rounded-lg border border-border px-4 py-3 text-sm hover:border-primary" to={animePath(left, '/downloads')}>Sources for {left.title}</Link><Link className="rounded-lg border border-border px-4 py-3 text-sm hover:border-primary" to={animePath(right, '/downloads')}>Sources for {right.title}</Link></div>
+    </section> : <p className="mt-6 rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">Choose one title on each side to compare. You can share the resulting page address.</p>}
+  </div>;
 }
