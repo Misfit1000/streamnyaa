@@ -34,7 +34,7 @@ export function parseEvidenceDocument(html:string,url:string):EvidenceDocument{
   }};
   $('script[type="application/ld+json"]').each((_i,node)=>{try{scan(JSON.parse($(node).text()));}catch{/* Invalid structured data is not evidence. */}});
   const time=$('article time[datetime],main time[datetime],time[itemprop="datePublished"]').first().attr('datetime');if(time)dates.push(time);
-  $('script,style,nav,footer,header,aside').remove();
+  $('script,style,nav,footer,header,aside,noscript,iframe').remove();
   const root=$('article').length?$('article').first():$('main').length?$('main').first():$('body');
   const body=root.text().replace(/\s+/g,' ').trim().slice(0,18000);
   const links=root.find('a[href]').map((_i,node)=>{try{return new URL($(node).attr('href')!,url).toString();}catch{return'';}}).get().filter(Boolean);

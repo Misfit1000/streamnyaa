@@ -26,7 +26,7 @@ function reject(state:EditorialDiscoveryV4,url:string,reason:string){state.rejec
 /** Immutable provider timestamps, validated cached documents, existing host allowlists. */
 async function document(transport:EditorialTransport,url:string,allowed:string[],ttl=3600){
   const parsed=new URL(url);if(parsed.protocol!=='https:'||!allowed.some(host=>hostMatches(parsed.hostname,host)))throw Error('Unsupported evidence host.');
-  const key=`editorial:document:v4-2:${fingerprint(url+'|'+[...allowed].sort().join(','))}`;
+  const key=`editorial:document:v4-3:${fingerprint(url+'|'+[...allowed].sort().join(','))}`;
   const saved=await publicSnapshot<EvidenceDocument>(key,ttl,()=>transport.document(url,allowed),value=>{
     try{return typeof value?.text==='string'&&value.text.length>=180&&value.text.length<=18000&&Array.isArray(value.links)&&new URL(value.url).protocol==='https:'&&allowed.some(host=>hostMatches(new URL(value.url).hostname,host));}catch{return false;}
   });
@@ -112,6 +112,12 @@ export function guideBriefV4(item:any,official:EvidenceDocument&{retrievedAt:str
     facts:[JSON.stringify(facts),'Catalog listings and franchise relations must be attributed to AniList. Only the official document establishes official announcements. A listed prequel is not proof of a complete viewing order.'],items:[toMediaItem(item)],
     development:`A researched guide answering the reader question about ${subject}; this is not breaking news or a viewing review.`,context:related.map((row:any)=>`${row.relation}: ${row.title} (${row.format})`),unknowns:['Do not invent worldwide availability, an unannounced date, complete viewing order or viewing experience.']};
 }
+function guideDetailUrls(home:EvidenceDocument){
+  const origin=new URL(home.url);
+  return [...new Set(home.links.flatMap(link=>{try{const url=new URL(link,origin);if(url.protocol==='http:')url.protocol='https:';
+    return url.protocol==='https:'&&url.hostname===origin.hostname&&url.pathname+url.search!==origin.pathname+origin.search&&/\/(?:intro(?:duction)?|about|story)(?:\/|\.|$)|\/news\/[^?#]+|\/news[._-][^?#]+|[?&](?:id|news)=/i.test(url.pathname+url.search)?[url.toString()]:[];
+  }catch{return[];}}))].sort((a,b)=>Number(!/\/(?:intro(?:duction)?|about|story)(?:\/|\.|$)/i.test(a))-Number(!/\/(?:intro(?:duction)?|about|story)(?:\/|\.|$)/i.test(b))).slice(0,1);
+}
 export async function discoverGuidesV4(transport:EditorialTransport,state:EditorialDiscoveryV4,checkpoint:()=>Promise<void>,recent:any[]=[],now=Date.now(),limit=3){
   const media=await editorialCatalogV4(transport,state,checkpoint,now),guides=state.guides ||= [];
   for(state.guideIndex ||= 0;state.guideIndex<media.length&&guides.length<limit;){
@@ -119,7 +125,15 @@ export async function discoverGuidesV4(transport:EditorialTransport,state:Editor
     const urls=officialUrls(item).slice(0,2),positions=state.guideLinks ||= {};
     if(!recent.some(post=>post.publication?.fingerprint===key)&&!guides.some(brief=>brief.fingerprint===key))for(positions[item.id] ||= 0;positions[item.id]<urls.length;){
       const url=urls[positions[item.id]];let found=false;
-      try{const official=await document(transport,url,[...primaryDomains,...officialHosts(item)],21600),brief=guideBriefV4(item,official,state.catalogRetrievedAt!);if(brief){guides.push(brief);found=true;}else reject(state,url,'Not enough title-specific official information for a useful guide.');}
+      try{
+        const allowed=[...primaryDomains,...officialHosts(item)],home=await document(transport,url,allowed,21600);let brief:EvidenceBrief|undefined;
+        // Follow one actual same-site content link before using a homepage
+        // whose useful information may be limited to navigation/news teasers.
+        for(const detail of guideDetailUrls(home))try{const source=await document(transport,detail,allowed,21600);brief=guideBriefV4(item,source,state.catalogRetrievedAt!);}
+        catch(error){if(/budget/i.test(String((error as Error).message)))throw error;noteFailure(state,error,providerOf(detail));reject(state,detail,String((error as Error).message));}
+        brief ||= guideBriefV4(item,home,state.catalogRetrievedAt!);
+        if(brief){guides.push(brief);found=true;}else reject(state,url,'Not enough title-specific official information for a useful guide.');
+      }
       catch(error){if(/budget/i.test(String((error as Error).message)))throw error;noteFailure(state,error,providerOf(url));reject(state,url,String((error as Error).message));}
       positions[item.id]++;await checkpoint();if(found)break;
     }
@@ -136,7 +150,7 @@ export function prepareEditorialV4(brief:EvidenceBrief){
 export function editorialInstructionsV4(brief:EvidenceBrief){
   if(brief.ranking)return editorialInstructions(brief).replace('EDITORIAL POLICY 3','EDITORIAL POLICY 4');
   return `EDITORIAL POLICY 4: Answer this reader question: ${brief.readerQuestion}. Use a descriptive subject-specific headline; it need not copy the suggested headline. Plain text only, without Markdown, HTML or inline citation tokens. Use sourceIds for citations. ${brief.kind==='guide'?
-    'Write a researched guide, not a news announcement or a personal review. Explain the specific format/franchise or release ambiguity using the official document and attributed catalog facts. Lead with the most useful supported distinction and give the headline that focus, rather than a generic list of format, release status and production details. An older or undated official page is usable for established information, but is not evidence of a new announcement. Never turn catalog relations into an exhaustive watch order. Do not guess which source version is adapted or add hypothetical explanations with may or might. Give useful distinctions and source-backed practical answers, not a rewritten metadata card or a list of unknowns. Select only a few staff/cast credits directly relevant to that answer; never transcribe a full roster or use a long credits paragraph as depth.':
+    'Write a researched guide, not a news announcement or a personal review. Explain the specific format/franchise or release ambiguity using the official document and attributed catalog facts. Lead with the most useful supported distinction and give the headline that focus, rather than a generic list of format, release status and production details. An older or undated official page is usable for established information, but is not evidence of a new announcement. A prequel/sequel catalog link establishes a recorded relationship, not narrative continuity, standalone accessibility or a required viewing order. Do not guess which source version is adapted or add hypothetical explanations with may or might. Give useful distinctions and source-backed practical answers, not a rewritten metadata card or a list of unknowns. A section must add a new supported fact or practical explanation; never restate a preceding paragraph under another heading. Omit duplicated sections and repeated full titles. Copyright footers are attribution, not production evidence or useful article depth. Select only a few staff/cast credits directly relevant to that answer; never transcribe a full roster or use a long credits paragraph as depth.':
     'A concise verified update is worthwhile when it answers what was confirmed, who confirmed it and a practical reader detail. It need not have a dramatic consequence, multiple sections or a predetermined length. Do not invent an extra angle to make a small announcement look substantial. A dated reporting document may corroborate the linked undated official statement; do not assign its date to the official page.'} Let the evidence determine length and headings. Add sourced context when it resolves an actual question. No mandatory FAQs, generic introduction/conclusion, repeated summaries or promises of future news. Clearly distinguish official confirmation, catalog information and unresolved matters. Reject only when the evidence cannot answer the reader question accurately or a useful distinct article cannot be written.`;
 }
 export function editorialPromptV4(brief:EvidenceBrief,feedback:string[],draft:unknown){
@@ -151,13 +165,24 @@ export function validateEditorialV4(raw:EditorialDraft,brief:EvidenceBrief){
   if(!brief.sources.some(s=>s.primary&&s.id!=='catalog'))errors.push('A title-specific official source is required.');
   if(brief.kind==='guide'&&(!brief.readerQuestion||!brief.sources.some(s=>s.id==='catalog')||!brief.sources.some(s=>s.id==='official'&&s.text.length>=400)))errors.push('A guide needs a useful reader question, official information and attributed installment context.');
   if(brief.kind==='guide'&&/\b(?:review|masterpiece|must.watch|best anime|breaking|just announced)\b/i.test(raw.headline))errors.push('A researched guide cannot claim viewing experience, a verdict or a new announcement.');
+  if(brief.kind==='guide'){
+    const excluded=[brief.subject,...(brief.subjectAliases||[])],stop=new Set('this that these those with from have been both its their them they which where what when into than only also does same some such more most'.split(' '));
+    const terms=(text:string)=>{let value=String(text||'').toLowerCase();for(const title of excluded)value=value.split(title.toLowerCase()).join('');return new Set((value.match(/\b[a-z]{4,}\b/g)||[]).filter(word=>!stop.has(word)));};
+    for(let i=0;i<blocks.length;i++)for(let j=i+1;j<blocks.length;j++){
+      const a=terms(blocks[i]),b=terms(blocks[j]),overlap=[...a].filter(word=>b.has(word)).length;
+      if(a.size>=8&&b.size>=8&&overlap/Math.min(a.size,b.size)>.55&&overlap/new Set([...a,...b]).size>.25)errors.push('The guide repeats an earlier explanation under another paragraph or heading. Keep the supported answer once and remove redundant sections.');
+    }
+    const viewingClaim=/\b(?:direct (?:narrative )?continuation|not (?:a )?standalone|must (?:watch|see)|required viewing)\b/i;
+    const asserted=all.split(/[.!?]\s+/).some(sentence=>viewingClaim.test(sentence)&&!/\b(?:not necessarily|does not|do not|cannot|can't|doesn't|not prove|not establish|not evidence|not enough|unclear|unconfirmed|unknown)\b/i.test(sentence));
+    if(asserted&&!brief.sources.some(source=>source.id==='official'&&(/物語の続き|直接の続編/.test(source.text)||viewingClaim.test(source.text))))errors.push('Catalog franchise relations alone do not establish narrative continuity, standalone accessibility or a required viewing order.');
+  }
   for(const block of [...(raw.paragraphs||[]),...(raw.sections||[]).map(s=>({...s,text:s.body})),{text:`${raw.headline} ${raw.excerpt}`,sourceIds:brief.sources.map(source=>source.id)}]){
-    const sources=brief.sources.filter(source=>block.sourceIds?.includes(source.id)).map(source=>source.text.normalize('NFKC')).join(' ');
-    for(const claim of block.text.normalize('NFKC').matchAll(/\b(\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?\b|per cent\b)/gi)){
+    const text=String(block.text||''),ids=Array.isArray(block.sourceIds)?block.sourceIds:[],sources=brief.sources.filter(source=>ids.includes(source.id)).map(source=>source.text.normalize('NFKC')).join(' ');
+    for(const claim of text.normalize('NFKC').matchAll(/\b(\d+(?:\.\d+)?)\s*(?:%|percent(?:age)?\b|per cent\b)/gi)){
       const amount=claim[1].replace('.', '\\.');
       if(!new RegExp(`(?:^|[^\\d.])${amount}\\s*(?:%|percent(?:age)?|per cent)(?![a-z])`,'i').test(sources))errors.push('The cited evidence does not support that exact percentage. Do not turn jokes, idioms or a different unit into a literal statistic.');
     }
-    if(brief.kind==='guide'&&block.text.split(/\s+/).length>80&&((block.text.match(/\b(?:director|design(?:er)?|animation|sound|music|editor|cast|producer|composition|effects|animator|photography)\b/gi)||[]).length>=7||/\b(?:cast|voice|voiced)\b/i.test(block.text)&&(block.text.match(/\bas\b/g)||[]).length>=5))errors.push('Replace the exhaustive credits roster with the few sourced details that answer the reader question. More names are not useful depth.');
+    if(brief.kind==='guide'&&text.split(/\s+/).length>80&&((text.match(/\b(?:director|design(?:er)?|animation|sound|music|editor|cast|producer|composition|effects|animator|photography)\b/gi)||[]).length>=7||/\b(?:cast|voice|voiced)\b/i.test(text)&&(text.match(/\bas\b/g)||[]).length>=5))errors.push('Replace the exhaustive credits roster with the few sourced details that answer the reader question. More names are not useful depth.');
   }
   if(!brief.ranking&&/worldwide ranking|most popular in the world|guaranteed|why fans/i.test(raw.headline))errors.push('The headline overstates the evidence.');
   return errors;

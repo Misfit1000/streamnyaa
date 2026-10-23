@@ -29,7 +29,8 @@ test('publication dates include JSON-LD and ignore modification and footer times
   assert.equal(parseEvidenceDocument(`<meta property="article:modified_time" content="${recentDate}"><article>${body}</article><footer><time datetime="${recentDate}">Footer</time></footer>`,'https://official.test/story').publishedAt,undefined);
 });
 test('official page titles retain identity when the body uses an image logo, without making an empty page sufficient',()=>{
-  const doc=parseEvidenceDocument(`<title>Official anime: Fixture Horizon</title><header><img alt="Fixture Horizon"></header><main>${official().text.replaceAll('Fixture Horizon','The animated project')}</main>`,official().url);
+  const doc=parseEvidenceDocument(`<title>Official anime: Fixture Horizon</title><header><img alt="Fixture Horizon"></header><main><noscript>&lt;iframe src="https://tracker.test/"&gt;&lt;/iframe&gt;</noscript>${official().text.replaceAll('Fixture Horizon','The animated project')}</main>`,official().url);
+  assert.ok(!doc.text.includes('tracker.test'));
   assert.ok(guideBriefV4(item(),{...doc,retrievedAt:recentDate},recentDate));
   assert.throws(()=>parseEvidenceDocument('<title>Fixture Horizon</title><main>Only navigation.</main>',official().url),/insufficient/);
   const sequel={...item(),title:{english:'Fixture Horizon Season 2'}};
@@ -85,6 +86,16 @@ test('a researched guide selects relevant credits instead of treating a full ros
   raw.sections[0].body='The official site identifies the animation studio and director. Those credits establish who is making this entry; they do not establish distribution rights or an unannounced release date.';
   assert.deepEqual(validateEditorialV4(raw,brief),[]);
 });
+test('a guide cannot expand catalog facts into repeated sections or unsupported narrative continuity',()=>{
+  const brief=guide(),raw=draft();
+  raw.paragraphs[0].text='The anime installment titled Fixture Horizon is confirmed to be a television anime format. Both its official website and catalog records identify it as a television format production.';
+  raw.sections=[{heading:'Format and production',sourceIds:['official','catalog'],body:'The format for Fixture Horizon is a television anime. This is consistently stated across official announcements and catalog listings. Fixture Studio is credited as the animation studio for this installment. The intellectual property is under the copyright of the production partners, as displayed on the official website.'}];
+  assert.ok(validateEditorialV4(raw,brief).some(reason=>/repeats an earlier explanation/.test(reason)));
+  raw.sections=[];raw.paragraphs[0].text='Fixture Horizon is documented as a direct continuation of the narrative established in the earlier series. The catalog prequel relation means this is not a standalone work and establishes required viewing.';
+  assert.ok(validateEditorialV4(raw,brief).some(reason=>/Catalog franchise relations alone/.test(reason)));
+  raw.paragraphs[0].text='The catalog records a prequel relationship, but that does not establish required viewing or prove that this installment is a direct continuation of the narrative. A franchise link cannot determine standalone accessibility.';
+  assert.ok(!validateEditorialV4(raw,brief).some(reason=>/Catalog franchise relations alone/.test(reason)));
+});
 test('version four retains calculated-data safeguards and hides raw observations from normal public reads',()=>{
   const end=Math.floor(now/86400_000)*86400_000,start=end-7*86400_000;
   const records=Array.from({length:5},(_,i)=>Array.from({length:7},(_,day)=>({mediaId:i+1,date:(start+day*86400_000)/1000,trending:100-i*10+day,popularity:1000-i,media:{title:{english:`Fixture Series ${i+1}`}}}))).flat();
@@ -120,6 +131,11 @@ test('guide research upgrades known HTTP official links to HTTPS and checkpoints
   let interrupted=true;
   class Transport extends EditorialTransport{async document(url:string){urls.push(url);if(url.endsWith('/unrelated'))return{...official(media.id),url,text:'Unrelated corporate information. '.repeat(20)};if(interrupted)throw Error('Publishing request/time budget reached; retry this run.');return official(media.id);}}
   await fixture(async()=>{const t=new Transport();await assert.rejects(discoverGuidesV4(t,state,async()=>{},[],now),/budget/);assert.equal(state.guideLinks?.[media.id],1);assert.equal(state.guideIndex,0);interrupted=false;assert.equal((await discoverGuidesV4(t,state,async()=>{},[],now)).length,1);assert.deepEqual(urls,['https://official.test/unrelated','https://official.test/940050','https://official.test/940050']);state.guideIndex=0;assert.equal((await discoverGuidesV4(t,state,async()=>{},[],now)).length,1);assert.equal(urls.length,3);});
+});
+test('guide research follows one real same-site content link instead of relying on homepage teasers',async()=>{
+  const media=item(940070),state:EditorialDiscoveryV4={media:[media],catalogRetrievedAt:recentDate},reads:string[]=[];
+  class Transport extends EditorialTransport{async document(url:string){reads.push(url);return url===official(media.id).url?{...official(media.id),text:'Fixture Horizon news, social links and copyright information. '.repeat(10),links:['https://unrelated.test/news/claim',official(media.id).url+'?news=confirmed-format','https://official.test/news/extra']}:{...official(media.id),url};}}
+  await fixture(async()=>{const guides=await discoverGuidesV4(new Transport(),state,async()=>{},[],now);assert.equal(guides.length,1);assert.equal(guides[0].sources[0].url,official(media.id).url+'?news=confirmed-format');assert.deepEqual(reads,[official(media.id).url,official(media.id).url+'?news=confirmed-format']);});
 });
 test('v4 migration is repeatable, pins new jobs only and preserves private drafts and publication mode',async()=>{
   const db=await PGlite.create();try{
