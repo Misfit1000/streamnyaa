@@ -16,7 +16,7 @@ New jobs use editorial policy 4. Existing version-2/3 jobs, saved drafts, publis
 
 ## Verification
 
-TypeScript passed. Frontend: **725 tests / 113 files**. Publishing/model/recovery/review/database suites: **47 tests**. Web/account/ESM contracts: **19 tests**. Initial-HTML: **5 tests**, including version-4 guide labels, citations and single headline/summary. Production build, entry-asset checks and **13** standalone route smoke checks passed.
+TypeScript passed, now including every API TypeScript file. Frontend: **725 tests / 113 files**. Publishing/model/recovery/review/database suites: **48 tests**. Web/account/ESM contracts: **19 tests**. Initial-HTML: **5 tests**, including version-4 guide labels, citations and single headline/summary. Production build, entry-asset checks and **13** standalone route smoke checks passed.
 
 The final frontend pass used two workers. One Watch source-flow wait timed out during the first run alongside the build/database suites; the isolated full suite then passed without a product or test change.
 
@@ -31,5 +31,7 @@ Deployment `2061697` reached Ready. One ordinary Generate one draft request at 1
 The first private job (`d39a3287-0121-4ede-ac9c-4c3ae8756554`) was explicitly rejected with factual/editorial notes. A read-only production check confirmed the same 100 articles, unchanged article digest and automatic-publication setting. Deployment `f41d492` reached Ready; the separately approved final test (`0b4ea5d0-ceb7-4a3f-aca5-f8032e601974`) exhausted its candidate set without writing or publishing another draft. Its saved discovery exposed the page-title/older-link coverage problems corrected above. Final discovery corrections are covered by controlled fixtures; a successful editorial acceptance draft under those corrections and the next real scheduled run remain unverified. No further production model run was started without authorization.
 
 Final source `7e37267404483d10170fab452167fdcdd02d31b3` was integrated with current main, pushed normally and verified Ready in production on October 24 at 00:37 Nepal time (deployment `EKCgE7UYd6BmSrXPE7eaS4EjHmnn`, 33-second build). Production Admin loaded successfully, still reported 100 articles and automatic publication enabled. The previous Ready deployment `AWNXgQFeXzbYdWvH9cRocyGMrBKF` remains available for rollback. Approval for a private writing test of the final extractor was requested separately; no acceptance article was published.
+
+The explicitly approved October 24 private test initially failed before provider discovery with `fingerprint is not defined`. Its import is now fixed. The root TypeScript check previously excluded API files; it now includes them, and a fresh-manual-job regression exercises discovery through saving a private draft (rather than starting with an already prepared brief). Recovery resumes the same saved production job after deployment; no new Generate request is required.
 
 This is a website/publishing update. Desktop remains **0.1.14**; no installer is rebuilt. Provider outages, quotas and inadequate evidence can still prevent a draft. This update broadens useful coverage rather than promising a daily article regardless of evidence.

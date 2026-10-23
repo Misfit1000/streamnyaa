@@ -2,7 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { supabaseRest } from './adminAuth.js';
 import { archiveBlogPost, findDurableBlogPost, listPrimaryPublishedBlogPosts } from '../blogArchive.js';
 import { BLOG_POSTS, getBlogPost } from '../../src/api/blogShared.js';
-import { discoverNews, rankingBrief, precedingWeek, EditorialTransport, type EvidenceBrief } from './publishingData.js';
+import { discoverNews, rankingBrief, precedingWeek, EditorialTransport, fingerprint, type EvidenceBrief } from './publishingData.js';
 import { publicationPolicy, draftRevision } from './publicationReview.js';
 import { editorialModel,requestEditorialModel,type ModelRequestState } from './editorialModel.js';
 import { prepareEditorialBrief, validateEditorialV3, editorialInstructions, reportNovelty } from './editorialPolicy.js';

@@ -151,3 +151,26 @@ test('an already-covered news candidate falls through to a private guide draft i
     return Response.json([]);
   }) as typeof fetch);}finally{EditorialTransport.prototype.document=oldDocument;}
 });
+test('a fresh manual job completes discovery, selects a stable catalog page and saves a private draft',async()=>{
+  const media=item(940060),saves:any[]=[];let modelCalls=0,publicWrites=0,catalogReads=0;
+  const run={id:'00000000-0000-0000-0000-000000000445',idempotency_key:'manual:fresh-discovery-fixture',kind:'daily',origin:'manual',editorial_version:4,publication_mode:'review',created_at:new Date().toISOString(),checkpoint:{limit:1,published:[]}};
+  const old={graph:EditorialTransport.prototype.graph,fetch:EditorialTransport.prototype.fetch,document:EditorialTransport.prototype.document};
+  EditorialTransport.prototype.graph=async query=>{catalogReads++;assert.match(query,/EditorialCandidates/);return{data:{active:{media:[media]},upcoming:{media:[]},established:{media:[]}}};};
+  EditorialTransport.prototype.fetch=async url=>{assert.match(url,/api\.tenrai\.org/);return Response.json({data:[]});};
+  EditorialTransport.prototype.document=async()=>official(media.id);
+  try{await fixture(async()=>{
+    await runGeneration(run.id);const final=saves.at(-1);
+    assert.equal(final.p_status,'awaiting_review');assert.equal(final.p_checkpoint.briefs[0].kind,'guide');assert.equal(modelCalls,1);assert.equal(catalogReads,1);assert.equal(publicWrites,0);
+    const page=final.p_checkpoint.discoveryV4.catalogPage;assert.ok(Number.isInteger(page)&&page>=1&&page<=30);assert.ok(saves.every(save=>!save.p_checkpoint.discoveryV4?.catalogPage||save.p_checkpoint.discoveryV4.catalogPage===page));
+  },(async(input:any,init:any={})=>{
+    const url=new URL(String(input)),body=init.body?JSON.parse(init.body):{};
+    if(url.hostname==='generativelanguage.googleapis.com'){modelCalls++;return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(draft())}]}}]});}
+    assert.equal(url.hostname,'editorial-v4.test');
+    if(url.pathname.endsWith('/claim_blog_run'))return Response.json([run]);
+    if(url.pathname.endsWith('/save_blog_run')){saves.push(structuredClone(body));return Response.json(true);}
+    if(url.pathname.endsWith('/claim_blog_topic')||url.pathname.endsWith('/claim_site_snapshot')||url.pathname.endsWith('/put_site_snapshot'))return Response.json(true);
+    if(url.pathname.endsWith('/blog_publication_settings'))return Response.json([{automatic_enabled:true}]);
+    if(init.method==='POST'&&url.pathname.endsWith('/blog_articles'))publicWrites++;
+    return Response.json([]);
+  }) as typeof fetch);}finally{Object.assign(EditorialTransport.prototype,old);}
+});
