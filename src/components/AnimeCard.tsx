@@ -161,7 +161,7 @@ export default function AnimeCard({ anime, delayLabel, destination }: AnimeCardP
             {anime.title}
           </div>
           <div className="flex items-center justify-between text-[10px] text-zinc-300">
-            <span>{anime.latestEpisode ? `EP ${anime.latestEpisode}` : (anime.episodes ? `EP ${anime.episodes}` : anime.type)}</span>
+            <span>{anime.releaseEpisode ? (anime.type || 'Anime') : anime.latestEpisode ? `EP ${anime.latestEpisode}` : (anime.episodes ? `EP ${anime.episodes}` : anime.type)}</span>
             <span className="inline-flex items-center gap-1 font-medium text-yellow-400">
               <Star className="h-3.5 w-3.5 fill-current" />
               {anime.score || 'N/A'}

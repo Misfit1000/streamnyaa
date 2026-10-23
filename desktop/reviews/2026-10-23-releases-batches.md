@@ -10,7 +10,7 @@ The pictured numeric sequel followed by `2 - 01 ~ 10` previously lost its instal
 
 ## Verification
 
-- TypeScript and 701 frontend tests passed.
+- TypeScript and 702 frontend tests passed.
 - Web/account/config contracts: 19 passed. Gateway/database/ESM/release-pagination tests passed; frozen pagination makes zero provider calls.
 - Native suite: 129 passed; live/environment-specific tests remain opt-in.
 - Player state: 561 assertions passed. Pointer/keyboard, real EOF, Next, Replay, Close, stalled recovery and 100-cycle controls passed.
@@ -24,3 +24,5 @@ Production verification and installer evidence are recorded separately after rol
 No public-provider load test or percentage savings claim. Full paired cold/warm interactive measurements, physical 100/150/200% display scaling, clean install, upgrade and rollback in a disposable Windows environment are not established by the automated checks above. Actual public packs still depend on valid files and reachable peers; the controlled fixture proves selection and playback mechanics, not every listed release.
 
 The first production acceptance pass caught two missing integration allowlist entries: the browser public-cache namespace and the native dispatcher provider. Both now have transport-level regressions, beyond the mocked page tests. The real browser client validated a progressive production pass with 24 eligible records (13,077 ms during cold provider enrichment), then another 24-record pass in 3,799 ms. This is not a paired old/new speed comparison. The corrected native bridge also reached the public release gateway with real retrieval/completeness fields.
+
+A saved complete production release snapshot returned 24 records in 931 ms in one normal client request. Home and View All were checked with the same cutoff and episode URLs. Release cards now show the selected Sub episode without duplicating the original-broadcast count as a competing episode label.
