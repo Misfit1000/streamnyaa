@@ -86,6 +86,7 @@ export default function NyaaSearchPage() {
   const sourceQuery = useWebSources({ identity, query, category, filter, episode: selectedEpisodeNumber });
   const { isLoading } = sourceQuery;
   const torrents = sourceQuery.data?.items;
+  const hasBatchSources = torrents?.some(item=>item.matchTier==='batch'&&webAudioMatches(item.title,audio));
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault(); setShowAllSources(false);
     setSearchParams(searchInput.trim() ? { q: searchInput.trim() } : {});
@@ -398,9 +399,9 @@ export default function NyaaSearchPage() {
       ) : filteredTorrents.length === 0 ? (
           <div className={`mx-auto max-w-3xl rounded-3xl px-6 py-14 text-center ${desktop ? 'border border-white/8 bg-white/[0.04]' : 'border border-border bg-secondary/25'}`}>
           <HardDrive className={`mx-auto mb-4 h-14 w-14 ${desktop ? 'text-white/30' : 'text-muted-foreground'}`} />
-          <p className={`text-xl font-black ${desktop ? 'text-white' : 'text-foreground'}`}>{sourceQuery.data?.complete ? 'No matching individual sources found' : 'No matching sources in the pages checked yet'}</p>
+          <p className={`text-xl font-black ${desktop ? 'text-white' : 'text-foreground'}`}>{hasBatchSources ? 'Batch releases found' : sourceQuery.data?.complete ? 'No matching individual sources found' : 'No matching sources in the pages checked yet'}</p>
           <p className={`mx-auto mt-2 max-w-xl text-sm leading-6 ${desktop ? 'text-white/52' : 'text-muted-foreground'}`}>
-            Try the romanized or English title, remove strict quality filters, or search the episode number without a leading zero.
+            {hasBatchSources ? 'Episodes are bundled in the matching packs. Open Batch downloads below to choose a release and inspect its episode files in your torrent client.' : 'Try the romanized or English title, remove strict quality filters, or search the episode number without a leading zero.'}
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             {sourceFilter ? (

@@ -10,7 +10,7 @@ Discovery searches episode variants and title packs together. Title results are 
 
 ## Final source validation
 
-- TypeScript passed; frontend: **723 tests / 113 files passed**.
+- TypeScript passed; frontend: **725 tests / 113 files passed**.
 - Native: **134 passed, 8 opt-in tests ignored**; the local native acceptance test was separately run and passed.
 - Web/account/config/ESM contracts: **19 passed**. Gateway: **3 passed**. Source denial/throttling: **2 passed**. Desktop contracts passed.
 - Web production build, entry-asset checks and **13** standalone production-route smoke checks passed.
@@ -26,5 +26,7 @@ Compared baseline `7d354fa` against final discovery logic with 20 samples, a sim
 Website production and final installer evidence are recorded after rollout. Desktop version is **0.1.14**; checksum-verified **0.1.13** must remain the immediate rollback. No publishing configuration or archive changes are included.
 
 Live acceptance found that the website route boundary remounted source search when the episode URL changed, discarding an in-memory anime confirmation. Confirmation now survives in a provider-qualified URL field and is still checked against retrieved metadata. Episode changes write the episode and confirmation together; starting a fresh free-text search clears confirmation. The regression uses the same remount behavior as the production route boundary. Unconfirmed free-text results remain explicitly unclassified.
+
+Both web source pages now identify batch-only coverage as **Batch releases found**, instead of displaying a no-sources warning above valid packs. The individual-source statistic is labeled accordingly. This changes status text within the existing layout.
 
 Clean installation/upgrade/rollback in a disposable Windows environment, physical 100/150/200% display checks and manual interaction with an installed desktop app were not performed. Automated Watch-controller pointer/keyboard tests and real bundled-MPV fixtures are separate evidence. External peers and mislabeled public uploads remain availability limits. Comprehensive security auditing remains deferred as requested. No public-provider load testing was performed.

@@ -16,16 +16,23 @@ import NyaaSearchPage from '../../src/pages/NyaaSearchPage';
 const anime={mal_id:1,title:'Example Anime',type:'TV',status:'RELEASING',episodes:12,nextAiringEpisode:{episode:2,airingAt:2000000000},images:{jpg:{image_url:'https://example.test/poster.jpg'}}};
 const source=(title:string,id:number):NyaaItem=>({title,infoHash:String(id).padStart(40,'a'),magnet:'magnet:?xt=urn:btih:'+String(id).padStart(40,'a'),link:`https://nyaa.si/view/${id}`,size:'1 GiB',rawSize:1e9,seeders:'10',rawSeeders:10,leechers:'0',category:'Anime',categoryId:'1_2',pubDate:''});
 function RemountingSearchRoute(){const location=useLocation();return <NyaaSearchPage key={location.key}/>;}
-function setup(url:string,page:'title'|'search'){
+function setup(url:string,page:'title'|'search',batchOnly=false){
  vi.mocked(fetchAnimeDetails).mockResolvedValue({data:anime} as any);vi.mocked(fetchAnimeEpisodes).mockResolvedValue({data:[]} as any);vi.mocked(searchAnime).mockResolvedValue({data:[anime]} as any);
  vi.mocked(searchNyaa).mockImplementation(async(_q,_c,_f,_p,options)=>Object.assign([
-   source(options?.intent?.scope==='episode'?'Example Anime - 02 [720p] [Dual Audio]':'Example Anime 01-10 Batch [720p]',options?.intent?.scope==='episode'?1:2)
+   source(!batchOnly&&options?.intent?.scope==='episode'?'Example Anime - 02 [720p] [Dual Audio]':'Example Anime 01-10 Batch [720p]',!batchOnly&&options?.intent?.scope==='episode'?1:2)
  ],{complete:true,fetchedAt:Date.now(),stale:false}));
  const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><Routes><Route path="/anime/:id/downloads" element={<AnimeDownloads/>}/><Route path="/nyaa" element={<RemountingSearchRoute/>}/></Routes></MemoryRouter></QueryClientProvider>);
  return client;
 }
 afterEach(()=>{cleanup();vi.clearAllMocks();vi.unstubAllGlobals();});
+it.each(['title','search'] as const)('identifies batch-only coverage on the %s page without a false no-sources warning',async page=>{
+ setup(page==='title'?'/anime/1/downloads?ep=2':'/nyaa?q=Example%20Anime&ep=2&match=mal%3A1',page,true);
+ await screen.findByText('Batch releases found');
+ expect(screen.queryByText('No matching sources in the pages checked yet')).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:/Batch downloads/}));
+ await screen.findByText('Example Anime 01-10 Batch [720p]');
+});
 it('allows an episode beyond provider metadata and changes quality/audio without more requests',async()=>{
  setup('/anime/1/downloads?ep=2','title');
  await screen.findByText('Example Anime - 02 [720p] [Dual Audio]');

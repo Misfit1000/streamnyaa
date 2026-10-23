@@ -397,7 +397,7 @@ export default function AnimeDownloads() {
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">
         {[
-          { label: 'Sources found', value: torrentsLoading ? '...' : sortedTorrents.length, detail: sourceFilter ? 'After selected filter' : 'Matching this title' },
+          { label: 'Individual sources', value: torrentsLoading ? '...' : sortedTorrents.length, detail: sourceFilter ? 'After selected filter' : 'Matching this title' },
           { label: 'Total seeders', value: torrentsLoading ? '...' : totalSeeders, detail: 'Across visible sources' },
           { label: 'Best source score', value: torrentsLoading ? '...' : topSource ? sourceQualityScore(topSource) : 'None', detail: topSource ? `${sourceQualityLabel(sourceQualityScore(topSource))} - ${sourceHealth(topSource.rawSeeders)}` : 'Try another filter' },
         ].map((item) => (
@@ -474,9 +474,9 @@ export default function AnimeDownloads() {
       ) : torrentsError && !torrents?.length ? null : sortedTorrents.length === 0 ? (
         <div className="bg-secondary/30 border border-border p-8 md:p-12 rounded-3xl text-center flex flex-col items-center">
           <HardDrive className="w-16 h-16 text-muted-foreground mb-4" />
-          <p className="text-xl font-bold text-foreground mb-2">{sourceQuery.data?.complete ? 'No matching individual sources' : 'No matching sources in the pages checked yet'}</p>
+          <p className="text-xl font-bold text-foreground mb-2">{torrents?.some(item=>item.matchTier==='batch'&&webAudioMatches(item.title,audioFilter)) ? 'Batch releases found' : sourceQuery.data?.complete ? 'No matching individual sources' : 'No matching sources in the pages checked yet'}</p>
           <p className="max-w-2xl text-muted-foreground">
-            No source results were found for "{anime.title}" with the selected filters. Try a different filter or search.
+            {torrents?.some(item=>item.matchTier==='batch'&&webAudioMatches(item.title,audioFilter)) ? 'Matching packs are available in Batch downloads below. Inspect their file lists in your torrent client to choose the episode.' : `No individual source results were found for "${anime.title}" with the selected filters. Try a different filter or search.`}
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             {(anime.title_english || anime.title_romaji) ? (
