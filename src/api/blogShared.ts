@@ -188,7 +188,7 @@ export type BlogPostData = BlogPostDefinition & {
   activityEvidence?: import('./editorialTypes').ActivityEvidence;
   hasActivityEvidence?: boolean;
   qualityVersion?: number;
-  contentKind?: 'news' | 'data-report' | 'weekly-ranking';
+  contentKind?: 'news' | 'guide' | 'data-report' | 'weekly-ranking';
   sources?: {id:string;title:string;url:string;publishedAt?:string;retrievedAt?:string;primary?:boolean}[];
   charts?: {title:string;unit:string;values:{label:string;value:number;days?:number}[]}[];
   ranking?: {start:string;end:string;method:string;candidateCount:number;eligibleCount:number;coverage:string;rows:{id:number;title:string;mean:number;days:number;movement?:number}[];honorableMentions:{id:number;title:string;mean:number;days:number}[]};

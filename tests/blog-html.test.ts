@@ -39,6 +39,14 @@ test('future articles have one visible headline/summary and omit raw observation
   const bootstrap=JSON.parse($('#streamnyaa-article').text());assert.equal(bootstrap.post.hasActivityEvidence,true);assert.equal(bootstrap.post.activityEvidence,undefined);
   const legacy=load(articleHtml({...future,qualityVersion:2} as any,'/blog/'+future.articleSlug));assert.equal(legacy('#root h2').filter((_,el)=>legacy(el).text()===post.article.headline).length,1);
 });
+test('version-four guides render once with their actual content kind and sources in initial HTML',()=>{
+  const guide={...post,qualityVersion:4,contentKind:'guide',category:'Guide',article:{...post.article,headline:'Fixture Film: its release plans and franchise connection',citations:{'paragraph:0':['official']}}};
+  const $=load(articleHtml(guide as any,'/blog/'+guide.articleSlug)),root=$('#root');
+  assert.equal(root.find('h1').length,1);assert.equal(root.text().split(guide.article.excerpt).length-1,1);
+  assert.match(root.text(),/Researched guide/);assert.match(root.text(),/The confirmed article body/);
+  assert.ok(root.find('a[aria-label="Source 1: Publisher announcement"]').length);
+  assert.equal(JSON.parse($('#streamnyaa-article').text()).post.contentKind,'guide');
+});
 
 test('HTML reads are GET-only and distinguish outage, absence and canonical redirects without generation',async()=>{
   const original=globalThis.fetch,keys=['SUPABASE_URL','SUPABASE_SECRET_KEY'],saved=keys.map(key=>process.env[key]);

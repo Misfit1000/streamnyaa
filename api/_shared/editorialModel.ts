@@ -13,7 +13,7 @@ const sourceIds={type:'ARRAY',items:{type:'STRING'}};
 const articleSchema={type:'OBJECT',properties:{headline:{type:'STRING'},excerpt:{type:'STRING'},paragraphs:{type:'ARRAY',maxItems:12,items:{type:'OBJECT',properties:{text:{type:'STRING'},sourceIds},required:['text','sourceIds']}},sections:{type:'ARRAY',maxItems:6,items:{type:'OBJECT',properties:{heading:{type:'STRING'},body:{type:'STRING'},sourceIds},required:['heading','body','sourceIds']}},rejectReason:{type:'STRING'}},required:['headline','excerpt','paragraphs','sections']};
 export function editorialGenerationConfig(model:string,version=2){
   const schema=structuredClone(articleSchema);
-  if(version===3){(schema.properties.paragraphs.items.properties as any).findingIds=sourceIds;(schema.properties.sections.items.properties as any).findingIds=sourceIds;}
+  if(version>=3){(schema.properties.paragraphs.items.properties as any).findingIds=sourceIds;(schema.properties.sections.items.properties as any).findingIds=sourceIds;}
   return{temperature:.35,maxOutputTokens:8192,responseMimeType:'application/json',...(model.startsWith('gemini-2.5-')?{thinkingConfig:{thinkingBudget:2048},responseSchema:schema}:{})};
 }
 function retryDeadline(header:string|null,now:number){if(!header)return 0;return /^\d+(?:\.\d+)?$/.test(header)?now+Number(header)*1000:Date.parse(header)||0;}

@@ -61,7 +61,7 @@ export default async function handler(req:any,res:any){
     try{
       if(!/^[a-z0-9][a-z0-9-]{0,220}$/.test(slug)||getBlogPost(slug))return res.status(404).json({error:'Published evidence not found.'});
       const post=await readPublishedArticle(slug);
-      if(!post||post.articleStatus!=='published'||post.qualityVersion!==3||!post.activityEvidence)return res.status(404).json({error:'Published evidence not found.'});
+      if(!post||post.articleStatus!=='published'||(post.qualityVersion||0)<3||!post.activityEvidence)return res.status(404).json({error:'Published evidence not found.'});
       const evidence=publicActivityEvidence(post.activityEvidence);if(!evidence)throw Error('Invalid saved observations.');
       res.setHeader('Cache-Control','public, max-age=300, s-maxage=3600');
       return res.status(200).json({articleSlug:post.articleSlug,evidence});

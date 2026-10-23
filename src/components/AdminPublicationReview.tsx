@@ -16,7 +16,7 @@ export default function AdminPublicationReview({accountId,token,jobs,automaticEn
   const approved=jobs.find(job=>job.status==='published'&&job.reviewApproved);
   const awaitingReview=jobs.filter(job=>job.status==='awaiting_review');
   const saved=draft.data?.draft,brief=saved?.brief;
-  const preview:BlogPostData|undefined=saved&&brief?.editorialVersion===3?{...BLOG_POSTS[0],updatedAt:brief.sources[0]?.retrievedAt||'',qualityVersion:3,contentKind:brief.kind,article:articleFromEditorialDraft(saved.article,brief.findings),items:brief.items,sources:brief.sources,ranking:brief.ranking,charts:brief.charts,activityEvidence:brief.activityEvidence}:undefined;
+  const preview:BlogPostData|undefined=saved&&(brief?.editorialVersion||0)>=3?{...BLOG_POSTS[0],updatedAt:brief.sources[0]?.retrievedAt||'',qualityVersion:brief.editorialVersion,contentKind:brief.kind,article:articleFromEditorialDraft(saved.article,brief.findings),items:brief.items,sources:brief.sources,ranking:brief.ranking,charts:brief.charts,activityEvidence:brief.activityEvidence}:undefined;
   return <div className="mt-3 space-y-3 text-sm">
     {!!awaitingReview.length&&<p role="status" className="rounded-lg border border-primary/25 bg-primary/5 p-3">Draft written. Generate saves a private draft; approval publishes it. Review the saved draft below.</p>}
     <div className="flex flex-wrap gap-3">{awaitingReview.map(job=><button key={job.id} type="button" className="font-semibold text-primary underline" onClick={()=>{setJobId(job.id);setError('');setReason('');}}>Review saved draft</button>)}

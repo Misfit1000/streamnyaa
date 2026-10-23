@@ -138,7 +138,7 @@ export function articlePresentation(post: BlogPostData, definition: BlogPostDefi
   const bodyParagraphs = paragraphs.slice(1);
   const takeaways = article?.takeaways?.length ? article.takeaways : post.qualityVersion ? [] : buildTakeaways(post.items);
   const faq = article?.faq?.length ? article.faq : post.qualityVersion ? [] : buildFaq(definition, post.items);
-  const contentLabel = post.contentKind === 'weekly-ranking' ? 'Weekly activity' : post.contentKind === 'data-report' ? 'Data report' : isGeminiArticle ? 'Focused news' : definition.category;
+  const contentLabel = post.contentKind === 'guide' ? 'Researched guide' : post.contentKind === 'weekly-ranking' ? 'Weekly activity' : post.contentKind === 'data-report' ? 'Data report' : isGeminiArticle ? 'Focused news' : definition.category;
   const seoTitle = article?.seoTitle || (article?.headline ? `${article.headline} | StreamNyaa` : definition.seoTitle);
   const seoDescription = article?.metaDescription || article?.excerpt || definition.description;
   const headline = article?.headline || definition.title;
@@ -208,7 +208,7 @@ export default function BlogArticleView({ post, definition }: {post: BlogPostDat
               <div className="border border-border rounded-2xl p-6 bg-secondary/40 text-muted-foreground">No current entries are available for this article yet. Try refreshing again shortly.</div>
             ) : (
               <>
-                {post.qualityVersion===3?<><EditorialArticleBody post={post}/><AdSenseAd/></>:<>
+                {(post.qualityVersion||0)>=3?<><EditorialArticleBody post={post}/><AdSenseAd/></>:<>
                 {image && heroAnime ? (
                   isGeminiArticle ? (
                     <div className="relative min-h-[340px] overflow-hidden rounded-2xl border border-primary/30 bg-secondary">

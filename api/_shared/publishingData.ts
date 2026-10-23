@@ -8,10 +8,10 @@ import { publicSnapshot, readPublicSnapshot, writePublicSnapshot } from './publi
 import type { ActivityEvidence,EditorialFinding } from '../../src/api/editorialTypes.js';
 
 export type EvidenceSource={id:string;title:string;url:string;publishedAt?:string;retrievedAt:string;text:string;primary:boolean};
-export type EvidenceBrief={kind:'news'|'data-report'|'weekly-ranking';subject:string;headline:string;fingerprint:string;sources:EvidenceSource[];items:any[];facts:string[];ranking?:Ranking;charts?:any[];editorialVersion?:number;activityEvidence?:ActivityEvidence;findings?:EditorialFinding[];readerQuestion?:string;development?:string;context?:string[];unknowns?:string[]};
+export type EvidenceBrief={kind:'news'|'guide'|'data-report'|'weekly-ranking';subject:string;headline:string;fingerprint:string;sources:EvidenceSource[];items:any[];facts:string[];ranking?:Ranking;charts?:any[];editorialVersion?:number;activityEvidence?:ActivityEvidence;findings?:EditorialFinding[];readerQuestion?:string;development?:string;context?:string[];unknowns?:string[];newsDate?:string;subjectAliases?:string[]};
 export type Ranking={start:string;end:string;method:string;candidateCount:number;candidateIds:number[];eligibleCount:number;rows:{id:number;title:string;mean:number;days:number;popularity:number;movement?:number}[];honorableMentions:any[];coverage:string};
 export const fingerprint=(value:string)=>createHash('sha256').update(value.normalize('NFKC').toLowerCase()).digest('hex');
-const primaryDomains=['crunchyroll.com','netflix.com','aniplex.co.jp','toei-anim.co.jp','corp.toei-anim.co.jp','kadokawa.co.jp','nhk.or.jp','tms-e.co.jp','sunrise-inc.co.jp','toho.co.jp','tohoanimation.jp','bandainamco.co.jp','avex.jp','aoni.co.jp','81produce.co.jp','nexon.com','shueisha.co.jp'];
+export const primaryDomains=['crunchyroll.com','netflix.com','aniplex.co.jp','toei-anim.co.jp','corp.toei-anim.co.jp','kadokawa.co.jp','nhk.or.jp','tms-e.co.jp','sunrise-inc.co.jp','toho.co.jp','tohoanimation.jp','bandainamco.co.jp','avex.jp','aoni.co.jp','81produce.co.jp','nexon.com','shueisha.co.jp'];
 const hostMatches=(host:string,base:string)=>host===base||host.endsWith(`.${base}`);
 const publicAddress=(address:string)=>!/^127\.|^10\.|^192\.168\.|^169\.254\.|^0\.|^172\.(1[6-9]|2\d|3[01])\.|^::|^fc|^fd|^fe[89ab]|^ff|^2(?:2[4-9]|[3-5]\d)\./i.test(address);
 export async function safeEvidenceUrl(input:string,allowed:string[]){
@@ -19,13 +19,37 @@ export async function safeEvidenceUrl(input:string,allowed:string[]){
   const addresses=await lookup(url.hostname,{all:true});if(!addresses.length||addresses.some(row=>!publicAddress(row.address)))throw Error('Evidence host is not public.');
   return {url,addresses};
 }
+export type EvidenceDocument={url:string;text:string;links:string[];publishedAt?:string};
+/** Date-published evidence only: modification/footer dates are not publication. */
+export function parseEvidenceDocument(html:string,url:string):EvidenceDocument{
+  const $=load(html);
+  const dates:string[]=[];
+  for(const selector of ['meta[property="article:published_time"]','meta[name="datePublished"]','meta[itemprop="datePublished"]','meta[name="pubdate"]']){
+    const date=$(selector).attr('content');if(date)dates.push(date);
+  }
+  const scan=(value:any)=>{if(Array.isArray(value))value.forEach(scan);else if(value&&typeof value==='object'){
+    if(typeof value.datePublished==='string')dates.push(value.datePublished);
+    if(value['@graph'])scan(value['@graph']);
+  }};
+  $('script[type="application/ld+json"]').each((_i,node)=>{try{scan(JSON.parse($(node).text()));}catch{/* Invalid structured data is not evidence. */}});
+  const time=$('article time[datetime],main time[datetime],time[itemprop="datePublished"]').first().attr('datetime');if(time)dates.push(time);
+  $('script,style,nav,footer,header,aside').remove();
+  const root=$('article').length?$('article').first():$('main').length?$('main').first():$('body');
+  const text=root.text().replace(/\s+/g,' ').trim().slice(0,18000);
+  const links=root.find('a[href]').map((_i,node)=>{try{return new URL($(node).attr('href')!,url).toString();}catch{return'';}}).get().filter(Boolean);
+  const date=dates.find(value=>Number.isFinite(Date.parse(value)));
+  if(text.length<180)throw Error('Evidence text is insufficient.');
+  return{url,text,links,publishedAt:date?new Date(date).toISOString():undefined};
+}
 /** Explicit request budget, provider pacing and deadlines; never a public load test. */
 export class EditorialTransport{
-  requests=0;private admitted=new Map<string,number>();
+  requests=0;private admitted=new Map<string,number>();private blocked=new Map<string,Error>();
   constructor(readonly deadline=Date.now()+230_000){}
   async fetch(url:string,init:RequestInit={},spacing=1000,pinned?:{address:string;family:number}[]){
     if(this.requests>=40||Date.now()>this.deadline-12_000)throw Error('Publishing request/time budget reached; retry this run.');
-    const host=new URL(url).hostname,wait=(this.admitted.get(host)||0)+spacing-Date.now();
+    const host=new URL(url).hostname;
+    if(this.blocked.has(host))throw this.blocked.get(host);
+    const wait=(this.admitted.get(host)||0)+spacing-Date.now();
     if(wait>0)await new Promise(resolve=>setTimeout(resolve,wait));this.admitted.set(host,Date.now());this.requests++;
     // Aggregated activity queries can take longer than simple metadata reads.
     // Still bounded by the worker deadline and the same request budget/pacing.
@@ -36,14 +60,18 @@ export class EditorialTransport{
       request.on('error',reject);request.end();
     }):await fetch(url,{...init,signal});
     }catch{throw Object.assign(Error(`The editorial request to ${host} timed out or could not connect. Saved work can resume later.`),{status:503,provider:host});}})();
-    if(!response.ok&&!(init.redirect==='manual'&&response.status>=300&&response.status<400))throw Object.assign(Error(`Evidence provider ${host} returned HTTP ${response.status}.`),{status:response.status,provider:host,retryAfter:response.headers.get('retry-after')});
+    if(!response.ok&&!(init.redirect==='manual'&&response.status>=300&&response.status<400)){
+      const error=Object.assign(Error(`Evidence provider ${host} returned HTTP ${response.status}.`),{status:response.status,provider:host,retryAfter:response.headers.get('retry-after')});
+      if([403,429].includes(response.status))this.blocked.set(host,error);
+      throw error;
+    }
     return response;
   }
   async graph(query:string,variables:any){
     const response=await this.fetch('https://graphql.anilist.co',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,variables})},2100);
     const value=await response.json();if(value.errors?.length)throw Object.assign(Error('AniList could not verify editorial data.'),{status:502,provider:'graphql.anilist.co'});return value;
   }
-  async document(input:string,allowed:string[]):Promise<{url:string;text:string;links:string[];publishedAt?:string}>{
+  async document(input:string,allowed:string[]):Promise<EvidenceDocument>{
     let vetted=await safeEvidenceUrl(input,allowed),url=vetted.url;
     for(let redirects=0;redirects<4;redirects++){
       const response=await this.fetch(url.toString(),{redirect:'manual',headers:{Accept:'text/html','User-Agent':'StreamNyaa Editorial/1.0'}},1000,vetted.addresses);
@@ -51,13 +79,7 @@ export class EditorialTransport{
       if(!/text\/html/i.test(response.headers.get('content-type')||''))throw Error('Evidence document is not HTML.');
       const reader=response.body?.getReader();if(!reader)throw Error('Evidence document is empty.');let size=0;const chunks:Uint8Array[]=[];
       try{while(true){const part=await reader.read();if(part.done)break;size+=part.value.length;if(size>768*1024)throw Error('Evidence document exceeds the bounded read.');chunks.push(part.value);}}finally{await reader.cancel().catch(()=>{});}
-      const html=Buffer.concat(chunks).toString('utf8'),$=load(html);$('script,style,nav,footer,header,aside').remove();
-      const root=$('article').length?$('article').first():$('main').length?$('main').first():$('body');
-      const text=root.text().replace(/\s+/g,' ').trim().slice(0,18000);
-      const links=root.find('a[href]').map((_i,el)=>{try{return new URL($(el).attr('href')!,url).toString();}catch{return'';}}).get().filter(Boolean);
-      const date=$('meta[property="article:published_time"]').attr('content')||$('time[datetime]').first().attr('datetime');
-      const publishedAt=date&&Number.isFinite(Date.parse(date))?new Date(date).toISOString():undefined;
-      if(text.length<180)throw Error('Evidence text is insufficient.');return{url:url.toString(),text,links,publishedAt};
+      return parseEvidenceDocument(Buffer.concat(chunks).toString('utf8'),url.toString());
     }throw Error('Evidence redirect limit reached.');
   }
 }
@@ -141,7 +163,7 @@ export async function rankingBrief(transport:EditorialTransport,kind:'weekly-ran
   const source:EvidenceSource={id:'anilist-activity',title:'AniList daily media activity',url:'https://docs.anilist.co/reference/object/mediatrend',retrievedAt:new Date(snapshot.fetchedAt).toISOString(),text:JSON.stringify(ranking),primary:true};
   const ids=new Set([...ranking.rows,...ranking.honorableMentions].map(row=>row.id));
   const items=[...new Map(snapshot.value.records.filter(row=>ids.has(row.mediaId)).map(row=>[row.mediaId,toMediaItem(row.media)])).values()];
-  const activityEvidence:ActivityEvidence|undefined=version===3?{version:1,calculationVersion:1,provider:'anilist',retrievedAt:new Date(snapshot.fetchedAt).toISOString(),start:ranking.start,endExclusive:ranking.end,candidateIds:ranking.candidateIds,
+  const activityEvidence:ActivityEvidence|undefined=version>=3?{version:1,calculationVersion:1,provider:'anilist',retrievedAt:new Date(snapshot.fetchedAt).toISOString(),start:ranking.start,endExclusive:ranking.end,candidateIds:ranking.candidateIds,
     titles:[...new Map(snapshot.value.records.map(row=>[row.mediaId,{id:row.mediaId,title:row.media?.title?.english||row.media?.title?.romaji||`AniList ${row.mediaId}`}])).values()],
     observations:[...new Map(snapshot.value.records.map(row=>[`${row.mediaId}:${new Date(row.date*1000).toISOString().slice(0,10)}`,{mediaId:row.mediaId,date:row.date,activity:row.trending,popularity:Number(row.popularity)||0,retrievedAt:row.retrievedAt}])).values()]}:undefined;
   return{kind,subject:'AniList weekly activity',headline:kind==='weekly-ranking'?`AniList weekly activity: Top 10 for the week ending ${periodKey}`:`What seven days of AniList activity show through ${periodKey}`,fingerprint:fingerprint(`${kind}:${periodKey}`),sources:[source],items,facts:[ranking.method,ranking.coverage],ranking,activityEvidence,

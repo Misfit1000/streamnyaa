@@ -1,7 +1,7 @@
 import type {EditorialDraft,EditorialFinding} from '../api/editorialTypes';
 import type {BlogArticleContent,BlogPostData} from '../api/blogShared';
 export function publicArticleContent(post:BlogPostData):BlogPostData{
-  if(post.qualityVersion!==3||!post.activityEvidence)return post;
+  if((post.qualityVersion||0)<3||!post.activityEvidence)return post;
   const {activityEvidence,...view}=post;return{...view,hasActivityEvidence:true};
 }
 /** Shared conversion for private preview and published version-3 content. */
