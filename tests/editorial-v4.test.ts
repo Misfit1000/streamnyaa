@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {EditorialTransport,parseEvidenceDocument,calculateRanking,type EvidenceBrief} from '../api/_shared/publishingData.ts';
-import {guideBriefV4,verifiedNewsBriefV4,prepareEditorialV4,editorialPromptV4,discoverNewsV4,discoverGuidesV4,type EditorialDiscoveryV4} from '../api/_shared/editorialV4.ts';
+import {guideBriefV4,verifiedNewsBriefV4,prepareEditorialV4,editorialPromptV4,validateEditorialV4,discoverNewsV4,discoverGuidesV4,type EditorialDiscoveryV4} from '../api/_shared/editorialV4.ts';
 import {validateEditorial,runGeneration} from '../api/_shared/publishing.ts';
 import {publicArticleContent} from '../src/lib/editorialPresentation.ts';
 
@@ -58,6 +58,24 @@ test('concise confirmed updates no longer require an invented consequence or ext
   const brief:EvidenceBrief={...guide(),kind:'news',headline:'Fixture Horizon confirms its film format',newsDate:recentDate,context:[],readerQuestion:undefined};prepareEditorialV4(brief);
   const raw=draft();raw.headline='Fixture no Horizon confirms its film format';assert.deepEqual(validateEditorial(raw,brief),[]);
   assert.ok(validateEditorial({...raw,paragraphs:[{...raw.paragraphs[0],sourceIds:['fabricated']},raw.paragraphs[1]]},brief).some(reason=>/attribution/.test(reason)));
+});
+test('foreign-language wordplay cannot become a literal percentage or borrow support from another citation',()=>{
+  const brief=guide(),raw=draft();brief.sources[0].text+=' 作者は小説版と漫画版で内容が99割程度違うと冗談を述べています。';
+  raw.paragraphs[0].text+=' The author says the versions are 99 percent different.';
+  assert.ok(validateEditorialV4(raw,brief).some(reason=>/exact percentage/.test(reason)));
+  brief.sources[1].text+=' A separate record mentions 99 percent.';
+  assert.ok(validateEditorialV4(raw,brief).some(reason=>/exact percentage/.test(reason)));
+  brief.sources[0].text+=' A documented survey reports 99% for this metric.';
+  assert.ok(!validateEditorialV4(raw,brief).some(reason=>/exact percentage/.test(reason)));
+  raw.paragraphs[0].text=raw.paragraphs[0].text.replace('99 percent','99.5 percent');
+  assert.ok(validateEditorialV4(raw,brief).some(reason=>/exact percentage/.test(reason)));
+  assert.match(editorialPromptV4(brief,[],undefined),/jokes, idioms and promotional hyperbole are not literal statistics/);
+});
+test('a researched guide selects relevant credits instead of treating a full roster as depth',()=>{
+  const brief=guide(),raw=draft();raw.sections=[{heading:'Production credits',sourceIds:['official'],body:'The production lists a director and series composition, character designer and chief animation director. It also credits gag and sub-character design, another animation director, monster design and action animation direction. The main animator appears alongside color design, art direction, art design, prop design and special effects. A separate director is responsible for photography. Editing, music, sound direction and sound effects are also listed. The animation producer and the production committee round out the credits, with every credited person introduced as another name rather than explaining how any of those names resolves the reader question.'}];
+  assert.ok(validateEditorialV4(raw,brief).some(reason=>/exhaustive credits/.test(reason)));
+  raw.sections[0].body='The official site identifies the animation studio and director. Those credits establish who is making this entry; they do not establish distribution rights or an unannounced release date.';
+  assert.deepEqual(validateEditorialV4(raw,brief),[]);
 });
 test('version four retains calculated-data safeguards and hides raw observations from normal public reads',()=>{
   const end=Math.floor(now/86400_000)*86400_000,start=end-7*86400_000;
