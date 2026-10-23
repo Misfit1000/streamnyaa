@@ -26,3 +26,11 @@ No public-provider load test or percentage savings claim. Full paired cold/warm 
 The first production acceptance pass caught two missing integration allowlist entries: the browser public-cache namespace and the native dispatcher provider. Both now have transport-level regressions, beyond the mocked page tests. The real browser client validated a progressive production pass with 24 eligible records (13,077 ms during cold provider enrichment), then another 24-record pass in 3,799 ms. This is not a paired old/new speed comparison. The corrected native bridge also reached the public release gateway with real retrieval/completeness fields.
 
 A saved complete production release snapshot returned 24 records in 931 ms in one normal client request. Home and View All were checked with the same cutoff and episode URLs. Release cards now show the selected Sub episode without duplicating the original-broadcast count as a competing episode label.
+
+Production commit `9a6958a` was confirmed Ready in Vercel and matched the live hashed entry asset. A normal browser reload retained navigation, rendered 24 saved eligible cards and exposed stable Load More. Confirmed and estimated timing labels and selected episode URLs were checked. The prior verified production deployment remains available for rollback.
+
+The current PHP RCE advisory does not match this Node.js/TypeScript and Rust application stack; no PHP source, Composer configuration or PHP runtime configuration was found in the repository. The npm advisory check on 2026-10-23 reported zero known vulnerabilities. This is not a security certification: cargo-audit was unavailable, and a full native/player/hosting security assessment was deferred at the user's request.
+
+Final installer: **0.1.13**, 42,509,295 bytes, executable version `0.1.13`, SHA-256 `832B3E50BA02561CC01B71787A21F89CCF3D2BC0874059C57AE09EB3D1580422`. Authenticode status is **NotSigned**. All staged resource hashes and NSIS inclusions matched, the release copy checksum matched, and verified **0.1.12** remains the immediate rollback. Independent installer extraction and clean install/upgrade/rollback were not performed.
+
+Release preparation completed by invoking the unchanged script in PowerShell 7 after the npm wrapper's Windows PowerShell process could not discover Get-FileHash. No checksum or resource check was bypassed.
