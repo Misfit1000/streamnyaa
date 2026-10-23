@@ -894,7 +894,7 @@ pub async fn execute(
     let provider = job.provider().to_string();
     if !matches!(
         provider.as_str(),
-        "nyaa" | "anilist" | "tenrai" | "tmdb" | "animeschedule" | "anidb"
+        "nyaa" | "anilist" | "tenrai" | "tmdb" | "animeschedule" | "anidb" | "releases"
     ) {
         return Err(DataError::new("desktop", "invalid"));
     }
@@ -1125,6 +1125,13 @@ mod tests {
         let next = slot(provider, Arc::new(AtomicU8::new(0))).await.unwrap();
         drop(next);
         lanes().lock().unwrap().remove(provider);
+    }
+    #[tokio::test]
+    async fn release_provider_admission_preserves_the_narrow_path_allowlist() {
+        for path in ["/anime/1","/recent?provider=tenrai","/recent?url=https://example.invalid"] {
+            let error=execute(Job::Metadata(MetadataApiRequest{provider:"releases".into(),path:Some(path.into()),body:None,ttl_seconds:Some(60)}),None,Some("foreground".into()),Some(2000)).await.unwrap_err();
+            assert_eq!(error.provider,"releases");assert_eq!(error.code,"invalid");
+        }
     }
     #[test]
     fn restricts_transport_destinations() {
