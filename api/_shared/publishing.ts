@@ -150,7 +150,7 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
     const modern=run.editorial_version===4;
     if(modern&&state.resumeDiscovery){
       delete state.briefs;delete state.newsChecked;delete state.newsAdded;delete state.guidesChecked;delete state.guidesAdded;delete state.activityChecked;delete state.resumeDiscovery;state.next=0;
-      if(state.discoveryV4)Object.assign(state.discoveryV4,{feedIndex:0,leadIndex:0,guideIndex:0,unavailable:[]});
+      if(state.discoveryV4)Object.assign(state.discoveryV4,{feedIndex:0,leadIndex:0,guideIndex:0,guideLinks:{},unavailable:[]});
     }
     const recent=await listPrimaryPublishedBlogPosts(modern?24:8);
     const resumeActivity=state.activityPending||state.stage==='Activity report discovery'&&Array.isArray(state.briefs)&&!state.briefs.length;
@@ -159,6 +159,9 @@ export async function runGeneration(id:string,deadline=Date.now()+240_000){
       if(run.kind==='weekly'){const brief=await rankingBrief(transport,'weekly-ranking',Date.parse(run.created_at),run.editorial_version||2);state.briefs=brief?[brief]:[];}
       else if(modern){
         state.discoveryV4 ||= {};
+        // Manual attempts can research a different bounded established-title
+        // sample; the saved page remains stable through retries/recovery.
+        if(run.origin==='manual'&&!state.discoveryV4.catalogPage)state.discoveryV4.catalogPage=1+parseInt(fingerprint(run.idempotency_key||run.id).slice(0,8),16)%30;
         state.briefs=[...await discoverNewsV4(transport,state.discoveryV4,async()=>{await save(run,token,'running',state);},recent)];
         state.newsAdded=state.briefs.length;
         state.newsChecked=(state.discoveryV4.leadIndex||0)>=Math.min(12,state.discoveryV4.leads?.length||0);

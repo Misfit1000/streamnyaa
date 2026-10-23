@@ -23,6 +23,7 @@ export type EvidenceDocument={url:string;text:string;links:string[];publishedAt?
 /** Date-published evidence only: modification/footer dates are not publication. */
 export function parseEvidenceDocument(html:string,url:string):EvidenceDocument{
   const $=load(html);
+  const title=$('title').first().text().replace(/\s+/g,' ').trim().slice(0,400);
   const dates:string[]=[];
   for(const selector of ['meta[property="article:published_time"]','meta[name="datePublished"]','meta[itemprop="datePublished"]','meta[name="pubdate"]']){
     const date=$(selector).attr('content');if(date)dates.push(date);
@@ -35,10 +36,11 @@ export function parseEvidenceDocument(html:string,url:string):EvidenceDocument{
   const time=$('article time[datetime],main time[datetime],time[itemprop="datePublished"]').first().attr('datetime');if(time)dates.push(time);
   $('script,style,nav,footer,header,aside').remove();
   const root=$('article').length?$('article').first():$('main').length?$('main').first():$('body');
-  const text=root.text().replace(/\s+/g,' ').trim().slice(0,18000);
+  const body=root.text().replace(/\s+/g,' ').trim().slice(0,18000);
   const links=root.find('a[href]').map((_i,node)=>{try{return new URL($(node).attr('href')!,url).toString();}catch{return'';}}).get().filter(Boolean);
   const date=dates.find(value=>Number.isFinite(Date.parse(value)));
-  if(text.length<180)throw Error('Evidence text is insufficient.');
+  if(body.length<180)throw Error('Evidence text is insufficient.');
+  const text=(title?`Document title: ${title}\n${body}`:body).slice(0,18000);
   return{url,text,links,publishedAt:date?new Date(date).toISOString():undefined};
 }
 /** Explicit request budget, provider pacing and deadlines; never a public load test. */

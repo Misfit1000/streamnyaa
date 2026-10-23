@@ -28,6 +28,14 @@ test('publication dates include JSON-LD and ignore modification and footer times
   assert.equal(parsed.publishedAt,recentDate);assert.ok(!parsed.text.includes('Footer'));
   assert.equal(parseEvidenceDocument(`<meta property="article:modified_time" content="${recentDate}"><article>${body}</article><footer><time datetime="${recentDate}">Footer</time></footer>`,'https://official.test/story').publishedAt,undefined);
 });
+test('official page titles retain identity when the body uses an image logo, without making an empty page sufficient',()=>{
+  const doc=parseEvidenceDocument(`<title>Official anime: Fixture Horizon</title><header><img alt="Fixture Horizon"></header><main>${official().text.replaceAll('Fixture Horizon','The animated project')}</main>`,official().url);
+  assert.ok(guideBriefV4(item(),{...doc,retrievedAt:recentDate},recentDate));
+  assert.throws(()=>parseEvidenceDocument('<title>Fixture Horizon</title><main>Only navigation.</main>',official().url),/insufficient/);
+  const sequel={...item(),title:{english:'Fixture Horizon Season 2'}};
+  assert.equal(guideBriefV4(sequel,{...doc,retrievedAt:recentDate},recentDate),undefined);
+  assert.ok(guideBriefV4({...item(),title:{english:'Fixture: Horizon'}},{...doc,retrievedAt:recentDate},recentDate));
+});
 test('a dated linked report can corroborate an undated official statement without inventing its date',()=>{
   const doc=official(),report={url:'https://www.animenewsnetwork.com/news/fixture',publishedAt:recentDate,retrievedAt:recentDate,text:'The official site confirms Fixture Horizon as an animated film.',links:[doc.url]};
   const brief=verifiedNewsBriefV4(item(),{title:'Fixture Horizon confirms its movie format',url:report.url,date:recentDate},report,doc,false,now)!;
@@ -106,6 +114,12 @@ test('guide discovery can continue past already reserved packs of candidates wit
   const media=Array.from({length:5},(_,i)=>item(940030+i)),state:EditorialDiscoveryV4={media,catalogRetrievedAt:recentDate};let reads=0;
   class Transport extends EditorialTransport{async document(url:string){reads++;return official(Number(new URL(url).pathname.slice(1)));}}
   await fixture(async()=>{const t=new Transport();assert.equal((await discoverGuidesV4(t,state,async()=>{},[],now,3)).length,3);assert.equal(state.guideIndex,3);assert.equal((await discoverGuidesV4(t,state,async()=>{},[],now,6)).length,5);assert.equal(state.guideIndex,5);assert.equal(reads,5);});
+});
+test('guide research upgrades known HTTP official links to HTTPS and checkpoints alternate-site progress',async()=>{
+  const media={...item(940050),externalLinks:[{site:'Official Site',url:'http://official.test/unrelated'},{site:'Official Site',url:'https://official.test/940050'}]},state:EditorialDiscoveryV4={media:[media],catalogRetrievedAt:recentDate},urls:string[]=[];
+  let interrupted=true;
+  class Transport extends EditorialTransport{async document(url:string){urls.push(url);if(url.endsWith('/unrelated'))return{...official(media.id),url,text:'Unrelated corporate information. '.repeat(20)};if(interrupted)throw Error('Publishing request/time budget reached; retry this run.');return official(media.id);}}
+  await fixture(async()=>{const t=new Transport();await assert.rejects(discoverGuidesV4(t,state,async()=>{},[],now),/budget/);assert.equal(state.guideLinks?.[media.id],1);assert.equal(state.guideIndex,0);interrupted=false;assert.equal((await discoverGuidesV4(t,state,async()=>{},[],now)).length,1);assert.deepEqual(urls,['https://official.test/unrelated','https://official.test/940050','https://official.test/940050']);state.guideIndex=0;assert.equal((await discoverGuidesV4(t,state,async()=>{},[],now)).length,1);assert.equal(urls.length,3);});
 });
 test('v4 migration is repeatable, pins new jobs only and preserves private drafts and publication mode',async()=>{
   const db=await PGlite.create();try{

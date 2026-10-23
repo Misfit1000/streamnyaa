@@ -8,11 +8,13 @@ const week=7*86400_000;
 const hostMatches=(host:string,base:string)=>host===base||host.endsWith(`.${base}`);
 const titleOf=(item:any)=>item.title?.english||item.title?.romaji||item.title?.native||'';
 const aliases=(item:any):string[]=>[...new Set<string>(Object.values(item.title||{}).filter((v):v is string=>typeof v==='string'&&v.trim().length>=3))];
-const containsSubject=(text:string,item:any)=>aliases(item).some(title=>text.normalize('NFKC').toLowerCase().includes(title.normalize('NFKC').toLowerCase()));
-const officialHosts=(item:any):string[]=>(item.externalLinks||[]).filter((link:any)=>/^official(?: site)?$/i.test(link.site||''))
-  .flatMap((link:any)=>{try{const url=new URL(link.url);return url.protocol==='https:'?[url.hostname]:[];}catch{return[];}});
+const comparableTitle=(text:string)=>text.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu,'');
+const containsSubject=(text:string,item:any)=>aliases(item).some(title=>Boolean(comparableTitle(title))&&comparableTitle(text).includes(comparableTitle(title)));
+const officialUrls=(item:any):string[]=>[...new Set<string>((item.externalLinks||[]).filter((link:any)=>/^official(?: site)?$/i.test(link.site||''))
+  .flatMap((link:any)=>{try{const url=new URL(link.url);if(url.protocol==='http:')url.protocol='https:';return url.protocol==='https:'?[url.toString()]:[];}catch{return[];}}))];
+const officialHosts=(item:any):string[]=>officialUrls(item).map(url=>new URL(url).hostname);
 const dateIsRecent=(value:string|undefined,now=Date.now())=>Boolean(value&&Number.isFinite(Date.parse(value))&&Date.parse(value)>=now-week&&Date.parse(value)<=now+60_000);
-export type EditorialDiscoveryV4={media?:any[];catalogRetrievedAt?:string;feedIndex?:number;leads?:{item:any;news:any}[];leadIndex?:number;briefs?:EvidenceBrief[];guideIndex?:number;guides?:EvidenceBrief[];unavailable?:{provider:string;reason:string;retryAt?:number}[];rejections?:{url:string;reason:string}[]};
+export type EditorialDiscoveryV4={media?:any[];catalogPage?:number;catalogRetrievedAt?:string;feedIndex?:number;leads?:{item:any;news:any}[];leadIndex?:number;briefs?:EvidenceBrief[];guideIndex?:number;guideLinks?:Record<string,number>;guides?:EvidenceBrief[];unavailable?:{provider:string;reason:string;retryAt?:number}[];rejections?:{url:string;reason:string}[]};
 
 function noteFailure(state:EditorialDiscoveryV4,error:any,provider:string){
   if(![403,429].includes(error.status)&&!(error.status>=500)&&!['ENOTFOUND','EAI_AGAIN'].includes(error.code))return;
@@ -24,7 +26,7 @@ function reject(state:EditorialDiscoveryV4,url:string,reason:string){state.rejec
 /** Immutable provider timestamps, validated cached documents, existing host allowlists. */
 async function document(transport:EditorialTransport,url:string,allowed:string[],ttl=3600){
   const parsed=new URL(url);if(parsed.protocol!=='https:'||!allowed.some(host=>hostMatches(parsed.hostname,host)))throw Error('Unsupported evidence host.');
-  const key=`editorial:document:v4:${fingerprint(url+'|'+[...allowed].sort().join(','))}`;
+  const key=`editorial:document:v4-2:${fingerprint(url+'|'+[...allowed].sort().join(','))}`;
   const saved=await publicSnapshot<EvidenceDocument>(key,ttl,()=>transport.document(url,allowed),value=>{
     try{return typeof value?.text==='string'&&value.text.length>=180&&value.text.length<=18000&&Array.isArray(value.links)&&new URL(value.url).protocol==='https:'&&allowed.some(host=>hostMatches(new URL(value.url).hostname,host));}catch{return false;}
   });
@@ -33,7 +35,7 @@ async function document(transport:EditorialTransport,url:string,allowed:string[]
 }
 export async function editorialCatalogV4(transport:EditorialTransport,state:EditorialDiscoveryV4,checkpoint:()=>Promise<void>,now=Date.now()){
   if(state.media)return state.media;
-  const page=1+Math.floor(now/86400_000)%30;
+  const page=state.catalogPage&&state.catalogPage>=1&&state.catalogPage<=30?state.catalogPage:1+Math.floor(now/86400_000)%30;
   const fields='id idMal title{romaji english native} format status episodes genres startDate{year month day} endDate{year month day} coverImage{extraLarge large} studios(isMain:true){nodes{name}} externalLinks{url site} relations{edges{relationType node{id type format title{romaji english}}}}';
   const saved=await publicSnapshot<any>(`editorial:candidates:v4:${page}`,3600,()=>transport.graph(`query EditorialCandidates{active:Page(perPage:5){media(type:ANIME,status:RELEASING,sort:TRENDING_DESC,isAdult:false){${fields}}} upcoming:Page(perPage:5){media(type:ANIME,status:NOT_YET_RELEASED,sort:POPULARITY_DESC,isAdult:false){${fields}}} established:Page(page:${page},perPage:3){media(type:ANIME,status:FINISHED,sort:POPULARITY_DESC,isAdult:false){${fields}}}}`,{}),value=>['active','upcoming','established'].every(key=>Array.isArray(value?.data?.[key]?.media)&&value.data[key].media.every((m:any)=>Number.isSafeInteger(m?.id)&&titleOf(m))));
   if(saved.stale)throw saved.refreshError||Object.assign(Error('Editorial catalog could not refresh.'),{status:503,provider:'graphql.anilist.co'});
@@ -114,9 +116,12 @@ export async function discoverGuidesV4(transport:EditorialTransport,state:Editor
   const media=await editorialCatalogV4(transport,state,checkpoint,now),guides=state.guides ||= [];
   for(state.guideIndex ||= 0;state.guideIndex<media.length&&guides.length<limit;){
     const item=media[state.guideIndex],key=fingerprint(`guide:release-and-format:${item.id}`);
-    if(!recent.some(post=>post.publication?.fingerprint===key))for(const link of (item.externalLinks||[]).filter((link:any)=>/^official(?: site)?$/i.test(link.site||'')).slice(0,1)){
-      try{const official=await document(transport,link.url,[...primaryDomains,...officialHosts(item)],21600),brief=guideBriefV4(item,official,state.catalogRetrievedAt!);if(brief)guides.push(brief);else reject(state,link.url,'Not enough title-specific official information for a useful guide.');}
-      catch(error){if(/budget/i.test(String((error as Error).message)))throw error;noteFailure(state,error,providerOf(link.url));}
+    const urls=officialUrls(item).slice(0,2),positions=state.guideLinks ||= {};
+    if(!recent.some(post=>post.publication?.fingerprint===key)&&!guides.some(brief=>brief.fingerprint===key))for(positions[item.id] ||= 0;positions[item.id]<urls.length;){
+      const url=urls[positions[item.id]];let found=false;
+      try{const official=await document(transport,url,[...primaryDomains,...officialHosts(item)],21600),brief=guideBriefV4(item,official,state.catalogRetrievedAt!);if(brief){guides.push(brief);found=true;}else reject(state,url,'Not enough title-specific official information for a useful guide.');}
+      catch(error){if(/budget/i.test(String((error as Error).message)))throw error;noteFailure(state,error,providerOf(url));reject(state,url,String((error as Error).message));}
+      positions[item.id]++;await checkpoint();if(found)break;
     }
     state.guideIndex++;await checkpoint();
   }
