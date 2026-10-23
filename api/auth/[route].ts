@@ -1,4 +1,4 @@
-import { fetchSupabaseUser, isAdminEmail } from '../_shared/adminAuth.js';
+import { fetchSupabaseUser, isAdminUser } from '../_shared/adminAuth.js';
 import { hasOnlyNativeRecoveryQueryParameters, nativeRecoveryRelayHtml, parseNativeRecoveryPlatform } from '../_shared/nativeAuthRelay.js';
 
 const APP_CALLBACK = 'streamnyaa://auth';
@@ -42,7 +42,7 @@ async function currentUser(req: any, res: any) {
     const user = await fetchSupabaseUser(token);
     if (!user?.email) return res.status(401).json({ error: 'Invalid session' });
     let isAdmin = false;
-    try { isAdmin = await isAdminEmail(user.email); } catch (error) { console.error('Admin lookup failed', error); }
+    try { isAdmin = await isAdminUser(user); } catch (error) { console.error('Admin lookup failed', error); }
     return res.status(200).json({
       user: {
         id: user.id,

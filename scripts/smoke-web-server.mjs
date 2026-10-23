@@ -60,6 +60,7 @@ try {
   for (const route of routes) {
     const response = await fetch(origin + route, { redirect: 'manual' });
     const body = await response.text();
+    if (response.headers.get('x-content-type-options') !== 'nosniff' || response.headers.get('x-frame-options') !== 'DENY') throw Error(`Missing security headers for ${route}`);
     if (response.status !== 200 || !body.includes('id="root"')) {
       throw new Error(`Route smoke test failed for ${route}: HTTP ${response.status}`);
     }

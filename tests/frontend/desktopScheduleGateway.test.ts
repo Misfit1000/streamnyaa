@@ -41,7 +41,7 @@ describe('authenticated Calendar metadata gateway', () => {
     const { default: handler } = await import('../../api/stream-sources');
     for (const path of ['/timetables/all', '/oauth2/token', '/user']) {
       const result = recorder(); await handler({ method: 'GET', query: { provider: 'animeschedule', path } }, result.response);
-      expect(result.state.status).toBe(500);
+      expect(result.state.status).toBe(path === '/timetables/all' ? 500 : 400);
     }
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -49,6 +49,6 @@ describe('authenticated Calendar metadata gateway', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status })));
     const { default: handler } = await import('../../api/stream-sources');
     const result = recorder(); await handler({ method: 'GET', query: { provider: 'animeschedule', path: '/timetables/dub' } }, result.response);
-    expect(result.state.status).toBe(500); expect(result.state.body.error).toMatch(/HTTP 401|empty|invalid JSON/);
+    expect(result.state.status).toBe(status === 401 ? 401 : 502); expect(result.state.body.error).toMatch(/HTTP 401|empty|invalid JSON/);
   });
 });

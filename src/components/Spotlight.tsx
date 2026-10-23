@@ -30,11 +30,17 @@ export default function Spotlight({ animeList, loading = false, error = false, r
   const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
-    if (!animeList?.length) return undefined;
-    const timer = window.setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % animeList.length);
-    }, 5200);
-    return () => window.clearInterval(timer);
+    if (animeList?.length < 2) return undefined;
+    let timer: number | undefined;
+    const update = () => {
+      window.clearInterval(timer);
+      timer = undefined;
+      if (document.visibilityState === 'hidden') return;
+      timer = window.setInterval(() => setCurrentIndex(prev => (prev + 1) % animeList.length), 5200);
+    };
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', update); };
   }, [animeList]);
 
   if (!animeList?.length) {
@@ -72,6 +78,8 @@ export default function Spotlight({ animeList, loading = false, error = false, r
                 backgroundColor: currentAnime.color || 'transparent',
               }}
               referrerPolicy="no-referrer"
+              decoding="async"
+              fetchPriority={currentIndex === 0 ? 'high' : 'auto'}
             />
           ) : null}
         </motion.div>

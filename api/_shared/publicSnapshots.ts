@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { supabaseRest } from './adminAuth.js';
+import { RequestCache } from './requestReuse.js';
 
 export type SharedSnapshot<T> = { value: T; fetchedAt: number; stale: boolean; persistenceError?: string; refreshError?: unknown };
-const memory = new Map<string, SharedSnapshot<unknown>>();
+const memory = new RequestCache({ snapshots: 100 }, 16 * 1024 * 1024);
+const remember = (key: string, value: SharedSnapshot<unknown>) => memory.set('snapshots', key, value, Date.now() + 60 * 86_400_000);
 const flights = new Map<string, Promise<SharedSnapshot<unknown>>>();
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function stored<T>(key: string): Promise<SharedSnapshot<T> | undefined> {
@@ -13,7 +15,7 @@ export async function writePublicSnapshot<T>(key: string, value: T, fetchedAt: n
   await supabaseRest('rpc/put_site_snapshot', { method: 'POST', signal: AbortSignal.timeout(4000), body: JSON.stringify({ p_key: key, p_payload: value, p_fetched_at: new Date(fetchedAt).toISOString(), p_ttl: ttlSeconds }) });
 }
 export async function readPublicSnapshot<T>(key: string): Promise<SharedSnapshot<T> | undefined> {
-  try { return await stored<T>(key); } catch { return memory.get(key) as SharedSnapshot<T> | undefined; }
+  try { return await stored<T>(key); } catch { return memory.get<SharedSnapshot<T>>('snapshots', key); }
 }
 export async function readPublicSnapshots<T>(keys:string[]):Promise<Map<string,SharedSnapshot<T>>>{
   const found=new Map<string,SharedSnapshot<T>>();
@@ -36,16 +38,20 @@ export async function readPublicSnapshots<T>(keys:string[]):Promise<Map<string,S
 }
 /** Provider identity is the key; caller freshness can only shorten reuse. */
 export async function publicSnapshot<T>(key: string, ttlSeconds: number, load: () => Promise<T>, valid: (value: T) => boolean = () => true): Promise<SharedSnapshot<T>> {
-  const cached = memory.get(key) as SharedSnapshot<T> | undefined;
+  const cached = memory.get<SharedSnapshot<T>>('snapshots', key);
   const saved = cached && valid(cached.value) ? cached : undefined;
   if (saved && saved.fetchedAt + ttlSeconds * 1000 > Date.now()) return saved;
   const active = flights.get(key); if (active) return active as Promise<SharedSnapshot<T>>;
+  if (flights.size >= 32) {
+    if (saved) return { ...saved, stale: true };
+    throw Object.assign(Error('Shared metadata server is busy.'), { status: 503, retryAt: Date.now() + 5000 });
+  }
   const job = (async () => {
     let prior = saved, persistenceError: string | undefined, token: string | undefined;
     try {
       const persisted = await stored<T>(key);
       if (persisted && valid(persisted.value)) prior = persisted;
-      if (prior && prior.fetchedAt + ttlSeconds * 1000 > Date.now()) { memory.set(key, prior); return prior; }
+      if (prior && prior.fetchedAt + ttlSeconds * 1000 > Date.now()) { remember(key, prior); return prior; }
       token = randomUUID();
       const claimed = await supabaseRest('rpc/claim_site_snapshot', { method: 'POST', signal: AbortSignal.timeout(4000), body: JSON.stringify({ p_key: key, p_token: token, p_seconds: 30 }) });
       if (!claimed) {
@@ -62,7 +68,7 @@ export async function publicSnapshot<T>(key: string, ttlSeconds: number, load: (
       if (!valid(value)) throw Error('The provider response was incomplete.');
       try { await writePublicSnapshot(key, value, fetchedAt, ttlSeconds); } catch { persistenceError = 'Shared snapshot storage is unavailable.'; }
       const result = { value, fetchedAt, stale: false, ...(persistenceError ? { persistenceError } : {}) };
-      memory.set(key, result); while (memory.size > 100) memory.delete(memory.keys().next().value!);
+      remember(key, result);
       return result;
     } catch (error) {
       if (prior && Date.now() - prior.fetchedAt < 60 * 86_400_000) return { ...prior, stale: true, refreshError: error, ...(persistenceError ? { persistenceError } : {}) };

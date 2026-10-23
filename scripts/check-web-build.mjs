@@ -24,6 +24,11 @@ for (const asset of referencedAssets) {
   }
 }
 const manifest = JSON.parse(readFileSync(path.join(distDir, '.vite/manifest.json'), 'utf8'));
+for (const key of Object.keys(manifest)) {
+  if (/src\/pages\/Desktop(?:Home|Watch|Schedule|Library|History|Profile|Explore)\.tsx$/.test(key)) {
+    throw Error(`Native route leaked into the web build: ${key}`);
+  }
+}
 for (const [key, chunk] of Object.entries(manifest)) {
   if (!existsSync(path.join(distDir, chunk.file))) throw Error(`Missing route chunk for ${key}`);
   for (const dependency of [...(chunk.imports || []), ...(chunk.dynamicImports || [])]) {

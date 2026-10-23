@@ -23,6 +23,7 @@ export async function fetchSupabaseUser(token) {
   if (!url || !key) throw new Error('Authentication is not configured');
 
   const response = await fetch(`${url}/auth/v1/user`, {
+    signal: AbortSignal.timeout(8000),
     headers: {
       apikey: key,
       Authorization: `Bearer ${token}`,
@@ -41,6 +42,7 @@ export async function supabaseRest(pathname, options = {}) {
 
   const response = await fetch(`${url}/rest/v1/${pathname}`, {
     ...options,
+    signal: options.signal || AbortSignal.timeout(10_000),
     headers: {
       apikey: key,
       Authorization: `Bearer ${key}`,
@@ -84,6 +86,11 @@ export async function isAdminEmail(email) {
   return admins.some((admin) => String(admin.email || '').toLowerCase() === cleanEmail);
 }
 
+export async function isAdminUser(user) {
+  // Require provider-verified ownership, never a user-editable metadata flag.
+  return Boolean(user?.email && Number.isFinite(Date.parse(user.email_confirmed_at))) && isAdminEmail(user.email);
+}
+
 export async function requireAdmin(req) {
   const header = String(req.headers.authorization || '');
   const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : '';
@@ -91,6 +98,6 @@ export async function requireAdmin(req) {
 
   const user = await fetchSupabaseUser(token);
   if (!user?.email) return { error: 'Invalid session', status: 401 };
-  if (!(await isAdminEmail(user.email))) return { error: 'Admin access required', status: 403, user };
+  if (!(await isAdminUser(user))) return { error: 'Admin access required', status: 403, user };
   return { user, token };
 }

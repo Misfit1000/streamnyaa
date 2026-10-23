@@ -2,6 +2,7 @@ import { calendarIdentityCoverage, isCalendarRecord, normalizeScheduleTrack, rec
 import { publicSnapshot, readPublicSnapshot, readPublicSnapshots } from './publicSnapshots.js';
 import { supabaseRest } from './adminAuth.js';
 import type { RequestUsage } from './requestReuse.js';
+import { boundedJson } from './boundedHttp.js';
 
 function isoWeek(ms: number) {
   const date = new Date(ms); date.setUTCHours(0,0,0,0); date.setUTCDate(date.getUTCDate()+4-(date.getUTCDay()||7));
@@ -14,7 +15,7 @@ async function json(url: string, init: RequestInit, usage: RequestUsage, deadlin
   const response = await usage.fetch(url,{...init,signal:AbortSignal.timeout(Math.max(1,Math.min(5000,deadline-Date.now())))});
   if (!response.ok) { const header=response.headers.get('retry-after')||'',numeric=Number(header),retryAt=/^\d+$/.test(header)?Date.now()+numeric*1000:Date.parse(header)||0;
     throw Object.assign(new Error(`Calendar provider temporarily unavailable (${response.status}).`), {status:response.status,retryAt:Math.max(Date.now()+30000,retryAt)}); }
-  const value = await response.json(); if (value?.errors?.length) throw Error('Calendar provider could not verify the schedule.'); return value;
+  const value = await boundedJson(response); if (value?.errors?.length) throw Error('Calendar provider could not verify the schedule.'); return value;
 }
 export async function publicCalendar(req: any, usage: RequestUsage): Promise<PublicCalendar> {
   const deadline=Date.now()+18_000;

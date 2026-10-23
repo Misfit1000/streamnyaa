@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
-import { useAccountSync } from '../context/AccountSyncContext';
+import { useAccountSync } from '../context/WebAccountSyncContext';
 import {
   fetchAccountDownloadHistory,
   getDownloadHistory,

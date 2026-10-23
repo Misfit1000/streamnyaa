@@ -2,8 +2,9 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
+const firstPort=Number(process.env.WEB_AUDIT_PORT)||4173;
 const instances = Array.from({length:8},(_,index)=>[
- ['baseline',4173+index*2,path.resolve('.validation/web-audit-baseline/dist')],['candidate',4174+index*2,path.resolve('dist')]
+ ['baseline',firstPort+index*2,path.resolve(process.env.WEB_AUDIT_BASELINE || '.validation/web-audit-baseline/dist')],['candidate',firstPort+1+index*2,path.resolve(process.env.WEB_AUDIT_CANDIDATE || 'dist')]
 ]).flat();
 const now=Date.now(),today=new Date().setHours(0,0,0,0);
 // Local-only DOM evidence: CUA's read-only scope intentionally excludes browser
@@ -30,6 +31,11 @@ for(const [name,port,root] of instances){
    if(url.pathname==='/api/auth/config')return send({supabaseUrl:'https://local-fixture.invalid',publishableKey:'local-only-fixture'});
    if(url.pathname==='/api/nyaa'&&url.searchParams.get('q')?.includes('fixture-outage')){res.setHeader('Retry-After','90');return send({error:'Controlled source outage'},503);}
    if(url.pathname==='/api/stream-sources'){
+    if(url.searchParams.get('provider')==='releases'){
+     const before=Number(url.searchParams.get('before'))||Math.floor(now/1000),page=1,track=url.searchParams.get('track')||'sub';
+     const data=Array.from({length:12},(_,i)=>({canonicalId:`anilist:${i+1}`,anilist_id:i+1,mal_id:i+101,title:`Fixture Anime ${i+1}`,image:origin+'/fixture-poster.svg',images:{jpg:{large_image_url:origin+'/fixture-poster.svg'}},airingEpisode:4,releaseEpisode:4,releaseAt:(before-300-i*60)*1000,airingAt:before-300-i*60,releaseTrack:track,scheduleStatus:'scheduled',scheduleFetchedAt:now,scheduleProvider:'anilist',scheduleId:`anilist:${i+1}:episode-4:${track}`,timingBasis:track==='dub'?'confirmed-dub':'confirmed-sub',releasePolicyVersion:1}));
+     return send({version:1,before,track,page,data,complete:true,stale:false,fetchedAt:now});
+    }
     if(url.searchParams.get('provider')==='calendar'){
      const data=[];for(let id=1;id<=10;id++)for(const [index,track] of ['original','sub','dub'].entries())data.push({canonicalId:`anilist:${id}`,anilist_id:id,mal_id:id+100,title:`Fixture Anime ${id}`,image:origin+'/fixture-poster.svg',images:{jpg:{large_image_url:origin+'/fixture-poster.svg'}},airingEpisode:track==='dub'?1:4,airingAt:(today+(18*60+id*5+index*15)*60000)/1000,releaseTrack:track,scheduleStatus:'scheduled',scheduleFetchedAt:now,scheduleProvider:'animeschedule',sourceRoute:`fixture-${id}`,scheduleId:`anilist:${id}:episode-${track==='dub'?1:4}:${track}`});
      data.push({...data[0],canonicalId:'animeschedule:fixture-1',anilist_id:undefined,mal_id:undefined,scheduleId:'animeschedule:fixture-1:episode-4:original'});
@@ -52,7 +58,7 @@ for(const [name,port,root] of instances){
   try{
    let file=path.resolve(root,'.'+decodeURIComponent(url.pathname));if(!file.startsWith(root+path.sep)&&file!==root)throw Error('Invalid path');
    try{if(!(await stat(file)).isFile())file=path.join(root,'index.html');}catch{file=path.join(root,'index.html');}
-   let payload=cached.get(file);if(!payload){let raw=await readFile(file);const html=file.endsWith('.html');if(html){raw=Buffer.from(raw.toString().replace(/<script async src="https:\/\/www.googletagmanager[^>]*><\/script>/g,''));}
+   let payload=file.endsWith('.html')?undefined:cached.get(file);if(!payload){let raw=await readFile(file);const html=file.endsWith('.html');if(html){raw=Buffer.from(raw.toString().replace(/<script async src="https:\/\/www.googletagmanager[^>]*><\/script>/g,''));}
     if(html)raw=Buffer.from(raw.toString().replace('</head>',instrumentation+'</head>'));
     payload={body:gzipSync(raw),type:html?'text/html; charset=utf-8':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'image/png'};cached.set(file,payload);}
    res.setHeader('Content-Type',payload.type);res.setHeader('Content-Encoding','gzip');res.setHeader('Cache-Control',file.endsWith('.html')?'no-cache':'public,max-age=3600');res.setHeader('Timing-Allow-Origin','*');entry.bytes=payload.body.length;res.end(payload.body);

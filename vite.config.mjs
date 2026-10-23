@@ -27,7 +27,12 @@ export default defineConfig({
       ...(isDesktopTarget ? [{
         find: seoComponentPath,
         replacement: desktopSeoComponentPath,
-      }] : []),
+      }] : [{
+        // A shared card's native hover helper otherwise pulls the complete
+        // desktop page graph into the website's shared startup chunks.
+        find: /^.*\/desktopRoutePreload(?:\.ts)?$/,
+        replacement: path.resolve(__dirname, 'src/lib/webDesktopRoutePreload.ts'),
+      }]),
     ],
   },
   server: {

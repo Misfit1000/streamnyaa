@@ -51,6 +51,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.22.1",
     "fast-xml-parser": "^5.7.2",
+    "graphql": "^16.14.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.38.0",
     "react": "^19.0.0",

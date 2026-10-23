@@ -1,98 +1,29 @@
 import express from "express";
 import metadataHandler from "./api/stream-sources";
+import sourceHandler from "./api/nyaa";
 import path from "path";
-import { XMLParser } from "fast-xml-parser";
 import blogHandler, { getCachedBlogPost } from "./api/blog";
 import { getBlogPost } from "./src/api/blogShared";
 
-type SourceCacheEntry = {
-  data: any[];
-  fetchedAt: number;
-  refreshPromise?: Promise<any[]>;
-};
-
-const sourceCache = new Map<string, SourceCacheEntry>();
-const SOURCE_FRESH_MS = 1000 * 60 * 2;
-const SOURCE_STALE_MS = 1000 * 60 * 10;
-
-async function fetchSourceResults(url: string) {
-  const response = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0' }
-  });
-  if (!response.ok) throw new Error(`Failed to fetch source results: ${response.status}`);
-
-  const xmlData = await response.text();
-  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
-  const result = parser.parse(xmlData);
-  const items = result.rss?.channel?.item || [];
-
-  return (Array.isArray(items) ? items : [items]).map((item: any) => ({
-    title: item.title, link: item.link, guid: item.guid, pubDate: item.pubDate,
-    seeders: item["nyaa:seeders"], leechers: item["nyaa:leechers"], downloads: item["nyaa:downloads"],
-    infoHash: item["nyaa:infoHash"], categoryId: item["nyaa:categoryId"], category: item["nyaa:category"],
-    size: item["nyaa:size"], comments: item["nyaa:comments"], trusted: item["nyaa:trusted"], remake: item["nyaa:remake"],
-  }));
-}
-
-function refreshCachedSource(cacheKey: string, cached: SourceCacheEntry) {
-  if (cached.refreshPromise) return;
-  cached.refreshPromise = fetchSourceResults(cacheKey)
-    .then((data) => {
-      sourceCache.set(cacheKey, { data, fetchedAt: Date.now() });
-      return data;
-    })
-    .catch(() => cached.data)
-    .finally(() => {
-      const latest = sourceCache.get(cacheKey);
-      if (latest) delete latest.refreshPromise;
-    });
-}
-
 async function startServer() {
   const app = express();
+  app.disable('x-powered-by');
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Content-Security-Policy', "base-uri 'none'; object-src 'none'; frame-ancestors 'none'");
+    res.setHeader('Referrer-Policy', /^\/(?:login|reset-password|admin|dashboard|api\/auth)(?:\/|$)/.test(req.path) ? 'no-referrer' : 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+    next();
+  });
   app.use(express.json({limit:'1mb'}));
   app.all('/api/stream-sources', (req,res)=>metadataHandler(req,res));
   const configuredPort = Number.parseInt(process.env.PORT || '3000', 10);
   const port = Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : 3000;
 
   // --- NYAA API ---
-  app.get("/api/nyaa", async (req, res) => {
-    try {
-      const { q, c, f, p } = req.query;
-      const url = new URL("https://nyaa.si/?page=rss");
-      if (q) url.searchParams.append("q", q as string);
-      if (c) url.searchParams.append("c", c as string);
-      if (f) url.searchParams.append("f", f as string);
-      if (p) url.searchParams.append("p", p as string);
-
-      const cacheKey = url.toString();
-      const cached = sourceCache.get(cacheKey);
-      const age = cached ? Date.now() - cached.fetchedAt : Number.POSITIVE_INFINITY;
-      res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=480");
-
-      if (cached && age < SOURCE_FRESH_MS) {
-        res.setHeader("X-Source-Cache", "HIT");
-        res.setHeader("X-Source-Fetched-At", String(cached.fetchedAt));
-        return res.json(cached.data);
-      }
-
-      if (cached && age < SOURCE_STALE_MS) {
-        refreshCachedSource(cacheKey, cached);
-        res.setHeader("X-Source-Cache", "STALE");
-        res.setHeader("X-Source-Fetched-At", String(cached.fetchedAt));
-        return res.json(cached.data);
-      }
-
-      const formattedItems = await fetchSourceResults(cacheKey);
-      const fetchedAt = Date.now();
-      sourceCache.set(cacheKey, { data: formattedItems, fetchedAt });
-      res.setHeader("X-Source-Cache", "MISS");
-      res.setHeader("X-Source-Fetched-At", String(fetchedAt));
-      res.json(formattedItems);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
+  // Use the same validated, bounded implementation as the deployed function.
+  app.get('/api/nyaa', (req, res) => sourceHandler(req, res));
 
   // --- BLOG API ---
   app.get("/api/blog", async (req, res) => {

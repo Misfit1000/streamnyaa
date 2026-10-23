@@ -2,6 +2,7 @@ import { XMLParser } from "fast-xml-parser";
 import { waitUntil } from '@vercel/functions';
 import { parseSourceEpisode } from '../src/lib/desktopSourceIdentity.js';
 import { RequestCache, RequestUsage, publicFreshness } from './_shared/requestReuse.js';
+import { readBoundedResponse } from './_shared/boundedHttp.js';
 
 type SourceItem = {
   title: string;
@@ -193,6 +194,7 @@ async function fetchRawFeed(url: URL, usage: RequestUsage): Promise<SourceCacheE
   if (cached) { usage.feedHits++; return cached; }
   const pending = feedFlights.get(key);
   if (pending) { usage.coalesced++; return pending; }
+  if (feedFlights.size >= 48) throw Object.assign(Error('Source server is busy. Please retry shortly.'), {statusCode:503,retryAfter:'5'});
   const flight = loadRawFeed(url, usage);
   feedFlights.set(key, flight);
   try {
@@ -208,6 +210,7 @@ async function loadRawFeed(url: URL, usage: RequestUsage): Promise<SourceCacheEn
   const fetchedAt = Date.now();
   const response = await usage.fetch(url.toString(), {
     signal: AbortSignal.timeout(8000),
+    redirect: 'error',
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36"
     }
@@ -217,7 +220,7 @@ async function loadRawFeed(url: URL, usage: RequestUsage): Promise<SourceCacheEn
     throw Object.assign(new Error(`Failed to fetch source results: ${response.status}`),{statusCode:response.status,retryAfter:response.headers.get('retry-after')});
   }
 
-  const xmlData = await response.text();
+  const xmlData = new TextDecoder().decode(await readBoundedResponse(response, 4 * 1024 * 1024));
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_"
@@ -393,6 +396,7 @@ async function fetchEnhancedResults(options: { query: string; category: string; 
 async function loadSource(cacheKey: string, loader: () => Promise<SourceResult>, usage: RequestUsage): Promise<SourceResult> {
   const pending = sourceFlights.get(cacheKey);
   if (pending) { usage.coalesced++; return pending; }
+  if (sourceFlights.size >= 16) throw Object.assign(Error('Source server is busy. Please retry shortly.'), {statusCode:503,retryAfter:'5'});
   const flight = loader(); sourceFlights.set(cacheKey, flight);
   try {
     const result = await flight;
@@ -414,6 +418,9 @@ export default async function handler(req: any, res: any) {
     const c = firstValue(req.query.c) || "1_2";
     const f = firstValue(req.query.f) || "0";
     const p = firstValue(req.query.p) || "1";
+    if (q.length > 512 || !/^\d{1,2}_\d{1,2}$/.test(c) || !/^[012]$/.test(f) || !/^\d{1,4}$/.test(p) || Number(p) < 1 || Number(p) > 1000) {
+      status = 400; return res.status(status).json({error:'Invalid source search parameters.'});
+    }
     const pages = Math.max(1, Math.min(Number(firstValue(req.query.pages) || 3) || 3, MAX_DEEP_PAGES));
     const deep = q ? firstValue(req.query.deep) !== "0" : false;
     const wide = firstValue(req.query.wide) === "1";
@@ -460,7 +467,8 @@ export default async function handler(req: any, res: any) {
     res.json(formattedItems);
   } catch (e: any) {
     console.error(e);
-    status = Number.isInteger(e.statusCode)&&e.statusCode>=400&&e.statusCode<=599?e.statusCode:500;
+    const errorStatus = e.statusCode || e.status;
+    status = Number.isInteger(errorStatus)&&errorStatus>=400&&errorStatus<=599?errorStatus:500;
     if(e.retryAfter)res.setHeader('Retry-After',e.retryAfter);
     res.status(status).json({ error: e.message });
   } finally {

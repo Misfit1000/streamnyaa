@@ -27,7 +27,8 @@ function AnimeGridSkeleton({ count = 10 }: { count?: number }) {
 }
 
 export default function Home() {
-  const { myList, nsfwMode } = useStore();
+  const myList = useStore(state => state.myList);
+  const nsfwMode = useStore(state => state.nsfwMode);
 
   const [recentlyViewed, setRecentlyViewed] = useState<RecentAnime[]>([]);
   const seasonalSection=useNearViewport();

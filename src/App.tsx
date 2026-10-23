@@ -5,7 +5,7 @@ import Layout from './components/Layout';
 import Home from './pages/Home';
 import ScrollToTop from './components/ScrollToTop';
 import { AuthProvider } from './context/AuthContext';
-import { AccountSyncProvider } from './context/AccountSyncContext';
+import { WebAccountSyncProvider as AccountSyncProvider } from './context/WebAccountSyncContext';
 import { createAppQueryClient } from './lib/queryClient';
 import { installDesktopAutoRecovery } from './lib/desktopAutoRecovery';
 

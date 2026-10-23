@@ -1,5 +1,7 @@
 import { MAL_METADATA_BASE_URL, supportedMalMetadataPath } from '../src/lib/malMetadataProvider.js';
-import { RequestUsage, publicFreshness } from './_shared/requestReuse.js';
+import { RequestCache, RequestUsage, publicFreshness } from './_shared/requestReuse.js';
+import { boundedJson, HttpInputError, readBoundedResponse, readJsonBody } from './_shared/boundedHttp.js';
+import { publicMetadataQuery, publicProviderPath, publicTmdbPath } from './_shared/publicMetadataQuery.js';
 import { publicCalendar } from './_shared/publicCalendar.js';
 import { recentReleases } from './_shared/recentReleases.js';
 const ANILIST_URL = 'https://graphql.anilist.co';
@@ -19,7 +21,7 @@ type CacheEntry = {
   value: unknown;
 };
 
-const metadataCache = new Map<string, CacheEntry>();
+const metadataCache = new RequestCache({ metadata: MAX_METADATA_CACHE_ENTRIES }, 16 * 1024 * 1024);
 const inFlightMetadataCache = new Map<string, Promise<CacheEntry>>();
 
 function ttlFromRequest(req: any) {
@@ -36,31 +38,6 @@ function sendCached(req: any, res: any, value: unknown, ttlSeconds: number, cach
   res.setHeader('X-StreamNyaa-Fetched-At', String(fetchedAt));
   usage.cache = cacheState;
   return res.status(200).json(value);
-}
-
-async function readBody(req: any) {
-  if (req.body && typeof req.body === 'object') return req.body;
-  if (typeof req.body === 'string' && req.body.trim()) return JSON.parse(req.body);
-
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  const text = Buffer.concat(chunks).toString('utf8');
-  return text.trim() ? JSON.parse(text) : {};
-}
-
-function safeJikanPath(value: unknown) {
-  const path = String(value || '').trim();
-  if (!path.startsWith('/') || path.includes('://') || path.includes('..')) return '';
-  return path;
-}
-
-function safeProviderPath(value: unknown) {
-  const path = String(value || '').trim();
-  if (!path.startsWith('/') || path.includes('://') || path.includes('..') || path.includes('\\')) return '';
-  if (!/^\/[a-z0-9/_?=&.,:%+\-[\]]*$/i.test(path)) return '';
-  return path;
 }
 
 function envValue(...names: string[]) {
@@ -86,7 +63,7 @@ function queryValue(req: any, key: string) {
 
 async function cachedJson(cacheKey: string, ttlSeconds: number, fetcher: () => Promise<unknown>, usage: RequestUsage) {
   const now = Date.now();
-  const cached = metadataCache.get(cacheKey);
+  const cached = metadataCache.get<CacheEntry>('metadata', cacheKey);
   if (cached && cached.savedAt + ttlSeconds * 1000 > now) return { value: cached.value, state: 'HIT', fetchedAt: cached.savedAt, ttlSeconds };
   const stale = cached && now - cached.savedAt <= STALE_TTL_MS ? cached : null;
   const inFlight = inFlightMetadataCache.get(cacheKey);
@@ -96,25 +73,20 @@ async function cachedJson(cacheKey: string, ttlSeconds: number, fetcher: () => P
       const entry = await inFlight;
       return { value: entry.value, state: 'COALESCED', fetchedAt: entry.savedAt, ttlSeconds };
     } catch (error) {
-      if (stale) return { value: stale.value, state: 'STALE', fetchedAt: stale.savedAt, ttlSeconds };
+      if (stale && !(error instanceof UpstreamMetadataError && [401, 403, 429].includes(error.status))) return { value: stale.value, state: 'STALE', fetchedAt: stale.savedAt, ttlSeconds };
       throw error;
     }
   }
 
-  const nextRequest = fetcher().then(value => ({ value, savedAt: now }));
+  if (inFlightMetadataCache.size >= 16) throw new UpstreamMetadataError('Metadata server is busy. Please retry shortly.', 503, '5');
+  const nextRequest = fetcher().then(value => ({ value, savedAt: Date.now() }));
   inFlightMetadataCache.set(cacheKey, nextRequest);
   try {
     const entry = await nextRequest;
-    metadataCache.set(cacheKey, entry);
-    if (metadataCache.size > MAX_METADATA_CACHE_ENTRIES) {
-      [...metadataCache.entries()]
-        .sort((left, right) => left[1].savedAt - right[1].savedAt)
-        .slice(0, metadataCache.size - MAX_METADATA_CACHE_ENTRIES)
-        .forEach(([key]) => metadataCache.delete(key));
-    }
+    metadataCache.set('metadata', cacheKey, entry, entry.savedAt + STALE_TTL_MS);
     return { value: entry.value, state: 'MISS', fetchedAt: entry.savedAt, ttlSeconds };
   } catch (error) {
-    if (stale) return { value: stale.value, state: 'STALE', fetchedAt: stale.savedAt, ttlSeconds };
+    if (stale && !(error instanceof UpstreamMetadataError && [401, 403, 429].includes(error.status))) return { value: stale.value, state: 'STALE', fetchedAt: stale.savedAt, ttlSeconds };
     throw error;
   } finally {
     if (inFlightMetadataCache.get(cacheKey) === nextRequest) {
@@ -124,8 +96,7 @@ async function cachedJson(cacheKey: string, ttlSeconds: number, fetcher: () => P
 }
 
 async function fetchAniList(req: any, ttlSeconds: number, usage: RequestUsage) {
-  const body = await readBody(req);
-  if (!body?.query || typeof body.query !== 'string') throw new UpstreamMetadataError('AniList query is required.', 400);
+  const body = publicMetadataQuery(await readJsonBody(req));
 
   return cachedJson(`anilist:v2:${JSON.stringify(body)}`, ttlSeconds, async () => {
     const response = await usage.fetch(ANILIST_URL, {
@@ -134,7 +105,7 @@ async function fetchAniList(req: any, ttlSeconds: number, usage: RequestUsage) {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(12_000),
     });
-    const data = await response.json().catch(() => null);
+    const data = await boundedJson(response).catch(error => { if (response.ok) throw error; return null; });
     if (!response.ok || data?.errors?.length) {
       throw new UpstreamMetadataError(data?.errors?.[0]?.message || `AniList returned ${response.status}`, response.ok ? 502 : response.status, response.headers.get('retry-after'));
     }
@@ -154,7 +125,7 @@ async function fetchJikan(req: any, ttlSeconds: number, usage: RequestUsage) {
       signal: AbortSignal.timeout(5000),
       headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa Metadata Cache/1.0' },
     });
-    const data = await response.json().catch(() => null);
+    const data = await boundedJson(response);
     if (!response.ok) {
       throw new UpstreamMetadataError(data?.message || `Metadata provider returned ${response.status}`, response.status, response.headers.get('Retry-After'));
     }
@@ -164,8 +135,7 @@ async function fetchJikan(req: any, ttlSeconds: number, usage: RequestUsage) {
 }
 
 async function fetchTmdb(req: any, ttlSeconds: number, usage: RequestUsage) {
-  const path = safeProviderPath(queryValue(req, 'path'));
-  if (!path) throw new Error('Valid TMDB path is required.');
+  const path = publicTmdbPath(queryValue(req, 'path'));
 
   const bearerToken = envValue('TMDB_BEARER_TOKEN', 'TMDB_READ_ACCESS_TOKEN');
   const apiKey = envValue('TMDB_API_KEY');
@@ -178,44 +148,42 @@ async function fetchTmdb(req: any, ttlSeconds: number, usage: RequestUsage) {
 
   return cachedJson(`tmdb:${path}`, ttlSeconds, async () => {
     const url = new URL(`${TMDB_URL}${path}`);
-    if (!bearerToken && apiKey && !url.searchParams.has('api_key')) {
-      url.searchParams.set('api_key', apiKey);
-    }
+    url.searchParams.delete('api_key');
+    if (!bearerToken && apiKey) url.searchParams.set('api_key', apiKey);
     const response = await usage.fetch(url, {
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
       headers: {
         Accept: 'application/json',
         ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
       },
     });
-    const data = await response.json();
+    const data = await boundedJson(response);
     if (!response.ok) {
-      throw new Error(data?.status_message || `TMDB returned ${response.status}`);
+      throw new UpstreamMetadataError(`TMDB returned ${response.status}`, response.status, response.headers.get('Retry-After'));
     }
     return data;
   }, usage);
 }
 
 async function fetchAnimeSchedule(req: any, ttlSeconds: number, usage: RequestUsage) {
-  const path = safeProviderPath(queryValue(req, 'path'));
-  if (!path || !/^\/(?:anime(?:\/[a-z0-9-]+)?|timetables\/(?:all|raw|sub|dub))(?:\?|$)/i.test(path)) throw new Error('Valid public AnimeSchedule metadata path is required.');
+  const path = publicProviderPath(queryValue(req, 'path'));
+  if (!/^\/(?:anime(?:\/[a-z0-9-]+)?|timetables\/(?:all|raw|sub|dub))(?:\?|$)/i.test(path)) throw new HttpInputError('Valid public AnimeSchedule metadata path is required.', 400);
 
   return cachedJson(`animeschedule:${path}`, ttlSeconds, async () => {
     const token = envValue('ANIMESCHEDULE_TOKEN', 'ANIMESCHEDULE_API_TOKEN');
     if (!token) throw new Error('AnimeSchedule application token is not configured on the metadata server.');
     const response = await usage.fetch(`${ANIME_SCHEDULE_URL}${path}`, {
       signal: AbortSignal.timeout(15000),
+      redirect: 'error',
       headers: {
         Accept: 'application/json',
         'User-Agent': 'StreamNyaa Metadata Cache/1.0',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
     });
-    if (!response.ok) throw new Error(`AnimeSchedule returned HTTP ${response.status}.`);
-    const text = await response.text();
-    if (!text.trim()) throw new Error('AnimeSchedule returned an empty response.');
-    let data: unknown;
-    try { data = JSON.parse(text); } catch { throw new Error('AnimeSchedule returned invalid JSON.'); }
-    return data;
+    if (!response.ok) throw new UpstreamMetadataError(`AnimeSchedule returned HTTP ${response.status}.`, response.status, response.headers.get('Retry-After'));
+    return boundedJson(response);
   }, usage);
 }
 
@@ -280,9 +248,11 @@ async function fetchAniDb(req: any, ttlSeconds: number, usage: RequestUsage) {
     url.searchParams.set('aid', String(aid));
 
     const response = await usage.fetch(url, {
+      signal: AbortSignal.timeout(10_000),
+      redirect: 'error',
       headers: { Accept: 'application/xml,text/xml,*/*', 'User-Agent': 'StreamNyaa Metadata Cache/1.0' },
     });
-    const xml = await response.text();
+    const xml = new TextDecoder().decode(await readBoundedResponse(response, 4 * 1024 * 1024));
     if (!response.ok) {
       throw new Error(`AniDB returned ${response.status}`);
     }
