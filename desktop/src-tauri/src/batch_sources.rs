@@ -5,7 +5,7 @@ use std::sync::Arc;
 const VERSION: u32 = 1;
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 // rqbit reports hexadecimal BTIHs even when the magnet used base32.
-fn canonical_hash(value: &str) -> Option<String> {
+pub(super) fn canonical_hash(value: &str) -> Option<String> {
     let normalized = normalize_info_hash(value)?;
     if normalized.len() == 40 {
         return Some(normalized);
@@ -78,7 +78,7 @@ pub struct Resolution {
     pub selection: Option<Selection>,
 }
 
-fn valid(m: &Manifest) -> bool {
+pub(super) fn valid(m: &Manifest) -> bool {
     m.version == VERSION
         && normalize_info_hash(&m.info_hash).is_some()
         && !m.files.is_empty()
@@ -106,7 +106,7 @@ pub fn manifest_id(m: &Manifest) -> String {
     }
     format!("v{VERSION}-{:016x}", hash.finish())
 }
-fn video(file: &File) -> bool {
+pub(super) fn video(file: &File) -> bool {
     matches!(
         file.name
             .rsplit('.')
@@ -117,7 +117,8 @@ fn video(file: &File) -> bool {
         "mkv" | "mp4" | "webm" | "avi" | "m2ts" | "mov"
     )
 }
-fn extra(name: &str) -> bool {
+pub(super) fn extra(name: &str) -> bool { extra_for(name,"TV") }
+pub(super) fn extra_for(name:&str,format:&str)->bool {
     name.to_ascii_lowercase()
         .split(|c: char| !c.is_ascii_alphanumeric())
         .any(|w| {
@@ -134,10 +135,8 @@ fn extra(name: &str) -> bool {
                 "opening",
                 "ending",
                 "pv",
-                "specials",
-                "ova",
             ]
-            .contains(&w)
+            .contains(&w) || w=="ova"&&format!="OVA" || w=="specials"&&format!="SPECIAL"
                 || w.strip_prefix("ncop")
                     .or_else(|| w.strip_prefix("nced"))
                     .is_some_and(|s| s.chars().all(|c| c.is_ascii_digit()))
@@ -189,7 +188,7 @@ fn multi_episode(name: &str) -> bool {
     false
 }
 fn compatible(file: &File, r: &Request, pack_exact: bool) -> bool {
-    if !video(file) || extra(&file.name) {
+    if !video(file) || extra_for(&file.name,&r.identity.format) {
         return false;
     }
     if source_identity::season_marker(&file.name)
@@ -334,7 +333,7 @@ fn remember(m: &Manifest) {
         }
     }
 }
-fn read_cache(hash: &str) -> Option<Manifest> {
+pub(super) fn read_cache(hash: &str) -> Option<Manifest> {
     if let Ok(cache) = memory().lock() {
         if let Some((m, _)) = cache
             .iter()
@@ -355,7 +354,7 @@ fn read_cache(hash: &str) -> Option<Manifest> {
         None
     }
 }
-fn save_cache(m: &Manifest) {
+pub(super) fn save_cache(m: &Manifest) {
     if !valid(m) {
         return;
     }
@@ -1002,11 +1001,31 @@ mod tests {
             "native-batch-fixture-2".into(),
         ))
         .expect("Native metadata command");
+        println!("Native fixture inspected: state={} files={}",result.state,result.files.len());
         assert_eq!(result.state, "matched");
         assert_eq!(result.available_episodes, (1..=10).collect::<Vec<_>>());
         assert_eq!(result.selection.as_ref().unwrap().file_index, 1);
         let playback:PlaybackRequest=serde_json::from_value(serde_json::json!({"magnet":magnet,"title":r.title,"anime_title":"Fixture Anime","episode":"2","source_identity":r.identity,"batch_selection":result.selection})).unwrap();
         validate(&playback).unwrap();
+        if env::var("STREAMNYAA_NATIVE_FIXTURE_PORT").is_ok(){
+            let mut current=playback.clone();
+            current.settings=Some(DesktopSettings{torrent_engine_path:env::var("STREAMNYAA_NATIVE_FIXTURE_ENGINE").ok(),player_path:env::var("STREAMNYAA_NATIVE_FIXTURE_PLAYER").ok(),mpv_path:None,cache_dir:env::var("STREAMNYAA_NATIVE_FIXTURE_CACHE").ok()});
+            println!("Native fixture starting actual launch");
+            let first=tauri::async_runtime::block_on(play_local_torrent(current.clone())).unwrap();println!("Native fixture first launch returned: {first}");assert_eq!(first["ok"],true,"{first}");
+            let ipc=manager().lock().unwrap().player_ipc.clone().unwrap();
+            let mut advanced=false;
+            for _ in 0..40 {if get_player_property_f64(&ipc,"time-pos").is_some_and(|n|n>0.15){advanced=true;break;}thread::sleep(Duration::from_millis(100));}
+            assert!(advanced,"Native launch must advance actual decoded video.");
+            assert!(get_player_property_string(&ipc,"path").unwrap().contains("/stream/1"));
+            let mut next=r.clone();next.episode=3;let resolution=resolve(&read_cache(&result.info_hash).unwrap(),&next);
+            current.episode="3".into();current.batch_selection=resolution.selection;current.resume_seconds=Some(0.5);
+            let second=tauri::async_runtime::block_on(play_local_torrent(current)).unwrap();assert_eq!(second["ok"],true,"{second}");assert_eq!(first["torrent_id"],second["torrent_id"]);
+            for _ in 0..30 {if get_player_property_string(&ipc,"path").is_some_and(|p|p.contains("/stream/2"))&&get_player_property_f64(&ipc,"time-pos").is_some_and(|n|n>=0.5){break;}thread::sleep(Duration::from_millis(100));}
+            assert!(get_player_property_string(&ipc,"path").unwrap().contains("/stream/2"));assert!(get_player_property_f64(&ipc,"time-pos").unwrap_or(0.0)>=0.5);
+            stop_active_session(false);
+            if let Ok(mut guard)=manager().lock(){if let Some(mut player)=guard.player.take(){let _=player.kill();let _=player.wait();}guard.player_ipc=None;}
+            println!("Native complete launch: decoded episode2=true next=episode3 resumed=true same_session=true manifest_paths=nested_unicode_plus_percent");
+        }
         let mut wrong = playback.clone();
         wrong.episode = "3".into();
         assert!(validate(&wrong).is_err());

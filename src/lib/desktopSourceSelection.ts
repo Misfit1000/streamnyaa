@@ -14,6 +14,11 @@ export function sourceAudioCompatible(title: string, audio: 'sub' | 'dub' | 'any
   const dub = /\b(?:dub(?:bed)?|english[ .-]?audio|eng[ .-]?dub)\b/i.test(title);
   return audio === 'dub' ? dual || dub : dual || !dub;
 }
+/** List visibility is based on identity; seed count and health do not prove an installment. */
+export function visibleSourcesForMode<T extends { title:string; matchTier:string; manualOnly?:boolean; batchCandidate?:boolean }>(sources:T[],mode:SourceMode,audio:'sub'|'dub'|'any') {
+  return sources.filter(source => sourceAudioCompatible(source.title,audio) && (mode==='broad'
+    || !source.manualOnly && (source.matchTier==='exact' || source.batchCandidate===true && source.matchTier==='likely')));
+}
 export function selectSourceMode<T extends { title: string; matchTier: string; playable: boolean; manualOnly?: boolean; batchCandidate?:boolean }>(
   sources: T[], mode: SourceMode, audio: 'sub' | 'dub' | 'any',
   score: (source: T) => number, failed: (source: T) => boolean,
@@ -21,13 +26,13 @@ export function selectSourceMode<T extends { title: string; matchTier: string; p
   return sources.filter(source => {
     if (source.matchTier === 'rejected' || !sourceAudioCompatible(source.title, audio)) return false;
     if (mode === 'broad') return true;
-    if(source.batchCandidate)return !failed(source);
+    if(source.batchCandidate && source.matchTier==='likely')return !source.manualOnly && !failed(source);
     if (source.manualOnly || !source.playable || source.matchTier !== 'exact' || failed(source)) return false;
     return score(source) >= (mode === 'strict' ? 72 : 42);
   });
 }
 
-/** Explicit source selection keeps seeded listings; confidence controls recommendations only. */
-export function visibleSeededSources<T extends {rawSeeders:number;matchTier:string;manualOnly?:boolean}>(sources:T[]):T[]{
-  return sources.filter(source=>source.rawSeeders>0).map(source=>source.matchTier==='rejected'?{...source,matchTier:'broad',manualOnly:true} as T:source);
+/** Retain seeded listings for Broad/manual review; narrower views apply identity filtering separately. */
+export function visibleSeededSources<T extends {rawSeeders:number;seedersKnown?:boolean;matchTier:string;manualOnly?:boolean}>(sources:T[]):T[]{
+  return sources.filter(source=>(source.rawSeeders>0||source.seedersKnown===false)).map(source=>source.matchTier==='rejected'?{...source,matchTier:'broad',manualOnly:true} as T:source);
 }

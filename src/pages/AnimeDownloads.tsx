@@ -106,9 +106,9 @@ export default function AnimeDownloads() {
   const sourceQuery = useWebSources({ identity, episode: resolvedEpisodeNumber }, downloadSearchAvailable);
   const { isLoading: torrentsLoading, isError: torrentsError, isFetching: torrentsRefreshing, refetch: retryTorrents } = sourceQuery;
   const torrents = sourceQuery.data?.items;
-  const uncertainCount = torrents?.filter(item => item.matchTier === 'uncertain').length || 0;
+  const uncertainCount = torrents?.filter(item => ['uncertain','conflict'].includes(item.matchTier)).length || 0;
 
-  const sortedTorrents = useMemo(() => [...(torrents || [])].filter(torrent => torrent.matchTier !== 'batch' && (includeUncertain || torrent.matchTier !== 'uncertain')).filter(torrent => webAudioMatches(torrent.title, audioFilter) && (!downloadFilter || (downloadFilter === 'RAW' ? torrent.categoryId === '1_4' : torrent.title.toLowerCase().includes(downloadFilter.toLowerCase())))).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
+  const sortedTorrents = useMemo(() => [...(torrents || [])].filter(torrent => torrent.matchTier !== 'batch' && (includeUncertain || !['uncertain','conflict'].includes(torrent.matchTier))).filter(torrent => webAudioMatches(torrent.title, audioFilter) && (!downloadFilter || (downloadFilter === 'RAW' ? torrent.categoryId === '1_4' : torrent.title.toLowerCase().includes(downloadFilter.toLowerCase())))).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
     if (sortBy === 'best') {
         if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
         const trustedGroups = ['[SubsPlease]', '[Erai-raws]', '[Judas]', '[Ember]', '[ASW]', '[Cerberus]', '[Yameii]'];
@@ -125,7 +125,7 @@ export default function AnimeDownloads() {
         return sortDirection === 'asc' ? a.rawSeeders - b.rawSeeders : b.rawSeeders - a.rawSeeders;
     }
   }), [sortBy, sortDirection, sourceFilter, torrents, includeUncertain, audioFilter, downloadFilter]);
-  const topSource = sortedTorrents[0];
+  const topSource = sortedTorrents.find(torrent=>torrent.matchTier==='exact');
   const visibleTorrents = useMemo(() => showAllSources ? sortedTorrents : sortedTorrents.slice(0, 5), [showAllSources, sortedTorrents]);
   const hiddenSourceCount = Math.max(sortedTorrents.length - visibleTorrents.length, 0);
   const totalSeeders = useMemo(() => sortedTorrents.reduce((sum, torrent) => sum + torrent.rawSeeders, 0), [sortedTorrents]);
@@ -214,15 +214,16 @@ export default function AnimeDownloads() {
     saveDownloadHistory({
       title: torrent.title,
       magnet: torrent.magnet,
-      animeTitle: anime.title,
-      animeId: anime.mal_id || anime.id,
-      episode,
+      animeTitle: torrent.matchTier==='conflict'?undefined:anime.title,
+      animeId: torrent.matchTier==='conflict'?undefined:anime.mal_id || anime.id,
+      episode: torrent.matchTier==='conflict'?null:episode,
       action,
       size: torrent.size,
       seeders: torrent.seeders,
     }, session);
   };
   const openDesktopPlayback = async (torrent: any) => {
+    if(torrent.matchTier!=='exact'){setDesktopNotice({tone:'error',text:'Review this release manually. Its installment or episode has not been verified for this title.'});return;}
     setDesktopNotice({ tone: 'loading', text: 'Opening source in the desktop player...' });
     recordDownloadAction(torrent, 'open');
     const result = await openLocalSourceNow({
@@ -232,6 +233,7 @@ export default function AnimeDownloads() {
       animeTitle: anime.title,
       animeId: anime.mal_id || anime.id,
       episode: resolvedEpisodeNumber,
+      sourceIdentity:identity,
       size: torrent.size,
       seeders: torrent.seeders,
       image: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url,
@@ -460,7 +462,7 @@ export default function AnimeDownloads() {
 
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
         <label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={includeUncertain} onChange={event => setIncludeUncertain(event.target.checked)}/>Include uncertain matches{uncertainCount ? ` (${uncertainCount})` : ''}</label>
-        <span className="text-xs text-muted-foreground">Conflicting titles and installments are excluded. Audio and quality filters reuse these results.</span>
+        <span className="text-xs text-muted-foreground">Manual results may belong to another installment or episode. They are excluded by default and never recommended. Audio and quality filters reuse these results.</span>
       </div>
       <WebSourceProgress data={sourceQuery.data} fetching={torrentsRefreshing} retry={() => void retryTorrents()}/>
       <DataStatus label="Source results" error={torrentsError} fetching={torrentsRefreshing && !torrentsLoading} retry={() => void retryTorrents()} />
@@ -573,7 +575,7 @@ export default function AnimeDownloads() {
                       {sourceFreshnessLabel(torrent)}
                     </span>
                   </div>
-                  <p className="mb-2 text-xs text-muted-foreground">{torrent.matchTier === 'uncertain' ? 'Uncertain match — ' : 'Title matched — '}{torrent.matchReason}</p>
+                  <p className="mb-2 text-xs text-muted-foreground">{torrent.matchTier === 'conflict' ? 'Manual review · different installment/episode — ' : torrent.matchTier === 'uncertain' ? 'Uncertain match — ' : 'Title matched — '}{torrent.matchReason}</p>
                   <h4 className="font-bold text-foreground break-all leading-tight mb-3 group-hover:text-primary transition-colors text-[15px]">
                     {torrent.title}
                   </h4>

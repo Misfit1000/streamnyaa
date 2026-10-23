@@ -9,8 +9,8 @@ export type SourceIdentity = {
   sequel: boolean;
 };
 export type SourceEvidence = { evidence: 'exact' | 'uncertain' | 'conflict'; reason: string; episodeMatch: boolean };
-export const SOURCE_CLASSIFIER_VERSION = 5;
-export function isBatchRelease(title:string){return /\b(?:batch|complete|collection|season pack)\b/i.test(title)||/\b\d{1,4}\s*[-–~]\s*\d{1,4}\b/.test(title);}
+export const SOURCE_CLASSIFIER_VERSION = 6;
+export function isBatchRelease(title:string){return /\b(?:batch|complete|collection|season pack)\b/i.test(title)||/\b\d{1,4}\s*[-–~]\s*\d{1,4}\b/.test(title)||seasonFromTitle(title)!=null&&parseSourceEpisode(title)==null;}
 export function batchTitleIdentity(title:string,identity:SourceIdentity){
   const clean=title.replace(/\s[-–]\s*\d{1,4}\s*[-–~]\s*\d{1,4}/g,' ').replace(/\b\d{1,4}\s*[-–~]\s*\d{1,4}\b/g,' ').replace(/\b(?:complete\s+season(?!\s*\d)|season\s+pack)\b/ig,' ').replace(/\b(?:batch|complete|collection|pack)\b/ig,' ');
   return classifySourceIdentity(`${sourceAnimeTitle(clean)} - 01`,identity,1).evidence==='exact';
@@ -86,14 +86,27 @@ export function buildSourceIdentity(anime: any, installment?: { name?: string; f
     ...(Array.isArray(anime?.titles) ? anime.titles.map((x: any) => x?.title || x?.name || x) : []),
     ...(anime?.synonyms || []), ...(anime?.title_synonyms || []), ...(installment?.aliases || []),
   ]);
-  const seasonNumber = positive(installment?.seasonNumber) || aliases.map(seasonFromTitle).find(Boolean) || null;
+  let seasonNumber = positive(installment?.seasonNumber) || aliases.map(seasonFromTitle).find(Boolean) || null;
   const partNumber = positive(installment?.partNumber) || aliases.map(partFromTitle).find(Boolean) || null;
+  // Only complete aliases of THIS canonical entry, never aliases imported from related entries.
+  const predecessorAliases = orderedSourceAliases((anime?.relations || []).filter((r: any) => /^(prequel|parent)$/i.test(r?.relation || r?.relationType || ''))
+    .flatMap((r: any) => (r?.entry || []).map((entry: any) => entry?.name || entry?.title || '')));
+  const predecessorTitles = predecessorAliases.map(stripMarkers);
+  const format=String(installment?.format || anime?.type || anime?.format || 'TV').toUpperCase();
+  // A numeric sequel is an equivalent season spelling only with a matching
+  // canonical prequel. Do not guess from timeline order or a trailing number alone.
+  if (!seasonNumber && ['TV','TV_SHORT','ONA'].includes(format)) for (const alias of [...aliases]) {
+    const match=normalizeSourceTitle(alias).match(/^(.*\S) ([2-9]|[1-9]\d)$/);
+    if (!match) continue;
+    const base=match[1],next=Number(match[2]);
+    const previous=predecessorAliases.some(value => {
+      const prior=normalizeSourceTitle(value);
+      return next===2&&prior===base || prior===`${base} ${next-1}` || prior===`${base} season ${next-1}`;
+    });
+    if (previous) { seasonNumber=next;aliases.push(`${base} Season ${next}`);break; }
+  }
   const sequel = Boolean(installment?.sequel || (seasonNumber && seasonNumber > 1) || (partNumber && partNumber > 1)
     || (anime?.relations || []).some((r: any) => /^(prequel|parent)$/i.test(r?.relation || r?.relationType || '')));
-  // Only complete aliases of THIS canonical entry, never aliases imported from related entries.
-  const predecessorTitles = orderedSourceAliases((anime?.relations || []).filter((r: any) => /^(prequel|parent)$/i.test(r?.relation || r?.relationType || ''))
-    .flatMap((r: any) => (r?.entry || []).map((entry: any) => entry?.name || entry?.title || ''))).map(stripMarkers);
-  const format=String(installment?.format || anime?.type || anime?.format || 'TV').toUpperCase();
   const allOriginalAliasesLength=aliases.length;
   // A translated franchise prefix can repeat its romanized name. Keep a
   // shortened translation only when a verified prequel establishes that prefix
@@ -162,4 +175,17 @@ export function classifySourceIdentity(title: string, identity: SourceIdentity, 
     || Boolean(part === identity.partNumber && part && part > 1) || installmentAlias;
   if (!seasonProven || !partProven || !sequelProven) return { evidence: 'uncertain', reason: 'Installment identity needs verification', episodeMatch };
   return { evidence: 'exact', reason: 'Same anime, installment and episode', episodeMatch };
+}
+
+export type SourceAssessment = {
+  identity:SourceIdentity; classifierVersion:number; releaseKind:'individual'|'batch-candidate';
+  animeEvidence:SourceEvidence['evidence']; installmentEvidence:SourceEvidence['evidence']; episodeEvidence:SourceEvidence['evidence'];
+  installmentVerified:boolean; reason:string; retrievedAt?:number;
+};
+export function assessSource(title:string,identity:SourceIdentity,episode:number,retrievedAt?:number):SourceAssessment {
+  const evidence=classifySourceIdentity(title,identity,episode),batch=isBatchRelease(title),actual=parseSourceEpisode(title);
+  const installment=batch&&batchTitleIdentity(title,identity)?'exact':classifySourceIdentity(title,identity,actual||episode).evidence;
+  return {identity,classifierVersion:SOURCE_CLASSIFIER_VERSION,releaseKind:batch?'batch-candidate':'individual',
+    animeEvidence:installment,installmentEvidence:installment,episodeEvidence:batch?'uncertain':actual===null?'uncertain':actual===episode?'exact':'conflict',
+    installmentVerified:batch?batchTitleIdentity(title,identity):evidence.evidence==='exact',reason:evidence.reason,retrievedAt};
 }

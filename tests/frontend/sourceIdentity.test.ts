@@ -45,6 +45,16 @@ describe('canonical source identity', () => {
     expect(sourceIdentitySignature(first)).not.toBe(sourceIdentitySignature(hydrated));
     expect(classifySourceIdentity('Example - 01', hydrated, 1).evidence).not.toBe('exact');
   });
+  it('maps a numeric series sequel to season tags only with a matching canonical prequel',()=>{
+    const anime={mal_id:2,title:'Cyberpunk: Edgerunners 2',type:'ONA'};
+    expect(buildSourceIdentity(anime).seasonNumber).toBeNull();
+    expect(buildSourceIdentity({...anime,relations:[{relation:'Prequel',entry:[{name:'Different Anime'}]}]}).seasonNumber).toBeNull();
+    const identity=buildSourceIdentity({...anime,relations:[{relation:'Prequel',entry:[{name:'Cyberpunk: Edgerunners'}]}]});
+    expect(identity.seasonNumber).toBe(2);
+    expect(classifySourceIdentity('Cyberpunk Edgerunners S02E02 [1080p]',identity,2).evidence).toBe('exact');
+    expect(classifySourceIdentity('Cyberpunk Edgerunners S01E02 [1080p]',identity,2).evidence).toBe('conflict');
+    expect(buildSourceIdentity({...anime,type:'MOVIE',relations:[{relation:'Prequel',entry:[{name:'Cyberpunk: Edgerunners'}]}]}).seasonNumber).toBeNull();
+  });
   it('does not relabel manual sources using the requested episode', () => {
     expect(sourceEpisodeIdentity('Example - 02 [1080p]', 1)).toEqual({ episode: 2, conflict: true, needsReview: false });
     expect(sourceEpisodeIdentity('Example Season 2', 2)).toEqual({ episode: null, conflict: false, needsReview: true });

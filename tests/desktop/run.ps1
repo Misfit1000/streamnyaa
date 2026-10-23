@@ -78,9 +78,9 @@ $cargoManifest = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\Cargo.toml
 $releasePreparer = Get-Content -Raw (Join-Path $repo 'scripts\prepare-desktop-release.ps1')
 
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
-Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.13"' 'Desktop release configuration should target version 0.1.13.'
-Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.13"' 'Rust package version should match the desktop release version.'
-Assert-Match $releasePreparer 'release-timing-batches-v1' 'The release manifest must identify the current batch and publishing revision.'
+Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.14"' 'Desktop release configuration should target version 0.1.14.'
+Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.14"' 'Rust package version should match the desktop release version.'
+Assert-Match $releasePreparer 'source-reliability-v1' 'The release manifest must identify the source-reliability revision.'
 Assert-Match $releasePreparer 'Previous installer checksum mismatch' 'The previous installer must be verified before being retained for rollback.'
 Assert-Match $releasePreparer '2MB' 'The installer must reject growth beyond the two MiB budget.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
@@ -475,3 +475,5 @@ Write-Host 'Desktop verification passed.'
 $handoffNative = Get-Content -Raw (Join-Path $repo 'desktop/src-tauri/src/main.rs')
 Assert-Match $handoffNative '(?s)fn load_player_target.*?\*load_guard = Some\(ipc.to_string\(\)\).*?load_player_file_locked.*?set_property","pause",false' 'Episode handoff must fence late artwork and explicitly start playback.'
 Assert-Match $handoffNative '(?s)fn maybe_replace_generic_loading_frame.*?load_guard.as_deref\(\) == Some\(ipc\).*?return;' 'Late artwork must not replace a pending video load.'
+
+Assert-Match $watchPage 'visibleSourcesForMode\(allRankedSources,sourceMode,audioMode\)' 'Watch must apply match mode to the rendered source list, not only to recommendations.'

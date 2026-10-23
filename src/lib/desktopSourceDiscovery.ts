@@ -1,6 +1,6 @@
 import { normalizeSourceTitle, orderedSourceAliases, type SourceIdentity } from './desktopSourceIdentity';
 
-export type SourceSearchJob = { query: string; category: string; page: number; scope: 'episode' | 'title'; episode?: number };
+export type SourceSearchJob = { query: string; category: string; page: number; scope: 'episode' | 'title'; episode?: number; seenPages?:string[] };
 export type SourceDiscovery<T> = { items: T[]; complete: boolean; pending?: SourceSearchJob[]; fetchedAt?: number; stale?: boolean;
   partialReason?: 'discovery-budget' | 'provider-failure'; retryAt?: number };
 
@@ -21,7 +21,7 @@ export function sourceSearchPlan(identity: SourceIdentity, episode?: number, aud
   const queries = queryValues.filter(query => { const key = normalizeSourceTitle(query); if (seen.has(key)) return false; seen.add(key); return true; });
   const jobs: SourceSearchJob[] = [];
   // All spelling variants on the preferred category first, then broaden categories, then pages.
-  for (const page of [1, 2, 3]) for (const category of ['1_2', '1_3', '1_4']) for (const query of queries) {
+  for (const page of [1]) for (const category of ['1_2', '1_3', '1_4']) for (const query of queries) {
     jobs.push({ query, category, page, scope: episodeScoped ? 'episode' : 'title', ...(episodeScoped ? { episode } : {}) });
   }
   if(episodeScoped&&aliases.length){
@@ -35,13 +35,13 @@ export function sourceSearchPlan(identity: SourceIdentity, episode?: number, aud
 export async function runSourceSearchPass<T>(options: {
   jobs: SourceSearchJob[]; initial?: T[]; signal?: AbortSignal; merge: (items: T[]) => T[];
   initialState?: { stale?: boolean; fetchedAt?: number; retryAt?: number };
-  fetch: (job: SourceSearchJob, deadlineMs: number) => Promise<{ items: T[]; complete?: boolean; stale?: boolean; fetchedAt?: number; emptyPage?: boolean; retryAt?: number }>;
+  fetch: (job: SourceSearchJob, deadlineMs: number) => Promise<{ items: T[]; complete?: boolean; stale?: boolean; fetchedAt?: number; emptyPage?: boolean; pageFingerprint?:string; retryAt?: number }>;
   publish?: (result: SourceDiscovery<T>) => void; budgetMs?: number; requestLimit?: number;
 }): Promise<SourceDiscovery<T>> {
   const started = Date.now(), budget = options.budgetMs ?? 30_000, limit = options.requestLimit ?? 12;
   let items = options.merge(options.initial || []), stale = options.initialState?.stale === true, fetchedAt = options.initialState?.fetchedAt;
   let interrupted = false, retryAt = options.initialState?.retryAt;
-  const pending = [...options.jobs]; let launched = 0;
+  const pending = [...new Map(options.jobs.map(job=>[JSON.stringify([job.query.toLowerCase(),job.category,job.page,job.scope,job.episode]),{...job}])).values()]; let launched = 0;
   const result = (): SourceDiscovery<T> => ({ items, complete: pending.length === 0 && !stale, pending: [...pending], stale, fetchedAt, retryAt,
     partialReason: pending.length || stale ? interrupted || stale ? 'provider-failure' : 'discovery-budget' : undefined });
   while (pending.length && launched < limit && Date.now() - started < budget) {
@@ -70,9 +70,16 @@ export async function runSourceSearchPass<T>(options: {
           pending.push(lane.job); admissionWait = true; interrupted = true;
           retryAt = Math.max(retryAt || 0, lane.result.retryAt || 0) || undefined;
         }
-        else if (lane.result.emptyPage === true) {
-          // An empty page ends this exact query/category pagination lane.
-          for (let i = pending.length - 1; i >= 0; i--) if (pending[i].query === lane.job.query && pending[i].category === lane.job.category && pending[i].page > lane.job.page) pending.splice(i, 1);
+        else {
+          const fingerprint=lane.result.pageFingerprint;
+          const repeated=Boolean(fingerprint&&lane.job.seenPages?.includes(fingerprint));
+          if(lane.result.emptyPage===true||repeated){
+            for(let i=pending.length-1;i>=0;i--)if(pending[i].query===lane.job.query&&pending[i].category===lane.job.category&&pending[i].scope===lane.job.scope)pending.splice(i,1);
+          }else if(lane.result.emptyPage===false||fingerprint){
+            const next={...lane.job,page:lane.job.page+1,seenPages:[...(lane.job.seenPages||[]),...(fingerprint?[fingerprint]:[])].slice(-256)};
+            const existing=pending.find(job=>job.query===next.query&&job.category===next.category&&job.page===next.page&&job.scope===next.scope);
+            if(existing)existing.seenPages=next.seenPages;else pending.push(next);
+          }
         }
       } else {
         pending.push(lane.job);
@@ -98,4 +105,11 @@ export class SourceAccumulator<T> {
   add(items: T[]) { this.values = this.merge([...this.values, ...items]); return this.values; }
   interrupt() { this.interrupted = true; }
   result(): SourceDiscovery<T> { return { items: [...this.values], complete: !this.interrupted }; }
+}
+
+/** Coverage detector only; it never establishes source identity or playability. */
+export function sourcePageFingerprint(items:{infoHash?:string;link?:string;title:string}[]){
+  const value=items.map(item=>(item.infoHash||item.link||item.title).toLowerCase()).sort().join('|');
+  let a=2166136261,b=5381;for(let i=0;i<value.length;i++){a=Math.imul(a^value.charCodeAt(i),16777619);b=Math.imul(b,33)^value.charCodeAt(i);}
+  return items.length?`${items.length}:${a>>>0}:${b>>>0}`:'';
 }

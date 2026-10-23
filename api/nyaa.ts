@@ -9,6 +9,7 @@ type SourceItem = {
   guid: string;
   pubDate: string;
   seeders: string;
+  seedersKnown?:boolean;
   leechers: string;
   downloads: string;
   infoHash: string;
@@ -213,7 +214,7 @@ async function loadRawFeed(url: URL, usage: RequestUsage): Promise<SourceCacheEn
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch source results: ${response.status}`);
+    throw Object.assign(new Error(`Failed to fetch source results: ${response.status}`),{statusCode:response.status,retryAfter:response.headers.get('retry-after')});
   }
 
   const xmlData = await response.text();
@@ -231,6 +232,7 @@ async function loadRawFeed(url: URL, usage: RequestUsage): Promise<SourceCacheEn
     guid: item.guid || "",
     pubDate: item.pubDate || "",
     seeders: String(item["nyaa:seeders"] || "0"),
+    seedersKnown:item["nyaa:seeders"]!==undefined&&Number.isFinite(Number(item["nyaa:seeders"])),
     leechers: String(item["nyaa:leechers"] || "0"),
     downloads: String(item["nyaa:downloads"] || "0"),
     infoHash: item["nyaa:infoHash"] || "",
@@ -361,7 +363,7 @@ async function fetchInChunks(urls: { url: URL; query: string; category: string; 
     const settled = await Promise.allSettled(chunk.map((entry) => fetchSourceResults(entry.url, entry, usage)));
     for (const result of settled) {
       if (result.status === "fulfilled") { results.push(...result.value.data); fetchedAt = Math.min(fetchedAt, result.value.fetchedAt); }
-      else complete = false;
+      else {const error=result.reason as {statusCode?:number};if([401,403,429].includes(error?.statusCode||0))throw result.reason;complete = false;}
     }
   }
   return { items: results, complete, fetchedAt };
@@ -458,7 +460,8 @@ export default async function handler(req: any, res: any) {
     res.json(formattedItems);
   } catch (e: any) {
     console.error(e);
-    status = 500;
+    status = Number.isInteger(e.statusCode)&&e.statusCode>=400&&e.statusCode<=599?e.statusCode:500;
+    if(e.retryAfter)res.setHeader('Retry-After',e.retryAfter);
     res.status(status).json({ error: e.message });
   } finally {
     if (background) waitUntil(background.finally(() => usage.finish(status)));

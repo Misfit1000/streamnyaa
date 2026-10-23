@@ -97,15 +97,15 @@ export default function NyaaSearchPage() {
       title: torrent.title,
       magnet: torrent.magnet,
       animeTitle: confirmed ? matchedAnimeFull?.title : query || undefined,
-      animeId: confirmed ? matchedAnimeFull?.mal_id : undefined,
-      episode,
+      animeId: confirmed&&torrent.matchTier!=='conflict' ? matchedAnimeFull?.mal_id : undefined,
+      episode:torrent.matchTier==='conflict'?null:episode,
       action,
       size: torrent.size,
       seeders: torrent.seeders,
     }, session);
   };
 
-  const filteredTorrents = useMemo(() => [...(torrents || [])].filter(torrent => (!category.startsWith('1_') || torrent.matchTier !== 'batch') && (includeUncertain || torrent.matchTier !== 'uncertain') && webAudioMatches(torrent.title, audio)).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
+  const filteredTorrents = useMemo(() => [...(torrents || [])].filter(torrent => (!category.startsWith('1_') || torrent.matchTier !== 'batch') && (includeUncertain || !['uncertain','conflict'].includes(torrent.matchTier)) && webAudioMatches(torrent.title, audio)).filter((torrent) => torrentMatchesSourceFilter(torrent, sourceFilter)).sort((a, b) => {
     if (sortBy === 'best') {
       if (Number(b.sourceScore || 0) !== Number(a.sourceScore || 0)) return Number(b.sourceScore || 0) - Number(a.sourceScore || 0);
       if (b.rawSeeders !== a.rawSeeders) return b.rawSeeders - a.rawSeeders;

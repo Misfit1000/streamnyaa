@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod data_requests;
 mod source_identity;
+mod stream_files;
 mod batch_sources;
 mod reminder_scheduler;
 mod schedule_updates;
@@ -41,6 +42,10 @@ const DESKTOP_OAUTH_EVENT: &str = "streamnyaa-desktop-oauth-callback";
 const DESKTOP_OAUTH_SUPABASE_HOST: &str = "opteiijnvuwstpdjxwlk.supabase.co";
 
 const RQBIT_URL: &str = "http://127.0.0.1:3030";
+fn rqbit_url()->String {
+    #[cfg(test)] if let Ok(port)=env::var("STREAMNYAA_NATIVE_FIXTURE_PORT").ok().and_then(|v|v.parse::<u16>().ok()).ok_or(()) { return format!("http://127.0.0.1:{port}"); }
+    RQBIT_URL.to_string()
+}
 const PER_SESSION_CACHE_MAX_BYTES: u64 = 3 * 1024 * 1024 * 1024;
 const MAX_SESSION_CACHE_BYTES: u64 = 12 * 1024 * 1024 * 1024;
 const GLOBAL_CACHE_MAX_BYTES: u64 = 6 * 1024 * 1024 * 1024;
@@ -867,12 +872,14 @@ fn command_configured(path_value: &Option<String>, allowed_names: &[&str]) -> bo
 }
 
 fn cache_root() -> PathBuf {
+    #[cfg(test)] if env::var("STREAMNYAA_NATIVE_FIXTURE_PORT").is_ok(){return env::temp_dir().join(format!("streamnyaa-native-fixture-{}",std::process::id())).join("cache");}
     let mut path = env::temp_dir();
     path.push("StreamNyaa");
     path
 }
 
 fn logs_root() -> PathBuf {
+    #[cfg(test)] if env::var("STREAMNYAA_NATIVE_FIXTURE_PORT").is_ok(){return env::temp_dir().join(format!("streamnyaa-native-fixture-{}",std::process::id())).join("logs");}
     if let Ok(local) = env::var("LOCALAPPDATA") {
         return PathBuf::from(local).join("StreamNyaa").join("logs");
     }
@@ -880,6 +887,7 @@ fn logs_root() -> PathBuf {
 }
 
 fn player_preferences_path() -> PathBuf {
+    #[cfg(test)] if env::var("STREAMNYAA_NATIVE_FIXTURE_PORT").is_ok(){return env::temp_dir().join(format!("streamnyaa-native-fixture-{}",std::process::id())).join("preferences.json");}
     if let Ok(local) = env::var("LOCALAPPDATA") {
         return PathBuf::from(local)
             .join("StreamNyaa")
@@ -1552,7 +1560,7 @@ fn rqbit_request_timeout(default: Duration) -> Result<Duration, String> {
 }
 
 fn rqbit_get(path: &str) -> Result<String, String> {
-    let url = format!("{}{}", RQBIT_URL, path);
+    let url = format!("{}{}", rqbit_url(), path);
     rqbit_http_client()
         .get(url)
         .timeout(rqbit_request_timeout(Duration::from_secs(35))?)
@@ -1564,7 +1572,7 @@ fn rqbit_get(path: &str) -> Result<String, String> {
 }
 
 fn rqbit_post(path: &str, body: &str) -> Result<String, String> {
-    let url = format!("{}{}", RQBIT_URL, path);
+    let url = format!("{}{}", rqbit_url(), path);
     let response = rqbit_http_client()
         .post(url)
         .timeout(rqbit_request_timeout(Duration::from_secs(60))?)
@@ -1594,14 +1602,13 @@ fn rqbit_post(path: &str, body: &str) -> Result<String, String> {
 }
 
 fn rqbit_add_path(media_dir: &Path) -> String {
-    format!(
-        "/torrents?overwrite=true&output_folder={}",
-        percent_encode(&media_dir.to_string_lossy())
-    )
+    let path=format!("/torrents?overwrite=true&output_folder={}",percent_encode(&media_dir.to_string_lossy()));
+    #[cfg(test)] if let Ok(peers)=env::var("STREAMNYAA_NATIVE_FIXTURE_PEERS"){return format!("{path}&initial_peers={}",percent_encode(&peers));}
+    path
 }
 
 fn rqbit_post_json(path: &str, body: &serde_json::Value) -> Result<String, String> {
-    let url = format!("{}{}", RQBIT_URL, path);
+    let url = format!("{}{}", rqbit_url(), path);
     let response = rqbit_http_client()
         .post(url)
         .timeout(rqbit_request_timeout(Duration::from_secs(12))?)
@@ -1631,7 +1638,7 @@ fn safe_engine_error_category(body: &str) -> &'static str {
 }
 
 fn rqbit_delete(path: &str) -> Result<(), String> {
-    let url = format!("{}{}", RQBIT_URL, path);
+    let url = format!("{}{}", rqbit_url(), path);
     rqbit_http_client()
         .delete(url)
         .timeout(Duration::from_secs(20))
@@ -1642,7 +1649,7 @@ fn rqbit_delete(path: &str) -> Result<(), String> {
 }
 
 fn rqbit_ready() -> bool {
-    let url = format!("{}/", RQBIT_URL);
+    let url = format!("{}/", rqbit_url());
     rqbit_http_client()
         .get(url)
         .timeout(Duration::from_millis(700))
@@ -1669,6 +1676,7 @@ fn start_rqbit(
 ) -> Result<(), String> {
     fs::create_dir_all(cache_dir)
         .map_err(|error| format!("Could not prepare StreamNyaa cache: {}", error))?;
+    #[cfg(test)] if env::var("STREAMNYAA_NATIVE_FIXTURE_PORT").is_ok(){return if rqbit_ready(){ACTIVE_ENGINE_GENERATION.store(playback_generation,Ordering::SeqCst);Ok(())}else{Err("Isolated fixture engine is unavailable.".into())};}
     if rqbit_ready() {
         log_info("Stopping stale local stream engine before starting a clean session");
         stop_rqbit_server(Some(engine_path));
@@ -2921,7 +2929,7 @@ fn normalize_playlist_url(playlist_url: &str, value: &str) -> String {
         return trimmed.to_string();
     }
     if trimmed.starts_with('/') {
-        return format!("{}{}", RQBIT_URL, trimmed);
+        return format!("{}{}", rqbit_url(), trimmed);
     }
     let base = playlist_url
         .rsplit_once('/')
@@ -2935,9 +2943,9 @@ fn normalize_playlist_url(playlist_url: &str, value: &str) -> String {
 }
 
 fn playlist_file_index(url: &str) -> Option<usize> {
-    url.split(['/', '?', '&', '='])
-        .rev()
-        .find_map(|segment| segment.parse::<usize>().ok())
+    let path = url.split(['?', '#']).next()?;
+    let (_, index) = path.rsplit_once("/stream/")?;
+    index.parse::<usize>().ok()
 }
 
 fn parse_playlist_entries(playlist_url: &str, content: &str) -> Vec<PlaylistEntry> {
@@ -3136,80 +3144,6 @@ fn playlist_entry_search_text(entry: &PlaylistEntry) -> String {
     )
 }
 
-fn playlist_video_score(entry: &PlaylistEntry, request: &PlaybackRequest) -> i32 {
-    let value = playlist_entry_search_text(entry);
-    let mut score = 0i32;
-
-    if entry.kind == PlaylistKind::Video {
-        score += 1000;
-    }
-    if !request.episode.trim().is_empty() {
-        if episode_signal_in_text(&value, &request.episode) {
-            score += 220;
-        }
-        if let Some(expected_episode) = parse_episode_number(&request.episode) {
-            let episode_numbers = episode_numbers_in_text(&value);
-            if episode_numbers.contains(&expected_episode) {
-                score += 260;
-            } else if !episode_numbers.is_empty() {
-                score -= 320;
-            }
-        }
-    }
-    if !request.anime_title.trim().is_empty() {
-        let title = request
-            .anime_title
-            .to_ascii_lowercase()
-            .replace(':', " ")
-            .replace('-', " ")
-            .replace('_', " ");
-        let overlap = title
-            .split_whitespace()
-            .filter(|part| part.len() > 2 && value.contains(part))
-            .count() as i32;
-        score += overlap * 12;
-    }
-    if !request.title.trim().is_empty() {
-        let title = request
-            .title
-            .to_ascii_lowercase()
-            .replace(':', " ")
-            .replace('-', " ")
-            .replace('_', " ");
-        let overlap = title
-            .split_whitespace()
-            .filter(|part| part.len() > 2 && value.contains(part))
-            .count() as i32;
-        score += overlap * 8;
-    }
-    if value.contains("1080") {
-        score += 16;
-    }
-    if value.contains("1440") || value.contains("2k") {
-        score += 12;
-    }
-    if value.contains("2160") || value.contains("4k") || value.contains("uhd") {
-        score += 10;
-    }
-    if value.contains("720") {
-        score += 8;
-    }
-    if value.contains("hevc") || value.contains("x265") || value.contains("h265") {
-        score += 8;
-    }
-    if value.contains("dual") || value.contains("multi audio") || value.contains("dub") {
-        score += 18;
-    }
-    if looks_like_auxiliary_video(&value) {
-        score -= 240;
-    }
-    if value.contains("sample") {
-        score -= 500;
-    }
-
-    score
-}
-
 fn select_stream_target(
     entries: &[PlaylistEntry],
     request: &PlaybackRequest,
@@ -3221,38 +3155,15 @@ fn select_stream_target(
         let mut indices=vec![selection.file_index]; indices.extend(subtitles.iter().filter_map(|entry|entry.file_index));
         return Some(ResolvedStreamTarget{media_url:media.url.clone(),subtitle_urls:subtitles.iter().map(|entry|entry.url.clone()).collect(),selected_file_indices:indices,selected_file_name:media.file_name.clone()});
     }
-    let videos = entries
-        .iter()
-        .filter(|entry| entry.kind == PlaylistKind::Video)
-        .collect::<Vec<_>>();
-    let playable_videos = videos
-        .iter()
-        .copied()
+    // Compatibility parsing is deliberately deterministic too. The production
+    // path resolves the full engine manifest in stream_files::target.
+    let eligible = entries.iter().filter(|entry| entry.kind == PlaylistKind::Video)
         .filter(|entry| !looks_like_auxiliary_video(&playlist_entry_search_text(entry)))
+        .filter(|entry| request.episode.parse::<u64>().is_ok_and(|episode|
+            source_identity::matches_episode(&playlist_entry_search_text(entry), episode)))
         .collect::<Vec<_>>();
-    let video_pool = if playable_videos.is_empty() {
-        videos
-    } else {
-        playable_videos
-    };
-
-    // Legacy callers cannot make a pack playable through a best-score fallback.
-    // Exact single-episode releases remain compatible, including their extras.
-    if video_pool.len()>1 && request.episode.parse::<u64>().is_ok_and(|episode| {
-        video_pool.iter().filter(|entry|source_identity::matches_episode(&playlist_entry_search_text(entry),episode)).count()!=1
-    }) { return None; }
-
-    let media = video_pool
-        .into_iter()
-        .max_by_key(|entry| playlist_video_score(entry, request))
-        .cloned()
-        .or_else(|| {
-            entries
-                .iter()
-                .filter(|entry| entry.kind != PlaylistKind::Subtitle)
-                .max_by_key(|entry| playlist_video_score(entry, request))
-                .cloned()
-        })?;
+    if eligible.len() != 1 { return None; }
+    let media = eligible[0].clone();
 
     let subtitle_urls = entries
         .iter()
@@ -3264,17 +3175,6 @@ fn select_stream_target(
         })
         .map(|entry| entry.url.clone())
         .collect::<Vec<_>>();
-
-    let subtitle_urls = if subtitle_urls.is_empty() {
-        entries
-            .iter()
-            .filter(|entry| entry.kind == PlaylistKind::Subtitle)
-            .take(3)
-            .map(|entry| entry.url.clone())
-            .collect::<Vec<_>>()
-    } else {
-        subtitle_urls
-    };
 
     let mut selected_file_indices = vec![media.file_index]
         .into_iter()
@@ -3324,7 +3224,7 @@ fn torrent_is_live(json: &serde_json::Value) -> Result<bool, String> {
 
 fn probe_local_video(media_url: &str) -> Result<(), String> {
     let url = reqwest::Url::parse(media_url).map_err(|_| "Local engine: invalid video address.".to_string())?;
-    if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port() != Some(3030)
+    if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port() != reqwest::Url::parse(&rqbit_url()).ok().and_then(|base|base.port())
         || !url.path().starts_with("/torrents/") || !url.username().is_empty() || url.password().is_some() {
         return Err("Local engine: untrusted video address.".to_string());
     }
@@ -3349,11 +3249,9 @@ fn playlist_target(
     torrent_id: &str,
     request: &PlaybackRequest,
 ) -> Result<Option<ResolvedStreamTarget>, String> {
-    let playlist_path = format!("/torrents/{}/playlist", percent_encode(torrent_id));
-    let playlist_url = format!("{}{}", RQBIT_URL, &playlist_path);
-    let payload = rqbit_get(&playlist_path)?;
-    let entries = parse_playlist_entries(&playlist_url, &payload);
-    Ok(select_stream_target(&entries, request))
+    let payload=rqbit_get(&format!("/torrents/{}",percent_encode(torrent_id)))?;
+    let details:serde_json::Value=serde_json::from_str(&payload).map_err(|_|"Local file resolution: invalid engine manifest.")?;
+    stream_files::target(torrent_id,request,&details).map(Some)
 }
 
 fn loading_palette_rgb(_value: &str) -> ([u8; 3], [u8; 3], [u8; 3]) {
@@ -4831,6 +4729,7 @@ fn launch_or_reuse_player(
         command.arg(format!("--script={}", player_skin.to_string_lossy()));
     }
 
+    #[cfg(test)] if env::var("STREAMNYAA_NATIVE_FIXTURE_PORT").is_ok(){command.args(["--vo=null","--ao=null","--force-window=no"]);}
     let child = command
         .arg(loading)
         .stdin(Stdio::null())
@@ -5276,11 +5175,10 @@ fn wait_for_stream_with_session_guard(
         saw_peer |= peers > 0;
 
         if selected_target.is_none() {
-            if let Ok(target) = playlist_target(torrent_id, request) {
-                if let Some(target) = target {
-                    selected_target_at = Some(now_millis());
-                    selected_target = Some(target);
-                }
+            match playlist_target(torrent_id,request) {
+                Ok(Some(target))=>{selected_target_at=Some(now_millis());selected_target=Some(target);},
+                Err(error) if !error.contains("manifest not ready")=>return Err(error),
+                _=>{}
             }
         }
 
@@ -5603,7 +5501,7 @@ fn start_stream(
                 let target=wait_for_stream_with_session_guard(&active.torrent_id,&request,Some(&ipc),&cache_dir,&active.session_dir,cache_limit,playback_generation)?;
                 if let Some(context)=request.progress_context.clone(){playback_progress::begin(&ipc,context);}
                 if !load_player_target(&ipc,&title,&target,request.resume_seconds){return Err("The player could not open the next pack file.".into());}
-                Ok(PlaybackStatus{ok:true,state:"started".into(),message:"Selected episode opened from the existing pack.".into(),title:title.clone(),torrent_id:Some(active.torrent_id.clone()),playlist_url:Some(format!("{RQBIT_URL}/torrents/{}/playlist",percent_encode(&active.torrent_id))),media_url:Some(target.media_url)})
+                Ok(PlaybackStatus{ok:true,state:"started".into(),message:"Selected episode opened from the existing pack.".into(),title:title.clone(),torrent_id:Some(active.torrent_id.clone()),playlist_url:Some(format!("{}/torrents/{}/playlist",rqbit_url(),percent_encode(&active.torrent_id))),media_url:Some(target.media_url)})
                 })();
                 if let Err(error)=&reused {
                     if playback_generation_current(playback_generation){
@@ -5774,7 +5672,7 @@ fn start_stream(
             .ok_or_else(|| "Stream engine did not return a torrent id.".to_string())?;
         let playlist_url = format!(
             "{}/torrents/{}/playlist",
-            RQBIT_URL,
+            rqbit_url(),
             percent_encode(&torrent_id)
         );
 
@@ -5875,23 +5773,27 @@ fn start_stream(
     stream_result
 }
 
+fn playback_failure(title:&str,error:String)->serde_json::Value {
+    let lower=error.to_lowercase();
+    let stage=if lower.contains("cancel")||lower.contains("superseded"){"cancellation"}
+      else if lower.contains("file resolution")||lower.contains("file selection")||lower.contains("source identity"){"file-resolution"}
+      else if lower.contains("metadata"){"metadata"}else if lower.contains("no peer")||lower.contains("no seed"){"peers"}
+      else if lower.contains("decoder")||lower.contains("codec"){"decoding"}else if lower.contains("buffer"){"buffering"}else{"local-engine"};
+    serde_json::json!({"ok":false,"state":"failed","title":title,"message":error,"stage":stage,"failure_kind":stage,"can_retry":stage!="cancellation","requires_file_choice":stage=="file-resolution"})
+}
 #[tauri::command]
-async fn play_local_torrent(request: PlaybackRequest) -> Result<PlaybackStatus, String> {
-    batch_sources::validate(&request)?;
-    let playback_generation = next_playback_generation();
-    let title = playback_title(&request);
-    log_info(format!(
-        "Playback generation {} requested for {}",
-        playback_generation, title
-    ));
-    notify_player_source_switch(&title, playback_generation);
-    tauri::async_runtime::spawn_blocking(move || start_stream(request, playback_generation))
-        .await
-        .map_err(|error| {
-            let message = format!("Playback task could not finish: {}", error);
-            remember_error(message.clone());
-            message
-        })?
+async fn play_local_torrent(request: PlaybackRequest) -> Result<serde_json::Value, String> {
+    let title=playback_title(&request);
+    if let Err(error)=batch_sources::validate(&request){return Ok(playback_failure(&title,error));}
+    if request.batch_selection.is_none() && request.source_identity.as_ref().is_some_and(|identity|source_identity::classify(&request.title,identity,request.episode.parse().unwrap_or(1))!=source_identity::Evidence::Exact){return Ok(playback_failure(&title,"Source identity: requested installment or episode is unverified.".into()));}
+    let playback_generation=next_playback_generation();
+    log_info(format!("Playback generation {} requested for {}",playback_generation,title));
+    notify_player_source_switch(&title,playback_generation);
+    match tauri::async_runtime::spawn_blocking(move||start_stream(request,playback_generation)).await {
+      Ok(Ok(status))=>serde_json::to_value(status).map_err(|_|"Playback response unavailable.".to_string()),
+      Ok(Err(error))=>Ok(playback_failure(&title,error)),
+      Err(error)=>Ok(playback_failure(&title,format!("Local engine: playback task could not finish: {error}")))
+    }
 }
 
 #[tauri::command]
@@ -5918,7 +5820,7 @@ async fn get_local_playback_progress(
         }
         let playlist_url = format!(
             "{}/torrents/{}/playlist",
-            RQBIT_URL,
+            rqbit_url(),
             percent_encode(&torrent_id)
         );
         let (media_url, player_ipc, generation) = manager()
@@ -7354,6 +7256,15 @@ mod tests {
         let target = select_stream_target(&entries, &request).expect("target");
         assert!(target.media_url.ends_with("/stream/1"));
         assert_eq!(target.selected_file_indices, vec![1, 2]);
+    }
+
+    #[test]
+    fn playlist_compatibility_never_guesses_an_unrelated_file_or_index() {
+        let request = playback_request_for_episode("5");
+        let entries = vec![playlist_entry("Example S01E04.mkv", "Example.S01E04.mkv", PlaylistKind::Video)];
+        assert!(select_stream_target(&entries, &request).is_none());
+        assert_eq!(playlist_file_index("http://127.0.0.1:3030/torrents/12/playlist?count=7"), None);
+        assert_eq!(playlist_file_index("http://127.0.0.1:3030/torrents/12/stream/4?x=7"), Some(4));
     }
 
     #[test]

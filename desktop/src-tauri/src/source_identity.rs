@@ -75,11 +75,17 @@ pub fn parse_episode_intent(query: &str) -> Option<u64> {
     Some(n as u64)
 }
 pub fn release_episode(title: &str) -> Option<u64> {
-    let lower = title.to_ascii_lowercase();
+    let mut lower = title.to_ascii_lowercase();
+    for extension in [".mkv",".mp4",".avi",".webm",".m2ts",".m4v",".mov",".ts"] {if lower.ends_with(extension){lower.truncate(lower.len()-extension.len());break;}}
     // Drop bracketed release metadata before looking for bare episode suffixes.
     let mut cleaned = String::new(); let mut bracket = 0;
     for c in lower.chars() { match c { '[' | '(' => bracket += 1, ']' | ')' => bracket = (bracket - 1).max(0), _ if bracket == 0 => cleaned.push(c), _ => {} } }
-    parse_episode_intent(&cleaned)
+    for separator in [" - "," – "] {for suffix in cleaned.split(separator).skip(1){if let Some(n)=suffix.split_whitespace().next().and_then(|token|number(token.split('v').next().unwrap_or(""))){return Some(n as u64);}}}
+    let normalized=normalize(&cleaned);let words:Vec<_>=normalized.split_whitespace().collect();
+    let end=words.iter().enumerate().position(|(i,w)|["480p","720p","1080p","1440p","2160p","webrip","webdl","web","bluray","bdrip","hevc","avc","x264","x265","aac","flac","dual"].contains(w)
+        || *w=="h" && words.get(i+1).is_some_and(|next|["264","265"].contains(next))
+        || w.starts_with("aac")&&w[3..].starts_with(|c:char|c.is_ascii_digit())).unwrap_or(words.len());
+    parse_episode_intent(&words[..end].join(" "))
 }
 pub fn matches_episode(title: &str, episode: u64) -> bool {
     let lower = title.to_ascii_lowercase();
@@ -214,6 +220,7 @@ pub fn batch_identity(title: &str, identity: &SourceIdentity) -> Evidence {
     classify(&format!("{base} - 01"), identity, 1)
 }
 pub fn is_batch_release(title:&str)->bool {
+    if season_marker(title).is_some() && release_episode(title).is_none() { return true; }
     if normalize(title).split_whitespace().any(|word|["batch","complete","collection","pack"].contains(&word)){return true;}
     let chars:Vec<_>=title.chars().collect();
     for start in 0..chars.len(){if !chars[start].is_ascii_digit(){continue;}let mut end=start;while end<chars.len()&&chars[end].is_ascii_digit(){end+=1;}while end<chars.len()&&chars[end].is_whitespace(){end+=1;}if end<chars.len()&&['-','–','~'].contains(&chars[end]){end+=1;while end<chars.len()&&chars[end].is_whitespace(){end+=1;}if end<chars.len()&&chars[end].is_ascii_digit(){return true;}}}
@@ -229,6 +236,16 @@ mod tests {
         for codec in ["1080p NF WEB-DL HEVC EAC3","720p NF WEB-DL AVC EAC3","1080p NF WEB-DL AVC EAC3"] {assert_eq!(batch_identity(&format!("[Erai-raws] Cyberpunk: Edgerunners 2 - 01 ~ 10 [{codec}][MultiSub] [BATCH]"),&identity),Evidence::Exact);}
         assert_ne!(batch_identity("Cyberpunk: Edgerunners - 01 ~ 10 [BATCH]",&identity),Evidence::Exact);
         assert!(is_batch_release("Example Anime - 01 ~ 10"));
+    }
+    #[test] fn pictured_season_source_modes() {
+        let fixture:serde_json::Value=serde_json::from_str(include_str!("../../../tests/fixtures/source-modes-cyberpunk.json")).unwrap();
+        let identity:SourceIdentity=serde_json::from_value(fixture["identity"].clone()).unwrap();
+        for case in fixture["cases"].as_array().unwrap(){
+            let title=case["title"].as_str().unwrap();
+            assert_eq!(serde_json::to_value(classify(title,&identity,2)).unwrap(),case["evidence"],"{title}");
+            assert_eq!(is_batch_release(title),case["batch"].as_bool().unwrap(),"{title}");
+            if let Some(expected)=case["batchIdentity"].as_bool(){assert_eq!(batch_identity(title,&identity)==Evidence::Exact,expected,"{title}");}
+        }
     }
     #[test] fn sxe_uses_episode_only() { for (text, episode) in [("Example S02E01",1), ("Example S01E03",3), ("Example S02E105",105), ("Example EP01",1), ("Example - 003v2",3)] { assert_eq!(parse_episode_intent(text),Some(episode)); } }
     #[test] fn title_scope_does_not_infer_season() { assert_eq!(parse_episode_intent("Example Season 2"),None); assert_eq!(parse_episode_intent("86"),None); }

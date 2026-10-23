@@ -5,12 +5,13 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import http from 'node:http';
+import os from 'node:os';
 const root=path.resolve('.validation/batch-engine-fixture');await fs.mkdir(root,{recursive:true});
 const mediaPath=path.resolve('.validation/completion-fixture.mkv');
 try{await fs.access(mediaPath);}catch{await new Promise((resolve,reject)=>{const media=spawn(path.resolve('desktop/src-tauri/bin/mpv.com'),['--no-config','--ao=null','--ovc=ffv1','--of=matroska',`--o=${mediaPath}`,'av://lavfi:testsrc=duration=3:size=64x64:rate=12','--term-status-msg='],{windowsHide:true,stdio:'ignore'});media.once('error',reject);media.once('exit',code=>code===0?resolve():reject(Error('Could not generate valid fixture media.')));});}
 const fixture=await fs.readFile(mediaPath);
 const encode=value=>Buffer.isBuffer(value)?Buffer.concat([Buffer.from(`${value.length}:`),value]):typeof value==='string'?encode(Buffer.from(value)):typeof value==='number'?Buffer.from(`i${value}e`):Array.isArray(value)?Buffer.concat([Buffer.from('l'),...value.map(encode),Buffer.from('e')]):Buffer.concat([Buffer.from('d'),...Object.keys(value).sort().flatMap(key=>[encode(key),encode(value[key])]),Buffer.from('e')]);
-const files=Array.from({length:10},(_,index)=>({length:fixture.length,path:[`Fixture Anime S01E${String(index+1).padStart(2,'0')}.mkv`]}));
+const files=Array.from({length:10},(_,index)=>({length:fixture.length,path:['Season + 1 [100%]',`Fixture Anime S01E${String(index+1).padStart(2,'0')} [雪, plus+percent%25].mkv`]}));
 const data=Buffer.concat(files.map(()=>fixture)),pieces=[];for(let offset=0;offset<data.length;offset+=16384)pieces.push(createHash('sha1').update(data.subarray(offset,offset+16384)).digest());
 const info={files,name:'Fixture Anime','piece length':16384,pieces:Buffer.concat(pieces),private:1};
 // A small compliant BEP-9 metadata peer keeps this test independent of the
@@ -25,15 +26,15 @@ const metadataPeer=net.createServer(socket=>{sockets.add(socket);socket.on('clos
   });});
 await new Promise(resolve=>metadataPeer.listen(0,'127.0.0.1',resolve));const metadataPort=metadataPeer.address().port;
 const peerPort=await unusedPort();
-const tracker=http.createServer((_request,response)=>{response.writeHead(200,{'Content-Type':'text/plain'});response.end(encode({interval:60,peers:Buffer.from([127,0,0,1,metadataPort>>8,metadataPort&255])}));});
+const tracker=http.createServer((_request,response)=>{response.writeHead(200,{'Content-Type':'text/plain'});response.end(encode({interval:60,peers:Buffer.from([127,0,0,1,metadataPort>>8,metadataPort&255,127,0,0,1,peerPort>>8,peerPort&255])}));});
 await new Promise(resolve=>tracker.listen(0,'127.0.0.1',resolve));const trackerUrl=`http://127.0.0.1:${tracker.address().port}/announce`;
 const hash=createHash('sha1').update(encode(info)).digest('hex'),torrent=path.join(root,'fixture.torrent');await fs.writeFile(torrent,encode({announce:trackerUrl,info}));
-const seed=path.join(root,'seed');await fs.mkdir(path.join(seed,'Fixture Anime'),{recursive:true});for(const file of files)await fs.writeFile(path.join(seed,...file.path),fixture);
+const seed=path.join(root,'seed');await fs.mkdir(path.join(seed,'Fixture Anime'),{recursive:true});for(const file of files){await fs.mkdir(path.dirname(path.join(seed,...file.path)),{recursive:true});await fs.writeFile(path.join(seed,...file.path),fixture);}
 const fixtureRecord={hash,torrent,files:10,bytes:fixture.length,root};await fs.writeFile(path.resolve('.validation/batch-fixture.json'),JSON.stringify(fixtureRecord,null,2));
 async function unusedPort(){return new Promise((resolve,reject)=>{const server=net.createServer();server.on('error',reject);server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});}
 const port=await unusedPort();
 const base=`http://127.0.0.1:${port}`,engine=spawn(path.resolve('desktop/src-tauri/bin/rqbit.exe'),['-v','debug','--disable-dht','--disable-upnp-port-forward','--disable-dht-persistence','--tcp-min-port',String(peerPort),'--tcp-max-port',String(peerPort+1),'--http-api-listen-addr',`127.0.0.1:${port}`,'server','start','--disable-persistence',seed],{windowsHide:true,env:{...process.env,NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'},stdio:['ignore','pipe','pipe']});
-let leecher;
+let leecher,nativeEngine;
 let stderr='';engine.stderr.on('data',chunk=>stderr=(stderr+chunk).slice(-16384));engine.stdout.on('data',chunk=>stderr=(stderr+chunk).slice(-16384));
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function api(route,body,origin=base){const response=await fetch(origin+route,{method:body===undefined?'GET':'POST',headers:body&&typeof body==='object'&&!Buffer.isBuffer(body)?{'Content-Type':'application/json'}:{},body:body===undefined?undefined:typeof body==='string'||Buffer.isBuffer(body)?body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});const text=await response.text();assert.ok(response.ok,`${response.status}: ${text}`);return JSON.parse(text);}
@@ -67,10 +68,14 @@ try{
     const current=await api(`/torrents/${id}`,undefined,clientBase);assert.equal(current.info_hash||current.details?.info_hash,hash);
     assert.deepEqual(current.files.filter(file=>file.included).map((_,position)=>current.files.indexOf(current.files.filter(file=>file.included)[position])),[index]);
     if(index===1&&process.argv.includes('--native')){
-      const command=spawn('cargo',['test','--manifest-path','desktop/src-tauri/Cargo.toml','batch_metadata_native_acceptance','--','--ignored','--nocapture'],{windowsHide:true,env:{...process.env,STREAMNYAA_BATCH_FIXTURE_MAGNET:magnet,STREAMNYAA_BATCH_FIXTURE_PEER:`127.0.0.1:${metadataPort}`,NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'},stdio:['ignore','pipe','pipe']});let log='';command.stdout.on('data',chunk=>{log+=chunk;process.stdout.write(chunk);});command.stderr.on('data',chunk=>{log+=chunk;process.stdout.write(chunk);});
-      const code=await new Promise((resolve,reject)=>{command.on('error',reject);command.on('exit',resolve);});await fs.writeFile(path.resolve('.validation/batch-native-fixture.log'),log);assert.equal(code,0);assert.equal(leecher.exitCode,null,'Inspection must leave active transfer engine running');
+      const nativePort=await unusedPort(),nativeBase=`http://127.0.0.1:${nativePort}`,nativeCache=await fs.mkdtemp(path.join(os.tmpdir(),'streamnyaa-native-flow-'));
+      nativeEngine=spawn(path.resolve('desktop/src-tauri/bin/rqbit.exe'),['--disable-dht','--disable-tcp-listen','--disable-upnp-port-forward','--disable-dht-persistence','--http-api-listen-addr',`127.0.0.1:${nativePort}`,'server','start','--disable-persistence',nativeCache],{windowsHide:true,env:{...process.env,NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'},stdio:['ignore','pipe','pipe']});
+      nativeEngine.stderr.on('data',chunk=>stderr=(stderr+chunk).slice(-16384));nativeEngine.stdout.on('data',chunk=>stderr=(stderr+chunk).slice(-16384));
+      for(let attempt=0;attempt<50;attempt++){try{await api('/',undefined,nativeBase);break;}catch{if(attempt===49)throw Error('Isolated native engine did not start.');await pause(100);}}
+      const command=spawn('cargo',['test','--manifest-path','desktop/src-tauri/Cargo.toml','batch_metadata_native_acceptance','--','--ignored','--nocapture'],{windowsHide:true,env:{...process.env,STREAMNYAA_BATCH_FIXTURE_MAGNET:magnet,STREAMNYAA_BATCH_FIXTURE_PEER:`127.0.0.1:${metadataPort}`,STREAMNYAA_NATIVE_FIXTURE_PORT:String(nativePort),STREAMNYAA_NATIVE_FIXTURE_PEERS:`127.0.0.1:${metadataPort},127.0.0.1:${peerPort}`,STREAMNYAA_NATIVE_FIXTURE_CACHE:nativeCache,STREAMNYAA_NATIVE_FIXTURE_ENGINE:path.resolve('desktop/src-tauri/bin/rqbit.exe'),STREAMNYAA_NATIVE_FIXTURE_PLAYER:path.resolve('desktop/src-tauri/bin/mpv.exe'),NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'},stdio:['ignore','pipe','pipe']});let log='';command.stdout.on('data',chunk=>{log+=chunk;process.stdout.write(chunk);});command.stderr.on('data',chunk=>{log+=chunk;process.stdout.write(chunk);});
+      const deadline=setTimeout(()=>{if(command.exitCode===null){if(process.platform==='win32')spawn('taskkill',['/PID',String(command.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});else command.kill();}},120000);const code=await new Promise((resolve,reject)=>{command.on('error',reject);command.on('exit',resolve);});clearTimeout(deadline);await fs.writeFile(path.resolve('.validation/batch-native-fixture.log'),log);assert.equal(code,0);assert.equal(leecher.exitCode,null,'Inspection and native playback must leave the other transfer engine running');nativeEngine.kill();nativeEngine=undefined;
     }
   }
   const evidence={...fixtureRecord,passed:true,metadataOnlyDidNotAddDownload:true,selectedIndices:[1,2],sameTorrentId:id,bundledMpvDecodedBothFiles:true,enginePid:engine.pid,externalProvidersContacted:false,elapsedNote:'Local fixture only; not a public-provider benchmark.'};
   await fs.writeFile(path.resolve('.validation/batch-engine-results.json'),JSON.stringify(evidence,null,2));console.log(evidence);
-}catch(error){await fs.writeFile(path.resolve('.validation/batch-engine-error.log'),stderr);console.error(stderr.slice(-8000));throw error;}finally{for(const socket of sockets)socket.destroy();metadataPeer.close();tracker.closeAllConnections();tracker.close();leecher?.kill();engine.kill();await Promise.race([new Promise(resolve=>engine.once('exit',resolve)),pause(2000)]);}
+}catch(error){await fs.writeFile(path.resolve('.validation/batch-engine-error.log'),stderr);console.error(stderr.slice(-8000));throw error;}finally{for(const socket of sockets)socket.destroy();metadataPeer.close();tracker.closeAllConnections();tracker.close();nativeEngine?.kill();leecher?.kill();engine.kill();await Promise.race([new Promise(resolve=>engine.once('exit',resolve)),pause(2000)]);}

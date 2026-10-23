@@ -23,7 +23,7 @@ it('separates matching episodes, uncertain seasons and uninspected batches from 
  const sequel=buildSourceIdentity({mal_id:2,title:'Example Anime Season 2',type:'TV'});
  const sources=classifyWebSources([item('Example Anime S02E02',1),item('Example Anime - 02',2),item('Example Anime S01E02',3),item('Example Anime Season 2 01-10 Batch',4),item('Example Anime Season 1 Batch',5),item('Example Anime S02E03',6),item('Example Anime S02E02 NCOP',7)],sequel,2);
  expect(sources.map(value=>value.matchTier)).toEqual(expect.arrayContaining(['exact','uncertain','batch']));
- expect(sources).toHaveLength(3);
+ expect(sources.filter(source=>source.matchTier!=='conflict')).toHaveLength(3);expect(sources.filter(source=>source.matchTier==='conflict')).toHaveLength(3);
  expect(sources.find(value=>value.matchTier==='batch')?.matchReason).toContain('not inspected');
  expect(classifyWebSources([item('Unrelated Anime - 02')])[0].matchTier).toBe('search');
 });
@@ -52,7 +52,7 @@ it('uses title intent for the pack lane and clears failure state only after succ
  vi.mocked(searchNyaa).mockResolvedValue(result([item('Example Anime 01-10 Batch')]));
  const found=await discoverWebSources({identity,episode:2},{previous:{items:[],complete:false,pending:[job],stale:true,partialReason:'provider-failure'},requestLimit:1});
  expect(searchNyaa).toHaveBeenCalledWith(job.query,job.category,'0',String(job.page),expect.objectContaining({maxAgeMs:300000,intent:{scope:'title'}}));
- expect(found.items[0].matchTier).toBe('batch');expect(found.complete).toBe(true);
+ expect(found.items[0].matchTier).toBe('batch');expect(found.complete).toBe(false);expect(found.pending?.[0].page).toBe(2);expect(found.stale).toBe(false);
 });
 it('never converts cancellation into a fresh empty result',async()=>{
  const controller=new AbortController();vi.mocked(searchNyaa).mockImplementation(async()=>{controller.abort();throw new DOMException('Cancelled','AbortError');});

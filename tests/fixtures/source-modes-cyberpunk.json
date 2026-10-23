@@ -1,0 +1,79 @@
+{
+  "identity": {
+    "animeId": "mal:2",
+    "aliases": [
+      "Cyberpunk: Edgerunners 2",
+      "cyberpunk edgerunners Season 2"
+    ],
+    "installmentAliases": [
+      "Cyberpunk: Edgerunners 2",
+      "cyberpunk edgerunners Season 2"
+    ],
+    "format": "ONA",
+    "seasonNumber": 2,
+    "partNumber": null,
+    "sequel": true
+  },
+  "cases": [
+    {
+      "title": "Cyberpunk Edgerunners S02 Season 2 1080p NF WEBRip Dual Audio AAC5.1 10bits x265",
+      "episode": 2,
+      "evidence": "uncertain",
+      "batch": true,
+      "batchIdentity": true
+    },
+    {
+      "title": "Cyberpunk Edgerunners Season 1 S01 2022 1080p NF Dual Audio WEBRip",
+      "episode": 2,
+      "evidence": "conflict",
+      "batch": true,
+      "batchIdentity": false
+    },
+    {
+      "title": "Cyberpunk Edgerunners - S01E02 (WEB 1080p) [ENG]",
+      "episode": 2,
+      "evidence": "conflict",
+      "batch": false
+    },
+    {
+      "title": "Cyberpunk - Edgerunners - S01 - DUAL 1080p WEB H.264",
+      "episode": 2,
+      "evidence": "conflict",
+      "batch": true,
+      "batchIdentity": false
+    },
+    {
+      "title": "[Feibanyama] Cyberpunk Edgerunners S02E01 [NF WebRip 1080p H265]",
+      "episode": 2,
+      "evidence": "conflict",
+      "batch": false
+    },
+    {
+      "title": "Cyberpunk.Edgerunners.S01.1080p.NF.WEB-DL.DDP5.1.DV.HDR.H.265",
+      "episode": 2,
+      "evidence": "conflict",
+      "batch": true,
+      "batchIdentity": false
+    },
+    {
+      "title": "[Tenrai-Sensei] Cyberpunk Edgerunners (Season 1) [BD][1080p][HEVC 10bit x265][Dual Audio]",
+      "episode": 2,
+      "evidence": "conflict",
+      "batch": true,
+      "batchIdentity": false
+    },
+    {
+      "title": "[Erai-raws] Cyberpunk: Edgerunners 2 - 01 ~ 10 [1080p NF WEB-DL HEVC EAC3][MultiSub] [BATCH]",
+      "episode": 2,
+      "evidence": "uncertain",
+      "batch": true,
+      "batchIdentity": true
+    },
+    {
+      "title": "Cyberpunk Edgerunners S02E02 [1080p HEVC]",
+      "episode": 2,
+      "evidence": "exact",
+      "batch": false
+    }
+  ]
+}

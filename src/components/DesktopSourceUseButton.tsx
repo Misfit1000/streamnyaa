@@ -5,6 +5,6 @@ export default function DesktopSourceUseButton({ selected, unavailableReason, ti
 }) {
   return <button type="button" className="sn-secondary-action sn-source-use" disabled={busy||Boolean(unavailableReason)} aria-busy={busy}
     aria-pressed={selected} aria-label={`${selected ? 'Selected' : 'Use'} source: ${title}`}
-    title={unavailableReason || (selected ? 'Selected for the main Play button' : 'Select this release for the main Play button')}
+    title={unavailableReason || (selected ? 'Play this selected release' : 'Play this release; choose its episode file if needed')}
     onClick={onSelect}>{busy?'Checking…':selected ? <><Check size={14} aria-hidden="true" />Selected</> : 'Use'}</button>;
 }

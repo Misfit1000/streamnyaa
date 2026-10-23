@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { batchTitleIdentity, buildSourceIdentity, isBatchRelease } from '../../src/lib/desktopSourceIdentity';
+import { batchTitleIdentity, buildSourceIdentity, classifySourceIdentity, isBatchRelease } from '../../src/lib/desktopSourceIdentity';
 import { batchResolutionKey, inspectDesktopBatch } from '../../src/lib/desktopBatchSources';
 import { sourceSearchPlan } from '../../src/lib/desktopSourceDiscovery';
-import { selectSourceMode,visibleSeededSources } from '../../src/lib/desktopSourceSelection';
+import { selectSourceMode,visibleSeededSources,visibleSourcesForMode } from '../../src/lib/desktopSourceSelection';
+import picturedSources from '../fixtures/source-modes-cyberpunk.json';
 import DesktopBatchPicker from '../../src/components/DesktopBatchPicker';
 afterEach(()=>{cleanup();delete window.__TAURI__;});
 const identity=buildSourceIdentity({mal_id:1,title:'Example Anime',type:'TV'});
@@ -25,11 +26,49 @@ describe('batch verification and explicit file choice',()=>{
     const values=[{rawSeeders:300,matchTier:'broad',manualOnly:true},{rawSeeders:12,matchTier:'rejected',manualOnly:false},{rawSeeders:0,matchTier:'exact'}];
     expect(visibleSeededSources(values)).toEqual([values[0],{...values[1],matchTier:'broad',manualOnly:true}]);
   });
+  it('does not erase a listing when its peer count is unknown',()=>{
+    expect(visibleSeededSources([{rawSeeders:0,seedersKnown:false,matchTier:'broad',manualOnly:true}])).toHaveLength(1);
+    expect(visibleSeededSources([{rawSeeders:0,seedersKnown:true,matchTier:'exact'}])).toHaveLength(0);
+  });
   it('can display a batch candidate without claiming its files are verified',()=>{
     const candidate={title:'Example Anime Batch',matchTier:'likely',playable:false,batchCandidate:true};
     expect(selectSourceMode([candidate],'strict','sub',()=>1,()=>false)).toEqual([candidate]);
     expect(candidate.playable).toBe(false);
     expect(batchResolutionKey(identity,{infoHash:'ABC'},2)).not.toBe(batchResolutionKey(identity,{infoHash:'ABC'},3));
+  });
+  it('keeps wrong-season and unresolved batch releases in Broad only, including after cached manifest misses',()=>{
+    const rows=visibleSeededSources([
+      {title:'Season 2 - 02',rawSeeders:2,matchTier:'exact',playable:true},
+      {title:'Season 2 Batch',rawSeeders:2,matchTier:'likely',playable:false,batchCandidate:true},
+      {title:'Season 1 Batch',rawSeeders:400,matchTier:'broad',playable:false,manualOnly:true,batchCandidate:true},
+      {title:'Season 1 - 02',rawSeeders:400,matchTier:'rejected',playable:false},
+      {title:'Season 2 Batch missing episode',rawSeeders:400,matchTier:'rejected',playable:false,batchCandidate:true},
+      {title:'Dead release',rawSeeders:0,matchTier:'exact',playable:true},
+    ]);
+    for(const mode of ['strict','balanced'] as const){
+      expect(visibleSourcesForMode(rows,mode,'sub').map(x=>x.title)).toEqual(['Season 2 - 02','Season 2 Batch']);
+      expect(selectSourceMode(rows,mode,'sub',()=>90,()=>false).map(x=>x.title)).toEqual(['Season 2 - 02','Season 2 Batch']);
+    }
+    expect(visibleSourcesForMode(rows,'broad','sub')).toHaveLength(5);
+    expect(rows).toHaveLength(5);
+  });
+  it.each(picturedSources.cases)('classifies the pictured season source: $title',entry=>{
+    expect(classifySourceIdentity(entry.title,picturedSources.identity,entry.episode).evidence).toBe(entry.evidence);
+    expect(isBatchRelease(entry.title)).toBe(entry.batch);
+    if(entry.batchIdentity!==undefined)expect(batchTitleIdentity(entry.title,picturedSources.identity)).toBe(entry.batchIdentity);
+  });
+  it('keeps the pictured current-season pack and episode in Strict and Balanced, while Broad retains seeded Season 1 releases',()=>{
+    const rows=visibleSeededSources(picturedSources.cases.map(entry=>{
+      const pack=isBatchRelease(entry.title),verifiedPack=pack&&batchTitleIdentity(entry.title,picturedSources.identity);
+      const exact=classifySourceIdentity(entry.title,picturedSources.identity,entry.episode).evidence==='exact';
+      return {title:entry.title,rawSeeders:400,playable:exact,matchTier:exact?'exact':verifiedPack?'likely':'broad',manualOnly:!exact&&!verifiedPack,batchCandidate:pack};
+    }));
+    for(const mode of ['strict','balanced'] as const){
+      const visible=visibleSourcesForMode(rows,mode,'sub');
+      expect(visible.map(x=>x.title)).toEqual([picturedSources.cases[0].title,picturedSources.cases[7].title,picturedSources.cases[8].title]);
+      expect(visible.some(x=>/S01|Season 1/i.test(x.title))).toBe(false);
+    }
+    expect(visibleSourcesForMode(rows,'broad','sub')).toHaveLength(rows.length);
   });
   it('opens an accessible picker and dispatches exactly the chosen file',()=>{
     const choose=vi.fn(),close=vi.fn();render(<DesktopBatchPicker open episode={2} files={[{index:4,name:'02 [1080p].mkv',bytes:100},{index:7,name:'02 [720p].mkv',bytes:80}]} onChoose={choose} onClose={close}/>);

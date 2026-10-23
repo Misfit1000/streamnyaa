@@ -14,6 +14,7 @@ export interface NyaaItem {
   rawSize: number;
   seeders: string;
   rawSeeders: number;
+  seedersKnown?:boolean;
   leechers: string;
   magnet: string;
   category: string;
@@ -256,7 +257,8 @@ const desktopResponse = await fetchDesktopSourceApi(url.toString(), options);
         infoHash,
         size: item.size || '0 Bytes',
         rawSize: parseSize(item.size),
-        seeders: (item.seeders || 0).toString(),
+        seeders: item.seedersKnown===false?'Unknown':(item.seeders || 0).toString(),
+        seedersKnown:item.seedersKnown!==false,
         rawSeeders: parseInt(item.seeders) || 0,
         leechers: (item.leechers || 0).toString(),
         magnet,

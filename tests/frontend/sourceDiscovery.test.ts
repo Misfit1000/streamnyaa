@@ -30,12 +30,12 @@ describe('bounded resumable source discovery', () => {
   it('retains successful lanes and returns pending jobs when local admission waits', async () => {
     const first = jobs().slice(0, 3);
     const result = await runSourceSearchPass({ jobs: first, merge, fetch: async job => {
-      if (job === first[1]) throw { code: 'queued', origin: 'local-admission', retryAt: 60_000 };
+      if (job.query===first[1].query&&job.category===first[1].category) throw { code: 'queued', origin: 'local-admission', retryAt: 60_000 };
       return { items: [{ id: job.query }], complete: true };
     } });
     expect(result.items.length).toBe(1);
     expect(result.complete).toBe(false);
-    expect(result.pending).toContain(first[1]);
+    expect(result.pending).toContainEqual(first[1]);
     expect(result).toMatchObject({ partialReason: 'provider-failure', retryAt: 60_000 });
   });
   it('prunes only genuinely empty provider pages, never pages whose items were rejected by classification', async () => {
@@ -47,7 +47,14 @@ describe('bounded resumable source discovery', () => {
     expect(fetch).toHaveBeenCalledTimes(6);
     const filtered = await runSourceSearchPass({ jobs: plan, merge, requestLimit: 3, fetch: async () => ({ items: [], complete: true, emptyPage: false }) });
     expect(filtered.complete).toBe(false);
-    expect(filtered.pending?.length).toBe(plan.length-3);
+    expect(filtered.pending?.length).toBe(plan.length);
+  });
+  it('continues beyond page three and terminates a repeated provider page',async()=>{
+    const job=jobs()[0];const fetch=vi.fn(async (job:typeof job)=>({items:[{id:String(job.page)}],emptyPage:false,pageFingerprint:job.page>4?'page4':`page${job.page}`,complete:true}));
+    const first=await runSourceSearchPass({jobs:[job],merge,fetch,requestLimit:3});
+    expect(first.pending?.[0].page).toBe(4);
+    const next=await runSourceSearchPass({jobs:first.pending!,initial:first.items,merge,fetch});
+    expect(fetch.mock.calls.map(([job])=>job.page)).toEqual([1,2,3,4,5]);expect(next.complete).toBe(true);
   });
   it('never reports stale or cancelled discovery as complete', async () => {
     const result = await runSourceSearchPass({ jobs: jobs().slice(0, 1), merge, fetch: async () => ({ items: [{ id: 'saved' }], complete: false, stale: true, fetchedAt: 10 }) });

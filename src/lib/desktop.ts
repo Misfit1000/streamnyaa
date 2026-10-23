@@ -72,6 +72,8 @@ export type DesktopRuntimeStatus = {
 };
 
 export type DesktopPlaybackStatus = {
+  stage?:'metadata'|'file-resolution'|'local-engine'|'peers'|'buffering'|'decoding'|'cancellation';
+  failure_kind?:string; can_retry?:boolean; requires_file_choice?:boolean;
   ok: boolean;
   state: string;
   message: string;
