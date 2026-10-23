@@ -925,6 +925,8 @@ function load_player_meta()
   local previous_artwork_layout = tostring(player_meta.artworkLayout or "")
   local previous_cover_key = cover_metadata_key()
 
+  player_meta.hasNextEpisode = data.hasNextEpisode
+  if player_meta.hasNextEpisode == nil then player_meta.hasNextEpisode = data.has_next_episode end
   player_meta.animeTitle = tostring(data.animeTitle or data.anime_title or "")
   player_meta.episodeTitle = tostring(data.episodeTitle or data.episode_title or "")
   player_meta.episodeNumber = tostring(data.episodeNumber or data.episode_number or "")
@@ -2332,6 +2334,7 @@ function request_external_subtitle_import()
 end
 
 function request_next_episode(reason)
+  if player_meta.hasNextEpisode == false then ui.end_status = "unavailable"; ui.end_focus = "end_replay"; return end
   if reason == "ended" and ui.sleep_expired then return end
   if ui.end_next_pending or ui.end_status == "unavailable" then return end
   local next_reason = reason == "ended" and "ended" or "manual"
@@ -3033,14 +3036,15 @@ function draw_end_overlay(ass, width, height, mouse, s)
   rect(ass, 0, 0, width, height, C.black, 180)
   rounded_rect(ass, x, y, x + w, y + h, 14 * s, C.panel, 0)
   rounded_outline(ass, x, y, x + w, y + h, 14 * s, s, C.white, 220)
-  local unavailable = ui.end_status == "unavailable"
+  local unavailable = ui.end_status == "unavailable" or player_meta.hasNextEpisode == false
   draw_text(ass, x + 28 * s, y + 20 * s, 4, 10 * s, C.accent, 0, "PLAYBACK", true, "Segoe UI Semibold")
   draw_text(ass, x + 28 * s, y + 49 * s, 4, 25 * s, C.white, 0, unavailable and "You're caught up" or "Episode complete", true, "Segoe UI Semibold")
   local title = tostring(player_meta.animeTitle ~= "" and player_meta.animeTitle or state.title or ""):gsub("[\r\n]", " ")
   local episode = tostring(player_meta.episode or "")
   if episode ~= "" then title = title .. " · Episode " .. episode end
   draw_text(ass, x + 28 * s, y + 86 * s, 4, 16 * s, C.white, 8, truncate_to_width(title, w - 56 * s, 16 * s, 0), true, "Segoe UI Semibold")
-  local detail = unavailable and "No next aired episode yet."
+  local detail = player_meta.hasNextEpisode == false and "This installment is complete. Replay it or close this message."
+    or unavailable and "No next aired episode yet."
     or ui.end_status == "opening" and "Opening the next episode…"
     or ui.end_status == "preparing" and "Preparing the next episode…"
     or ui.end_status == "failed" and "Couldn't prepare the next episode. Try again."
@@ -4922,7 +4926,7 @@ end
 
 function keyboard_seek(seconds, reason)
   if ui.end_overlay then
-    local choices = ui.end_status == "unavailable" and {"end_replay", "end_close"} or ui.end_next_pending and {"end_replay", "end_close"} or {"end_next_episode", "end_replay", "end_close"}
+    local choices = (ui.end_status == "unavailable" or player_meta.hasNextEpisode == false) and {"end_replay", "end_close"} or ui.end_next_pending and {"end_replay", "end_close"} or {"end_next_episode", "end_replay", "end_close"}
     local current = 1
     for i, id in ipairs(choices) do if id == ui.end_focus then current = i end end
     ui.end_focus = choices[((current - 1 + (seconds > 0 and 1 or -1)) % #choices) + 1]

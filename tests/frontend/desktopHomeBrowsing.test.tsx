@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@t
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../../src/api/recentReleases',async original=>({...await original<any>(),fetchRecentReleases:vi.fn(async(request:any)=>({version:1,before:request.before,track:'sub',page:1,complete:true,stale:false,fetchedAt:Date.now(),data:[{canonicalId:'anilist:301',anilist_id:301,mal_id:301,title:'New episode fixture',countryOfOrigin:'JP',releaseEpisode:7,releaseAt:(request.before-60)*1000,releaseTrack:'sub',timingBasis:'confirmed-sub',releasePolicyVersion:1,airingEpisode:7}]}))}));
 vi.mock('../../src/context/AuthContext',()=>({useAuth:()=>({user:null,isAdmin:false})}));
 vi.mock('../../src/components/DesktopWatchDesk',()=>({default:()=>null}));
 vi.mock('../../src/api/desktopHomeBatch',async importOriginal=>({...(await importOriginal<any>()),fetchHomeShelf:vi.fn()}));
@@ -76,10 +77,10 @@ describe('Home origin preference',()=>{
 describe('Home page without source proof',()=>{
  const mount=()=>{const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});return render(<QueryClientProvider client={client}><MemoryRouter><DesktopHome/></MemoryRouter></QueryClientProvider>);};
  it('populates the banner and shelves, toggles Chinese animation, and opens the advertised episode',async()=>{
-  const view=mount();await screen.findAllByText(japanese.title);await screen.findByText('New episode fixture');
+  const view=mount();await screen.findAllByText(japanese.title);await screen.findAllByText('New episode fixture');
   expect(screen.queryByText(chinese.title)).toBeNull();expect(screen.getAllByText(unknown.title).length).toBeGreaterThan(0);
   expect(screen.getByRole('link',{name:'Open anime'})).toBeTruthy();expect(screen.queryByText(/still need source verification/)).toBeNull();
-  const episodeLink=screen.getByText('New episode fixture').closest('a');expect(episodeLink?.getAttribute('href')).toContain('ep=7');
+  const episodeLink=screen.getAllByText('New episode fixture').at(-1)?.closest('a');expect(episodeLink?.getAttribute('href')).toContain('ep=7');
   fireEvent.click(screen.getByRole('checkbox',{name:'Show Chinese animation'}));await screen.findAllByText(chinese.title);
   expect(localStorage.getItem(HOME_CHINESE_ANIMATION_KEY)).toBe('true');
   fireEvent.click(screen.getByRole('checkbox',{name:'Show Chinese animation'}));await waitFor(()=>expect(screen.queryByText(chinese.title)).toBeNull());

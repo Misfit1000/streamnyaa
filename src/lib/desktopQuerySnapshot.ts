@@ -1,3 +1,4 @@
+import {isRecentReleasePage} from './recentReleases';
 import { dehydrate, hydrate, type DehydratedState, type Query, type QueryClient } from '@tanstack/react-query';
 
 const SNAPSHOT_KEY = 'streamnyaa.desktopPublicQuerySnapshot.v1';
@@ -10,6 +11,7 @@ const PUBLIC_QUERY_PREFIXES = new Set([
   'episodes',
   'seasonal-anime',
   'recent-episodes',
+  'recent-releases',
   'upcoming-anime',
   'popular-anime',
   'top-anime',
@@ -43,6 +45,7 @@ export function restoreDesktopQuerySnapshot(queryClient: QueryClient) {
     parsed.state.queries = parsed.state.queries.filter(query => {
       if (!isPublicDesktopQuery(query as Query) || query.state.status !== 'success') return false;
       const data = query.state.data as any;
+      if(query.queryKey[0]==='recent-releases'&&(!Array.isArray(data?.pages)||!data.pages.every(isRecentReleasePage)))return false;
       if (query.queryKey[0] === 'episodes' && data?.streamnyaa?.status === 'estimated') return false;
       if (query.queryKey[0] === 'desktop-watch-sources' && !Array.isArray(data?.items)) return false;
       if (query.queryKey[0] === 'desktop-watch-installments-graph' && !Array.isArray(data?.items)) return false;

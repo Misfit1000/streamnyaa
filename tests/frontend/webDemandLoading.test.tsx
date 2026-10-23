@@ -4,6 +4,7 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {MemoryRouter} from 'react-router-dom';
 import {afterEach,expect,it,vi} from 'vitest';
 const calls=vi.hoisted(()=>[] as string[]);
+vi.mock('../../src/api/recentReleases',async original=>({...await original<any>(),fetchRecentReleases:vi.fn(async(request:any)=>{calls.push('recent');return{version:1,before:request.before,track:'sub',page:1,data:[],complete:true,stale:false,fetchedAt:Date.now()};})}));
 vi.mock('../../src/api/jikan',()=>({fetchSchedule:vi.fn(async()=>{calls.push('schedule');return {data:[]};}),mapAnilistToJikan:(value:any)=>value,
  fetchAniList:vi.fn(async(body:any)=>{calls.push(body.query.includes('query Recent')?'recent':body.query.includes('SCORE_DESC')?'score':body.variables.status==='NOT_YET_RELEASED'?'upcoming':'trending');return new Response(JSON.stringify({data:{Page:{pageInfo:{currentPage:1,hasNextPage:false},media:[],airingSchedules:[]}}}));})}));
 vi.mock('../../src/components/AnimeCard',()=>({default:()=>null}));

@@ -1,3 +1,5 @@
+import {useRecentReleaseFeed,useReleaseTrack} from '../lib/useRecentReleaseFeed';
+import RecentReleaseStatus from '../components/RecentReleaseStatus';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
@@ -113,10 +115,10 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
   const candidates = useMemo(() => desktopPosterCandidates(anime), [anime]);
   const image = candidates[imageIndex] || '';
   const title = anime?.title || anime?.title_english || anime?.title_romaji || 'Anime';
-  const path = anime.recentFeedKind === 'listed' && anime.listedEpisode ? desktopWatchPath(anime, {ep:anime.listedEpisode}) : desktopWatchOrBrowsePath(anime);
+  const path = anime.releaseEpisode?desktopWatchPath(anime,{ep:anime.releaseEpisode,type:anime.releaseTrack}):anime.recentFeedKind === 'listed' && anime.listedEpisode ? desktopWatchPath(anime, {ep:anime.listedEpisode}) : desktopWatchOrBrowsePath(anime);
   const genres = genresFor(anime).slice(0, 2);
   const compact = density === 'compact';
-  const episodeLabel = anime.recentFeedKind === 'listed' ? (anime.listedEpisode ? `Listed episode ${anime.listedEpisode}` : 'Recently listed') : episodeAvailabilityLabel(anime);
+  const episodeLabel = anime.releaseEpisode || (anime.recentFeedKind === 'listed' ? (anime.listedEpisode ? `Listed episode ${anime.listedEpisode}` : 'Recently listed') : episodeAvailabilityLabel(anime));
   const upcoming = isUpcomingAnime(anime);
 
   useEffect(() => {
@@ -144,7 +146,7 @@ export const ExploreAnimeCard = memo(function ExploreAnimeCard({ anime, index, d
           <h3 className="line-clamp-1 text-base font-semibold text-white">{title}</h3>
           <p className="mt-1 line-clamp-2 text-sm leading-5 text-white/52">{anime?.synopsis || genres.join(' · ') || 'Anime details are being refreshed.'}</p>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-semibold text-white/56">
-            <span>{formatFor(anime)}</span><span>Episodes {episodeLabel}</span><span>{yearFor(anime) || 'Year TBA'}</span>
+            {anime.homeAvailabilityLabel&&<span>{anime.homeAvailabilityLabel}</span>}<span>{formatFor(anime)}</span><span>Episodes {episodeLabel}</span><span>{yearFor(anime) || 'Year TBA'}</span>
             <span className="inline-flex items-center gap-1 text-amber-300"><Star className="h-3.5 w-3.5 fill-current" />{scoreFor(anime) ? scoreFor(anime).toFixed(1) : 'N/A'}</span>
           </div>
         </div>
@@ -229,7 +231,11 @@ export default function DesktopExplore() {
   const lastValidFeed = useRef<{key: string; page: ExplorePage} | null>(null);
   const sentinel = useRef<HTMLDivElement>(null);
   const firstPage = ranking ? (block - 1) * 4 + 1 : 1;
-  const catalogQuery = useInfiniteQuery({
+  const timedReleases=mode==='new'&&!query;
+  const preferredTrack=useReleaseTrack();
+  const releaseFeed=useRecentReleaseFeed({enabled:timedReleases,adult,track:searchParams.get('track')==='dub'?'dub':preferredTrack,before:Number(searchParams.get('before'))||undefined,genre:genre==='Any'?'':genre,type:format==='Any'?'':format.toUpperCase().replace(/ /g,'_'),status:({Airing:'airing',Completed:'complete',Upcoming:'upcoming'} as Record<string,string>)[status]||'',year:selectedYear});
+  const legacyCatalogQuery = useInfiniteQuery({
+    enabled:!timedReleases,
     queryKey: ['desktop-explore-v3', catalogCacheKey],
     initialPageParam: { page: firstPage, service: service as ExploreService, before: undefined as number | undefined },
     queryFn: async ({ signal, pageParam }) => {
@@ -265,19 +271,20 @@ export default function DesktopExplore() {
     refetchInterval: false, // The shared recovery coordinator owns provider recovery.
   });
 
+  const catalogQuery=timedReleases?{...releaseFeed,data:releaseFeed.data?{pages:[{data:releaseFeed.items,page:1,fetchedAt:releaseFeed.fetchedAt,stale:releaseFeed.stale,hasNextPage:releaseFeed.hasNextPage,service:'anilist' as const,fallback:false} as ExplorePage],pageParams:[]}:undefined}:legacyCatalogQuery;
   const retryAt = Number((catalogQuery.error as {retryAt?:number} | null)?.retryAt) || catalogQuery.errorUpdatedAt + Number((catalogQuery.error as {retryAfterMs?:number} | null)?.retryAfterMs || 0);
   const retryClock = useVisibleCountdown(retryAt, catalogQuery.isError);
   const retrySeconds = Math.max(0, Math.ceil((retryAt - retryClock)/1000));
 
   useEffect(() => {
-    if (!catalogQuery.data) return;
+    if (timedReleases || !catalogQuery.data) return;
     const pages = catalogQuery.data.pages.slice(0, 12);
     writeDesktopExploreCatalog(catalogCacheKey, { data: pages.flatMap((page) => page.data), pages,
       pageParams: catalogQuery.data.pageParams.slice(0, 12) }, Math.min(...pages.map(page => page.fetchedAt || Date.now())));
-  }, [catalogCacheKey, catalogQuery.data]);
+  }, [catalogCacheKey, catalogQuery.data,timedReleases]);
 
   useEffect(() => {
-    if (!catalogQuery.hasNextPage || catalogQuery.isFetching || catalogQuery.isError || navigator.onLine === false) return;
+    if (timedReleases || !catalogQuery.hasNextPage || catalogQuery.isFetching || catalogQuery.isError || navigator.onLine === false) return;
     if (ranking) { void catalogQuery.fetchNextPage(); return; }
     if (!sentinel.current || typeof IntersectionObserver === 'undefined') return;
     // Do not drain an entire filtered schedule while the sentinel stays visible.
@@ -292,9 +299,9 @@ export default function DesktopExplore() {
     }, { rootMargin: '500px' });
     observer.observe(sentinel.current);
     return () => observer.disconnect();
-  }, [ranking, genre, format, status, catalogQuery.hasNextPage, catalogQuery.isFetching, catalogQuery.isError, catalogQuery.fetchNextPage, catalogQuery.data]);
+  }, [timedReleases,ranking, genre, format, status, catalogQuery.hasNextPage, catalogQuery.isFetching, catalogQuery.isError, catalogQuery.fetchNextPage, catalogQuery.data]);
 
-  const loadedItems = useMemo(() => { const items = catalogQuery.data?.pages.flatMap(page => page.data) || []; if (mode !== 'new') return uniqueAnime(items); const seen = new Set<string>(); return items.filter(item => { const key = JSON.stringify([item.anilist_id ? 'anilist' : 'mal', item.anilist_id || item.mal_id, item.latestEpisode || item.listedEpisode]); if (seen.has(key)) return false; seen.add(key); return true; }); }, [catalogQuery.data, mode]);
+  const loadedItems = useMemo(() => { const items = catalogQuery.data?.pages.flatMap(page => page.data) || []; if (timedReleases) return releaseFeed.items; if (mode !== 'new') return uniqueAnime(items); const seen = new Set<string>(); return items.filter(item => { const key = JSON.stringify([item.anilist_id ? 'anilist' : 'mal', item.anilist_id || item.mal_id, item.latestEpisode || item.listedEpisode]); if (seen.has(key)) return false; seen.add(key); return true; }); }, [catalogQuery.data, mode,timedReleases,releaseFeed.items]);
   const rankPositions = useMemo(() => new Map(loadedItems.map((anime, index) => [organizationIdentity(anime), Number(anime.rankingPosition) || (block - 1) * 100 + index + 1])), [loadedItems, block]);
   const results = useMemo(() => {
     // Preserve item references so appending a page does not invalidate every
@@ -383,7 +390,7 @@ export default function DesktopExplore() {
           <PremiumSelect ariaLabel="Format" value={format} options={formatOptions.map((value) => ({ label: value === 'Any' ? 'All formats' : value, value }))} onChange={(value) => setParam('format', value, 'Any')} />
           <PremiumSelect ariaLabel="Status" value={status} options={statusOptions.map((value) => ({ label: value === 'Any' ? 'Any status' : value, value }))} onChange={(value) => setParam('status', value, 'Any')} />
           <PremiumSelect ariaLabel="Sort" value={sort} options={sortOptions} onChange={(value) => setParam('order', value, 'best')} />
-          <PremiumSelect ariaLabel={mode === 'new' ? 'Episode release window' : 'Premiere window'} value={releaseDays} options={[{ value: 'all', label: 'Any release date' }, { value: '7', label: 'Past 7 days' }, { value: '30', label: 'Past 30 days' }, { value: '90', label: 'Past 90 days' }]} onChange={value => setParam('released', value, 'all')} />
+          {!timedReleases&&<PremiumSelect ariaLabel="Premiere window" value={releaseDays} options={[{ value: 'all', label: 'Any release date' }, { value: '7', label: 'Past 7 days' }, { value: '30', label: 'Past 30 days' }, { value: '90', label: 'Past 90 days' }]} onChange={value => setParam('released', value, 'all')} />}
           {['year', 'seasonal'].includes(mode) ? <PremiumSelect ariaLabel="Year" value={String(year)} options={Array.from({ length: 70 }, (_, index) => ({ label: String(currentYear + 1 - index), value: String(currentYear + 1 - index) }))} onChange={(value) => setParam('year', value)} /> : null}
           {mode === 'seasonal' ? <PremiumSelect ariaLabel="Season" value={season.toUpperCase()} options={['WINTER', 'SPRING', 'SUMMER', 'FALL'].map((value) => ({ value, label: value[0] + value.slice(1).toLowerCase() }))} onChange={(value) => setParam('season', value)} /> : null}
           {ranking ? <PremiumSelect ariaLabel="Ranking year" value={selectedYear ? String(selectedYear) : 'all'} options={[{ value: 'all', label: 'All years' }, ...Array.from({ length: 70 }, (_, index) => ({ label: String(currentYear - index), value: String(currentYear - index) }))]} onChange={value => setParam('year', value, 'all')} /> : null}
@@ -402,6 +409,7 @@ export default function DesktopExplore() {
         {catalogQuery.isError ? <button type="button" disabled={retrySeconds > 0 || catalogQuery.isFetching} onClick={() => void catalogQuery.refetch()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-sm font-semibold text-white/72 hover:bg-white/[0.09]"><RefreshCw className="h-4 w-4" />{retrySeconds ? `Retry in ${retrySeconds}s` : "Retry"}</button> : null}
       </div>
 
+      {timedReleases&&<RecentReleaseStatus page={releaseFeed.latest} fetching={releaseFeed.isFetching} retry={()=>{void (releaseFeed.hasNextPage?releaseFeed.fetchNextPage():releaseFeed.refetch());}}/>}
       {catalogQuery.data?.pages[0] && <p role="status" className="mt-3 text-xs text-white/60">{catalogQuery.isError || catalogQuery.data.pages[0].stale || Date.now()-catalogQuery.data.pages[0].fetchedAt > (mode === "new" ? 60_000 : 1500_000) ? "Saved snapshot" : isAdmin && catalogQuery.data.pages[0].fallback ? "Fallback catalog" : "Updated catalog"} {catalogQuery.data.pages[0].fetchedAt > 0 && <>· Last updated {new Date(catalogQuery.data.pages[0].fetchedAt).toLocaleString()}</>}</p>}
       {catalogQuery.data?.pages[0]?.catalogKind === 'saved-titles' && <p className="mt-2 text-sm text-white/60">Saved titles from this device · current results are unavailable. These are browsing alternatives.</p>}
       {catalogQuery.data?.pages[0]?.catalogKind === 'popular-alternative' && <p className="mt-2 text-sm text-white/60">Popular titles · current trending information is unavailable.</p>}
@@ -421,7 +429,7 @@ export default function DesktopExplore() {
         {catalogQuery.isFetchingNextPage ? <span className="flex items-center gap-2 text-sm text-white/60"><Loader2 className="h-4 w-4 animate-spin" />Loading more anime…</span> : null}
         {catalogQuery.hasNextPage && !catalogQuery.isFetchingNextPage ? <button className="sn-secondary-action" onClick={() => void catalogQuery.fetchNextPage()}>Load more</button> : null}
         {ranking ? <><button className="sn-secondary-action" disabled={block === 1 || catalogQuery.isFetching} onClick={() => setParam('page', String(block - 1))}>Previous 100</button><button className="sn-primary-action disabled:opacity-40 disabled:cursor-not-allowed" disabled={catalogQuery.isFetching || catalogQuery.isError || (catalogQuery.data?.pages.length || 0) < 4 || !catalogQuery.data?.pages.at(-1)?.hasNextPage} onClick={() => setParam('page', String(block + 1))}>Next 100</button></> : null}
-        {!catalogQuery.hasNextPage && !catalogQuery.isFetching && results.length > 0 && !ranking ? <span className="text-sm text-white/50">You’ve reached the end.</span> : null}
+        {!catalogQuery.hasNextPage && !catalogQuery.isFetching && results.length > 0 && !ranking && (!timedReleases||releaseFeed.complete&&!releaseFeed.stale) ? <span className="text-sm text-white/50">You’ve reached the end.</span> : null}
       </div>
 
       <section className="mt-8 grid gap-3 md:grid-cols-3">

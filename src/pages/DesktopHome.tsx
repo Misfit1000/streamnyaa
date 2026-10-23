@@ -1,3 +1,5 @@
+import {useRecentReleaseFeed} from '../lib/useRecentReleaseFeed';
+import RecentReleaseStatus from '../components/RecentReleaseStatus';
 import { useAuth } from '../context/AuthContext';
 import { watchDeskReleases } from '../lib/desktopWatchDesk';
 import { useStore } from '../store/useStore';
@@ -632,14 +634,17 @@ export default function DesktopHome() {
   const seasonalQuery = useHomeCatalogQuery(`home:seasonal:${currentSeason.key}`, ['desktop-home-seasonal', currentSeason.key], options => fetchHomeShelf('home:seasonal', options), { enabled: shelfEnabled('spotlight') || shelfEnabled('season') });
   const seasonalData = seasonalQuery.data;
   const trendingQuery = useHomeCatalogQuery('home:trending', ['desktop-trending-airing'], options => fetchHomeShelf('home:trending', options), { enabled: shelfEnabled('trending') });
-  const recentEpisodeQuery = useHomeCatalogQuery('home:recent', ['desktop-recent-episodes'], options => fetchHomeShelf('home:recent', options), { enabled: shelfEnabled('episodes'), staleTime: 60_000 });
+  const nsfwMode=useStore(state=>state.nsfwMode);
+  const releaseFeed=useRecentReleaseFeed({track:audioPreference==='dub-only'?'dub':'sub',adult:nsfwMode,enabled:shelfEnabled('episodes')});
+  const recentEpisodeData=useMemo(()=>({data:releaseFeed.items,fetchedAt:releaseFeed.fetchedAt,stale:releaseFeed.stale,fallback:false,fallbackLabel:'',recentFeedKind:'aired'}),[releaseFeed.items,releaseFeed.fetchedAt,releaseFeed.stale]);
+  const recentEpisodeQuery={...releaseFeed,data:recentEpisodeData};
   const popularQuery = useHomeCatalogQuery('home:popular', ['desktop-popular'], options => fetchHomeShelf('home:popular', options), { enabled: shelfEnabled('popular'), staleTime: 1000 * 60 * 15 });
   const topAiringQuery = useHomeCatalogQuery('home:top-airing', ['desktop-top-airing'], options => fetchHomeShelf('home:top-airing', options), { enabled: shelfEnabled('airing') });
   const upcomingQuery = useHomeCatalogQuery('home:upcoming', ['desktop-upcoming'], options => fetchHomeShelf('home:upcoming', options), { enabled: shelfEnabled('upcoming'), staleTime: 1000 * 60 * 30 });
   const topYear = new Date().getFullYear() - 1;
   const yearlyTopQuery = useHomeCatalogQuery(`home:year:${topYear}`, ['desktop-top-year', topYear], options => fetchHomeShelf(`home:year:${topYear}`, options), { enabled: shelfEnabled('yearly'), staleTime: 1000 * 60 * 60 });
   const trendingData = trendingQuery.data;
-  const recentEpisodeData = recentEpisodeQuery.data;
+
   const popularData = popularQuery.data;
   const topAiringData = topAiringQuery.data;
   const upcomingData = upcomingQuery.data;
@@ -653,7 +658,7 @@ export default function DesktopHome() {
   const readinessCandidates = useMemo(() => [
     ...(activeShelves.has('spotlight') || activeShelves.has('season') ? seasonalData?.data || [] : []),
     ...uniqueRecentSources(history).slice(0, 6).map(source => ({ ...historyAnime(source), homeRequiredEpisode: Number(source.episode) || 1 })),
-    ...(activeShelves.has('episodes') ? (recentEpisodeData?.data || []).map(anime => ({ ...anime, homeRequiredEpisode: Number(anime.listedEpisode || anime.latestEpisode || 1) })) : []),
+    ...(activeShelves.has('episodes') ? (recentEpisodeData?.data || []).map(anime => ({ ...anime, homeRequiredEpisode: Number(anime.releaseEpisode || anime.listedEpisode || anime.latestEpisode || 1) })) : []),
     ...(activeShelves.has('trending') ? trendingData?.data || [] : []),
     ...(activeShelves.has('popular') ? popularData?.data || [] : []),
     ...(activeShelves.has('airing') ? topAiringData?.data || [] : []),
@@ -789,15 +794,16 @@ export default function DesktopHome() {
       ) : null}
 
       <section data-home-shelf="episodes" style={shelfStyle('episodes', !recentEpisodeQuery.isFetched)} className="mt-7 desktop-section-enter">
-        <RailHeader title="New Episodes" subtitle={(isAdmin && recentEpisodeData?.fallbackLabel) || (recentEpisodeData?.recentFeedKind === 'listed' ? 'Recently listed episodes · listing order may differ from broadcast time' : 'Latest episode broadcasts')} to="/search?mode=new" count={latestEpisodes.length} />
+        <RecentReleaseStatus page={releaseFeed.latest} fetching={releaseFeed.isFetching} retry={()=>{void (releaseFeed.hasNextPage?releaseFeed.fetchNextPage():releaseFeed.refetch());}}/>
+        <RailHeader title="New Episodes" subtitle={(isAdmin && recentEpisodeData?.fallbackLabel) || (recentEpisodeData?.recentFeedKind === 'listed' ? 'Recently listed episodes · listing order may differ from broadcast time' : releaseFeed.track==='dub'?'Confirmed Dub release times':'Sub release times · estimates clearly marked')} to={`/search?mode=new&before=${releaseFeed.before}&track=${releaseFeed.track}`} count={latestEpisodes.length} />
         {recentEpisodeData?.fetchedAt && <p className="mb-3 text-xs text-white/55">{recentEpisodeData.stale || recentEpisodeQuery.isError ? "Saved episode snapshot" : "Episode updates"} · Last updated {new Date(recentEpisodeData.fetchedAt).toLocaleString()}</p>}
         <MediaRail>
           {latestEpisodes.map((anime: any, index: number) => (
             <PosterAnimeCard
               key={`latest-${anime.mal_id || anime.id || index}`}
               anime={anime}
-              to={desktopWatchPath(anime, {ep: anime.listedEpisode || anime.latestEpisode || 1, type: watchTypeForAudioPreference(audioPreference)})}
-              episode={anime.recentFeedKind === 'listed' ? anime.listedEpisode || 'Listed' : anime?.latestEpisode || watchEpisodeFor(anime, history, index + 1)}
+              to={desktopWatchPath(anime, {ep: anime.releaseEpisode || anime.listedEpisode || anime.latestEpisode || 1, type: watchTypeForAudioPreference(audioPreference)})}
+              episode={anime.releaseEpisode || (anime.recentFeedKind === 'listed' ? anime.listedEpisode || 'Listed' : anime?.latestEpisode || watchEpisodeFor(anime, history, index + 1))}
               showNew={!anime.catalogAlternative && anime.recentFeedKind !== 'listed'}
             />
           ))}

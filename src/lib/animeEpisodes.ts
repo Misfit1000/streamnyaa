@@ -37,6 +37,19 @@ export function watchEpisodeCatalogSize(aired: number | null, requested: number,
   return Math.min(100_000, Math.max(upcoming ? 0 : aired ?? 12, valid(requested), ...sourceEpisodes.map(valid)));
 }
 
+/** Announced series totals may lag; movies and completed installments have bounds. */
+export function episodeNavigation(anime: any, aired: number | null, requested = 1, sources: number[] = [], upcoming = false) {
+  const total = totalEpisodeCount(anime);
+  const movie = String(anime?.type || anime?.format || '').toUpperCase() === 'MOVIE';
+  const limit = movie ? total || 1 : /FINISHED|COMPLETED/i.test(String(anime?.status)) ? total : null;
+  const valid = Number.isSafeInteger(requested) && requested > 0 ? Math.min(requested, 9999) : 1;
+  const selected = limit ? Math.min(valid, limit) : valid;
+  const eligibleSources = [...new Set(sources.filter(value => Number.isSafeInteger(value) && value > 0 && (!limit || value <= limit)))].sort((a,b)=>a-b);
+  const count = limit ? Math.min(limit, Math.max(upcoming ? 0 : aired ?? limit, selected, ...eligibleSources))
+    : watchEpisodeCatalogSize(aired, selected, eligibleSources, upcoming);
+  return { selected, count, limit, sourceEpisodes: eligibleSources, hasNext: selected < count, singlePart: movie && limit === 1 };
+}
+
 /** Titles are optional. Missing title/date metadata must not manufacture zero aired episodes. */
 export function verifiedAiredEpisodeCount(anime: any, episodes: any[] = [], now = Date.now()): number | null {
   const status = String(anime?.status || '').trim().toUpperCase();

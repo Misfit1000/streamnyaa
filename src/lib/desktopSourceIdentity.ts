@@ -9,11 +9,11 @@ export type SourceIdentity = {
   sequel: boolean;
 };
 export type SourceEvidence = { evidence: 'exact' | 'uncertain' | 'conflict'; reason: string; episodeMatch: boolean };
-export const SOURCE_CLASSIFIER_VERSION = 4;
+export const SOURCE_CLASSIFIER_VERSION = 5;
 export function isBatchRelease(title:string){return /\b(?:batch|complete|collection|season pack)\b/i.test(title)||/\b\d{1,4}\s*[-–~]\s*\d{1,4}\b/.test(title);}
 export function batchTitleIdentity(title:string,identity:SourceIdentity){
-  const clean=title.replace(/\b\d{1,4}\s*[-–~]\s*\d{1,4}\b/g,' ').replace(/\b(?:complete\s+season(?!\s*\d)|season\s+pack)\b/ig,' ').replace(/\b(?:batch|complete|collection|pack)\b/ig,' ');
-  return classifySourceIdentity(`${clean} - 01`,identity,1).evidence==='exact';
+  const clean=title.replace(/\s[-–]\s*\d{1,4}\s*[-–~]\s*\d{1,4}/g,' ').replace(/\b\d{1,4}\s*[-–~]\s*\d{1,4}\b/g,' ').replace(/\b(?:complete\s+season(?!\s*\d)|season\s+pack)\b/ig,' ').replace(/\b(?:batch|complete|collection|pack)\b/ig,' ');
+  return classifySourceIdentity(`${sourceAnimeTitle(clean)} - 01`,identity,1).evidence==='exact';
 }
 
 export function normalizeSourceTitle(value = '') {

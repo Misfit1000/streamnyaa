@@ -15,9 +15,9 @@ export function homeBrowseVisible(anime: any, showChineseAnimation: boolean) {
 export function homeBrowseItems(items: any[], showChineseAnimation: boolean, episodesFor: (anime: any) => number[], preferred: (anime: any) => number, recent = false) {
   return items.filter(anime => homeBrowseVisible(anime, showChineseAnimation)).map(anime => {
     const episodes = episodesFor(anime);
-    const requested = recent ? Number(anime.listedEpisode || anime.latestEpisode || 1) : preferred(anime);
+    const requested = recent ? Number(anime.releaseEpisode || anime.listedEpisode || anime.latestEpisode || 1) : preferred(anime);
     const episode = recent ? episodes.includes(requested) ? requested : undefined : chooseReadyEpisode(episodes, requested);
-    return { ...anime, homeReadyEpisode: episode, homeAvailabilityLabel: episode ? `Episode ${episode} source found` : undefined };
+    return { ...anime, homeReadyEpisode: episode, homeAvailabilityLabel: episode ? `Episode ${episode} source found` : anime.homeAvailabilityLabel };
   });
 }
 export function useHomeBrowsingPreference() {

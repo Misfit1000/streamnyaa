@@ -344,6 +344,8 @@ struct SeriesArtworkDescriptor { version: u32, identity: String, candidates: Vec
 #[derive(Clone, Deserialize)]
 struct PlaybackRequest {
     #[serde(default)]
+    has_next_episode: Option<bool>,
+    #[serde(default)]
     source_identity: Option<source_identity::SourceIdentity>,
     #[serde(default)]
     batch_selection: Option<batch_sources::Selection>,
@@ -367,6 +369,7 @@ struct PlaybackRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PlayerMetadata {
+    has_next_episode: Option<bool>,
     build_revision: String,
     shortcuts: HashMap<String, String>,
     subtitle_offset_key: Option<String>,
@@ -2191,6 +2194,7 @@ fn player_metadata_for(
     let subtitle_offset_seconds = offset_key.as_deref().and_then(persisted_player_preference)
         .and_then(|value| value.parse::<f64>().ok()).filter(|value| value.is_finite() && value.abs() <= 120.0).unwrap_or(0.0);
     PlayerMetadata {
+        has_next_episode: request.has_next_episode,
         build_revision: DESKTOP_BUILD_REVISION.to_string(),
         shortcuts: player_shortcuts::load(),
         subtitle_offset_key: offset_key,
@@ -6344,6 +6348,9 @@ fn valid_desktop_metadata_payload(provider: &str, data: &serde_json::Value) -> b
                     .map(|errors| errors.is_empty())
                     .unwrap_or(true)
         }
+        "releases" => object.get("version").and_then(|v|v.as_u64())==Some(1)
+            && object.get("data").and_then(|v|v.as_array()).is_some_and(|rows| rows.len()<=24 && rows.iter().all(|row| row.get("releaseEpisode").and_then(|v|v.as_u64()).is_some_and(|n|n>0) && row.get("releaseAt").and_then(|v|v.as_f64()).is_some_and(|n|n>0.0)))
+            && object.get("complete").is_some_and(|v|v.is_boolean()) && object.get("stale").is_some_and(|v|v.is_boolean()),
         "tenrai" | "jikan" => object
             .get("data")
             .map(|value| value.is_array() || value.is_object())
@@ -7070,6 +7077,20 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "one ordinary production release read through the actual native metadata command"]
+    async fn live_sub_release_native_bridge_acceptance() {
+        let before=(now_millis()/60000)*60;
+        for path in ["/anime/1","/recent?provider=tenrai","/recent?url=https://example.invalid"] {
+            assert!(fetch_desktop_metadata_api(MetadataApiRequest{provider:"releases".into(),path:Some(path.into()),body:None,ttl_seconds:Some(60)},None,Some("foreground".into()),Some(30000)).await.is_err());
+        }
+        let result=fetch_desktop_metadata_api(MetadataApiRequest{provider:"releases".into(),path:Some(format!("/recent?before={before}&track=sub&adult=0")),body:None,ttl_seconds:Some(60)},None,Some("foreground".into()),Some(30000)).await.expect("live Sub feed through native bridge");
+        assert_eq!(result.provider,"releases");assert_eq!(result.data["version"],1);assert_eq!(result.data["track"],"sub");
+        let rows=result.data["data"].as_array().expect("release records");
+        for row in rows {assert!(row["releaseEpisode"].as_u64().is_some_and(|n|n>0));assert!(row["releaseAt"].as_u64().is_some_and(|n|u128::from(n)<=before*1000));assert!(["confirmed-sub","estimated-sub"].contains(&row["timingBasis"].as_str().unwrap_or("")));}
+        println!("LIVE_SUB_RELEASE_NATIVE rows={} complete={} stale={} retrieved_at={} transport_ms={}",rows.len(),result.data["complete"],result.data["stale"],result.data["fetchedAt"],result.duration_ms);
+    }
+
+    #[tokio::test]
     #[ignore = "live public metadata through the native command, no mocked transport"]
     async fn live_tenrai_native_bridge_acceptance() {
         async fn get(path:&str)->data_requests::DataResponse {
@@ -7093,7 +7114,7 @@ mod tests {
     #[test]
     fn playback_source_uses_valid_magnet() {
         let hash = "0123456789abcdef0123456789abcdef01234567";
-        let request = PlaybackRequest { source_identity: None, batch_selection: None,
+        let request = PlaybackRequest { has_next_episode: None, source_identity: None, batch_selection: None,
             progress_context: None,
             magnet: format!("magnet:?xt=urn:btih:{}", hash),
             info_hash: None,
@@ -7264,7 +7285,7 @@ mod tests {
 
     #[test]
     fn playback_source_rebuilds_valid_magnet_from_info_hash() {
-        let request = PlaybackRequest { source_identity: None, batch_selection: None,
+        let request = PlaybackRequest { has_next_episode: None, source_identity: None, batch_selection: None,
             progress_context: None,
             magnet: "magnet:?xt=urn:btih:".to_string(),
             info_hash: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
@@ -7287,7 +7308,7 @@ mod tests {
     }
 
     fn playback_request_for_episode(episode: &str) -> PlaybackRequest {
-        PlaybackRequest { source_identity: None, batch_selection: None,
+        PlaybackRequest { has_next_episode: None, source_identity: None, batch_selection: None,
             progress_context: None,
             magnet: "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567".to_string(),
             info_hash: Some("0123456789abcdef0123456789abcdef01234567".to_string()),
@@ -7395,7 +7416,7 @@ mod tests {
 
     #[test]
     fn playback_source_rejects_missing_hash_and_url() {
-        let request = PlaybackRequest { source_identity: None, batch_selection: None,
+        let request = PlaybackRequest { has_next_episode: None, source_identity: None, batch_selection: None,
             progress_context: None,
             magnet: "magnet:?xt=urn:btih:".to_string(),
             info_hash: Some(String::new()),

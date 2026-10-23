@@ -1,4 +1,5 @@
 import express from "express";
+import metadataHandler from "./api/stream-sources";
 import path from "path";
 import { XMLParser } from "fast-xml-parser";
 import blogHandler, { getCachedBlogPost } from "./api/blog";
@@ -49,6 +50,8 @@ function refreshCachedSource(cacheKey: string, cached: SourceCacheEntry) {
 
 async function startServer() {
   const app = express();
+  app.use(express.json({limit:'1mb'}));
+  app.all('/api/stream-sources', (req,res)=>metadataHandler(req,res));
   const configuredPort = Number.parseInt(process.env.PORT || '3000', 10);
   const port = Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : 3000;
 

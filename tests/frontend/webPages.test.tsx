@@ -3,7 +3,8 @@ import { act,cleanup,fireEvent,render,screen,within } from '@testing-library/rea
 import { QueryClient,QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter,Routes,Route,useLocation } from 'react-router-dom';
 import { afterEach,beforeEach,expect,it,vi } from 'vitest';
-const api=vi.hoisted(()=>({graph:vi.fn(),details:vi.fn()}));
+const api=vi.hoisted(()=>({graph:vi.fn(),details:vi.fn(),releases:vi.fn()}));
+vi.mock('../../src/api/recentReleases',async original=>({...await original<any>(),fetchRecentReleases:api.releases}));
 vi.mock('../../src/api/jikan',()=>({fetchAniList:api.graph,fetchAnimeDetails:api.details,fetchSchedule:async()=>({data:[]}),fetchGenres:async()=>({data:[]}),mapAnilistToJikan:(media:any)=>({anilist_id:media.id,mal_id:media.idMal,title:media.title.english,status:media.status,type:'TV',genres:[],images:{jpg:{image_url:'/logo.svg'}}})}));
 vi.mock('../../src/context/AuthContext',()=>({useAuth:()=>({user:null,isAdmin:false})}));
 vi.mock('../../src/components/AnimeCard',()=>({default:({anime}:any)=><p>{anime.title}</p>}));
@@ -12,17 +13,18 @@ import Home from '../../src/pages/Home';import Search from '../../src/pages/Sear
 function Path(){return <p data-testid="path">{useLocation().search}</p>;}
 const mount=(child:React.ReactNode,path='/')=>render(<MemoryRouter initialEntries={[path]}><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}>{child}</QueryClientProvider></MemoryRouter>);
 beforeEach(()=>{
- localStorage.clear();api.graph.mockReset();api.details.mockReset();
+ localStorage.clear();api.graph.mockReset();api.details.mockReset();api.releases.mockReset();
+ api.releases.mockImplementation(async(request:any,param:any={})=>{const id=param.cursor?2:1;return{version:1,before:request.before,track:request.track,page:id,complete:true,stale:false,fetchedAt:Date.now(),nextCursor:id===1?'next':undefined,data:[{canonicalId:`anilist:${id}`,anilist_id:id,mal_id:id+100,title:`Fixture ${id}`,releaseEpisode:id,releaseAt:(request.before-10)*1000,releaseTrack:'sub',timingBasis:'confirmed-sub',releasePolicyVersion:1,airingEpisode:id}]};});
  api.graph.mockImplementation(async(body:any)=>{const page=body.variables.page,id=page,media={id,idMal:id+100,title:{english:`Fixture ${id}`},status:body.variables.status||'RELEASING',genres:[]};return new Response(JSON.stringify({data:{Page:{pageInfo:{currentPage:page,hasNextPage:page===1},media:[media],airingSchedules:[{id,episode:page,airingAt:Math.floor(Date.now()/1000)-60,media}]}}}));});
  api.details.mockImplementation(async(id:string)=>({data:{mal_id:Number(id),title:`Full title ${id}`,metadataProvider:'anilist',popularityKind:'list-count',popularity:5000,score:8.2,episodes:12,status:'FINISHED',genres:[{name:'Adventure'}],images:{jpg:{image_url:'/logo.svg'}}}}));
 });
 afterEach(()=>{cleanup();vi.useRealTimers();});
 it('View All reuses the Home recent page, then appends genuinely new results',async()=>{
  mount(<Routes><Route path="/" element={<Home/>}/><Route path="/search" element={<Search/>}/></Routes>);
- await vi.waitFor(()=>expect(api.graph.mock.calls.some(([body])=>body.query.includes('query Recent'))).toBe(true));
- await screen.findAllByText('Fixture 1');const count=api.graph.mock.calls.filter(([body])=>body.query.includes('query Recent')).length;
+ await vi.waitFor(()=>expect(api.releases.mock.calls.length>0).toBe(true));
+ await screen.findAllByText('Fixture 1');const count=api.releases.mock.calls.length;
  fireEvent.click(screen.getAllByRole('link',{name:/View All/i})[0]);await screen.findByRole('heading',{name:'Recently updated'});
- expect(api.graph.mock.calls.filter(([body])=>body.query.includes('query Recent'))).toHaveLength(count);
+ expect(api.releases.mock.calls).toHaveLength(count);
  fireEvent.click(await screen.findByRole('button',{name:'Load More'}));await screen.findByText('Fixture 2');expect(screen.getByText('Fixture 1')).toBeTruthy();
 });
 it('debounces Search input and keeps Enter immediate',async()=>{

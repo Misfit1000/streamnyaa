@@ -182,7 +182,7 @@ export function useDesktopHomeReadiness(candidates: any[], preference: DesktopAu
           const job = cursor.jobs.shift()!; requests++;
           try {
             const raw = await searchNyaa(job.query, job.category, '0', String(job.page), { signal: controller.signal, priority: 'background',
-              deadlineMs: Math.max(1, Math.min(8000, HOME_SOURCE_PASS_MS - (Date.now() - started))), deep: false, pages: 1, wide: false, intent: { scope: required ? 'episode' : 'title', ...(required ? { episode: required } : {}) }, maxAgeMs: 300_000 });
+              deadlineMs: Math.max(1, Math.min(8000, HOME_SOURCE_PASS_MS - (Date.now() - started))), deep: false, pages: 1, wide: false, intent: job.scope==='episode'?{ scope:'episode',episode:required||job.episode }: {scope:'title'}, maxAgeMs: 300_000 });
             if (raw.stale) { cursor.jobs.unshift(job); cursor.retryAt = raw.retryAt || Date.now() + 60_000; continue; }
             const validated = await validateDesktopSourceCandidates(raw, identity, required || null);
             if (controller.signal.aborted) { cursor.jobs.unshift(job); break; }

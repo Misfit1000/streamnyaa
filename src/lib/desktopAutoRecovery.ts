@@ -10,7 +10,7 @@ export function installDesktopAutoRecovery(client: QueryClient) {
   type RecoveryError = { code?: string; provider?: string; retryAt?: number; retryAfterMs?: number; retryable?: boolean };
   const providerFor = (prefix: string, error?: RecoveryError | null) => error?.provider
     || (/episode/i.test(prefix) ? 'tenrai' : /source|nyaa/i.test(prefix) ? 'nyaa' : 'anilist');
-  const publicDataQuery = (prefix: string) => (/anime|episode|source|nyaa|schedule|season|trending|popular|explore|search|catalog|installments/i.test(prefix)
+  const publicDataQuery = (prefix: string) => (/anime|episode|source|nyaa|schedule|season|recent-releases|trending|popular|explore|search|catalog|installments/i.test(prefix)
     && !/auth|account|login|profile/i.test(prefix)) || prefix === 'desktop-broadcast-reference';
   const tick = () => {
     if (navigator.onLine === false || document.visibilityState === 'hidden') return;
@@ -30,7 +30,7 @@ export function installDesktopAutoRecovery(client: QueryClient) {
       if (query.state.status !== 'error' && ['background-budget', 'discovery-budget'].includes(value?.partialReason || '')) { pending.delete(query.queryHash); continue; }
       // Calendar continuation is pagination, not an upstream failure. Its last
       // page owns freshness; replaying every earlier page wastes provider work.
-      if (prefix === 'schedule-public' && query.state.status !== 'error' && !value?.stale) { pending.delete(query.queryHash); continue; }
+      if (['schedule-public','recent-releases'].includes(prefix) && query.state.status !== 'error' && !value?.stale) { pending.delete(query.queryHash); continue; }
       const needsRecovery = query.state.status === 'error' || value?.complete === false || value?.stale
         || value?.fallback || value?.streamnyaa?.status === 'stale';
       if (!needsRecovery) { pending.delete(query.queryHash); continue; }
@@ -53,7 +53,7 @@ export function installDesktopAutoRecovery(client: QueryClient) {
         if (busy.has(provider)) continue;
         busy.add(provider);
         previous.at = Date.now() + recoveryDelay(++previous.attempt);
-        const recover = prefix === 'schedule-public' ? query.meta?.recover : undefined;
+        const recover = ['schedule-public','recent-releases'].includes(prefix) ? query.meta?.recover : undefined;
         if (typeof recover === 'function') recover();
         else void client.refetchQueries({ queryKey: query.queryKey, exact: true, type: 'active' }, { cancelRefetch: false });
       }

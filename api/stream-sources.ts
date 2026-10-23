@@ -1,6 +1,7 @@
 import { MAL_METADATA_BASE_URL, supportedMalMetadataPath } from '../src/lib/malMetadataProvider.js';
 import { RequestUsage, publicFreshness } from './_shared/requestReuse.js';
 import { publicCalendar } from './_shared/publicCalendar.js';
+import { recentReleases } from './_shared/recentReleases.js';
 const ANILIST_URL = 'https://graphql.anilist.co';
 const JIKAN_URL = MAL_METADATA_BASE_URL;
 class UpstreamMetadataError extends Error { constructor(message: string, readonly status: number, readonly retryAfter?: string | null) { super(message); } }
@@ -306,6 +307,13 @@ export default async function handler(req: any, res: any) {
   const ttlSeconds = ttlFromRequest(req);
 
   try {
+    if(provider==='releases'){
+      if(req.method!=='GET'){status=405;return res.status(status).json({error:'Release feeds require GET.'});}
+      const releases=await recentReleases(req,usage);
+      res.setHeader('X-StreamNyaa-Provider','releases');res.setHeader('X-StreamNyaa-Fetched-At',String(releases.fetchedAt));
+      publicFreshness(res,releases.fetchedAt,60,releases.complete&&!releases.stale);
+      return res.status(200).json(releases);
+    }
     if (provider === 'calendar') {
       if(req.method!=='GET'){status=405;return res.status(status).json({error:'Calendar requires GET.'});}
       const calendar=await publicCalendar(req,usage);

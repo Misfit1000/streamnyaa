@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { Download, Plus, Check, Heart, Star, Calendar, Clock, Tv, Play, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -9,6 +9,7 @@ import Seo from '../components/Seo';
 import RelatedBlogArticles from '../components/RelatedBlogArticles';
 import { saveRecentAnime } from '../lib/activity';
 import { isDesktopApp } from '../lib/desktop';
+import {episodeNavigation} from '../lib/animeEpisodes';
 import { animeIdentity } from '../lib/animeIdentity';
 
 function formatStatus(value?: string) {
@@ -52,6 +53,7 @@ function canShowDownloadOptions(anime: any, episodeItems: any[] = []) {
 export default function AnimeDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [releaseParams]=useSearchParams();
   const { isInMyList, addToMyList, removeFromMyList, isLiked, toggleLike } = useStore();
   const relationsScrollRef = useRef<HTMLDivElement>(null);
   const recommendationsScrollRef = useRef<HTMLDivElement>(null);
@@ -75,7 +77,7 @@ export default function AnimeDetails() {
   const { data: episodesData, isLoading: episodesLoading } = useQuery({
     queryKey: ['episodes', data?.data?.mal_id, epPage],
     queryFn: ({signal}) => fetchAnimeEpisodes(String(data!.data.mal_id), epPage + 1, {signal}),
-    enabled: !!id,
+    enabled: !!data?.data?.mal_id,
   });
 
   const anime = data?.data;
@@ -85,7 +87,7 @@ export default function AnimeDetails() {
     if (!anime || !id) return;
     const cleanPath = animePath(anime);
     if (/^\d+$/.test(id) && cleanPath !== `/anime/${id}`) {
-      navigate(cleanPath, { replace: true });
+      navigate(`${cleanPath}${releaseParams.size?`?${releaseParams}`:''}`, { replace: true });
     }
   }, [anime, id, navigate]);
 
@@ -123,6 +125,8 @@ export default function AnimeDetails() {
   const detailEpisodes = episodesData?.data || [];
   const downloadOptionsAvailable = canShowDownloadOptions(anime, detailEpisodes);
   const latestAiredEpisode = knownAiredEpisodeCount(anime, detailEpisodes);
+  const releaseEpisode=Number(releaseParams.get('ep'));
+  const sourceEpisode=episodeNavigation(anime,latestAiredEpisode,Number.isSafeInteger(releaseEpisode)&&releaseEpisode>0?releaseEpisode:latestAiredEpisode||1).selected;
   const episodeCountText = anime.episodes ? `${anime.episodes} episodes` : nextEpisodeNumber ? `${Math.max(nextEpisodeNumber - 1, 0)} episodes aired so far` : 'episode count not confirmed';
   const scoreProvider = anime.metadataProvider === 'tenrai' ? 'MAL' : 'AniList';
   const malScoreText = anime.score ? `${scoreProvider} Score ${anime.score}` : `${scoreProvider} Score N/A`;
@@ -266,7 +270,7 @@ export default function AnimeDetails() {
               <>
                 {desktop ? (
                   <Link
-                    to={`${watchPath(anime)}?${new URLSearchParams({ ...(latestAiredEpisode ? { ep: String(latestAiredEpisode) } : {}), type: 'sub' }).toString()}`}
+                    to={`${watchPath(anime)}?${new URLSearchParams({ ...(sourceEpisode ? { ep: String(sourceEpisode) } : {}), type: 'sub' }).toString()}`}
                     className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-3 rounded-full font-bold transition-transform hover:scale-105"
                   >
                     <Play className="w-5 h-5 fill-current" />
@@ -340,19 +344,19 @@ export default function AnimeDetails() {
                     </p>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[420px]">
-                    <Link to={animePath(anime, latestAiredEpisode ? `/downloads?ep=${latestAiredEpisode}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                    <Link to={animePath(anime, sourceEpisode ? `/downloads?ep=${sourceEpisode}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
                       Latest episode
-                      <span className="mt-1 block text-xs font-semibold text-muted-foreground">{latestAiredEpisode ? `Episode ${latestAiredEpisode} sub` : 'Episode source search'}</span>
+                      <span className="mt-1 block text-xs font-semibold text-muted-foreground">{sourceEpisode ? `Episode ${sourceEpisode} sub` : 'Episode source search'}</span>
                     </Link>
                     <Link to={animePath(anime, '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
                       Batch download
                       <span className="mt-1 block text-xs font-semibold text-muted-foreground">Full-season source metadata</span>
                     </Link>
-                    <Link to={animePath(anime, latestAiredEpisode ? `/downloads?ep=${latestAiredEpisode}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                    <Link to={animePath(anime, sourceEpisode ? `/downloads?ep=${sourceEpisode}&type=sub` : '/downloads?type=sub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
                       Sub quick link
                       <span className="mt-1 block text-xs font-semibold text-muted-foreground">Subtitle-focused results</span>
                     </Link>
-                    <Link to={animePath(anime, latestAiredEpisode ? `/downloads?ep=${latestAiredEpisode}&type=dub` : '/downloads?type=dub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
+                    <Link to={animePath(anime, sourceEpisode ? `/downloads?ep=${sourceEpisode}&type=dub` : '/downloads?type=dub')} className="rounded-xl border border-border bg-background/70 px-4 py-3 text-sm font-black text-foreground transition-colors hover:border-primary/45 hover:text-primary">
                       Dub quick link
                       <span className="mt-1 block text-xs font-semibold text-muted-foreground">Dual-audio and dub results</span>
                     </Link>

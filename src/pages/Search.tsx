@@ -1,3 +1,5 @@
+import {useRecentReleaseFeed} from '../lib/useRecentReleaseFeed';
+import RecentReleaseStatus from '../components/RecentReleaseStatus';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
@@ -54,9 +56,11 @@ export default function Search() {
   const request = useMemo(() => catalogRequest(searchParams, nsfwMode), [searchParams.toString(), nsfwMode]);
   const genresQuery = useQuery({ queryKey: ['genres', nsfwMode], queryFn: fetchGenres });
   const genresData = genresQuery.data;
-  const results = useInfiniteQuery(catalogOptions(request));
+  const legacyResults = useInfiniteQuery({...catalogOptions(request),enabled:request.feed!=='recent'});
+  const releaseFeed=useRecentReleaseFeed({track:'sub',adult:nsfwMode,before:request.before,type:request.type,status:request.status,genre:request.genre,enabled:request.feed==='recent'});
+  const results=request.feed==='recent'?releaseFeed:legacyResults;
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = results;
-  const allAnimes = useMemo(() => uniqueMedia(data?.pages.flatMap(page => page.data) || []), [data]);
+  const allAnimes = useMemo(() => request.feed==='recent'?releaseFeed.items:uniqueMedia(data?.pages.flatMap(page => page.data) || []), [data,request.feed,releaseFeed.items]);
   const visibleAnimes = desktop && !committedQuery && allAnimes.length === 0 && !isLoading && !results.isError
     ? DESKTOP_EXPLORE_FALLBACK : allAnimes;
   const sort = searchParams.get('sort') || '';
@@ -120,6 +124,7 @@ export default function Search() {
         canonicalPath={canonicalPath}
       />
       {!desktop && <h1 className="mb-5 text-2xl font-black">{request.query ? 'Search anime' : ({recent:'Recently updated',trending:'Trending now',upcoming:'Upcoming anime',score:'Strongest airing picks',popular:'Popular anime',search:'Browse anime'})[request.feed]}</h1>}
+      {request.feed==='recent'&&<RecentReleaseStatus page={releaseFeed.latest} fetching={releaseFeed.isFetching} retry={()=>{void (releaseFeed.hasNextPage?releaseFeed.fetchNextPage():releaseFeed.refetch());}}/>}
       {desktop ? (
         <div className="mb-8 rounded-3xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))] p-6 shadow-2xl shadow-black/20">
           <div className="flex flex-wrap items-end justify-between gap-4">
@@ -229,7 +234,7 @@ export default function Search() {
 
           <DataStatus label="Anime results" error={results.isError} fetching={results.isFetching && !isLoading && !isFetchingNextPage} retry={() => void results.refetch()}/>
           {isLoading ? <div role="status" className="py-20 text-center text-muted-foreground">Loading anime…</div>
-            : visibleAnimes.length === 0 ? <div className="py-20 text-center text-muted-foreground">{results.isError ? 'Anime results are temporarily unavailable.' : hasNextPage ? 'No matching titles in this page. More results are available below.' : 'No anime found matching your criteria.'}</div>
+            : visibleAnimes.length === 0 ? <div className="py-20 text-center text-muted-foreground">{request.feed==='recent'&&!releaseFeed.complete?'Release coverage is still being checked.':results.isError ? 'Anime results are temporarily unavailable.' : hasNextPage ? 'No matching titles in this page. More results are available below.' : 'No anime found matching your criteria.'}</div>
             : <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6">{visibleAnimes.map((anime: any) => <AnimeCard key={mediaKey(anime)} anime={anime}/>)}</div>}
           {hasNextPage && <div className="mt-10 flex justify-center"><button onClick={() => void fetchNextPage()} disabled={isFetchingNextPage} className="rounded-full bg-secondary px-8 py-3 font-medium disabled:opacity-50">{isFetchingNextPage ? 'Loading…' : results.isFetchNextPageError ? 'Retry next page' : 'Load More'}</button></div>}
         </div>

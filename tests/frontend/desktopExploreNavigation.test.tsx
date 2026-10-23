@@ -3,12 +3,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+const releases=vi.hoisted(()=>vi.fn());
+vi.mock('../../src/api/recentReleases',async original=>({...await original<any>(),fetchRecentReleases:releases}));
 vi.mock('../../src/api/desktopExplore', () => ({ fetchExplorePage: vi.fn() }));
 import { fetchExplorePage } from '../../src/api/desktopExplore';
 import DesktopExplore from '../../src/pages/DesktopExplore';
 import { updateLibraryOrganization } from '../../src/lib/desktopLibraryOrganization';
 const clients: QueryClient[] = [];
-beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
+beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); releases.mockReset();
+ releases.mockImplementation(async(request:any,param:any={})=>({version:1,before:request.before,track:request.track,page:param.cursor?2:1,complete:true,stale:false,fetchedAt:Date.now(),nextCursor:param.cursor?undefined:'next',data:[{canonicalId:`anilist:${param.cursor?26:1}`,anilist_id:param.cursor?26:1,title:`anilist title ${param.cursor?26:1}`,releaseEpisode:2,airingEpisode:2,releaseTrack:request.track,releaseAt:request.before*1000-1,timingBasis:'confirmed-sub',releasePolicyVersion:1}]})); });
 afterEach(() => { cleanup(); clients.forEach(client => client.clear()); clients.length = 0; });
 function mount(route: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -66,23 +69,23 @@ describe('Explore ranked page navigation', () => {
   });
 });
 
-it('refreshes the first recent-feed cursor but keeps subsequent pages within that window', async () => {
+it('keeps release snapshot cutoffs stable across paging and retries', async () => {
  let clock=1700000000000;const now=vi.spyOn(Date,'now').mockImplementation(()=>clock);
  vi.mocked(fetchExplorePage).mockImplementation(async(request,number)=>({...page(request,number),before:request.before,hasNextPage:number===1}));
  try {
   mount('/search?mode=new');await screen.findByRole('heading',{name:'anilist title 1',exact:true});
-  const before=vi.mocked(fetchExplorePage).mock.calls[0][0].before;
+  const before=releases.mock.calls[0][0].before;
   clock+=86400_000;
   fireEvent.click(screen.getByRole('button',{name:'Load more'}));await screen.findByRole('heading',{name:'anilist title 26',exact:true});
-  expect(vi.mocked(fetchExplorePage).mock.calls[1][0].before).toBe(before);
+  expect(releases.mock.calls[1][0].before).toBe(before);
   await clients[0].refetchQueries();
-  expect(vi.mocked(fetchExplorePage).mock.calls[2][0].before).toBe(Math.floor(clock/60_000)*60);
-  expect(vi.mocked(fetchExplorePage).mock.calls[3][0].before).toBe(Math.floor(clock/60_000)*60);
+  expect(releases.mock.calls[2][0].before).toBe(before);
+  expect(releases.mock.calls[3][0].before).toBe(before);
  } finally {now.mockRestore();}
 });
 
 it('removes saved filters and retains the last episode snapshot when refresh fails', async () => {
- vi.mocked(fetchExplorePage).mockResolvedValueOnce({...page({service:'anilist'},1),fetchedAt:1700000000000,hasNextPage:false,recentFeedKind:'aired',data:[{mal_id:42,title:'Verified episode',latestEpisode:7,airingAt:1699990000,recentFeedKind:'aired'}]} as any).mockRejectedValue(new Error('HTTP 400 internal provider detail'));
+ releases.mockResolvedValueOnce({version:1,before:Math.floor(Date.now()/60000)*60,track:'sub',page:1,complete:true,stale:false,fetchedAt:1700000000000,data:[{canonicalId:'mal:42',mal_id:42,title:'Verified episode',releaseEpisode:7,airingEpisode:7,timingBasis:'confirmed-sub'}]}).mockRejectedValue(new Error('HTTP 400 internal provider detail'));
  mount('/search?mode=new');await screen.findByRole('heading',{name:'Verified episode',exact:true});
  expect(screen.queryByText('Saved filters')).toBeNull();
  await clients[0].refetchQueries();
@@ -102,12 +105,12 @@ it.each([
  ['/search?mode=ranking','Ranking year','year','2025'],
  ['/search?mode=seasonal','Year','year','2025'],
  ['/search?mode=seasonal','Season','season','WINTER'],
- ['/search?mode=new','Episode release window','releasedAfter','30'],
+ ['/search?mode=new','Genre','genre','Fantasy'],
 ])('applies %s %s to the catalog request',async(route,label,key,value)=>{
  vi.mocked(fetchExplorePage).mockImplementation(async(request,number)=>({...page(request,number),hasNextPage:false}));
  mount(route);await screen.findByRole('heading',{name:'anilist title 1',exact:true});
  const select=screen.getByRole('combobox',{name:label,exact:true});
  fireEvent.change(select,{target:{value}});
- await waitFor(()=>expect(vi.mocked(fetchExplorePage).mock.calls.at(-1)?.[0]?.[key]).toEqual(key==='releasedAfter'?expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/):key==='year'?2025:value));
+ await waitFor(()=>expect((route.includes('mode=new')?releases:vi.mocked(fetchExplorePage)).mock.calls.at(-1)?.[0]?.[key]).toEqual(key==='releasedAfter'?expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/):key==='year'?2025:value));
  expect((select as HTMLSelectElement).value).toBe(value);
 });

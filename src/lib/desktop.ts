@@ -12,6 +12,7 @@ import { readHideEpisodeSpoilers } from './desktopSpoilers';
 import { DESKTOP_AVAILABILITY_KEY, importDesktopAvailabilityRecords } from './desktopAvailability';
 
 export type LocalPlaybackSource = {
+  hasNextEpisode?: boolean;
   sourceIdentity?:SourceIdentity;
   batchSelection?:BatchSelection;
   identity?: string;
@@ -168,7 +169,7 @@ export type DesktopSourceApiResponse = {
 };
 
 export type DesktopMetadataApiRequest = {
-  provider: 'anilist' | 'tenrai' | 'anidb' | 'animeschedule' | 'tmdb';
+  provider: 'anilist' | 'tenrai' | 'anidb' | 'animeschedule' | 'tmdb' | 'releases';
   path?: string;
   body?: Record<string, unknown>;
   ttl_seconds?: number;
@@ -1240,6 +1241,7 @@ export async function startLocalPlaybackWithSettings(source: LocalPlaybackSource
         title: source.title,
         anime_title: source.animeTitle || '',
         episode: source.episode ? String(source.episode) : '',
+        has_next_episode: source.hasNextEpisode ?? null,
         size: source.size || '',
         poster: source.poster || source.image || '',
         banner: !source.artwork && readHideEpisodeSpoilers() ? '' : source.banner || '',

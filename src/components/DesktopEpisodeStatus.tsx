@@ -6,7 +6,7 @@ type Props = Omit<Parameters<typeof episodeMetadataStatus>[0], 'now'> & { retry:
 export default function DesktopEpisodeStatus({ retry, ...input }: Props) {
   // Anchor legacy errors lacking an absolute deadline to their input revision,
   // rather than moving the cooldown forward on each cosmetic clock update.
-  const retryStatus = useMemo(() => episodeMetadataStatus(input), [input.enabled, input.fetching, input.error, input.errorAt, input.hasTitles, input.hasEntries, input.administrator, input.stale, input.upcoming]);
+  const retryStatus = useMemo(() => episodeMetadataStatus(input), [input.enabled, input.fetching, input.error, input.errorAt, input.hasTitles, input.hasEntries, input.administrator, input.stale, input.upcoming, input.singlePart]);
   const now = useVisibleCountdown(retryStatus.retryAt, retryStatus.canRetry);
   const status = { ...retryStatus, waitingSeconds: Math.max(0, Math.ceil((retryStatus.retryAt - now) / 1000)) };
   if (!status.message) return null;

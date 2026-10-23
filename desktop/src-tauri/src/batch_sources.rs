@@ -53,6 +53,8 @@ pub struct Selection {
     pub file_index: usize,
     #[serde(default)]
     pub manual: bool,
+    #[serde(default)]
+    pub episode: Option<u32>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,6 +63,8 @@ pub struct Request {
     pub title: String,
     pub identity: source_identity::SourceIdentity,
     pub episode: u32,
+    #[serde(default)]
+    pub allow_manual: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -216,7 +220,7 @@ pub fn resolve(m: &Manifest, r: &Request) -> Resolution {
     let files: Vec<File> = m
         .files
         .iter()
-        .filter(|f| compatible(f, r, pack_exact))
+        .filter(|f| compatible(f, r, pack_exact) || r.allow_manual && compatible(f, r, true))
         .cloned()
         .collect();
     let absolute_unknown = (r.identity.season_number.is_some_and(|s| s > 1) || r.identity.sequel)
@@ -236,7 +240,7 @@ pub fn resolve(m: &Manifest, r: &Request) -> Resolution {
     };
     let mut available: Vec<u32> = files
         .iter()
-        .filter(|f| !multi_episode(&f.name) && !absolute_unknown && automatic(f))
+        .filter(|f| !r.allow_manual && !multi_episode(&f.name) && !absolute_unknown && automatic(f))
         .filter_map(episode)
         .collect();
     available.sort_unstable();
@@ -253,7 +257,9 @@ pub fn resolve(m: &Manifest, r: &Request) -> Resolution {
         })
         .cloned()
         .collect();
-    let (state, reason, choices, selection) = if exact.len() == 1 && !absolute_unknown {
+    let (state, reason, choices, selection) = if r.allow_manual && !files.is_empty() {
+        ("choose-file", "Confirm the video for the requested anime and episode. Its identity could not be verified automatically.", files.clone(), None)
+    } else if exact.len() == 1 && !absolute_unknown {
         (
             "matched",
             "Episode file verified",
@@ -262,7 +268,7 @@ pub fn resolve(m: &Manifest, r: &Request) -> Resolution {
                 info_hash: m.info_hash.clone(),
                 manifest_id: id.clone(),
                 file_index: exact[0].index,
-                manual: false,
+                manual: false, episode:Some(r.episode),
             }),
         )
     } else if exact.len() > 1 {
@@ -709,6 +715,7 @@ pub fn validate(r: &PlaybackRequest) -> Result<(), String> {
         title: r.title.clone(),
         identity,
         episode: r.episode.parse().map_err(|_| "Batch episode is invalid.")?,
+        allow_manual: selection.manual && selection.episode==r.episode.parse::<u32>().ok(),
     };
     let resolved = resolve(&m, &request);
     if resolved
@@ -781,7 +788,7 @@ mod tests {
                 part_number: None,
                 sequel: false,
             },
-            episode: ep,
+            episode: ep, allow_manual: false,
         }
     }
     fn manifest(names: &[&str]) -> Manifest {
@@ -799,6 +806,12 @@ mod tests {
                 .collect(),
             retrieved_at: 0,
         }
+    }
+    #[test]
+    fn manual_review_does_not_disable_seeded_uncertain_releases_or_claim_verified_episodes() {
+        let mut r=request(2); r.title="Unrecognized pack Batch".into(); r.allow_manual=true;
+        let m=Manifest{info_hash:"a".repeat(40),version:VERSION,retrieved_at:now_millis(),files:vec![File{index:0,name:"Different Anime 02.mkv".into(),bytes:100},File{index:1,name:"sample.mkv".into(),bytes:10}]};
+        let result=resolve(&m,&r);assert_eq!(result.state,"choose-file");assert_eq!(result.files.len(),1);assert_eq!(result.files[0].index,0);assert!(result.available_episodes.is_empty());assert!(result.selection.is_none());
     }
     #[test]
     fn pack_episode_selection() {
@@ -885,10 +898,12 @@ mod tests {
             info_hash: m.info_hash.clone(),
             manifest_id: manifest_id(&m),
             file_index: 1,
-            manual: true,
+            manual: true, episode:None,
         };
         let mut r:PlaybackRequest=serde_json::from_value(serde_json::json!({"magnet":format!("magnet:?xt=urn:btih:{}",m.info_hash),"title":request(2).title,"anime_title":"Example Anime","episode":"2","source_identity":request(2).identity,"batch_selection":selection})).unwrap();
         assert!(validate(&r).is_ok());
+        r.batch_selection.as_mut().unwrap().episode=Some(2);
+        r.episode="3".into(); assert!(validate(&r).is_err()); r.episode="2".into();
         r.batch_selection.as_mut().unwrap().file_index = 2;
         assert!(validate(&r).is_err());
         r.batch_selection.as_mut().unwrap().file_index = 3;
@@ -980,7 +995,7 @@ mod tests {
                 part_number: None,
                 sequel: false,
             },
-            episode: 2,
+            episode: 2, allow_manual: false,
         };
         let result = tauri::async_runtime::block_on(inspect_batch_release(
             r.clone(),

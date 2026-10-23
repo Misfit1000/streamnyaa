@@ -2,7 +2,7 @@ import { desktopDataError } from './desktopData';
 
 export function episodeMetadataStatus(input: {
   enabled: boolean; fetching: boolean; error?: unknown; errorAt?: number;
-  administrator?: boolean; hasTitles: boolean; hasEntries: boolean; stale?: boolean; upcoming?: boolean; now?: number;
+  administrator?: boolean; hasTitles: boolean; hasEntries: boolean; stale?: boolean; upcoming?: boolean; singlePart?: boolean; now?: number;
 }) {
   const now = input.now ?? Date.now();
   const error = input.error ? desktopDataError('tenrai', input.error) : undefined;
@@ -24,6 +24,7 @@ export function episodeMetadataStatus(input: {
     message = `${reason} ${input.hasTitles ? 'Available titles remain visible.' : 'You can still select an episode and find sources.'}`;
   } else if (input.stale) message = 'Saved episode titles are shown while live updates are unavailable.';
   else if (!input.hasTitles) message = input.hasEntries ? 'Titles have not been published for these episodes yet.' : 'The provider has not listed episode titles yet. Numbered navigation remains available.';
+  if (input.singlePart && !error && !input.hasTitles) message = input.fetching ? 'Loading movie details…' : 'This movie has one part. Its episode title has not been published.';
   return {
     message,
     canRetry: input.enabled && !input.upcoming && (error ? error.retryable && error.code !== 'invalid' && error.code !== 'cancelled' : Boolean(input.stale)),

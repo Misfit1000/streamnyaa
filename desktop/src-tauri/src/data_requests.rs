@@ -392,6 +392,7 @@ async fn fetch_bytes_with_attempts(
         // within the original two-attempt budget. Never route around HTTP denial
         // or throttling, and never change the requested identity/page.
         if let Some(relay) = &connection_relay { request = client().get(relay); }
+        if provider == "releases" { request = request.timeout(Duration::from_secs(24)); }
         let result = request.send().await;
         match result {
             Ok(mut response) => {
@@ -596,6 +597,12 @@ async fn metadata(
                     .append_pair("api_key", key.as_deref().unwrap_or(""));
             }
             url.to_string()
+        }
+        "releases" => {
+            let path = path()?;
+            let parsed = reqwest::Url::parse(&format!("https://www.streamnyaa.xyz{path}")).map_err(|_|DataError::new(provider,"invalid"))?;
+            if parsed.path() != "/recent" || parsed.query_pairs().any(|(key,_)| !["before","track","adult","type","status","genre","year","cursor","build"].contains(&key.as_ref())) { return Err(DataError::new(provider,"invalid")); }
+            format!("https://www.streamnyaa.xyz/api/stream-sources?provider=releases&{}",parsed.query().unwrap_or(""))
         }
         "animeschedule" => {
             // Application credentials remain on our authenticated metadata gateway.
@@ -829,7 +836,7 @@ async fn run(job: Job, priority: Arc<AtomicU8>, timeout: Duration) -> Outcome {
         }
     }
     let (data, complete) = match &job {
-        Job::Metadata(request) => (metadata(request, priority).await?, true),
+        Job::Metadata(request) => { let data=metadata(request, priority).await?;let complete=request.provider!="releases" || data["complete"]==true;(data,complete) },
         Job::Source(url) => {
             sources(
                 url,
@@ -839,8 +846,8 @@ async fn run(job: Job, priority: Arc<AtomicU8>, timeout: Duration) -> Outcome {
             .await?
         }
     };
-    let stale = provider == "tenrai" && data["streamnyaa"]["stale"] == true;
-    let fetched_at = if provider == "tenrai" { data["streamnyaa"]["fetchedAt"].as_u64().map(u128::from).unwrap_or_else(now_millis) } else { now_millis() };
+    let stale = provider == "tenrai" && data["streamnyaa"]["stale"] == true || provider == "releases" && data["stale"] == true;
+    let fetched_at = if provider == "releases" { data["fetchedAt"].as_u64().map(u128::from).unwrap_or_else(now_millis) } else if provider == "tenrai" { data["streamnyaa"]["fetchedAt"].as_u64().map(u128::from).unwrap_or_else(now_millis) } else { now_millis() };
     if complete && !stale {
         if let Ok(mut cache) = cache.lock() {
             cache.insert(

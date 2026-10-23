@@ -8,7 +8,7 @@ function isoWeek(ms: number) {
   const year = date.getUTCFullYear(), first = new Date(Date.UTC(year,0,1));
   return { year, week: Math.ceil(((date.getTime()-first.getTime())/86400_000+1)/7) };
 }
-const airingQuery = `query Calendar($start:Int!,$end:Int!,$page:Int!){Page(page:$page,perPage:50){pageInfo{hasNextPage} airingSchedules(airingAt_greater:$start,airingAt_lesser:$end,sort:TIME){id episode airingAt media{id idMal title{romaji english native} episodes format status isAdult averageScore coverImage{extraLarge large} bannerImage genres}}}}`;
+const airingQuery = `query Calendar($start:Int!,$end:Int!,$page:Int!){Page(page:$page,perPage:50){pageInfo{hasNextPage} airingSchedules(airingAt_greater:$start,airingAt_lesser:$end,sort:TIME){id episode airingAt media{id idMal title{romaji english native} synonyms countryOfOrigin seasonYear episodes format status isAdult averageScore coverImage{extraLarge large} bannerImage genres}}}}`;
 async function json(url: string, init: RequestInit, usage: RequestUsage, deadline: number) {
   if (Date.now() >= deadline) throw Error('Calendar pass budget reached.');
   const response = await usage.fetch(url,{...init,signal:AbortSignal.timeout(Math.max(1,Math.min(5000,deadline-Date.now())))});
@@ -46,7 +46,7 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
       for(const item of data.airingSchedules){const media=item.media;if(!Number.isSafeInteger(media?.id)||media.id<=0||!Number.isSafeInteger(item.episode)||item.episode<=0)continue;
         const image=media.coverImage?.extraLarge||media.coverImage?.large;
         incoming.push({anilist_id:media.id,mal_id:media.idMal||undefined,canonicalId:`anilist:${media.id}`,title:media.title?.english||media.title?.romaji||'Anime',image,
-          images:{jpg:{large_image_url:image},webp:{large_image_url:image}},banner_image:media.bannerImage,score:media.averageScore?media.averageScore/10:null,type:media.format,genres:media.genres,
+          title_romaji:media.title?.romaji,title_english:media.title?.english,title_japanese:media.title?.native,title_synonyms:media.synonyms,episodes:media.episodes,status:media.status,year:media.seasonYear,countryOfOrigin:media.countryOfOrigin,images:{jpg:{large_image_url:image},webp:{large_image_url:image}},banner_image:media.bannerImage,score:media.averageScore?media.averageScore/10:null,type:media.format,genres:media.genres,
           isAdult:Boolean(media.isAdult),airingEpisode:item.episode,airingAt:item.airingAt,releaseTrack:'original',scheduleStatus:'scheduled',scheduleFetchedAt:schedule.fetchedAt,scheduleProvider:'anilist',scheduleId:`anilist:${media.id}:episode-${item.episode}:original`});}
       nextPage=data.pageInfo.hasNextPage?page+1:0;
     }catch(error){retryAt=Math.max(retryAt,(error as any).retryAt||0);providers.anilist={fetchedAt:0,stale:true,error:(error as Error).message};}

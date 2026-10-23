@@ -425,6 +425,17 @@ local ok, error_message = pcall(function()
   check(state.pos==1420 and state.duration==1478,"EOF display must not fabricate watched position or rewrite decoder duration")
   note_explicit_seek(100)
   check(ui.confirmed_end==nil,"A replay/seek must restore live timestamp display")
+  reset()
+  meta.hasNextEpisode = false
+  ui.end_overlay, ui.visible = true, true
+  local requests_before=#commands
+  request_next_episode("ended")
+  check(not ui.end_next_pending and ui.end_status=="unavailable", "A finished movie cannot dispatch Next at EOF")
+  draw(true,"test-single-part-movie")
+  check(ui.end_focus=="end_replay", "Movie completion keeps Replay focused")
+  point_at("end_close"); handle_mouse_down(); handle_mouse_up()
+  check(not ui.end_overlay, "Close remains clickable for a finished movie")
+  meta.hasNextEpisode = nil
   -- Exercise the real draw -> hit-test -> pointer path, not just action dispatch.
   for _, loading in ipairs({false, true}) do
     reset()

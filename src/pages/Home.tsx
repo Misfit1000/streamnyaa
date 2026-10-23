@@ -1,3 +1,5 @@
+import {useRecentReleaseFeed} from '../lib/useRecentReleaseFeed';
+import RecentReleaseStatus from '../components/RecentReleaseStatus';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
@@ -26,7 +28,7 @@ function AnimeGridSkeleton({ count = 10 }: { count?: number }) {
 
 export default function Home() {
   const { myList, nsfwMode } = useStore();
-  const [recentBefore] = useState(() => Math.floor(Date.now() / 60_000) * 60);
+
   const [recentlyViewed, setRecentlyViewed] = useState<RecentAnime[]>([]);
   const seasonalSection=useNearViewport();
   const upcomingSection=useNearViewport();
@@ -47,8 +49,9 @@ export default function Home() {
       .slice(0, 6);
   }, [score.data]);
 
-  const recent = useInfiniteQuery(catalogOptions(catalogRequest(new URLSearchParams(`sort=recent&before=${recentBefore}`), nsfwMode)));
-  const recentData = recent.data?.pages[0], recentLoading = recent.isLoading;
+  const recent = useRecentReleaseFeed({track:'sub',adult:nsfwMode});
+  const recentBefore=recent.before;
+  const recentData = {data:recent.items}, recentLoading = recent.isLoading;
 
   const upcoming = useInfiniteQuery({
     ...catalogOptions(catalogRequest(new URLSearchParams('sort=upcoming'), nsfwMode)),
@@ -116,7 +119,8 @@ export default function Home() {
                 View All <ChevronRight className="h-4 w-4" />
               </Link>
             </div>
-            <DataStatus label="Recent episodes" error={recent.isError} fetching={recent.isFetching && !recent.isLoading} empty={!recent.isPending && !recentData?.data.length} retry={() => void recent.refetch()}/>
+            <DataStatus label="Recent episodes" error={recent.isError} fetching={recent.isFetching && !recent.isLoading} empty={recent.complete && !recent.isPending && !recentData?.data.length} retry={() => void recent.refetch()}/>
+            <RecentReleaseStatus page={recent.latest} fetching={recent.isFetching} retry={()=>{void (recent.hasNextPage?recent.fetchNextPage():recent.refetch());}}/>
             <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {recentLoading ? (
                 <AnimeGridSkeleton />

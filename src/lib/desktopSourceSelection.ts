@@ -26,3 +26,8 @@ export function selectSourceMode<T extends { title: string; matchTier: string; p
     return score(source) >= (mode === 'strict' ? 72 : 42);
   });
 }
+
+/** Explicit source selection keeps seeded listings; confidence controls recommendations only. */
+export function visibleSeededSources<T extends {rawSeeders:number;matchTier:string;manualOnly?:boolean}>(sources:T[]):T[]{
+  return sources.filter(source=>source.rawSeeders>0).map(source=>source.matchTier==='rejected'?{...source,matchTier:'broad',manualOnly:true} as T:source);
+}

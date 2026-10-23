@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { batchTitleIdentity, buildSourceIdentity, isBatchRelease } from '../../src/lib/desktopSourceIdentity';
 import { batchResolutionKey, inspectDesktopBatch } from '../../src/lib/desktopBatchSources';
 import { sourceSearchPlan } from '../../src/lib/desktopSourceDiscovery';
-import { selectSourceMode } from '../../src/lib/desktopSourceSelection';
+import { selectSourceMode,visibleSeededSources } from '../../src/lib/desktopSourceSelection';
 import DesktopBatchPicker from '../../src/components/DesktopBatchPicker';
 afterEach(()=>{cleanup();delete window.__TAURI__;});
 const identity=buildSourceIdentity({mal_id:1,title:'Example Anime',type:'TV'});
@@ -15,6 +15,15 @@ describe('batch verification and explicit file choice',()=>{
     expect(batchTitleIdentity('Different Anime 01-10 Batch',identity)).toBe(false);
     expect(isBatchRelease('Example Anime 01 – 10')).toBe(true);
     const sequel=buildSourceIdentity({mal_id:2,title:'Example Anime Season 2',type:'TV'});expect(batchTitleIdentity('Example Anime Season 1 Batch',sequel)).toBe(false);
+  });
+  it('keeps the numeric sequel before the pictured spaced tilde pack range',()=>{
+    const sequel=buildSourceIdentity({mal_id:2,title:'Cyberpunk: Edgerunners 2',type:'ONA',relations:[{relation:'Prequel',entry:[{name:'Cyberpunk: Edgerunners'}]}]});
+    for(const format of ['1080p NF WEB-DL HEVC EAC3','720p NF WEB-DL AVC EAC3','1080p NF WEB-DL AVC EAC3'])expect(batchTitleIdentity(`[Erai-raws] Cyberpunk: Edgerunners 2 - 01 ~ 10 [${format}][MultiSub] [BATCH]`,sequel)).toBe(true);
+    expect(batchTitleIdentity('Cyberpunk: Edgerunners - 01 ~ 10 [BATCH]',sequel)).toBe(false);
+  });
+  it('keeps seeded uncertain and conflicting releases selectable for explicit file review',()=>{
+    const values=[{rawSeeders:300,matchTier:'broad',manualOnly:true},{rawSeeders:12,matchTier:'rejected',manualOnly:false},{rawSeeders:0,matchTier:'exact'}];
+    expect(visibleSeededSources(values)).toEqual([values[0],{...values[1],matchTier:'broad',manualOnly:true}]);
   });
   it('can display a batch candidate without claiming its files are verified',()=>{
     const candidate={title:'Example Anime Batch',matchTier:'likely',playable:false,batchCandidate:true};

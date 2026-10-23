@@ -8,7 +8,7 @@ import { animePath } from '../lib/slug';
 import { fetchAnimeDetails } from '../api/jikan';
 import { isDesktopApp } from '../lib/desktop';
 import { animeIdentity } from '../lib/animeIdentity';
-import { desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
+import { desktopWatchPath,desktopWatchOrBrowsePath } from '../lib/desktopAnimeRoute';
 import { preloadDesktopRoute } from '../lib/desktopRoutePreload';
 import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { desktopAnimeQueryKey } from '../lib/desktopRequests';
@@ -46,7 +46,7 @@ export default function AnimeCard({ anime, delayLabel, destination }: AnimeCardP
   const inList = isInMyList(animeId);
   const liked = isLiked(animeId);
   const detailPath = animePath(anime);
-  const cardPath = destination || (desktop ? desktopWatchOrBrowsePath(anime) : detailPath);
+  const cardPath = destination || (desktop ? anime.releaseEpisode?desktopWatchPath(anime,{ep:anime.releaseEpisode,type:anime.releaseTrack}):desktopWatchOrBrowsePath(anime) : `${detailPath}${anime.releaseEpisode?`?ep=${anime.releaseEpisode}`:''}`);
   const routeId = detailPath.split('/').pop() || animeId;
   const imageCandidates = useMemo(() => imageCandidatesFor(anime), [anime]);
   const [imageIndex, setImageIndex] = useState(0);
@@ -114,6 +114,7 @@ export default function AnimeCard({ anime, delayLabel, destination }: AnimeCardP
     >
       <div className="sn-poster-card relative aspect-[2/3]" data-delayed={Boolean(delayLabel)}>
         <ScheduleDelayBadge label={delayLabel}/>
+        {anime.releaseEpisode&&<span className="absolute left-2 top-2 z-10 rounded bg-black/80 px-2 py-1 text-xs font-bold">Episode {anime.releaseEpisode}</span>}
         {currentImage && !imageFailed ? (
           <img
             key={currentImage}
@@ -172,6 +173,6 @@ export default function AnimeCard({ anime, delayLabel, destination }: AnimeCardP
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" /></svg>
         </div>
       </div>
-    </Link>{desktop && <DesktopBookmarkButton anime={anime} className="absolute right-3 top-3 z-30" />}</div>
+    </Link>{anime.homeAvailabilityLabel&&<p className="mt-2 text-xs text-muted-foreground">{anime.homeAvailabilityLabel}</p>}{desktop && <DesktopBookmarkButton anime={anime} className="absolute right-3 top-3 z-30" />}</div>
   );
 }

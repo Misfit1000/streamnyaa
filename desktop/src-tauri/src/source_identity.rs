@@ -191,6 +191,8 @@ pub fn batch_file_auto_identity(name:&str,identity:&SourceIdentity,episode:u32)-
 /// Pack labels establish the installment only. Episode identity comes from files.
 pub fn batch_identity(title: &str, identity: &SourceIdentity) -> Evidence {
     let mut clean = String::new();
+    let mut title=title;
+    for separator in [" - "," – "] { if let Some((prefix,suffix))=title.split_once(separator) { if suffix.trim_start().chars().next().is_some_and(|c|c.is_ascii_digit()) {title=prefix;break;} } }
     let chars: Vec<char> = title.chars().collect(); let mut i = 0;
     while i < chars.len() {
         if chars[i].is_ascii_digit() {
@@ -212,14 +214,22 @@ pub fn batch_identity(title: &str, identity: &SourceIdentity) -> Evidence {
     classify(&format!("{base} - 01"), identity, 1)
 }
 pub fn is_batch_release(title:&str)->bool {
-    normalize(title).split_whitespace().any(|word|["batch","complete","collection","pack"].contains(&word))
-        || title.split_whitespace().any(|word|word.trim_matches(['[',']','(',')']).split_once('-').is_some_and(|(a,b)|number(a).is_some()&&number(b).is_some()))
+    if normalize(title).split_whitespace().any(|word|["batch","complete","collection","pack"].contains(&word)){return true;}
+    let chars:Vec<_>=title.chars().collect();
+    for start in 0..chars.len(){if !chars[start].is_ascii_digit(){continue;}let mut end=start;while end<chars.len()&&chars[end].is_ascii_digit(){end+=1;}while end<chars.len()&&chars[end].is_whitespace(){end+=1;}if end<chars.len()&&['-','–','~'].contains(&chars[end]){end+=1;while end<chars.len()&&chars[end].is_whitespace(){end+=1;}if end<chars.len()&&chars[end].is_ascii_digit(){return true;}}}
+    false
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     fn sequel(format: &str) -> SourceIdentity { SourceIdentity { anime_id:"mal:2".into(), aliases:vec!["Yasei no Last Boss ga Arawareta! Season 2".into(), "Yasei no Last Boss ga Arawareta!".into()], installment_aliases:vec!["Yasei no Last Boss ga Arawareta! Season 2".into()], format:format.into(), season_number:Some(2), part_number:None, sequel:true } }
+    #[test] fn pictured_numeric_sequel_pack() {
+        let identity=SourceIdentity{anime_id:"mal:2".into(),aliases:vec!["Cyberpunk: Edgerunners 2".into()],installment_aliases:vec!["Cyberpunk: Edgerunners 2".into()],format:"ONA".into(),season_number:None,part_number:None,sequel:true};
+        for codec in ["1080p NF WEB-DL HEVC EAC3","720p NF WEB-DL AVC EAC3","1080p NF WEB-DL AVC EAC3"] {assert_eq!(batch_identity(&format!("[Erai-raws] Cyberpunk: Edgerunners 2 - 01 ~ 10 [{codec}][MultiSub] [BATCH]"),&identity),Evidence::Exact);}
+        assert_ne!(batch_identity("Cyberpunk: Edgerunners - 01 ~ 10 [BATCH]",&identity),Evidence::Exact);
+        assert!(is_batch_release("Example Anime - 01 ~ 10"));
+    }
     #[test] fn sxe_uses_episode_only() { for (text, episode) in [("Example S02E01",1), ("Example S01E03",3), ("Example S02E105",105), ("Example EP01",1), ("Example - 003v2",3)] { assert_eq!(parse_episode_intent(text),Some(episode)); } }
     #[test] fn title_scope_does_not_infer_season() { assert_eq!(parse_episode_intent("Example Season 2"),None); assert_eq!(parse_episode_intent("86"),None); }
     #[test] fn bare_root_is_not_sequel_evidence() { for kind in ["TV","ONA","OVA","SPECIAL"] { assert_eq!(classify("[Group] Yasei no Last Boss ga Arawareta! - 01 [1080p]",&sequel(kind),1),Evidence::Uncertain); assert!(!exact_candidate("Yasei no Last Boss ga Arawareta! S01E01",&sequel(kind),1)); assert!(exact_candidate("Yasei no Last Boss ga Arawareta! S02E01",&sequel(kind),1)); } }
