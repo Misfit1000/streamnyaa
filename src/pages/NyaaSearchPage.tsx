@@ -36,13 +36,19 @@ export default function NyaaSearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get('q') || '';
   const [searchInput, setSearchInput] = useState(query);
-  const [confirmedSelection, setConfirmedSelection] = useState<{id:number;query:string} | null>(null);
-  const confirmedAnimeId = confirmedSelection?.query === query ? confirmedSelection.id : null;
-  const setConfirmedAnimeId = (id:number | null) => setConfirmedSelection(id ? {id,query} : null);
+  // Route error boundaries remount on URL changes. Keep explicit confirmation
+  // in the URL; it is still checked against the retrieved canonical metadata.
+  const confirmedMatch = searchParams.get('match') || '';
+  const confirmedAnimeId = /^mal:[1-9]\d*$/.test(confirmedMatch) ? Number(confirmedMatch.slice(4)) : null;
+  const setConfirmedAnimeId = (id:number | null) => {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set('match', `mal:${id}`); else next.delete('match');
+    setSearchParams(next);
+  };
   const [includeUncertain, setIncludeUncertain] = useState(false);
   const [audio, setAudio] = useState<'sub' | 'dub' | 'all'>('all');
   const [notice, setNotice] = useState('');
-  useEffect(() => { setSearchInput(query); setConfirmedAnimeId(null); setShowAllSources(false); }, [query]);
+  useEffect(() => { setSearchInput(query); setShowAllSources(false); }, [query]);
   const [category, setCategory] = useState('1_0');
   const [filter, setFilter] = useState('0');
   const [sourceFilter, setSourceFilter] = useState<TorrentSourceFilter>('');
@@ -51,7 +57,6 @@ export default function NyaaSearchPage() {
   const [showAllSources, setShowAllSources] = useState(false);
   const animeLookupQuery = query;
   const selectedEpisode = /^[1-9]\d{0,3}$/.test(searchParams.get('ep') || '') ? searchParams.get('ep')! : '';
-  const setSelectedEpisode = (value: string) => { const next = new URLSearchParams(searchParams); if(value) next.set('ep',value); else next.delete('ep'); setSearchParams(next); };
 
   const { data: animeMatchData } = useQuery({
     queryKey: ['downloadSearchAnimeMatch', animeLookupQuery],
@@ -82,11 +87,15 @@ export default function NyaaSearchPage() {
   const { isLoading } = sourceQuery;
   const torrents = sourceQuery.data?.items;
   const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault(); setConfirmedAnimeId(null); setShowAllSources(false);
+    e.preventDefault(); setShowAllSources(false);
     setSearchParams(searchInput.trim() ? { q: searchInput.trim() } : {});
   };
   const handleEpisodeChange = (value: string) => {
-    setShowAllSources(false); setConfirmedAnimeId(matchedAnimeFull?.mal_id || null); setSelectedEpisode(value);
+    setShowAllSources(false);
+    const next = new URLSearchParams(searchParams);
+    if(value) next.set('ep',value); else next.delete('ep');
+    if(matchedAnimeFull?.mal_id) next.set('match', `mal:${matchedAnimeFull.mal_id}`);
+    setSearchParams(next);
   };
   const applyPreset = (preset: typeof SOURCE_PRESETS[number]) => {
     setSourceFilter((preset.sourceFilter || '') as TorrentSourceFilter); setAudio(preset.type); setShowAllSources(false);
