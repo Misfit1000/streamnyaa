@@ -125,7 +125,7 @@ export default function Search() {
         canonicalPath={canonicalPath}
       />
       {!desktop && <h1 className="mb-5 text-2xl font-black">{request.query ? 'Search anime' : ({recent:'Recently updated',trending:'Trending now',upcoming:'Upcoming anime',score:'Strongest airing picks',popular:'Popular anime',search:'Browse anime'})[request.feed]}</h1>}
-      {request.feed==='recent'&&<RecentReleaseStatus page={releaseFeed.latest} fetching={releaseFeed.isFetching} retry={()=>{void (releaseFeed.hasNextPage?releaseFeed.fetchNextPage():releaseFeed.refetch());}}/>}
+      {request.feed==='recent'&&<RecentReleaseStatus page={releaseFeed.latest} fetching={releaseFeed.isFetching} error={releaseFeed.isError} retry={()=>{void (releaseFeed.hasNextPage?releaseFeed.fetchNextPage():releaseFeed.refetch());}}/>}
       {desktop ? (
         <div className="mb-8 rounded-3xl border border-white/8 bg-[linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.015))] p-6 shadow-2xl shadow-black/20">
           <div className="flex flex-wrap items-end justify-between gap-4">
@@ -233,7 +233,7 @@ export default function Search() {
             </button>
           </form>
 
-          <DataStatus label="Anime results" error={results.isError} fetching={results.isFetching && !isLoading && !isFetchingNextPage} retry={() => void results.refetch()}/>
+          <DataStatus label="Anime results" error={results.isError&&(request.feed!=='recent'||!releaseFeed.latest)} fetching={request.feed!=='recent'&&results.isFetching && !isLoading && !isFetchingNextPage} retry={() => void results.refetch()}/>
           {isLoading ? <div role="status" className="py-20 text-center text-muted-foreground">Loading anime…</div>
             : visibleAnimes.length === 0 ? <div className="py-20 text-center text-muted-foreground">{request.feed==='recent'&&!releaseFeed.complete?'Release coverage is still being checked.':results.isError ? 'Anime results are temporarily unavailable.' : hasNextPage ? 'No matching titles in this page. More results are available below.' : 'No anime found matching your criteria.'}</div>
             : <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6">{visibleAnimes.map((anime: any) => <AnimeCard key={mediaKey(anime)} anime={anime}/>)}</div>}

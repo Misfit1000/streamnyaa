@@ -37,11 +37,11 @@ export function useRecentReleaseFeed(input:Omit<RecentReleaseRequest,'before'>&{
   const timer=setTimeout(()=>void query.fetchNextPage({cancelRefetch:false}),500);return()=>clearTimeout(timer);
  },[enabled,visible,latest,query.isFetching,query.isError,query.hasNextPage,query.data?.pages.length]);
  useEffect(()=>{
-  if(!enabled||!visible||input.before)return;
+  if(!enabled||!visible||input.before||query.isFetching||query.isError||!rawLatest||rawLatest.before!==request.before||rawLatest.stale||rawLatest.retryAt&&rawLatest.retryAt>Date.now())return;
   const boundary=latest?.nextBoundaryAt||Infinity,at=Math.min(boundary,request.before*1000+5*60000);
   const timer=setTimeout(()=>setAnchor(Math.floor(Date.now()/1000)),Math.max(1000,at-Date.now()+1000));return()=>clearTimeout(timer);
- },[enabled,visible,input.before,latest?.nextBoundaryAt,request.before]);
- useEffect(()=>{if(enabled&&visible&&!input.before&&Date.now()-anchor*1000>60000)setAnchor(Math.floor(Date.now()/1000));},[enabled,visible,input.before]);
+ },[enabled,visible,input.before,rawLatest,request.before,query.isFetching,query.isError]);
+ useEffect(()=>{if(enabled&&visible&&!input.before&&!query.isFetching&&!query.isError&&rawLatest?.before===request.before&&!rawLatest.stale&&!(rawLatest.retryAt&&rawLatest.retryAt>Date.now())&&Date.now()-anchor*1000>5*60000)setAnchor(Math.floor(Date.now()/1000));},[enabled,visible,input.before,query.isFetching,query.isError,rawLatest,request.before]);
  const expiredRecovery=useRef('');
  useEffect(()=>{if(enabled&&visible&&(query.error as any)?.statusCode===409){const key=JSON.stringify(query.data?.pageParams.at(-1));if(expiredRecovery.current!==key){expiredRecovery.current=key;void query.refetch();}}},[enabled,visible,query.error]);
  const isBuilding=query.isFetchingNextPage&&!latest?.nextCursor;

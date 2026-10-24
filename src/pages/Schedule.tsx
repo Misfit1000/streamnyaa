@@ -9,6 +9,7 @@ import { useStore } from '../store/useStore';
 import { airingAtMs, scheduleBroadcastState, scheduleDelayLabel, scheduleNextRelease, scheduleTrackLabel } from '../lib/schedulePresentation';
 import { calendarIdentityCoverage, reconcileCalendarRecords, type CalendarRecord } from '../lib/calendarModel';
 import { webScheduleSections } from '../lib/webSchedulePresentation';
+import {useVisibleCountdown} from '../lib/useVisibleCountdown';
 import '../styles/web-calendar.css';
 
 const dateLabel = (ms: number) => new Date(ms).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -34,18 +35,24 @@ export default function Schedule() {
     queryKey: ['schedule-public', start, end], initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) => fetchPublicCalendar(start, end, pageParam, signal, priority.current),
     getNextPageParam: (last, pages, lastParam, params) => last.cursor && last.cursor !== lastParam && !params.includes(last.cursor) ? last.cursor : undefined,
-    staleTime: 180_000, retry: false, meta: { publicProvider: 'calendar', recover: (): void => { if (query.hasNextPage) void query.fetchNextPage({ cancelRefetch: false }); else void query.refetch({ cancelRefetch: false }); } },
+    staleTime: 180_000, retry: false, refetchOnWindowFocus:false,refetchOnReconnect:false, meta: { publicProvider: 'calendar', recover: (): void => { if (query.hasNextPage) void query.fetchNextPage({ cancelRefetch: false }); else void query.refetch({ cancelRefetch: false }); } },
   });
   const latest = query.data?.pages.at(-1);
+  const retryNow=useVisibleCountdown(latest?.retryAt||0,visible&&Boolean(latest?.retryAt)),waiting=Boolean(latest?.retryAt&&latest.retryAt>retryNow);
   useEffect(() => {
-    if (!visible || navigator.onLine === false || !query.hasNextPage || query.isFetching || query.isError || latest?.stale && !latest.initialSnapshot) return;
+    if (!visible || navigator.onLine === false || !query.hasNextPage || query.isFetching || query.isError || waiting || latest?.stale && !latest.initialSnapshot || (query.data?.pages.length||0)>=9) return;
     const timer = setTimeout(() => void query.fetchNextPage({ cancelRefetch: false }), 500);
     return () => clearTimeout(timer);
-  }, [visible, query.hasNextPage, query.isFetching, query.isError, latest]);
+  }, [visible, waiting,query.hasNextPage, query.isFetching, query.isError, latest]);
   const rows = useMemo(() => query.data?.pages.reduce((saved, page) => reconcileCalendarRecords(saved, page.data), [] as CalendarRecord[]) || [], [query.data]);
   const sections = webScheduleSections(rows, { weekStart: days[0].start, weekEnd: days[6].end, dayStart: active.start, dayEnd: active.end, today: selectedDay === 0, dayLabel: active.label, now: clock }, nsfwMode,hideChinese);
   const stale = Boolean(latest?.stale || query.isError), pending = calendarIdentityCoverage(rows).pendingCount;
-  const retry = () => query.hasNextPage ? void query.fetchNextPage() : void query.refetch();
+  const retry = () => {if(query.isFetching||waiting)return;query.hasNextPage ? void query.fetchNextPage() : void query.refetch();};
+  const lastForegroundCheck=useRef(0);
+  useEffect(()=>{
+    const refresh=()=>{if(document.visibilityState==='hidden'||query.isFetching||query.isError||waiting||Date.now()-Math.max(lastForegroundCheck.current,latest?.fetchedAt||0)<900_000)return;lastForegroundCheck.current=Date.now();retry();};
+    document.addEventListener('visibilitychange',refresh);return()=>document.removeEventListener('visibilitychange',refresh);
+  },[query.isFetching,query.isError,query.hasNextPage,waiting,latest]);
   return <div className="container mx-auto px-4 py-10 md:px-10">
     <Seo title="Anime Airing Schedule | StreamNyaa" description="Anime episode schedules, release tracks and confirmed schedule changes in your local timezone." canonicalPath="/schedule" />
     <div className="mb-8 flex items-center gap-3"><Calendar className="h-8 w-8 text-primary" /><div>
@@ -59,9 +66,9 @@ export default function Schedule() {
         onClick={() => setSelectedDay(index)} className={`flex min-w-[100px] flex-col items-center whitespace-nowrap rounded-xl border px-4 py-3 transition-colors ${selectedDay === index ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-secondary/50 text-muted-foreground hover:bg-secondary'}`}><span className="text-sm font-bold">{day.label}</span><span className="mt-1 text-xs opacity-60">{day.date}</span></button>)}
     </div><AdSenseAd />
     <div role="status" className="mb-4 text-sm text-muted-foreground">
-      {query.isFetching && !query.isPending && <p>Updating release information… Existing cards remain available.</p>}
+      {query.isFetching && !query.isPending && !rows.length && <p>Loading release information…</p>}
       {pending > 0 && <p>{pending} provider {pending === 1 ? 'listing is' : 'listings are'} awaiting verified title links. They are not shown as duplicate cards.</p>}
-      {stale && <p className="text-amber-200">Some information could not refresh. Saved confirmed changes remain visible. <button className="min-h-9 underline" disabled={query.isFetching} onClick={retry}>Retry</button></p>}
+      {(query.isError||latest?.stale&&!latest.initialSnapshot) && <p className="text-muted-foreground">Some release information is temporarily unavailable. Saved changes remain visible. <button className="min-h-9 text-primary underline" disabled={query.isFetching||waiting} onClick={retry}>{waiting?`Retry in ${Math.ceil(((latest?.retryAt||0)-retryNow)/1000)}s`:'Retry'}</button></p>}
     </div>
     {query.isPending ? <div className="flex justify-center py-24"><Loader2 className="h-10 w-10 animate-spin text-primary" aria-label="Loading schedule" /></div>
       : <div id="web-calendar-results" role="tabpanel" aria-labelledby={`web-calendar-day-${selectedDay}`}>
@@ -86,7 +93,7 @@ export default function Schedule() {
           </div>
         </section>)}
         {!sections.length && <p className="rounded-2xl border border-border bg-secondary/20 px-6 py-16 text-center text-muted-foreground">{query.isError ? 'The schedule is temporarily unavailable.' : latest?.complete && !pending ? 'No confirmed releases on this day.' : 'Confirmed title information is still incomplete for this day.'}</p>}
-        {query.hasNextPage && !query.isFetching && <button className="mt-4 rounded-lg border border-border px-4 py-2 text-sm font-bold" onClick={retry}>{stale ? 'Retry remaining updates' : 'Continue updating schedule'}</button>}
+        {query.hasNextPage && !query.isFetching && <button disabled={waiting} className="mt-4 rounded-lg border border-border px-4 py-2 text-sm font-bold disabled:opacity-50" onClick={retry}>{waiting?`Retry in ${Math.ceil(((latest?.retryAt||0)-retryNow)/1000)}s`:stale&&!latest?.initialSnapshot ? 'Retry remaining updates' : 'Continue updating schedule'}</button>}
       </div>}
   </div>;
 }

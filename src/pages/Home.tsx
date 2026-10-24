@@ -122,8 +122,8 @@ export default function Home() {
                 View All <ChevronRight className="h-4 w-4" />
               </Link>
             </div>
-            <DataStatus label="Recent episodes" error={recent.isError} fetching={recent.isFetching && !recent.isLoading} empty={recent.complete && !recent.isPending && !recentData?.data.length} retry={() => void recent.refetch()}/>
-            <RecentReleaseStatus page={recent.latest} fetching={recent.isFetching} retry={()=>{void (recent.hasNextPage?recent.fetchNextPage():recent.refetch());}}/>
+            <DataStatus label="Recent episodes" error={recent.isError&&!recent.latest} empty={recent.complete && !recent.isPending && !recentData?.data.length} retry={() => void recent.refetch()}/>
+            <RecentReleaseStatus page={recent.latest} fetching={recent.isFetching} error={recent.isError} retry={()=>{void (recent.hasNextPage?recent.fetchNextPage():recent.refetch());}}/>
             <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {recentLoading ? (
                 <AnimeGridSkeleton />
