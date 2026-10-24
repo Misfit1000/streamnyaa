@@ -4,7 +4,7 @@ import DesktopDownloadManager from './DesktopDownloadManager';
 import DesktopActivityCenter from './DesktopActivityCenter';
 import { memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type PointerEvent } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
-import { Bookmark, CalendarDays, Compass, Download, Heart, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
+import { Bookmark, CalendarDays, Compass, Download, History, Home, Keyboard, Library, Menu, Search, Settings, UserCircle, X } from 'lucide-react';
 import DesktopBrand from './DesktopBrand';
 import DesktopCommandPalette from './DesktopCommandPalette';
 import DesktopNotificationCenter from './DesktopNotificationCenter';

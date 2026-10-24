@@ -6,42 +6,13 @@ import { useLocation } from 'react-router-dom';
 import { exportPersonalBackupFile, importPersonalBackupFile } from '../lib/desktopPersonalBackup';
 import { useEffect, useRef, useState } from 'react';
 import { saveHideEpisodeSpoilers, useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
-import { BellRing, CheckCircle2, Copy, Download, Globe2, HardDrive, History, Keyboard, PlayCircle, RefreshCw, ServerCog, ShieldCheck, Square, Trash2, Upload, UserRound } from 'lucide-react';
+import { BellRing, Copy, Download, Globe2, HardDrive, History, Keyboard, PlayCircle, RefreshCw, ServerCog, ShieldCheck, Square, Trash2, Upload, UserRound } from 'lucide-react';
 import Seo from '../components/Seo';
 import DesktopSettingsSearch from '../components/DesktopSettingsSearch';
 import DesktopAppearanceSettings from '../components/DesktopAppearanceSettings';
 import DesktopShortcutEditor from '../components/DesktopShortcutEditor';
 import DesktopDiagnosticCheck from '../components/DesktopDiagnosticCheck';
-import {
-  buildDesktopDiagnosticsReport,
-  clearLocalPlaybackHistory,
-  clearDesktopPlaybackCache,
-  controlLocalPlayer,
-  copyDesktopDiagnosticsReport,
-  DEFAULT_DESKTOP_AUDIO_PREFERENCE,
-  DEFAULT_DESKTOP_AUTO_OPEN_BEST_SOURCE,
-  DEFAULT_DESKTOP_AUTO_PLAY_NEXT_EPISODE,
-  exportDesktopSettingsBackup,
-  getDesktopDiagnostics,
-  getDesktopRuntimeStatus,
-  importDesktopSettingsBackup,
-  loadDesktopAutoPlayNextEpisode,
-  loadDesktopAutoOpenBestSource,
-  loadCachedDesktopRuntimeStatus,
-  loadDesktopAudioPreference,
-  loadDesktopPlaybackSettings,
-  loadLocalPlaybackHistory,
-  saveDesktopAutoOpenBestSource,
-  saveDesktopAutoPlayNextEpisode,
-  saveDesktopAudioPreference,
-  saveDesktopPlaybackSettings,
-  stopDesktopPlayback,
-  subscribeLocalPlaybackHistory,
-  type DesktopAudioPreference,
-  type DesktopDiagnosticsStatus,
-  type DesktopPlaybackSettings,
-  type DesktopRuntimeStatus,
-} from '../lib/desktop';
+import { buildDesktopDiagnosticsReport, clearLocalPlaybackHistory, clearDesktopPlaybackCache, controlLocalPlayer, copyDesktopDiagnosticsReport, DEFAULT_DESKTOP_AUDIO_PREFERENCE, getDesktopDiagnostics, getDesktopRuntimeStatus, loadDesktopAutoPlayNextEpisode, loadDesktopAutoOpenBestSource, loadCachedDesktopRuntimeStatus, loadDesktopAudioPreference, loadDesktopPlaybackSettings, loadLocalPlaybackHistory, saveDesktopAutoOpenBestSource, saveDesktopAutoPlayNextEpisode, saveDesktopAudioPreference, saveDesktopPlaybackSettings, stopDesktopPlayback, subscribeLocalPlaybackHistory, type DesktopAudioPreference, type DesktopDiagnosticsStatus, type DesktopPlaybackSettings, type DesktopRuntimeStatus } from '../lib/desktop';
 import {
   loadDesktopScheduleUpdatePreferences,
   saveDesktopScheduleUpdatePreferences,
@@ -62,11 +33,6 @@ function formatBytes(bytes?: number | null) {
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-function statusTone(ready: boolean) {
-  return ready
-    ? 'border-emerald-300/18 bg-emerald-400/10 text-emerald-100'
-    : 'border-amber-300/18 bg-amber-400/10 text-amber-100';
-}
 
 function PreferenceCard({
   title,

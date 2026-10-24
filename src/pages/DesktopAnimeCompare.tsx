@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, BarChart3, CheckCircle2, Gauge, GitCompare, Layers3, Loader2, Search, Tags, Trophy } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Gauge, GitCompare, Layers3, Loader2, Search, Tags, Trophy } from 'lucide-react';
 import { fetchAnimeDetails, searchAnime } from '../api/jikan';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';

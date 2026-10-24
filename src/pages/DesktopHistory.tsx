@@ -5,7 +5,7 @@ import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Clock, ExternalLink, Grid2X2, List, Play, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { Clock, ExternalLink, Grid2X2, List, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import Seo from '../components/Seo';
 import {
   clearLocalPlaybackHistory,

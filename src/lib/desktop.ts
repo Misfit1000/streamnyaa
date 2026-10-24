@@ -1,7 +1,7 @@
 import type { SeriesArtworkDescriptor } from './desktopArtwork';
 import type { SourceIdentity } from './desktopSourceIdentity';
 import type { BatchSelection } from './desktopBatchSources';
-import { historyArchiveReady, archiveRecentSources, archiveProgress, archiveTitles, archiveTitle, historyIdentity, saveArchiveEpisode, setArchiveEpisodeWatched, clearArchiveHistory, hydrateHistoryEpisode, queueHistoryWrite } from './desktopHistoryArchive';
+import { historyArchiveReady, archiveRecentSources, archiveProgress, archiveTitles, archiveTitle, historyIdentity, saveArchiveEpisode, setArchiveEpisodeWatched, clearArchiveHistory, hydrateHistoryEpisode } from './desktopHistoryArchive';
 import { SCHEDULE_ALERT_STATE_KEY, scheduleStateForBackup } from './desktopScheduleState';
 import { loadStoredSession } from './supabaseAuth';
 import {mergeCoverage,coveragePercent,type WatchedCoverage} from './desktopCoverage';

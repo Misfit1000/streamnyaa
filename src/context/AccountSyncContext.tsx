@@ -1,7 +1,7 @@
 import { isDesktopApp } from '../lib/desktop';
 import { WebAccountSyncProvider } from './WebAccountSyncContext';
 import {mergeCoverage,coveragePercent} from '../lib/desktopCoverage';
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 import {
   fetchAccountSync,
@@ -10,14 +10,9 @@ import {
   type AccountLibraryItem,
   type AccountWatchHistoryItem,
 } from '../lib/accountSync';
-import {
-  loadDesktopWatchProgress,
-  replaceDesktopWatchProgress,
-  subscribeDesktopWatchProgress,
-  type DesktopWatchProgressRecord,
-} from '../lib/desktop';
+import { replaceDesktopWatchProgress, subscribeDesktopWatchProgress, type DesktopWatchProgressRecord } from '../lib/desktop';
 import { useStore } from '../store/useStore';
-import { ensureHistoryArchive, flushHistoryWrites } from '../lib/desktopHistoryArchive';
+import { ensureHistoryArchive } from '../lib/desktopHistoryArchive';
 import { syncDesktopHistory } from '../lib/desktopHistorySync';
 
 type AccountSyncState = 'idle' | 'syncing' | 'synced' | 'unavailable';

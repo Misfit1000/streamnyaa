@@ -2,7 +2,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchAnimeDetails, fetchAnimeEpisodes } from '../api/jikan';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
-import { Download, HardDrive, ArrowLeft, Loader2, AlertTriangle, Languages, Volume2, Link as LinkIcon, Play } from 'lucide-react';
+import { Download, HardDrive, ArrowLeft, AlertTriangle, Languages, Volume2, Link as LinkIcon, Play } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { animePath } from '../lib/slug';
 import Seo from '../components/Seo';

@@ -2,20 +2,7 @@ import {coveragePercent} from '../lib/desktopCoverage';
 import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import {
-  ArrowRight,
-  Bookmark,
-  Cloud,
-  Heart,
-  History,
-  Library,
-  LogOut,
-  RefreshCw,
-  Search,
-  ShieldCheck,
-  UserCircle,
-  type LucideIcon,
-} from 'lucide-react';
+import { ArrowRight, Bookmark, Cloud, History, LogOut, RefreshCw, Search, ShieldCheck, UserCircle, type LucideIcon } from 'lucide-react';
 import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import { useAuth } from '../context/AuthContext';

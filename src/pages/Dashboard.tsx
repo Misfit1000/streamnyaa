@@ -1,22 +1,6 @@
 import { Link, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import {
-  Activity,
-  ArrowRight,
-  BookOpen,
-  Bookmark,
-  CalendarDays,
-  Cloud,
-  Compass,
-  Download,
-  Heart,
-  LogOut,
-  Newspaper,
-  RefreshCw,
-  Search,
-  Shield,
-  UserCircle,
-} from 'lucide-react';
+import { Activity, ArrowRight, BookOpen, CalendarDays, Cloud, Compass, Download, LogOut, Newspaper, RefreshCw, Search, Shield, UserCircle } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
 import { useAccountSync } from '../context/WebAccountSyncContext';

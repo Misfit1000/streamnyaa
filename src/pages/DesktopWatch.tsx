@@ -15,7 +15,7 @@ import DesktopEpisodeStatus from '../components/DesktopEpisodeStatus';
 import DesktopTrailer from '../components/DesktopTrailer';
 import DesktopAnimeCast from '../components/DesktopAnimeCast';
 import DesktopEpisodeThumbnail from '../components/DesktopEpisodeThumbnail';
-import { episodeNumberFromTitle, resolveEpisodeArtwork } from '../lib/desktopEpisodeArtwork';
+import { resolveEpisodeArtwork } from '../lib/desktopEpisodeArtwork';
 import { selectedEligibleSource, selectSourceMode, sourceSelectionKey, visibleSeededSources, visibleSourcesForMode } from '../lib/desktopSourceSelection';
 import { homeReadyEpisodes, sourceAvailabilityEvidence } from '../lib/desktopHomeReadiness';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -42,47 +42,12 @@ import { readDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { desktopAnimeQueryKey } from '../lib/desktopRequests';
 import { verifiedAiredEpisodeCount, episodeNavigation } from '../lib/animeEpisodes';
 import { runSourceSearchPass, sourceSearchPlan, type SourceDiscovery } from '../lib/desktopSourceDiscovery';
-import { buildSourceIdentity, classifySourceIdentity, parseSourceEpisode, sourceIdentitySignature, validateDesktopSourceCandidates, isBatchRelease, batchTitleIdentity } from '../lib/desktopSourceIdentity';
+import { buildSourceIdentity, classifySourceIdentity, sourceIdentitySignature, validateDesktopSourceCandidates, isBatchRelease, batchTitleIdentity } from '../lib/desktopSourceIdentity';
 import { desktopAvailabilityKey, readDesktopAvailabilityRecords, recordDesktopAvailability, subscribeDesktopAvailability } from '../lib/desktopAvailability';
 import { totalEpisodeCount } from '../lib/animeEpisodes';
 import { desktopDataError } from '../lib/desktopData';
 import { desktopLandscapeImageCandidates } from '../lib/desktopArtwork';
-import {
-  desktopEpisodeWatchState,
-  isDesktopApp,
-  formatPlaybackTime,
-  controlLocalPlayer,
-  getLocalPlaybackProgress,
-  flushDesktopPlaybackCheckpoint,
-  listenDesktopPlayerNextEpisode,
-  updateDesktopNextEpisodeStatus,
-  cancelDesktopNextEpisodeStartup,
-  listenDesktopPlayerRecoveryRequest,
-  loadDesktopWatchProgress,
-  loadDesktopPlayerPreferences,
-  loadDesktopAutoPlayNextEpisode,
-  loadDesktopAutoOpenBestSource,
-  loadDesktopAudioPreference,
-  openLocalSourceNow,
-  resolveDesktopPlaybackCheckpoint,
-  saveDesktopWatchProgress,
-  setDesktopEpisodeWatched,
-  subscribeDesktopAutoPlayNextEpisode,
-  subscribeDesktopPlayerPreferences,
-  subscribeDesktopWatchProgress,
-  saveDesktopAutoOpenBestSource,
-  saveDesktopAutoPlayNextEpisode,
-  saveDesktopAudioPreference,
-  syncDesktopPlayerPreferencesToPlayer,
-  stopDesktopPlayback,
-  subscribeDesktopAutoOpenBestSource,
-  watchTypeForAudioPreference,
-  type DesktopAudioPreference,
-  type DesktopPlayerControlAction,
-  type DesktopPlaybackProgress,
-  type DesktopEpisodeWatchState,
-  type LocalPlaybackSource,
-} from '../lib/desktop';
+import { desktopEpisodeWatchState, isDesktopApp, formatPlaybackTime, controlLocalPlayer, getLocalPlaybackProgress, flushDesktopPlaybackCheckpoint, listenDesktopPlayerNextEpisode, updateDesktopNextEpisodeStatus, cancelDesktopNextEpisodeStartup, listenDesktopPlayerRecoveryRequest, loadDesktopWatchProgress, loadDesktopPlayerPreferences, loadDesktopAutoPlayNextEpisode, loadDesktopAutoOpenBestSource, loadDesktopAudioPreference, openLocalSourceNow, resolveDesktopPlaybackCheckpoint, setDesktopEpisodeWatched, subscribeDesktopAutoPlayNextEpisode, subscribeDesktopPlayerPreferences, subscribeDesktopWatchProgress, saveDesktopAutoOpenBestSource, saveDesktopAutoPlayNextEpisode, saveDesktopAudioPreference, syncDesktopPlayerPreferencesToPlayer, stopDesktopPlayback, subscribeDesktopAutoOpenBestSource, watchTypeForAudioPreference, type DesktopAudioPreference, type DesktopPlayerControlAction, type DesktopPlaybackProgress, type DesktopEpisodeWatchState, type LocalPlaybackSource } from '../lib/desktop';
 
 type AudioMode = 'sub' | 'dub';
 type SourceSort = 'best' | 'seeders' | 'size';
@@ -536,15 +501,6 @@ function debugSourceDecision(payload: Record<string, unknown>) {
   }
 }
 
-function debugSourceLoading(step: string, payload: Record<string, unknown>) {
-  if (typeof window === 'undefined') return;
-  try {
-    if (localStorage.getItem('streamnyaa.debugSourceLoading') !== 'true') return;
-    console.debug(`[StreamNyaa Watch] source-load ${step}`, payload);
-  } catch {
-    // Timing logs are optional diagnostics and must never affect source loading.
-  }
-}
 
 function isSafeSourceQueryTitle(value = '') {
   const normalized = normalizeSourceMatchText(value);
@@ -750,27 +706,6 @@ function seriesRootTitle(value = '') {
   return cleanTitle(root || value).toLowerCase();
 }
 
-function sameSeriesFamily(rootTitle = '', nextTitle = '') {
-  const root = seriesRootTitle(rootTitle);
-  const next = seriesRootTitle(nextTitle);
-  if (!root || !next) return false;
-  if (root === next) return true;
-  if (root.length >= 8 && next.includes(root)) return true;
-  if (next.length >= 8 && root.includes(next)) return true;
-  const rootTokens = root.split(' ').filter((token) => token.length > 2);
-  const nextTokens = new Set(next.split(' ').filter((token) => token.length > 2));
-  if (rootTokens.length < 2 || nextTokens.size < 2) return false;
-  const hits = rootTokens.filter((token) => nextTokens.has(token)).length;
-  return hits >= Math.min(3, rootTokens.length);
-}
-
-function hasSeasonTitleSignal(value = '') {
-  return Boolean(
-    seasonNumberFromText(value)
-      || partNumberFromText(value)
-      || /\b(final\s+season|cour\s+\d+|part\s+\d+)\b/i.test(value),
-  );
-}
 
 function sourceSearchTitleVariants(anime: any, routeId = '', installment?: InstallmentItem | null) {
   const routeTitle = titleFromRoute(routeId);
@@ -1055,13 +990,6 @@ function relationTypeAllowed(entry: any, currentKind: InstallmentKind) {
   return TIMELINE_RELATIONS.has(relationType);
 }
 
-function installmentDiscoveryPriority(entry: any, displayKinds: Set<InstallmentKind>) {
-  const format = normalizeInstallmentFormat(entry?.format || entry?.type || 'TV');
-  const kind = installmentKindFor(format);
-  if (displayKinds.has(kind)) return 0;
-  if (kind === 'movie') return 2;
-  return 1;
-}
 
 function isPartiallySplitSeason(item: Omit<InstallmentItem, 'label'>) {
   return item.kind === 'season' && Boolean(item.seasonNumber && item.partNumber);

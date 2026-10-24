@@ -2,11 +2,7 @@ import { scheduleUpdateIsPersonal } from '../lib/desktopScheduleAlerts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, CalendarClock, CheckCheck, ChevronRight, Globe2, UserRound, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import {
-  desktopWatchedSeriesMatchesAnime,
-  loadDesktopWatchedSeries,
-  subscribeDesktopWatchProgress,
-} from '../lib/desktop';
+import { loadDesktopWatchedSeries, subscribeDesktopWatchProgress } from '../lib/desktop';
 import {
   readDesktopScheduleReminders,
   readDesktopUpcomingAnimeWatches,

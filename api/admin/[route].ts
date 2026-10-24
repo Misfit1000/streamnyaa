@@ -1,11 +1,4 @@
-import {
-  envAdminEmails,
-  listStoredAdmins,
-  requireAdmin,
-  supabaseBaseUrl,
-  supabaseRest,
-  supabaseSecretKey,
-} from '../_shared/adminAuth.js';
+import { requireAdmin, supabaseRest } from '../_shared/adminAuth.js';
 
 import { generateBlog, summary, generationStatusRoute, reviewBlog } from '../_shared/adminPublishing.js';
 import {manageBlogs} from '../_shared/adminBlogs.js';

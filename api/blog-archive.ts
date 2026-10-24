@@ -1,4 +1,4 @@
-import { findArchivedBlogPost, listArchivedBlogPostSummaries, listArchivedBlogPostSummaryPage, listArchivedBlogPosts, migrateArchivedBlogPostsToSupabase } from './blogArchive.js';
+import { findArchivedBlogPost, listArchivedBlogPostSummaries, listArchivedBlogPostSummaryPage, listArchivedBlogPosts } from './blogArchive.js';
 import {articleCacheTag} from './_shared/blogCache.js';
 
 export default async function handler(req: any, res: any) {

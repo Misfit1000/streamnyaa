@@ -3,31 +3,7 @@ import AdminBlogManager from '../components/AdminBlogManager';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import {
-  Activity,
-  AlertTriangle,
-  ArrowRight,
-  Archive,
-  CheckCircle2,
-  Clock,
-  Crown,
-  Database,
-  ExternalLink,
-  FileText,
-  Globe,
-  KeyRound,
-  Loader2,
-  Lock,
-  MailCheck,
-  Newspaper,
-  RefreshCw,
-  Settings,
-  Shield,
-  Sparkles,
-  Trash2,
-  UserPlus,
-  Users,
-} from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, CheckCircle2, Clock, Crown, Database, FileText, Globe, KeyRound, Loader2, Lock, MailCheck, Newspaper, RefreshCw, Settings, Shield, Sparkles, Trash2, UserPlus, Users } from 'lucide-react';
 import Seo from '../components/Seo';
 import { useAuth } from '../context/AuthContext';
 import { generationFeedback, generationJobLabel } from '../lib/adminGeneration';

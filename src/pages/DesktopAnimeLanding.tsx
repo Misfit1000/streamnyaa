@@ -1,6 +1,6 @@
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { ArrowLeft, CalendarDays, Filter, Flame, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Filter, Flame, RefreshCw } from 'lucide-react';
 import { fetchAnimeSeason, searchAnime } from '../api/jikan';
 import AnimeCard from '../components/AnimeCard';
 import Seo from '../components/Seo';

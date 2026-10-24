@@ -5,7 +5,7 @@ import DesktopBookmarkButton from '../components/DesktopBookmarkButton';
 import { useHideEpisodeSpoilers } from '../lib/desktopSpoilers';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { AlertTriangle, Bookmark, Clock3, Heart, History, Play, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { AlertTriangle, Bookmark, Clock3, History, Play, Search, SlidersHorizontal, Trash2 } from 'lucide-react';
 import AnimeCard from '../components/AnimeCard';
 import DesktopLibraryOrganizer from '../components/DesktopLibraryOrganizer';
 import DesktopDownloads from '../components/DesktopDownloads';

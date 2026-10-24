@@ -157,7 +157,7 @@ Assert-Match $watchPage 'saveDesktopAutoOpenBestSource' 'Desktop watch page shou
 Assert-Match $watchPage 'sourceQualityReasons' 'Desktop watch page should explain why source matches are ranked.'
 Assert-Match $watchPage 'fallbackAnimeFromRoute' 'Desktop watch page must fall back to a route title when metadata lookup fails.'
 Assert-Match $watchPage 'SafeImage' 'Desktop watch page must render fallback-safe images.'
-Assert-Match $watchPage 'episodeNumberFromTitle' 'Desktop watch page should avoid mismatching episode thumbnails and titles.'
+Assert-Match $watchPage 'resolveEpisodeArtwork\(' 'Desktop watch page should resolve identity-aware episode artwork through its active rendering path.'
 Assert-Match $watchPage 'selectedEpisode - Math\.floor\(maxVisible / 2\)' 'Desktop watch page should keep the selected long-running episode in the visible strip.'
 Assert-Match $watchPage 'sourceSearchTitleVariants' 'Desktop watch page should widen source title matching for alternate season naming.'
 Assert-Match $watchPage 'sourceMatchesInstallment' 'Desktop watch page should filter torrent sources by the selected installment.'
