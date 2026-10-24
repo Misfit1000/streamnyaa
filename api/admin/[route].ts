@@ -8,6 +8,7 @@ import {
 } from '../_shared/adminAuth.js';
 
 import { generateBlog, summary, generationStatusRoute, reviewBlog } from '../_shared/adminPublishing.js';
+import {manageBlogs} from '../_shared/adminBlogs.js';
 export const maxDuration = 300;
 
 function routeName(req: any) {
@@ -62,6 +63,7 @@ export default function handler(req: any, res: any) {
     case 'generation-status': return generationStatusRoute(req, res);
     case 'generation-review': return reviewBlog(req,res);
     case 'summary': return summary(req, res);
+    case 'blogs': return manageBlogs(req,res);
     default: return res.status(404).json({ error: 'Admin route not found' });
   }
 }

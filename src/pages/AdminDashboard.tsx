@@ -1,4 +1,5 @@
 import AdminPublicationReview from '../components/AdminPublicationReview';
+import AdminBlogManager from '../components/AdminBlogManager';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
@@ -77,7 +78,7 @@ export default function AdminDashboard() {
     setJobIds([]);setActionMessage('');setActionError('');setBusyAction('');
     manualRequest.current=null;manualInFlight.current=false;
     try{const saved=JSON.parse(localStorage.getItem(`streamnyaa.admin.request.${user?.id}`)||'null');if(saved&&/^[a-f0-9-]{36}$/i.test(saved.id)&&['one','both'].includes(saved.mode))manualRequest.current=saved;}catch{/* Optional retry restoration. */}
-    queryClient.removeQueries({predicate:query=>['admin-summary','admin-jobs','admin-draft'].includes(String(query.queryKey[0]))&&query.queryKey[1]!==user?.id});
+    queryClient.removeQueries({predicate:query=>['admin-summary','admin-jobs','admin-draft','admin-blogs'].includes(String(query.queryKey[0]))&&query.queryKey[1]!==user?.id});
     try{if(user?.id)setJobIds(JSON.parse(localStorage.getItem(`streamnyaa.admin.jobs.${user.id}`)||'[]').filter((id:unknown)=>typeof id==='string'&&/^[a-f0-9-]{36}$/i.test(id)).slice(0,4));}catch{/* Optional status restoration. */}
   },[user?.id,queryClient]);
   const [adminEmail, setAdminEmail] = useState('');
@@ -117,7 +118,6 @@ export default function AdminDashboard() {
   ), [data]);
   const envAdminEmails = data?.admins?.env || [];
   const storedAdmins = data?.admins?.stored || [];
-  const recentArticles = data?.recentArticles || [];
   const displayJobs=(data?.jobs||[]).map((job:any)=>jobs.data?.jobs?.find((current:any)=>current.id===job.id)||job);
 
   const trackAcceptedJobs=(ids:string[],acceptedJobs?:any[])=>{
@@ -343,41 +343,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
-                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="text-xl font-black tracking-tight">Recent articles</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Newest posts currently available on the blog.</p>
-                  </div>
-                  <Link to="/blog" className="inline-flex w-fit items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-black text-foreground hover:border-primary/45">
-                    Open blog
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-                <div className="overflow-hidden rounded-lg border border-border">
-                  {recentArticles.length ? recentArticles.map((article: any) => (
-                    <div key={article.slug} className="grid gap-3 border-b border-border bg-background/45 p-4 last:border-b-0 md:grid-cols-[1fr_auto] md:items-center">
-                      <div className="min-w-0">
-                        <Link to={`/blog/${article.slug}`} className="line-clamp-1 text-sm font-black text-foreground hover:text-primary">
-                          {article.title || article.slug}
-                        </Link>
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                          <span>{formatDate(article.updated_at)}</span>
-                          {article.category ? <span>{article.category}</span> : null}
-                          {article.article_kind ? <span>{article.article_kind}</span> : null}
-                          {article.status ? <span>{article.status}</span> : null}
-                        </div>
-                      </div>
-                      <Link to={`/blog/${article.slug}`} className="inline-flex items-center gap-1.5 text-xs font-black text-primary hover:underline">
-                        View
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </div>
-                  )) : (
-                    <div className="bg-background/35 p-5 text-sm text-muted-foreground">No recent articles found in the archive yet.</div>
-                  )}
-                </div>
-              </div>
+              <AdminBlogManager key={user.id} accountId={user.id} token={session?.access_token||''} onChanged={()=>void summary.refetch()} onAccepted={ids=>{if(account.current!==user.id)return;trackAcceptedJobs(ids);void summary.refetch();}} />
 
               <div className="rounded-lg border border-border bg-[var(--glass)] p-5">
                 <div className="mb-5 flex items-center justify-between">

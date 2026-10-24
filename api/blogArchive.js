@@ -183,13 +183,12 @@ export async function archiveBlogPost(post) {
 }
 
 export async function latestPublishedBlogPost(slot) {
+  if (!supabaseUrl() || !supabaseKey()) return (await listGithubArchivedBlogPosts(12)).find(post => post?.slug === slot && post?.articleSlug);
   try {
-    const params = new URLSearchParams({select:'content', 'content->>slug':`eq.${slot}`,order:'updated_at.desc',limit:'1'});
+    const params = new URLSearchParams({select:'content',admin_deleted_at:'is.null', 'content->>slug':`eq.${slot}`,order:'updated_at.desc',limit:'1'});
     const rows = await supabase(`blog_articles?${params}`);
-    if (rows?.[0]?.content?.articleSlug) return rows[0].content;
-  } catch { /* Existing GitHub archive remains a read fallback. */ }
-  const posts = await listGithubArchivedBlogPosts(12);
-  return posts.find(post => post?.slug === slot && post?.articleSlug);
+    return rows?.[0]?.content?.articleSlug ? rows[0].content : null;
+  } catch { throw Object.assign(Error('Published article storage is temporarily unavailable.'),{status:503}); }
 }
 
 export async function listPrimaryPublishedBlogPosts(limit = 8) { return listSupabaseBlogPosts(limit); }
@@ -198,10 +197,13 @@ export async function readPublishedArticle(articleSlug) {
   let primaryError;
   if (supabaseUrl() && supabaseKey()) {
     try {
-      const rows=await supabase(`blog_articles?${new URLSearchParams({select:'content',slug:`eq.${articleSlug}`,limit:'1'})}`);
+      const rows=await supabase(`blog_articles?${new URLSearchParams({select:'content,admin_deleted_at',slug:`eq.${articleSlug}`,limit:'1'})}`);
       if (!Array.isArray(rows)) throw Error('Invalid article storage response.');
+      if (rows[0]?.admin_deleted_at) return null;
       if (rows[0]?.content) return rows[0].content;
     } catch (error) { primaryError=error; }
+    // An outage cannot establish whether an archived fallback was trashed.
+    if (primaryError) throw Object.assign(Error('Published article storage is temporarily unavailable.'),{status:503});
   } else primaryError=Error('Article storage is unavailable.');
   try {
     const file=await github(`/contents/${archivePath(articleSlug)}?ref=${encodeURIComponent(BRANCH)}`);
@@ -223,10 +225,12 @@ export async function findDurableBlogPost(articleSlug) {
 }
 
 export async function publishedBlogSitemap() {
+  if (supabaseUrl() && supabaseKey()) {
   try {
-    const rows = await supabase('blog_articles?select=slug,updated_at&order=updated_at.desc&limit=1000');
+    const rows = await supabase('blog_articles?select=slug,updated_at&admin_deleted_at=is.null&order=updated_at.desc&limit=1000');
     if (Array.isArray(rows)) return rows.map(row => ({articleSlug:row.slug,updatedAt:row.updated_at}));
-  } catch { /* Read-only archive fallback. */ }
+  } catch { throw Object.assign(Error('Published article storage is temporarily unavailable.'),{status:503}); }
+  }
   return (await listGithubArchivedBlogPosts(100)).map(post => ({articleSlug:post.articleSlug,updatedAt:post.publication?.updatedAt||post.updatedAt||post.generatedAt}));
 }
 
@@ -242,7 +246,7 @@ async function archiveSupabaseBlogPost(post) {
     const saved = await supabase('blog_articles?on_conflict=slug&select=slug', {
       method: 'POST',
       headers: {
-        Prefer: 'resolution=merge-duplicates,return=representation',
+        Prefer: 'resolution=ignore-duplicates,return=representation',
       },
       body: JSON.stringify({
         slug: post.articleSlug,
@@ -255,7 +259,7 @@ async function archiveSupabaseBlogPost(post) {
         updated_at: post.generatedAt || post.updatedAt || new Date().toISOString(),
       }),
     });
-    return Array.isArray(saved) && saved.some(row => row.slug === post.articleSlug);
+    return Array.isArray(saved) && (saved.some(row => row.slug === post.articleSlug) || Boolean(await findSupabaseBlogPost(post.articleSlug)));
   } catch (error) {
     console.error('Supabase blog archive save failed', error);
     supabaseArchiveErrors.push({
@@ -347,6 +351,7 @@ export async function migrateArchivedBlogPostsToSupabase(limit = 60) {
 }
 
 export async function listArchivedBlogPosts(limit = 60) {
+  if (supabaseUrl() && supabaseKey()) return listSupabaseBlogPosts(limit);
   try {
     const supabasePosts = await listSupabaseBlogPosts(limit);
     if (supabasePosts.length >= limit) return supabasePosts;
@@ -413,11 +418,12 @@ export async function listArchivedBlogPostSummaries(limit = 24) {
     try {
       const params = new URLSearchParams({
         select: 'slug,title,excerpt,topic,image,source,updated_at,content_kind:content->>contentKind,publication:content->publication,slot:content->>slug,content_category:content->>category',
+        admin_deleted_at: 'is.null',
         order: 'updated_at.desc',
         limit: String(limit),
       });
       const rows = await supabase(`blog_articles?${params.toString()}`);
-      if (Array.isArray(rows) && rows.length) {
+      if (Array.isArray(rows)) {
         return rows.map((row) => ({
           slug: row.slot || 'anime-trending-news-today',
           title: row.title || 'Anime News',
@@ -460,6 +466,7 @@ export async function listArchivedBlogPostSummaries(limit = 24) {
       }
     } catch (error) {
       console.error('Supabase blog archive summary list failed', error);
+      throw Object.assign(Error('Published article storage is temporarily unavailable.'),{status:503});
     }
   }
 
@@ -482,6 +489,7 @@ export async function listArchivedBlogPostSummaryPage({ page = 1, limit = 12 } =
     try {
       const params = new URLSearchParams({
         select: 'slug,title,excerpt,topic,image,source,updated_at,content_kind:content->>contentKind,publication:content->publication,slot:content->>slug,content_category:content->>category',
+        admin_deleted_at: 'is.null',
         order: 'updated_at.desc',
         limit: String(safeLimit),
         offset: String(offset),
@@ -546,6 +554,7 @@ export async function listArchivedBlogPostSummaryPage({ page = 1, limit = 12 } =
       }
     } catch (error) {
       console.error('Supabase blog archive summary page failed', error);
+      throw Object.assign(Error('Published article storage is temporarily unavailable.'),{status:503});
     }
   }
 
@@ -584,6 +593,7 @@ async function listSupabaseBlogPosts(limit = 60) {
   try {
     const params = new URLSearchParams({
       select: 'content',
+      admin_deleted_at: 'is.null',
       order: 'updated_at.desc',
       limit: String(limit),
     });
@@ -591,24 +601,12 @@ async function listSupabaseBlogPosts(limit = 60) {
     return Array.isArray(rows) ? rows.map((row) => row.content).filter(Boolean) : [];
   } catch (error) {
     console.error('Supabase blog archive list failed', error);
-    return [];
+    throw Object.assign(Error('Published article storage is temporarily unavailable.'),{status:503});
   }
 }
 
 export async function findArchivedBlogPost(articleSlug) {
-  const supabasePost = await findSupabaseBlogPost(articleSlug);
-  if (supabasePost) return supabasePost;
-
-  try {
-    const response = await fetch(publicArchiveUrl(articleSlug), {
-      headers: { Accept: 'application/json', 'User-Agent': 'StreamNyaa-Article-Archive' },
-    });
-    if (!response.ok) return null;
-    return response.json();
-  } catch (error) {
-    if (error?.status !== 404) console.error('Blog archive lookup failed', error);
-    return null;
-  }
+  return readPublishedArticle(articleSlug);
 }
 
 async function findSupabaseBlogPost(articleSlug) {

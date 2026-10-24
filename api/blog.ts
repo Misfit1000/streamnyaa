@@ -5,6 +5,7 @@ import { publicSnapshot } from './_shared/publicSnapshots.js';
 import { EditorialTransport, toMediaItem } from './_shared/publishingData.js';
 import {publicActivityEvidence} from '../src/lib/activityEvidence.js';
 import {publicArticleContent} from '../src/lib/editorialPresentation.js';
+import {articleCacheTag} from './_shared/blogCache.js';
 
 const memory=new Map<string,{at:number;value:BlogPostData}>(),flights=new Map<string,Promise<BlogPostData>>();
 async function readPost(slug:string):Promise<BlogPostData>{
@@ -28,12 +29,15 @@ async function readPost(slug:string):Promise<BlogPostData>{
 }
 /** Read-only compatibility entry point. Publication is exclusively a job operation. */
 export async function getCachedBlogPost(slug:string,_preview=false,_force=false,_options:unknown={}){
+  if(getBlogPost(slug)?.articleKind==='gemini')return readPost(slug);
   const saved=memory.get(slug);if(saved&&saved.at+60_000>Date.now())return saved.value;
   const active=flights.get(slug);if(active)return active;
   const request=readPost(slug).then(value=>{memory.set(slug,{at:Date.now(),value});return value;});
   flights.set(slug,request);try{return await request;}finally{flights.delete(slug);}
 }
 export default async function handler(req:any,res:any){
+  const tagSlug=String(req.query?.slug||'');
+  if(/^[a-z0-9][a-z0-9-]{0,220}$/.test(tagSlug))res.setHeader('Vercel-Cache-Tag',getBlogPost(tagSlug)?'blog-sections':articleCacheTag(tagSlug));
   if(req.query.render==='1' && ['GET','HEAD'].includes(req.method)){
     const slug=String(req.query.slug||'');
     res.setHeader('Content-Type','text/html; charset=utf-8');

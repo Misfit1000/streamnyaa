@@ -17,6 +17,8 @@ import { useAuth } from '../context/AuthContext';
 import { saveDownloadHistory } from '../lib/activity';
 import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQualityScore } from '../lib/sourceQuality';
 import { isDesktopApp, openLocalSourceNow } from '../lib/desktop';
+import {useStore} from '../store/useStore';
+import {titleSourceProvider} from '../lib/webSourceProvider';
 
 type AudioFilter = 'sub' | 'dub';
 
@@ -65,6 +67,7 @@ function canSearchDownloads(anime: any) {
 export default function AnimeDownloads() {
   const { session, user } = useAuth();
   const desktop = isDesktopApp();
+  const nsfwMode=useStore(state=>state.nsfwMode);
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const epParam = searchParams.get('ep');
@@ -90,6 +93,7 @@ export default function AnimeDownloads() {
   });
 
   const anime = data?.data;
+  const provider=desktop?'nyaa':titleSourceProvider(anime),adultBlocked=provider==='sukebei'&&!nsfwMode;
   const downloadSearchAvailable = canSearchDownloads(anime) || Boolean(anime && requestedUpcomingId === id);
 
   const { data: episodeData } = useQuery({
@@ -103,7 +107,7 @@ export default function AnimeDownloads() {
   const resolvedEpisodeNumber = selectedEpisodeNumber;
 
   const identity = useMemo(() => buildSourceIdentity(anime), [anime]);
-  const sourceQuery = useWebSources({ identity, episode: resolvedEpisodeNumber }, downloadSearchAvailable);
+  const sourceQuery = useWebSources({ identity, episode: resolvedEpisodeNumber,provider,adultAllowed:nsfwMode }, downloadSearchAvailable&&!adultBlocked);
   const { isLoading: torrentsLoading, isError: torrentsError, isFetching: torrentsRefreshing, refetch: retryTorrents } = sourceQuery;
   const torrents = sourceQuery.data?.items;
   const uncertainCount = torrents?.filter(item => ['uncertain','conflict'].includes(item.matchTier)).length || 0;
@@ -141,6 +145,7 @@ export default function AnimeDownloads() {
 
   if (animeError && !anime) return <div className="container mx-auto px-4 py-16"><DataStatus label="Anime details" error retry={() => void retryAnime()}/></div>;
   if (!anime) return <div className="text-center py-20">Anime not found</div>;
+  if(adultBlocked)return <section className="container mx-auto max-w-3xl px-4 py-8"><h1 className="text-2xl font-black">Hentai downloads · 18+</h1><p role="status" className="mt-4">Enable NSFW in the header before searching Hentai sources. No Sukebei request is made while it is off.</p><Link to="/nyaa" className="mt-4 inline-flex min-h-11 items-center text-primary underline">Open Downloads</Link></section>;
 
   if (!downloadSearchAvailable) {
     return (
@@ -265,6 +270,7 @@ export default function AnimeDownloads() {
           <img src={anime.images.jpg.image_url} alt={anime.title} className="w-16 h-24 object-cover rounded shadow-md" />
           <div>
             <h1 className="text-2xl font-black text-foreground mb-1">{anime.title}</h1>
+            {provider==='sukebei'&&<p role="status" className="mb-2 text-sm font-bold text-primary">Hentai · 18+ · {adultBlocked?'Enable NSFW in the header to search these sources.':'Sukebei Anime sources'}</p>}
             <p className="text-muted-foreground flex items-center gap-2">
               <HardDrive className="w-4 h-4" />
               Download Options
@@ -656,7 +662,7 @@ export default function AnimeDownloads() {
           ) : null}
         </div>
       )}
-      <WebBatchDownloads key={identity.animeId} identity={identity} initial={torrents} audio={audioFilter} quality={downloadFilter} onAction={(item, action) => recordDownloadAction(item, action, null)}/>
+      {!adultBlocked&&<WebBatchDownloads key={provider+identity.animeId} provider={provider} adultAllowed={nsfwMode} identity={identity} initial={torrents} audio={audioFilter} quality={downloadFilter} onAction={(item, action) => recordDownloadAction(item, action, null)}/>}
     </div>
   );
 }

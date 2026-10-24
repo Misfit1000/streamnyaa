@@ -16,6 +16,8 @@ import { useAuth } from '../context/AuthContext';
 import { saveDownloadHistory } from '../lib/activity';
 import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQualityScore } from '../lib/sourceQuality';
 import { isDesktopApp } from '../lib/desktop';
+import {useStore} from '../store/useStore';
+import {isHentaiTitle} from '../lib/webSourceProvider';
 
 const DESKTOP_SOURCE_PRESETS = SOURCE_PRESETS.filter((preset) => preset.sourceFilter !== 'batch');
 
@@ -34,6 +36,11 @@ export default function NyaaSearchPage() {
   const { session, user } = useAuth();
   const desktop = isDesktopApp();
   const [searchParams, setSearchParams] = useSearchParams();
+  const nsfwMode=useStore(state=>state.nsfwMode);
+  const hentai=!desktop&&nsfwMode&&searchParams.get('content')==='hentai';
+  const provider=hentai?'sukebei' as const:'nyaa' as const;
+  const changeContent=(adult:boolean)=>{const next=new URLSearchParams(searchParams);if(adult)next.set('content','hentai');else next.delete('content');next.delete('match');next.delete('ep');setSearchParams(next);setShowAllSources(false);setIncludeUncertain(false);};
+  useEffect(()=>{if(!nsfwMode&&searchParams.has('content')){const next=new URLSearchParams(searchParams);next.delete('content');next.delete('match');setSearchParams(next,{replace:true});}},[nsfwMode,searchParams,setSearchParams]);
   const query = searchParams.get('q') || '';
   const [searchInput, setSearchInput] = useState(query);
   // Route error boundaries remount on URL changes. Keep explicit confirmation
@@ -59,11 +66,11 @@ export default function NyaaSearchPage() {
   const selectedEpisode = /^[1-9]\d{0,3}$/.test(searchParams.get('ep') || '') ? searchParams.get('ep')! : '';
 
   const { data: animeMatchData } = useQuery({
-    queryKey: ['downloadSearchAnimeMatch', animeLookupQuery],
+    queryKey: ['downloadSearchAnimeMatch', animeLookupQuery,hentai,nsfwMode],
     queryFn: ({signal}) => searchAnime(animeLookupQuery, 1, '', '', '', '', '', {signal}),
     enabled: animeLookupQuery.trim().length >= 2 && category.startsWith('1_'),
   });
-  const matchedAnime = animeMatchData?.data?.[0];
+  const matchedAnime = animeMatchData?.data?.find((anime:any)=>isHentaiTitle(anime)===hentai);
   const { data: matchedAnimeDetails } = useQuery({
     queryKey: ['anime', matchedAnime?.mal_id ? String(matchedAnime.mal_id) : ''],
     queryFn: ({signal}) => fetchAnimeDetails(String(matchedAnime!.mal_id), {signal}),
@@ -83,13 +90,13 @@ export default function NyaaSearchPage() {
 
   const confirmed = Boolean(confirmedAnimeId && matchedAnimeFull?.mal_id === confirmedAnimeId && category.startsWith('1_'));
   const identity = useMemo(() => confirmed ? buildSourceIdentity(matchedAnimeFull) : undefined, [confirmed, matchedAnimeFull]);
-  const sourceQuery = useWebSources({ identity, query, category, filter, episode: selectedEpisodeNumber });
+  const sourceQuery = useWebSources({ identity, query, category:hentai?'1_1':category, filter, episode: selectedEpisodeNumber,provider,adultAllowed:nsfwMode });
   const { isLoading } = sourceQuery;
   const torrents = sourceQuery.data?.items;
   const hasBatchSources = torrents?.some(item=>item.matchTier==='batch'&&webAudioMatches(item.title,audio));
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault(); setShowAllSources(false);
-    setSearchParams(searchInput.trim() ? { q: searchInput.trim() } : {});
+    setSearchParams({...searchInput.trim()?{q:searchInput.trim()}:{},...hentai?{content:'hentai'}:{}});
   };
   const handleEpisodeChange = (value: string) => {
     setShowAllSources(false);
@@ -163,14 +170,15 @@ export default function NyaaSearchPage() {
         }}
       />
       <div className="flex flex-col items-center mb-8">
-        <h1 className="text-3xl font-black mb-4 flex items-center gap-2">
-            <HardDrive className="w-8 h-8 text-primary" />
-            Anime Download Search
+        <h1 className="text-2xl sm:text-3xl font-black mb-4 flex items-center gap-2">
+            <HardDrive className="w-8 h-8 shrink-0 text-primary" />
+            {hentai?'Hentai Download Search':'Anime Download Search'}
         </h1>
         <p className={`${desktop ? 'text-white/56' : 'text-muted-foreground'} mb-8 text-center max-w-xl`}>
           Search anime source metadata, open compatible source links in your preferred client, or copy source links for later.
         </p>
 
+        {!desktop&&<div className="mb-5 w-full max-w-3xl"><div role="group" aria-label="Download content category" className="flex flex-wrap gap-2"><button type="button" aria-pressed={!hentai} onClick={()=>changeContent(false)} className={`min-h-11 rounded-lg border px-5 text-sm font-bold ${!hentai?'border-primary bg-primary/10 text-primary':'border-border'}`}>Anime</button><button type="button" aria-pressed={hentai} disabled={!nsfwMode} onClick={()=>changeContent(true)} className={`min-h-11 rounded-lg border px-5 text-sm font-bold disabled:opacity-40 ${hentai?'border-primary bg-primary/10 text-primary':'border-border'}`}>Hentai · 18+</button></div><p role="status" className="mt-2 text-sm text-muted-foreground">{hentai?'Hentai only · Sukebei Anime sources. No catalogue match or artwork is required to download.':`Anime sources · Nyaa.${!nsfwMode?' Enable NSFW in the header to use the separate Hentai category.':''}`}</p></div>}
         <form onSubmit={handleSearch} className="w-full max-w-3xl flex flex-col md:flex-row gap-4 mb-6">
           <div className="flex-1 relative">
             <input
@@ -196,7 +204,7 @@ export default function NyaaSearchPage() {
 
         <div className="flex flex-wrap items-center justify-center gap-4 w-full max-w-3xl">
           <div className={`flex items-center gap-2 p-1 rounded-lg ${desktop ? 'border border-white/10 bg-white/[0.04]' : 'bg-secondary/30'}`}>
-            <select
+            {hentai?<span className="p-2 text-sm font-bold">Hentai animation only</span>:<select
               value={category}
               onChange={(e) => {
                 setShowAllSources(false);
@@ -214,7 +222,7 @@ export default function NyaaSearchPage() {
               <option value="3_0">Literature (All)</option>
               <option value="4_0">Live Action (All)</option>
               <option value="5_0">Pictures (All)</option>
-            </select>
+            </select>}
           </div>
 
           <div className={`flex items-center gap-2 p-1 rounded-lg ${desktop ? 'border border-white/10 bg-white/[0.04]' : 'bg-secondary/30'}`}>
@@ -493,7 +501,7 @@ export default function NyaaSearchPage() {
                   <h4 className={`text-[15px] font-bold break-all leading-tight mb-3 transition-colors ${
                     desktop ? 'text-white group-hover:text-primary' : 'text-foreground group-hover:text-primary'
                   }`}>
-                    {torrent.title}
+                    {hentai&&<span className="mr-2 inline-block rounded border border-primary/40 px-2 py-0.5 text-xs font-black text-primary">Hentai · 18+</span>}{torrent.title}
                   </h4>
                   <div className={`flex flex-wrap items-center gap-4 text-xs font-semibold ${desktop ? 'text-white/48' : 'text-muted-foreground'}`}>
                     <span className={desktop ? 'text-white/72' : 'text-secondary-foreground'}>{torrent.size}</span>
@@ -549,7 +557,7 @@ export default function NyaaSearchPage() {
         </div>
       )}
 
-      {query.trim().length >= 2 && category.startsWith('1_') && <div className="mx-auto max-w-5xl"><WebBatchDownloads key={query + (identity?.animeId || '')} identity={identity} query={query} initial={torrents} audio={audio} onAction={(item, action) => recordDownloadAction(item, action, null)}/></div>}
+      {query.trim().length >= 2 && (hentai||category.startsWith('1_')) && <div className="mx-auto max-w-5xl"><WebBatchDownloads key={provider+query + (identity?.animeId || '')} provider={provider} adultAllowed={nsfwMode} identity={identity} query={query} initial={torrents} audio={audio} onAction={(item, action) => recordDownloadAction(item, action, null)}/></div>}
       <section className={`mx-auto mt-12 max-w-5xl pt-8 ${desktop ? 'border-t border-white/8' : 'border-t border-border'}`}>
         <h2 className={`text-2xl font-black ${desktop ? 'text-white' : 'text-foreground'}`}>Anime download search FAQ</h2>
         <div className="mt-5 grid gap-4 md:grid-cols-3">

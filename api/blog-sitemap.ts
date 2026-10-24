@@ -1,6 +1,7 @@
 import { publishedBlogSitemap } from './blogArchive.js';
 const escapeXml=(value:string)=>value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 export default async function handler(req:any,res:any){
+  res.setHeader('Vercel-Cache-Tag','blog-sitemap');
   if(req.method!=='GET')return res.status(405).end();
   try{
     const origin=(process.env.SITE_URL||'https://www.streamnyaa.xyz').replace(/\/+$/,''),posts=await publishedBlogSitemap();

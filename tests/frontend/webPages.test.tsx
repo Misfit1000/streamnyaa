@@ -44,3 +44,19 @@ it('navigation dismisses after route changes and Escape restores button focus',(
  fireEvent.click(screen.getByRole('button',{name:'Open navigation menu'}));fireEvent.click(screen.getAllByRole('link',{name:'Compare'}).at(-1)!);expect(screen.getByRole('button',{name:'Open navigation menu'}).getAttribute('aria-expanded')).toBe('false');
  fireEvent.click(screen.getByRole('button',{name:'Open navigation menu'}));fireEvent.keyDown(document,{key:'Escape'});expect(document.activeElement).toBe(screen.getByRole('button',{name:'Open navigation menu'}));
 });
+it('navigation closes for the current page and same-query search, without dismissing mobile filters',()=>{
+ mount(<Navbar/>,'/');
+ fireEvent.click(screen.getByRole('button',{name:'Open navigation menu'}));
+ fireEvent.click(within(screen.getByRole('region',{name:'Mobile navigation'})).getByRole('link',{name:'Home'}));
+ expect(screen.queryByRole('region',{name:'Mobile navigation'})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Open navigation menu'}));
+ let menu=screen.getByRole('region',{name:'Mobile navigation'});
+ fireEvent.click(within(menu).getByRole('button',{name:'Filters'}));
+ const type=within(menu).getByLabelText('Type');fireEvent.mouseDown(type);fireEvent.change(type,{target:{value:'movie'}});
+ expect(within(menu).getByLabelText('Type')).toHaveProperty('value','movie');
+ fireEvent.submit(within(menu).getByPlaceholderText('Search anime...').closest('form')!);
+ expect(screen.queryByRole('region',{name:'Mobile navigation'})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Open navigation menu'}));menu=screen.getByRole('region',{name:'Mobile navigation'});
+ fireEvent.submit(within(menu).getByPlaceholderText('Search anime...').closest('form')!);
+ expect(screen.queryByRole('region',{name:'Mobile navigation'})).toBeNull();
+});

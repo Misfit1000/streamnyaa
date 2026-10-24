@@ -165,15 +165,17 @@ export async function searchNyaa(
   category: string = '1_2',
   filter: string = '0',
   page: string = '1',
-options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal; deadlineMs?: number; priority?: 'foreground' | 'prefetch' | 'background'; intent?: SourceSearchIntent; maxAgeMs?: number } = {}
+options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal; deadlineMs?: number; priority?: 'foreground' | 'prefetch' | 'background'; intent?: SourceSearchIntent; maxAgeMs?: number;provider?:'nyaa'|'sukebei';adultAllowed?:boolean } = {}
 ): Promise<SourceSearchResult> {
   if (options.signal?.aborted) throw desktopDataError('nyaa', new DOMException('Cancelled', 'AbortError'));
   const desktopRuntime = isDesktopApp();
+  const provider=options.provider||'nyaa';
+  if(provider==='sukebei'&&(!options.adultAllowed||desktopRuntime))throw Error('Hentai source searches require NSFW on the website.');
   if (desktopRuntime) loadPersistentSourceCache();
   const normalizedQuery = query.replace(/\s+/g, ' ').trim();
   const inferredEpisode = parseSourceEpisode(normalizedQuery);
   const intent = options.intent || (desktopRuntime ? inferredEpisode ? { scope: 'episode' as const, episode: inferredEpisode } : { scope: 'title' as const } : undefined);
-  const requestOptions = { deep: options.deep, pages: options.pages, wide: options.wide, intent };
+  const requestOptions = { ...(provider==='sukebei'?{provider}:{}),deep: options.deep, pages: options.pages, wide: options.wide, intent };
   const cacheKey = JSON.stringify({ query: normalizedQuery.toLowerCase(), category, filter, page, options: requestOptions });
   const cached = inMemorySearchCache.get(cacheKey);
   if (cached && Date.now() - cached.savedAt < (options.maxAgeMs ?? (desktopRuntime ? intent?.scope === 'episode' ? 60_000 : 300_000 : SEARCH_CACHE_TTL))) {
@@ -188,6 +190,7 @@ options: { deep?: boolean; pages?: number; wide?: boolean; signal?: AbortSignal;
   const request = (async () => {
     const desktop = desktopRuntime;
     const url = new URL('/api/nyaa', desktop ? 'https://www.streamnyaa.xyz' : window.location.origin);
+    if(provider==='sukebei'){url.searchParams.set('provider','sukebei');url.searchParams.set('nsfw','1');}
     if (normalizedQuery) url.searchParams.append('q', normalizedQuery);
     if (category) url.searchParams.append('c', category);
     if (filter) url.searchParams.append('f', filter);

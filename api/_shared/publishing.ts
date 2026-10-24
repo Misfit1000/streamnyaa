@@ -8,6 +8,7 @@ import { editorialModel,requestEditorialModel,type ModelRequestState } from './e
 import { prepareEditorialBrief, validateEditorialV3, editorialInstructions, reportNovelty } from './editorialPolicy.js';
 import { articleFromEditorialDraft } from '../../src/lib/editorialPresentation.js';
 import { discoverNewsV4, discoverGuidesV4, prepareEditorialV4, editorialPromptV4, validateEditorialV4 } from './editorialV4.js';
+import {quotationErrors} from './editorialQuotations.js';
 
 export type GenerationRun={id:string;idempotency_key:string;kind:'daily'|'weekly';origin?:'manual'|'scheduled';editorial_version?:number;publication_mode:'review'|'automatic';status:'pending'|'running'|'awaiting_review'|'published'|'skipped'|'failed';checkpoint:any;reason?:string;created_at:string;updated_at:string;lease_until?:string};
 const jsonPost=(body:any)=>({method:'POST',signal:AbortSignal.timeout(5000),body:JSON.stringify(body)});
@@ -58,7 +59,7 @@ export async function enqueueGeneration(kind:'daily'|'weekly',limit=2,now=Date.n
 }
 export async function generationStatus(ids?:string[]){
   const filter=ids?.length?`&id=in.(${ids.filter(id=>/^[a-f0-9-]{36}$/i.test(id)).join(',')})`:'';
-  const rows=await supabaseRest(`blog_generation_runs?select=id,kind,origin,editorial_version,publication_mode,status,reason,created_at,updated_at,lease_until,published:checkpoint->published,reviewDecision:checkpoint->reviewDecision,stage:checkpoint->>stage,lastFailure:checkpoint->lastFailure,writer:checkpoint->modelWork->request,resumeRequired:checkpoint->resumeRequired,retryAt:checkpoint->retryAt&order=created_at.desc&limit=12${filter}`,{signal:AbortSignal.timeout(5000)});
+  const rows=await supabaseRest(`blog_generation_runs?select=id,kind,origin,editorial_version,publication_mode,status,reason,created_at,updated_at,lease_until,published:checkpoint->published,reviewDecision:checkpoint->reviewDecision,stage:checkpoint->>stage,lastFailure:checkpoint->lastFailure,writer:checkpoint->modelWork->request,resumeRequired:checkpoint->resumeRequired,retryAt:checkpoint->retryAt&admin_deleted_at=is.null&order=created_at.desc&limit=12${filter}`,{signal:AbortSignal.timeout(5000)});
   const normalized=(rows||[]).map((row:any)=>({...row,checkpoint:row.checkpoint||{published:row.published,reviewDecision:row.reviewDecision,stage:row.stage,lastFailure:row.lastFailure,modelWork:{request:row.writer},resumeRequired:row.resumeRequired,retryAt:row.retryAt}}));
   return normalized.map((row:GenerationRun)=>({id:row.id,kind:row.kind,origin:row.origin,editorialVersion:row.editorial_version||2,publicationMode:row.publication_mode,status:row.status,reason:row.editorial_version===3?row.reason?.replace(/^No article published\. Most recent draft rejection: (?=No eligible new story:)/,''):row.reason,createdAt:row.created_at,updatedAt:row.updated_at,
     published:row.checkpoint?.published||[],reviewApproved:row.checkpoint?.reviewDecision?.approved===true,active:row.status==='running'&&(!row.lease_until||Date.parse(row.lease_until)>Date.now())||row.status==='pending'&&!row.checkpoint?.resumeRequired&&Date.parse(row.updated_at)>Date.now()-300000,
@@ -99,7 +100,7 @@ export function validateEditorial(raw:any,brief:EvidenceBrief,recent:any[]=[]):s
   for(const number of text.match(/\b\d+(?:[.,:]\d+)*\b/g)||[])if(!evidenceNumbers.has(number.replace(/,/g,'')))errors.push(`Unsupported numeric claim: ${number}`);
   if(brief.kind==='news'||brief.editorialVersion===4)for(const [claim,confirmation] of [[/\b(died|death|passed away)\b/i,/\b(died|death|passed away)\b|死去|逝去|訃報/i],[/\b(cancelled|canceled|cancellation)\b/i,/cancel|中止|打ち切り/i],[/\b(replaced|replacement)\b/i,/replac|交代|降板/i]] as [RegExp,RegExp][])if(claim.test(text)&&!confirmation.test(primaryText))errors.push('A sensitive claim lacks explicit primary confirmation.');
   for(const block of blocks){const words=String(block.text||'').toLowerCase().split(/\s+/);for(let i=0;i+16<=words.length;i+=4){const phrase=words.slice(i,i+16).join(' ');if(attributedText.includes(phrase)&&!brief.subject.toLowerCase().includes(phrase))errors.push('Source prose was copied instead of synthesized.');}}
-  for(const match of text.matchAll(/[“"]([^”"]{18,})[”"]/g))if(!evidence.includes(match[1].toLowerCase().replace(/[.,;:!?]+$/,'')))errors.push('A quoted passage is not present in the evidence.');
+  errors.push(...quotationErrors(text,brief));
   const sentences=text.toLowerCase().split(/[.!?]\s+/).map(value=>value.trim()).filter(value=>value.split(/\s+/).length>=10);
   if(new Set(sentences).size<sentences.length)errors.push('Repeated sentences.');
   for(const prior of recent){const old=[...(prior.article?.paragraphs||[]),...(prior.article?.sections||[]).map((section:any)=>section.body)].join(' ').toLowerCase();

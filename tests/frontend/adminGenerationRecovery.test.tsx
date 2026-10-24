@@ -7,6 +7,11 @@ import { generationFeedback, generationJobLabel } from '../../src/lib/adminGener
 vi.mock('../../src/context/AuthContext',()=>({useAuth:()=>({session:{access_token:'fixture'},user:{id:'owner',email:'admin@example.test'},isAdmin:true,loading:false})}));
 const job={id:'00000000-0000-0000-0000-000000000002',kind:'daily',status:'pending',active:true,stage:'Activity report discovery',published:[]};
 const summary={generatedBlogArticles:4,admins:{env:[],stored:[],tableReady:true},jobs:[],config:{geminiConfigured:true},publicationPolicy:{automaticEnabled:false}};
+it('distinguishes a written but rejected draft from an empty discovery run',()=>{
+ const rejected={...job,status:'skipped',active:false,reason:'No article published. Most recent draft rejection: An unsupported quotation.'};
+ expect(generationJobLabel(rejected)).toBe('Draft needs changes');expect(generationFeedback([rejected])).toContain('Open Blog management → Drafts');
+ expect(generationFeedback([rejected])).not.toContain('No new article passed');
+});
 afterEach(()=>{cleanup();vi.unstubAllGlobals();localStorage.clear();});
 it('Generate acknowledges the saved job, follows status and reports a private draft instead of zero published',async()=>{
  let release!:(response:Response)=>void,readStatus!:(response:Response)=>void;

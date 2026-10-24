@@ -13,6 +13,7 @@ import {searchNyaa,type NyaaItem} from '../../src/api/nyaa';
 import {saveDownloadHistory} from '../../src/lib/activity';
 import AnimeDownloads from '../../src/pages/AnimeDownloads';
 import NyaaSearchPage from '../../src/pages/NyaaSearchPage';
+import {useStore} from '../../src/store/useStore';
 const anime={mal_id:1,title:'Example Anime',type:'TV',status:'RELEASING',episodes:12,nextAiringEpisode:{episode:2,airingAt:2000000000},images:{jpg:{image_url:'https://example.test/poster.jpg'}}};
 const source=(title:string,id:number):NyaaItem=>({title,infoHash:String(id).padStart(40,'a'),magnet:'magnet:?xt=urn:btih:'+String(id).padStart(40,'a'),link:`https://nyaa.si/view/${id}`,size:'1 GiB',rawSize:1e9,seeders:'10',rawSeeders:10,leechers:'0',category:'Anime',categoryId:'1_2',pubDate:''});
 function RemountingSearchRoute(){const location=useLocation();return <NyaaSearchPage key={location.key}/>;}
@@ -25,7 +26,18 @@ function setup(url:string,page:'title'|'search',batchOnly=false){
  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><Routes><Route path="/anime/:id/downloads" element={<AnimeDownloads/>}/><Route path="/nyaa" element={<RemountingSearchRoute/>}/></Routes></MemoryRouter></QueryClientProvider>);
  return client;
 }
-afterEach(()=>{cleanup();vi.clearAllMocks();vi.unstubAllGlobals();});
+afterEach(()=>{cleanup();vi.clearAllMocks();vi.unstubAllGlobals();useStore.setState({nsfwMode:false});});
+it('keeps raw downloads usable without artwork, isolates Hentai searches and clears them when NSFW turns off',async()=>{
+ useStore.setState({nsfwMode:true});setup('/nyaa?q=Fixture%20release','search');
+ vi.mocked(searchAnime).mockResolvedValue({data:[]} as any);
+ await screen.findByText('Batch releases found');fireEvent.click(screen.getByRole('button',{name:/Batch downloads/}));await screen.findByRole('link',{name:'Open batch in torrent client'});fireEvent.click(screen.getByRole('button',{name:'Hentai · 18+'}));
+ await screen.findByRole('heading',{name:'Hentai Download Search'});
+ await waitFor(()=>expect(vi.mocked(searchNyaa).mock.calls.some(call=>call[4]?.provider==='sukebei'&&call[1]==='1_1')).toBe(true));
+ expect(screen.getByText(/No catalogue match or artwork is required/)).toBeTruthy();
+ const count=vi.mocked(searchNyaa).mock.calls.length;
+ useStore.setState({nsfwMode:false});await screen.findByRole('heading',{name:'Anime Download Search'});expect(screen.getByRole('button',{name:'Hentai · 18+'})).toHaveProperty('disabled',true);
+ await waitFor(()=>expect(vi.mocked(searchNyaa).mock.calls.slice(count).every(call=>call[4]?.provider!=='sukebei')).toBe(true));
+});
 it.each(['title','search'] as const)('identifies batch-only coverage on the %s page without a false no-sources warning',async page=>{
  setup(page==='title'?'/anime/1/downloads?ep=2':'/nyaa?q=Example%20Anime&ep=2&match=mal%3A1',page,true);
  await screen.findByText('Batch releases found');

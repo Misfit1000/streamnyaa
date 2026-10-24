@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+.web-mobile-menu {
+  max-height: calc(100vh - 65px);
+  max-height: calc(100dvh - 65px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.web-mobile-links a { display: flex; align-items: center; min-height: 44px; }
+@media (max-width: 767px) {
+  .web-app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  .web-app select, .web-app textarea { font-size: 16px; }
+}
+
 @theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

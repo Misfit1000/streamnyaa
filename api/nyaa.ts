@@ -179,8 +179,8 @@ function buildCategoryList(category: string, wide: boolean): string[] {
   return unique([category, ...DEFAULT_ANIME_CATEGORIES]);
 }
 
-function nyaaSearchUrl(query: string, category: string, filter: string, page: number) {
-  const url = new URL("https://nyaa.si/?page=rss");
+function nyaaSearchUrl(query: string, category: string, filter: string, page: number, provider='nyaa') {
+  const url = new URL(provider==='sukebei'?'https://sukebei.nyaa.si/?page=rss':"https://nyaa.si/?page=rss");
   if (query) url.searchParams.set("q", query);
   if (category) url.searchParams.set("c", category);
   if (filter) url.searchParams.set("f", filter);
@@ -372,10 +372,10 @@ async function fetchInChunks(urls: { url: URL; query: string; category: string; 
   return { items: results, complete, fetchedAt };
 }
 
-async function fetchEnhancedResults(options: { query: string; category: string; filter: string; page: number; pages: number; deep: boolean; wide: boolean; scope?: string; episode?: number }, usage: RequestUsage) {
+async function fetchEnhancedResults(options: { query: string; category: string; filter: string; page: number; pages: number; deep: boolean; wide: boolean; scope?: string; episode?: number;provider?:string }, usage: RequestUsage) {
   const intent = buildIntent(options.query, options.scope, options.episode);
   const queries = options.deep ? buildQueryVariants(options.query, intent) : [options.query];
-  const categories = options.deep ? buildCategoryList(options.category, options.wide) : [options.category || "1_2"];
+  const categories = options.provider==='sukebei'?['1_1']:options.deep ? buildCategoryList(options.category, options.wide) : [options.category || "1_2"];
   const pageList = options.deep
     ? Array.from({ length: Math.max(1, Math.min(options.pages, MAX_DEEP_PAGES)) }, (_, index) => Math.max(1, options.page || 1) + index)
     : [Math.max(1, options.page || 1)];
@@ -384,13 +384,13 @@ async function fetchEnhancedResults(options: { query: string; category: string; 
   for (const query of queries) {
     for (const category of categories) {
       for (const page of pageList) {
-        urls.push({ url: nyaaSearchUrl(query, category, options.filter, page), query, category, page });
+        urls.push({ url: nyaaSearchUrl(query, category, options.filter, page,options.provider), query, category, page });
       }
     }
   }
 
   const items = await fetchInChunks(urls, usage);
-  return { data: dedupeAndRank(items.items, intent, urls.length), complete: items.complete, fetchedAt: items.fetchedAt };
+  return { data: dedupeAndRank(options.provider==='sukebei'?items.items.filter(item=>item.categoryId==='1_1'):items.items, intent, urls.length), complete: items.complete, fetchedAt: items.fetchedAt };
 }
 
 async function loadSource(cacheKey: string, loader: () => Promise<SourceResult>, usage: RequestUsage): Promise<SourceResult> {
@@ -415,6 +415,8 @@ export default async function handler(req: any, res: any) {
   try {
     if (req.method && req.method !== 'GET') { status = 405; return res.status(status).json({ error: 'Source searches require GET.' }); }
     const q = firstValue(req.query.q);
+    const provider=firstValue(req.query.provider)||'nyaa';
+    if(!['nyaa','sukebei'].includes(provider)||provider==='sukebei'&&firstValue(req.query.nsfw)!=='1'){status=400;return res.status(status).json({error:'Hentai sources require an explicit NSFW search.'});}
     const c = firstValue(req.query.c) || "1_2";
     const f = firstValue(req.query.f) || "0";
     const p = firstValue(req.query.p) || "1";
@@ -428,8 +430,8 @@ export default async function handler(req: any, res: any) {
     const requestedEpisode = Number(firstValue(req.query.episode));
     if ((scope && !['title', 'episode'].includes(scope)) || (firstValue(req.query.episode) && (!Number.isInteger(requestedEpisode) || requestedEpisode < 1 || requestedEpisode > 9999))) { status = 400; return res.status(status).json({ error: 'Invalid source intent.' }); }
     const episode = requestedEpisode || undefined;
-    const loader = () => fetchEnhancedResults({ query: q, category: c, filter: f, page: Number(p) || 1, pages, deep, wide, scope, episode }, usage);
-    const cacheKey = JSON.stringify({ q, c, f, p, pages, deep, wide, scope, episode, version: 5 });
+    const loader = () => fetchEnhancedResults({ query: q, category: c, filter: f, page: Number(p) || 1, pages, deep, wide, scope, episode,provider }, usage);
+    const cacheKey = JSON.stringify({ provider,q, c, f, p, pages, deep, wide, scope, episode, version: 6 });
     const cached = sourceCache.get<SourceCacheEntry>('assembled', cacheKey);
     const age = cached ? Date.now() - cached.fetchedAt : Number.POSITIVE_INFINITY;
 

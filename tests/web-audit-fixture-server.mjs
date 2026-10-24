@@ -42,7 +42,7 @@ for(const [name,port,root] of instances){
      return send({version:1,data,complete:Boolean(url.searchParams.get('cursor')),stale:false,fetchedAt:now,providers:{anilist:{fetchedAt:now,stale:false},animeschedule:{fetchedAt:now,stale:false}},...(!url.searchParams.get('cursor')?{cursor:'0:0'}:{})});
     }
     if(['tenrai','jikan'].includes(url.searchParams.get('provider')))return send({data:Array.from({length:12},(_,i)=>({mal_id:i+1,title:`Episode ${i+1}`,aired:new Date(today-i*86400_000).toISOString()})),pagination:{has_next_page:false,last_visible_page:1}});
-    let body='';for await(const chunk of req)body+=chunk;const input=JSON.parse(body||'{}'),q=input.query||'',vars=input.variables||{},page=Number(vars.page)||1;
+    let body='';try{for await(const chunk of req)body+=chunk;}catch{return res.destroy();}const input=JSON.parse(body||'{}'),q=input.query||'',vars=input.variables||{},page=Number(vars.page)||1;
     const items=Array.from({length:24},(_,i)=>({...media((page-1)*24+i+1,origin),status:vars.status||'RELEASING'}));
     if(q.includes('GenreCollection'))return send({data:{GenreCollection:['Adventure','Fantasy','Action']}});
     if(/\bMedia\s*\(/.test(q)){let id=Number(vars.id||1);if(q.includes('idMal:')&&id>100)id-=100;return send({data:{Media:media(id,origin)}});}

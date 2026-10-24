@@ -19,7 +19,7 @@ export default function Layout() {
   }, [theme]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-red-600/30">
+    <div className="web-app min-h-screen bg-background text-foreground font-sans selection:bg-red-600/30">
       <Navbar />
       <RouteSeo />
       <main>

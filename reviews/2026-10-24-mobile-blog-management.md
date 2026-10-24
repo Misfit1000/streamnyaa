@@ -1,0 +1,25 @@
+# Mobile navigation, blog management and web source separation
+
+## Delivered behavior
+
+- Mobile navigation closes on link activation, including the current URL, and on same-query search submission. Mobile filter interaction no longer triggers the desktop filter's outside-click handler. Short-screen menus scroll within the dynamic viewport; mobile form text is 16px and key header controls have 44px targets.
+- Compare suggestions have a bounded scrolling surface. Local fixture checks at 320px and 390px found no document overflow on Home, Search, Calendar, Compare, Blog and title/general Downloads. The comparison table scrolls within its own region (520px table in a 271px region), without widening the document. Physical-device and mobile-browser keyboard checks remain unverified.
+- Admin Blog management provides Published, Drafts, Jobs and recoverable Trash, with title search, 20-entry cursor pages, on-demand private previews and specific validation feedback. List loading reuses the viewport observer, search is debounced 300ms, inactive lists do not poll, private caches expire and are cleared on account unmount. The summary uses a count-only HEAD rather than transferring a second article list.
+- Trash/Restore uses a transactional, revision-fenced service-role operation. Active jobs cannot be trashed. Content, evidence, genuine dates, claims and publication settings stay intact. Public reads/sitemaps exclude trashed articles; configured-primary outages fail closed instead of resurrecting a removed GitHub fallback. Existing public archive content is not erased. Blog cache tags refresh only affected article/archive/section/sitemap responses, preserving normal cache lifetimes.
+- Rejected model drafts can be inspected privately, without an approval bypass. Feedback distinguishes a written-but-rejected draft from an empty discovery run. Exact verified titles and normalized punctuation do not count as fabricated speech; other quotations still require source wording. Repetition feedback identifies the overlapping body blocks, and the existing one-revision prompt asks for removal of redundant explanations. No generation, approval or publication was triggered for acceptance.
+- General web Downloads has separate Anime and Hentai categories. Anime uses Nyaa; Hentai requires NSFW and uses only Sukebei's Anime category (`1_1`), including batch searches. Switching NSFW off clears the adult view and restores Anime. Canonical title Downloads uses explicit Hentai genre/rating evidence, never an adult/Ecchi flag alone. Raw download links work without a catalogue match or artwork.
+- Provider identity participates in frontend, cross-tab and server caches. No cross-provider fallback or arbitrary destination URL is accepted. Zero-seeder filtering, existing budgets, cancellation, paging and source assessment remain intact. No public media was downloaded.
+
+## Evidence
+
+- TypeScript passes; 732 frontend tests / 115 files pass.
+- All 98 Node server, source, review, editorial, PostgreSQL permission/concurrency, account and gateway contracts pass. The additional restrictive public-read policy was retested with a public permissive policy: visible rows remain readable, trashed rows do not.
+- Production build, bundle checks and 13 local production route checks pass. Build uses the existing lazy Admin route; no telemetry, provider-wide scans or infrastructure was added. No percentage latency improvement is claimed.
+- Additive `supabase/blog-management.sql` applied in the existing production project. Verification retains 101 articles and automatic publication enabled; the management RPC is unavailable to anonymous clients.
+- Raw screenshots, responsive geometry and test/build output are in `.validation/web-mobile-admin-2026-10-24/` (not committed).
+
+## Acceptance limits
+
+Live provider and deployment checks are recorded after pushing this source. Actual third-party source availability is external; local fixtures prove separation and actions without requesting adult media. No personal articles/drafts were moved to Trash in production. No new model quota was consumed, and editorial success or Google indexing is not implied by validator tests. Desktop 0.1.14 and its installer are unchanged.
+
+Implementation references: [Vercel cache tags and targeted invalidation](https://vercel.com/docs/functions/functions-api-reference/vercel-functions-package), [Nyaa/Sukebei category definitions](https://github.com/nyaadevs/nyaa/blob/master/db_create.py).

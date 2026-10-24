@@ -1,7 +1,7 @@
 export type AdminGenerationJob={id:string;kind:string;origin?:'manual'|'scheduled';editorialVersion?:number;status:string;active:boolean;stage?:string;reason?:string;createdAt?:string;updatedAt?:string;retryAt?:number;resumeRequired?:boolean;published:string[]};
 export function generationJobLabel(job:AdminGenerationJob){
  if(job.status==='awaiting_review')return 'Ready for review';
- if(job.status==='skipped')return job.editorialVersion===3?'No eligible new story':'No eligible article';
+ if(job.status==='skipped')return /draft (?:rejection|rejected)/i.test(job.reason||'')?'Draft needs changes':job.editorialVersion===3?'No eligible new story':'No eligible article';
  if(job.status==='running')return job.active?'Running':'Paused';
  if(job.status==='pending')return job.active?'Queued':'Paused';
  return job.status==='failed'?'Failed':job.status==='published'?'Published':job.status;
@@ -14,6 +14,7 @@ export function generationFeedback(jobs:AdminGenerationJob[],now=Date.now()){
  if(jobs.some(job=>job.status==='awaiting_review'))return prefix+'A draft is saved privately and ready for review. Open it below to approve or reject it.';
  const paused=jobs.filter(job=>['pending','failed'].includes(job.status)||job.resumeRequired);
  if(paused.length){const retryAt=Math.max(...paused.map(job=>job.retryAt||0)),reason=[...new Set(paused.map(job=>job.reason).filter(Boolean))].join(' ');return prefix+`Generation paused. ${reason}${retryAt>now?` Retry after ${new Date(retryAt).toLocaleString()}.`:' Resume the saved job to retry.'}`;}
+ if(jobs.some(job=>job.status==='skipped'&&/draft (?:rejection|rejected)/i.test(job.reason||'')))return prefix+'A draft was written but did not pass the quality checks. Open Blog management → Drafts to inspect the saved text and specific feedback. Nothing new was published from that draft.';
  if(jobs.some(job=>job.status==='skipped'))return prefix+'No new article passed this run. '+[...new Set(jobs.map(job=>job.reason).filter(Boolean))].join(' ');
  return prefix||'The saved job finished without publishing an article.';
 }

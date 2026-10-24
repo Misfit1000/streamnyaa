@@ -22,10 +22,11 @@ export default function Navbar() {
   const navRef = useRef<HTMLElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
+      if (filterRef.current && !filterRef.current.contains(event.target as Node) && !mobileMenuRef.current?.contains(event.target as Node)) {
         setShowFilters(false);
       }
     }
@@ -36,7 +37,7 @@ export default function Navbar() {
   useEffect(() => {
     setIsMenuOpen(false);
     setShowFilters(false);
-  }, [location.pathname, location.search]);
+  }, [location.key, location.pathname, location.search]);
 
   useEffect(() => {
     setSearchQuery(searchParams.get('q') || '');
@@ -57,6 +58,8 @@ export default function Navbar() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    setIsMenuOpen(false);
+    setShowFilters(false);
     const params = new URLSearchParams();
     if (searchQuery.trim()) params.append('q', searchQuery);
     if (filterType) params.append('type', filterType);
@@ -188,20 +191,21 @@ export default function Navbar() {
           >
             {nsfwMode ? 'NSFW' : 'SFW'}
           </button>
-          <button onClick={toggleTheme} className="p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground">
+          <button onClick={toggleTheme} aria-label={theme === 'dark' ? 'Use light theme' : 'Use dark theme'} className="min-h-11 min-w-11 md:min-h-0 md:min-w-0 flex items-center justify-center p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground">
             {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </button>
           <Link to="/my-list" className="p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground hidden sm:block">
             <Bookmark className="w-5 h-5" />
           </Link>
-          <Link to={user ? '/dashboard' : '/login'} className="p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground" title={user ? 'Dashboard' : 'Login'}>
+          <Link to={user ? '/dashboard' : '/login'} className="min-h-11 min-w-11 md:min-h-0 md:min-w-0 flex items-center justify-center p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground" title={user ? 'Dashboard' : 'Login'}>
             <UserCircle className="w-5 h-5" />
           </Link>
           <button 
             ref={menuButtonRef}
             aria-expanded={isMenuOpen}
+            aria-controls="mobile-navigation"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="xl:hidden p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground"
+            className="xl:hidden min-h-11 min-w-11 flex items-center justify-center p-2 rounded-full hover:bg-secondary/80 transition-colors text-foreground"
             aria-label={isMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           >
             {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -211,7 +215,9 @@ export default function Navbar() {
 
       {/* Mobile Menu */}
       {isMenuOpen && (
-        <div className="absolute left-0 top-full z-50 w-full border-b border-[var(--glass-border)] bg-background/90 shadow-lg shadow-black/20 backdrop-blur-2xl xl:hidden">
+        <div ref={mobileMenuRef} id="mobile-navigation" role="region" aria-label="Mobile navigation" className="web-mobile-menu absolute left-0 top-full z-50 w-full overflow-y-auto overscroll-contain border-b border-[var(--glass-border)] bg-background/95 shadow-lg shadow-black/20 backdrop-blur-2xl xl:hidden" onClick={event => {
+          if ((event.target as Element).closest('a[href]')) { setIsMenuOpen(false); setShowFilters(false); }
+        }}>
           <div className="container mx-auto px-6 py-4 flex flex-col gap-4">
             <form onSubmit={handleSearch} className="md:hidden relative flex items-center mb-2">
               <input
@@ -219,7 +225,7 @@ export default function Navbar() {
                 placeholder="Search anime..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[var(--glass)] border border-[var(--glass-border)] py-2.5 pl-10 pr-20 rounded-xl text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:border-primary/50 transition-colors"
+                className="min-w-0 w-full bg-[var(--glass)] border border-[var(--glass-border)] py-2.5 pl-10 pr-20 rounded-xl text-foreground placeholder:text-muted-foreground text-base focus:outline-none focus:border-primary/50 transition-colors"
               />
               <button
                 type="submit"
@@ -230,6 +236,7 @@ export default function Navbar() {
               </button>
               <button 
                 type="button" 
+                aria-expanded={showFilters}
                 onClick={() => setShowFilters(!showFilters)}
                 className={`absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg text-[10px] uppercase tracking-widest flex items-center gap-1 font-bold transition-all ${showFilters || filterType || filterStatus || filterRating ? 'bg-primary/20 text-primary' : 'hover:bg-secondary text-muted-foreground hover:text-foreground'}`}
               >
@@ -241,11 +248,12 @@ export default function Navbar() {
               <div className="bg-secondary/30 border border-border rounded-xl p-4 flex flex-col gap-3 mb-2">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold uppercase text-muted-foreground mb-1">Type</label>
+                    <label htmlFor="mobile-filter-type" className="block text-xs font-semibold uppercase text-muted-foreground mb-1">Type</label>
                     <select 
+                      id="mobile-filter-type"
                       value={filterType}
                       onChange={(e) => setFilterType(e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg text-sm p-2"
+                      className="min-w-0 w-full bg-background border border-border rounded-lg text-base p-2"
                     >
                       <option value="">Any</option>
                       <option value="tv">TV</option>
@@ -253,11 +261,12 @@ export default function Navbar() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold uppercase text-muted-foreground mb-1">Status</label>
+                    <label htmlFor="mobile-filter-status" className="block text-xs font-semibold uppercase text-muted-foreground mb-1">Status</label>
                     <select
+                      id="mobile-filter-status"
                       value={filterStatus}
                       onChange={(e) => setFilterStatus(e.target.value)}
-                      className="w-full bg-background border border-border rounded-lg text-sm p-2"
+                      className="min-w-0 w-full bg-background border border-border rounded-lg text-base p-2"
                     >
                       <option value="">Any</option>
                       <option value="airing">Airing</option>
@@ -268,7 +277,7 @@ export default function Navbar() {
               </div>
             )}
             
-            <div className="flex flex-col gap-3 text-sm font-medium">
+            <div className="web-mobile-links flex flex-col gap-2 text-sm font-medium">
               <Link to="/" className="hover:text-primary transition-colors py-2 border-b border-border/50">Home</Link>
               <Link to="/search" className="hover:text-primary transition-colors py-2 border-b border-border/50">Browse</Link>
               <Link to="/my-list" className="hover:text-primary transition-colors py-2 border-b border-border/50">My List</Link>

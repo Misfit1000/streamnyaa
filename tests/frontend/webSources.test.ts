@@ -3,6 +3,14 @@ vi.mock('../../src/api/nyaa',async original=>({...await original<typeof import('
 import {searchNyaa,type NyaaItem} from '../../src/api/nyaa';
 import {buildSourceIdentity} from '../../src/lib/desktopSourceIdentity';
 import {batchSearchText,classifyWebSources,discoverWebSources,torrentFileUrl,webAudioMatches,webSourcePlan} from '../../src/lib/webSources';
+import {isHentaiTitle,titleSourceProvider} from '../../src/lib/webSourceProvider';
+it('classifies Hentai explicitly, never Ecchi or an adult flag alone, and keeps adult searches gated',()=>{
+ expect(isHentaiTitle({genres:[{name:'Hentai'}]})).toBe(true);expect(titleSourceProvider({genres:[{name:'Ecchi'}],isAdult:true})).toBe('nyaa');
+ expect(webSourcePlan({query:'Fixture title',provider:'sukebei',adultAllowed:false})).toEqual([]);
+ expect(webSourcePlan({identity,episode:2,provider:'sukebei',adultAllowed:true}).every(job=>job.category==='1_1')).toBe(true);
+ expect(torrentFileUrl('https://sukebei.nyaa.si/view/123')).toBe('https://sukebei.nyaa.si/download/123.torrent');
+ expect(torrentFileUrl('https://sukebei.nyaa.si.attacker.test/view/123')).toBeUndefined();
+});
 afterEach(()=>{vi.clearAllMocks();vi.useRealTimers();});
 const identity=buildSourceIdentity({mal_id:1,title:'Example Anime',title_english:'Example English',type:'TV'});
 const item=(title:string,id=1):NyaaItem=>({title,infoHash:String(id).padStart(40,'a'),link:`https://nyaa.si/view/${id}`,magnet:'magnet:?xt=urn:btih:'+String(id).padStart(40,'a'),size:'1 GiB',rawSize:1e9,seeders:'20',rawSeeders:20,leechers:'0',categoryId:'1_2',category:'Anime',pubDate:''});
