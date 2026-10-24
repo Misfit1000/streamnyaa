@@ -48,5 +48,7 @@ test('quotation gate recognizes exact verified titles and typography without adm
  const brief:any={subject:'An Official Film – The Return',items:[],sources:[{text:'The project’s release is confirmed.'}]};
  assert.deepEqual(quotationErrors('The film “An Official Film — The Return” has an official page.',brief),[]);
  assert.deepEqual(quotationErrors('The source says “The project\'s release is confirmed.”',brief),[]);
+  assert.deepEqual(quotationErrors('The series "Fixture" has several recorded installments in different formats. A second entry "Fixture II" contains additional chapters.',brief),[]);
+  assert.deepEqual(quotationErrors('Empty pairs “”, "" and a short "name" do not capture surrounding prose.',brief),[]);
  assert.equal(quotationErrors('The producer says “Everyone will love this worldwide release.”',brief).length,1);
 });

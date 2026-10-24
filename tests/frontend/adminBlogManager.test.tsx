@@ -1,10 +1,14 @@
 import {afterEach,expect,it,vi} from 'vitest';
-import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {MemoryRouter} from 'react-router-dom';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import AdminBlogManager from '../../src/components/AdminBlogManager';
 const article={slug:'saved-article',title:'A published fixture',updated_at:'2026-10-24T00:00:00Z',admin_revision:2};
-afterEach(()=>{cleanup();vi.unstubAllGlobals();});
+afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.useRealTimers();});
+it('does not reset a quickly selected next page with an unchanged initial search debounce',async()=>{
+ vi.useFakeTimers();vi.stubGlobal('fetch',vi.fn(async(url:any)=>Response.json(String(url).includes('cursor=')?{entries:[{...article,slug:'second',title:'Second page article'}]}:{entries:[article],nextCursor:'fixture-next'})));
+ const {client}=mount();await vi.waitFor(()=>expect(screen.getByText(article.title)).toBeTruthy());fireEvent.click(screen.getByRole('button',{name:'Next'}));await vi.waitFor(()=>expect(screen.getByText('Second page article')).toBeTruthy());await act(()=>vi.advanceTimersByTimeAsync(350));expect(screen.getByText('Second page article')).toBeTruthy();expect(screen.getByText(/Page 2/)).toBeTruthy();client.clear();
+});
 function mount(){const client=new QueryClient({defaultOptions:{queries:{retry:false}}});const onAccepted=vi.fn(),onChanged=vi.fn();const view=render(<MemoryRouter><QueryClientProvider client={client}><AdminBlogManager accountId="owner" token="private-fixture" onAccepted={onAccepted} onChanged={onChanged}/></QueryClientProvider></MemoryRouter>);return{client,view,onChanged};}
 it('loads summaries only, confirms recoverable trash once and restores using the current revision',async()=>{
  let finish!:(r:Response)=>void;const fetcher=vi.fn(async(url:any,init:any)=>init?.method==='POST'?await new Promise<Response>(r=>finish=r):Response.json({entries:[{...article,admin_revision:String(url).includes('trash-articles')?3:2}]}));vi.stubGlobal('fetch',fetcher);
