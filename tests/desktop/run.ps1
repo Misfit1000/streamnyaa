@@ -29,6 +29,7 @@ function Assert-NotMatch {
 
 $desktopBridge = Get-Content -Raw (Join-Path $repo 'src\lib\desktop.ts')
 $watchPage = Get-Content -Raw (Join-Path $repo 'src\pages\DesktopWatch.tsx')
+$timelineLibrary = Get-Content -Raw (Join-Path $repo 'src\lib\desktopSeriesTimeline.ts')
 $appDesktop = Get-Content -Raw (Join-Path $repo 'src\AppDesktop.tsx')
 $desktopShell = Get-Content -Raw (Join-Path $repo 'src\components\DesktopShell.tsx')
 $mainDesktop = Get-Content -Raw (Join-Path $repo 'src\main.desktop.tsx')
@@ -78,9 +79,9 @@ $cargoManifest = Get-Content -Raw (Join-Path $repo 'desktop\src-tauri\Cargo.toml
 $releasePreparer = Get-Content -Raw (Join-Path $repo 'scripts\prepare-desktop-release.ps1')
 
 Assert-Match $desktopBridge "DEFAULT_DESKTOP_SETTINGS:\s*DesktopPlaybackSettings\s*=\s*\{\s*torrent_engine_path:\s*''" 'Desktop settings should default to bundled engine lookup.'
-Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.14"' 'Desktop release configuration should target version 0.1.14.'
-Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.14"' 'Rust package version should match the desktop release version.'
-Assert-Match $releasePreparer 'source-reliability-v1' 'The release manifest must identify the source-reliability revision.'
+Assert-Match $tauriConfig '"version"\s*:\s*"0\.1\.15"' 'Desktop release configuration should target version 0.1.15.'
+Assert-Match $cargoManifest 'version\s*=\s*"0\.1\.15"' 'Rust package version should match the desktop release version.'
+Assert-Match $releasePreparer 'series-timeline-v2' 'The release manifest must identify the series-timeline revision.'
 Assert-Match $releasePreparer 'Previous installer checksum mismatch' 'The previous installer must be verified before being retained for rollback.'
 Assert-Match $releasePreparer '2MB' 'The installer must reject growth beyond the two MiB budget.'
 Assert-Match $desktopBridge '__STREAMNYAA_DESKTOP__' 'Desktop detection should use the explicit desktop runtime flag.'
@@ -161,10 +162,10 @@ Assert-Match $watchPage 'selectedEpisode - Math\.floor\(maxVisible / 2\)' 'Deskt
 Assert-Match $watchPage 'sourceSearchTitleVariants' 'Desktop watch page should widen source title matching for alternate season naming.'
 Assert-Match $watchPage 'sourceMatchesInstallment' 'Desktop watch page should filter torrent sources by the selected installment.'
 Assert-Match $watchPage 'TIMELINE_RELATIONS' 'Desktop watch page should build a complete related-series timeline instead of only direct sequel pills.'
-Assert-Match $watchPage "'SIDE_STORY'" 'Desktop watch page should allow OVA/special timeline entries while still filtering non-anime media.'
+Assert-Match $timelineLibrary "'SIDE_STORY'" 'Desktop timeline relations should allow OVA/special entries while the Watch page filters non-anime media.'
 Assert-Match $watchPage 'loadSeriesTimeline' 'Desktop watch page must progressively traverse the verified relation graph.'
-Assert-Match $watchPage 'sameSeriesFamily' 'Desktop watch page should keep season traversal inside the same title family.'
-Assert-Match $watchPage 'hasSeasonTitleSignal' 'Desktop watch page should avoid fake season labels for unlabeled TV relations.'
+Assert-Match $watchPage 'timelineRelationVisible' 'Desktop watch page must apply the verified relation and family rules.'
+Assert-Match $watchPage 'timelineSeasonNumber' 'Desktop watch page should use explicit provider aliases for season labels.'
 Assert-Match $watchPage 'sourceSeasonNumber' 'Desktop watch page should keep hidden season ordinals for torrent source matching without fake season labels.'
 Assert-Match $watchPage 'installment\?\.sourceSeasonNumber' 'Desktop source search should use hidden season ordinals when visible labels stay title-based.'
 Assert-Match $watchPage 'Upcoming related entries belong in the timeline' 'The complete series timeline should include verified upcoming installments while gating their playback.'

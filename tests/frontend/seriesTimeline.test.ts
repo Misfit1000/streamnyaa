@@ -1,8 +1,28 @@
 import { describe, it, expect, vi } from 'vitest';
-import { loadSeriesTimeline, type TimelineResult } from '../../src/lib/desktopSeriesTimeline';
+import { loadSeriesTimeline,timelineLabels,timelineSeasonNumber,timelineRelationVisible,type TimelineResult } from '../../src/lib/desktopSeriesTimeline';
 const node = (id: number, children: any[] = []) => ({ anilist_id: id, mal_id: id + 1000, title: 'Season ' + id, children });
 const options = (root: any) => ({ root, children: (item: any) => item.children || [], allowed: () => true, signal: new AbortController().signal, onPartial: vi.fn() });
 describe('complete series timeline', () => {
+  it('includes the provider-linked original Cyberpunk ONA without treating unrelated Other entries as the same franchise',()=>{
+    const root={anilist_id:195539,mal_id:61990,title:'Cyberpunk: Edgerunners 2',type:'ONA',synonyms:['Cyberpunk: Edgerunners II']};
+    const original={anilist_id:120377,mal_id:42310,name:'Cyberpunk: Edgerunners',type:'ANIME',format:'ONA'};
+    expect(timelineRelationVisible(root,original,'OTHER')).toBe(true);expect(timelineRelationVisible(root,{...original,name:'Unrelated series'},'OTHER')).toBe(false);
+    expect(timelineRelationVisible(root,{...original,name:'Different translated title'},'PREQUEL')).toBe(true);
+    expect(timelineRelationVisible(root,{...original,name:'Different translated title'},'Side story')).toBe(true);
+    expect(timelineRelationVisible(root,{...original,name:'Different translated title'},'Parent story')).toBe(true);
+  });
+  it('uses explicit season evidence in every alias and never invents first seasons, film numbers or source-season hints from ordering',()=>{
+    expect(timelineSeasonNumber({title:'Translated title',title_romaji:'Example 2nd Season'})).toBe(2);
+    expect(timelineSeasonNumber({title:'Example 2'})).toBeNull();expect(timelineSeasonNumber({title:'Example Season 2',synonyms:['Example Season 3']})).toBeNull();
+    const entry=(id:number,extra:any={})=>({mal_id:id,kind:'season',name:`Entry ${id}`,year:2020+id,seasonNumber:null,sourceSeasonNumber:null,partNumber:null,...extra});
+    const single=timelineLabels([entry(2)]);expect(single[0]).toMatchObject({label:'TV',sourceSeasonNumber:null});
+    const mixed=timelineLabels([entry(2,{seasonNumber:2}),entry(1),entry(3,{kind:'movie'}),entry(4,{kind:'movie'})]);expect(mixed.map(item=>item.label)).toEqual(['TV','Season 2','Movie','Movie']);
+  });
+  it('keeps conflicting provider mappings pending instead of accepting a shared but contradictory ID',async()=>{
+    const config=options(node(1,[{anilist_id:2,mal_id:1002}]));
+    const result=await loadSeriesTimeline({...config,fetchBatch:async()=>[{anilist_id:99,mal_id:1002,title:'Wrong mapping'}]});
+    expect(result.complete).toBe(false);expect(result.items).toEqual([]);expect(result.pending).toHaveLength(1);
+  });
   it('keeps partial entries and retries the exact failed batch', async () => {
     const sequel = node(2, [node(3)]);
     let fail = true;

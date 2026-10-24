@@ -1,11 +1,11 @@
 param(
   [string]$ReleaseTree,
-  [string]$ValidationRecord = '.validation/0.1.14-results.json',
-  [string]$BuildInputs = '.validation/0.1.14-build-inputs.json',
-  [string]$ValidationNotes = 'desktop/reviews/2026-10-23-source-reliability.md',
-  [string]$EvidenceManifest = 'desktop/reviews/2026-10-23-source-reliability-installer.json',
-  [string]$ReleaseRevision = 'source-reliability-v1',
-  [string]$RollbackVersion = '0.1.13'
+  [string]$ValidationRecord = '.validation/0.1.15-results.json',
+  [string]$BuildInputs = '.validation/0.1.15-build-inputs.json',
+  [string]$ValidationNotes = 'desktop/reviews/2026-10-24-series-timeline.md',
+  [string]$EvidenceManifest = 'desktop/reviews/2026-10-24-series-timeline-installer.json',
+  [string]$ReleaseRevision = 'series-timeline-v2',
+  [string]$RollbackVersion = '0.1.14'
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

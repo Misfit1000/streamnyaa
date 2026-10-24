@@ -604,6 +604,10 @@ export const mapAnilistToJikan = (m: any) => ({
         genres:(edge.node.genres||[]).map((name:string)=>({name})),
         startDate: edge.node.startDate,
         name: edge.node.title?.english || edge.node.title?.romaji || edge.node.title?.native,
+        title_english:edge.node.title?.english,
+        title_romaji:edge.node.title?.romaji,
+        title_japanese:edge.node.title?.native,
+        title_synonyms:edge.node.synonyms||[],
         images: {
           jpg: {
             image_url: edge.node.coverImage?.large || edge.node.coverImage?.extraLarge,
@@ -897,6 +901,7 @@ const ANIME_DETAIL_SELECTION = `
         idMal
         countryOfOrigin
         genres
+        synonyms
         type
         format
         status

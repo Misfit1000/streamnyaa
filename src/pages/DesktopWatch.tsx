@@ -30,7 +30,9 @@ import Seo from '../components/Seo';
 import DesktopLoadingProgress from '../components/DesktopLoadingProgress';
 import UpcomingNotifyButton from '../components/UpcomingNotifyButton';
 import { fetchAnimeDetails, fetchTenraiPath, cachedAnimeEpisodeWindow, fetchAnimeEpisodeWindow, fetchAnimeEpisodeTail, mergeAnimeEpisodeTail, fetchAnimeInstallments } from '../api/jikan';
-import { loadSeriesTimeline, type TimelineResult } from '../lib/desktopSeriesTimeline';
+import { loadSeriesTimeline, sameTimelineInstallment,timelineLabels,timelineSeasonNumber,timelinePartNumber,timelineRelationVisible,normalizeTimelineRelation,TIMELINE_GRAPH_VERSION,TIMELINE_RELATIONS,type TimelineResult } from '../lib/desktopSeriesTimeline';
+import {useNearViewport} from '../lib/useNearViewport';
+import {useVisibleCountdown} from '../lib/useVisibleCountdown';
 import { dedupeNyaaItems, searchNyaa, type NyaaItem } from '../api/nyaa';
 import { desktopWatchPath, isUpcomingAnime } from '../lib/desktopAnimeRoute';
 import { manualEpisodeTarget, episodeRangeContains, isEpisodeInteractiveTarget, isIntentionalHorizontalDrag } from '../lib/desktopEpisodeInteraction';
@@ -144,8 +146,7 @@ const FAILED_SOURCE_MEMORY_KEY = 'streamnyaa.desktopFailedSources';
 const FAILED_SOURCE_MEMORY_TTL = 1000 * 60 * 60 * 24;
 const SOURCE_SUCCESS_MEMORY_TTL = 1000 * 60 * 60 * 24 * 7;
 const FAILED_SOURCE_MEMORY_LIMIT = 160;
-const ALLOWED_INSTALLMENT_KINDS = new Set<InstallmentKind>(['season', 'movie', 'ova', 'ona', 'special']);
-const TIMELINE_RELATIONS = new Set(['PREQUEL', 'SEQUEL', 'PARENT', 'SIDE_STORY', 'SPIN_OFF']);
+const ALLOWED_INSTALLMENT_KINDS = new Set<InstallmentKind>(['season', 'movie', 'ova', 'ona', 'special','other']);
 const ANCILLARY_SOURCE_PATTERNS = [
   /\b(?:nc)?op(?:ening)?\b/i,
   /\b(?:nc)?ed(?:ing)?\b/i,
@@ -1025,6 +1026,7 @@ function sourceTierWeight(tier: SourceMatchTier) {
 
 function installmentDiscoveryKind(format = ''): InstallmentKind | null {
   const kind = installmentKindFor(format);
+  if(kind==='other'&&String(format).toUpperCase()==='ANIME')return kind;
   if (kind === 'season' || kind === 'movie' || kind === 'ova' || kind === 'ona' || kind === 'special') return kind;
   return null;
 }
@@ -1036,7 +1038,7 @@ function relationEntriesForGraph(anime: any) {
       relation: entry?.relation || relation?.relation || '',
     })))
     .filter((entry: any) => {
-      if (!entry?.mal_id && !entry?.id) return false;
+      if (!entry?.mal_id && !entry?.anilist_id && !entry?.id) return false;
       const format = normalizeInstallmentFormat(entry?.format || entry?.type || 'TV');
       const kind = installmentDiscoveryKind(format);
       const mediaType = String(entry?.type || '').toUpperCase();
@@ -1047,7 +1049,7 @@ function relationEntriesForGraph(anime: any) {
 }
 
 function relationTypeAllowed(entry: any, currentKind: InstallmentKind) {
-  const relationType = String(entry?.relation || '').toUpperCase();
+  const relationType = normalizeTimelineRelation(entry?.relation || '');
   if (!relationType) return false;
   if (currentKind === 'season') return TIMELINE_RELATIONS.has(relationType);
   return TIMELINE_RELATIONS.has(relationType);
@@ -1084,6 +1086,8 @@ function preferInstallmentCandidate(
   nextItem: Omit<InstallmentItem, 'label'>,
 ) {
   if (nextItem.current && !currentItem.current) return nextItem;
+  if(currentItem.kind==='other'&&nextItem.kind!=='other')return nextItem;
+  if(nextItem.kind==='other'&&currentItem.kind!=='other')return currentItem;
   if (isPartiallySplitSeason(nextItem) && !isPartiallySplitSeason(currentItem)) return nextItem;
   if (nextItem.seasonNumber && !currentItem.seasonNumber) return nextItem;
   if (!currentItem.year && nextItem.year) return nextItem;
@@ -1283,94 +1287,16 @@ function installmentKindFor(format = ''): InstallmentKind {
   return 'other';
 }
 
-function installmentSortWeight(kind: InstallmentKind) {
-  switch (kind) {
-    case 'season': return 0;
-    case 'movie': return 1;
-    case 'ova': return 2;
-    case 'ona': return 3;
-    case 'special': return 4;
-    default: return 5;
-  }
-}
-
 function displayKindsFor(currentKind: InstallmentKind) {
-  const relatedAnimeKinds = new Set<InstallmentKind>(['season', 'movie', 'ova', 'ona', 'special']);
+  const relatedAnimeKinds = new Set<InstallmentKind>(['season', 'movie', 'ova', 'ona', 'special','other']);
   if (currentKind === 'season' || currentKind === 'movie' || currentKind === 'ova' || currentKind === 'ona' || currentKind === 'special') {
     return relatedAnimeKinds;
   }
   return relatedAnimeKinds;
 }
 
-function sortInstallments(items: Omit<InstallmentItem, 'label'>[]) {
-  return [...items].sort((a, b) => {
-    if (a.kind === 'season' && b.kind === 'season') {
-      if (a.seasonNumber && b.seasonNumber) {
-        return a.seasonNumber - b.seasonNumber
-          || (a.partNumber || 0) - (b.partNumber || 0)
-          || (a.year || 0) - (b.year || 0)
-          || String(a.name || '').localeCompare(String(b.name || ''))
-          || Number(a.mal_id) - Number(b.mal_id);
-      }
-      if (!a.seasonNumber && b.seasonNumber) return -1;
-      if (a.seasonNumber && !b.seasonNumber) return 1;
-    }
-    const yearA = a.year || 0;
-    const yearB = b.year || 0;
-    return yearA - yearB
-      || installmentSortWeight(a.kind) - installmentSortWeight(b.kind)
-      || String(a.name || '').localeCompare(String(b.name || ''))
-      || Number(a.mal_id) - Number(b.mal_id);
-  });
-}
-
 function buildInstallmentLabels(items: Omit<InstallmentItem, 'label'>[]): InstallmentItem[] {
-  const sorted = sortInstallments(items);
-  let seasonIndex = 0;
-  let movieIndex = 0;
-  let ovaIndex = 0;
-  let onaIndex = 0;
-  let specialIndex = 0;
-  const movieTotal = sorted.filter((item) => item.kind === 'movie').length;
-  const ovaTotal = sorted.filter((item) => item.kind === 'ova').length;
-  const onaTotal = sorted.filter((item) => item.kind === 'ona').length;
-  const specialTotal = sorted.filter((item) => item.kind === 'special').length;
-
-  return sorted.map((item) => {
-    let label = item.format || 'Entry';
-    let sourceSeasonNumber = item.sourceSeasonNumber || item.seasonNumber || null;
-    if (item.kind === 'season') {
-      if (item.seasonNumber) {
-        const resolvedSeasonNumber = item.seasonNumber;
-        seasonIndex = Math.max(seasonIndex + 1, resolvedSeasonNumber);
-        sourceSeasonNumber = resolvedSeasonNumber;
-        label = item.partNumber
-          ? `Season ${resolvedSeasonNumber} Part ${item.partNumber}`
-          : `Season ${resolvedSeasonNumber}`;
-      } else if (sorted.filter((entry) => entry.kind === 'season').length === 1) {
-        seasonIndex += 1;
-        sourceSeasonNumber = 1;
-        label = 'Season 1';
-      } else {
-        seasonIndex += 1;
-        sourceSeasonNumber = seasonIndex;
-        label = item.name || `TV ${seasonIndex}`;
-      }
-    } else if (item.kind === 'movie') {
-      movieIndex += 1;
-      label = movieTotal > 1 ? `Movie ${movieIndex}` : 'Movie';
-    } else if (item.kind === 'ova') {
-      ovaIndex += 1;
-      label = ovaTotal > 1 ? `OVA ${ovaIndex}` : 'OVA';
-    } else if (item.kind === 'ona') {
-      onaIndex += 1;
-      label = onaTotal > 1 ? `ONA ${onaIndex}` : 'ONA';
-    } else if (item.kind === 'special') {
-      specialIndex += 1;
-      label = specialTotal > 1 ? `Special ${specialIndex}` : 'Special';
-    }
-    return { ...item, sourceSeasonNumber, label };
-  });
+  return timelineLabels(items);
 }
 
 function shouldSkipInstallment(item: any, kind: InstallmentKind, current: boolean, displayKinds: Set<InstallmentKind>) {
@@ -1379,6 +1305,7 @@ function shouldSkipInstallment(item: any, kind: InstallmentKind, current: boolea
   const status = String(item?.status || '').toUpperCase();
   if (!current && (!ALLOWED_INSTALLMENT_KINDS.has(kind) || !displayKinds.has(kind))) return true;
   if (!current && mediaType && !['ANIME', 'TV', 'TV_SHORT', 'OVA', 'ONA', 'SPECIAL', 'MOVIE'].includes(mediaType)) return true;
+  if(!current&&kind==='other'&&mediaType!=='ANIME')return true;
   // Upcoming related entries belong in the timeline; their Watch page gates playback.
   if (kind === 'season' && /\b(director'?s cut|recap|compilation|digest|summary|tv edit(?:ion)?)\b/i.test(title)) return true;
   return false;
@@ -1386,20 +1313,7 @@ function shouldSkipInstallment(item: any, kind: InstallmentKind, current: boolea
 
 function isSameTitleLineInstallment(rootAnime: any, item: any, kind: InstallmentKind, current: boolean, relation?: string) {
   if (current) return true;
-  const currentKind = installmentKindFor(normalizeInstallmentFormat(rootAnime?.type || 'TV'));
-  const relationType = String(relation || item?.relation || '').toUpperCase();
-  if (!relationTypeAllowed({ relation: relationType }, currentKind)) return false;
-
-  const rootTitle = titleForInstallment(rootAnime);
-  const nextTitle = titleForInstallment(item);
-  if (relationType === 'PREQUEL' || relationType === 'SEQUEL' || relationType === 'PARENT') return true;
-  const rootTitles = [rootTitle, rootAnime?.title_romaji, rootAnime?.title_english, ...(rootAnime?.synonyms || [])].filter(Boolean);
-  const nextTitles = [nextTitle, item?.title_romaji, item?.title_english, ...(item?.synonyms || [])].filter(Boolean);
-  if (!rootTitles.some(a => nextTitles.some(b => sameSeriesFamily(a, b)))) return false;
-  if (kind !== 'season') return true;
-  if (relationType === 'PREQUEL' || relationType === 'SEQUEL' || relationType === 'PARENT') return true;
-  if (hasSeasonTitleSignal(nextTitle)) return true;
-  return /\b(after\s+story|shippuuden|shippuden|kai|final|next|second|third|fourth)\b/i.test(nextTitle);
+  return timelineRelationVisible(rootAnime,item,String(relation||item?.relation||''));
 }
 
 function buildInstallmentItems(anime: any, discoveredItems: any[] = []): InstallmentItem[] {
@@ -1420,9 +1334,9 @@ function buildInstallmentItems(anime: any, discoveredItems: any[] = []): Install
       current,
       format,
       year: Number(item?.year || item?.seasonYear || 0) || null,
-      seasonNumber: seasonNumberFromText(title),
-      sourceSeasonNumber: seasonNumberFromText(title),
-      partNumber: partNumberFromText(title),
+      seasonNumber: timelineSeasonNumber(item),
+      sourceSeasonNumber: timelineSeasonNumber(item),
+      partNumber: timelinePartNumber(item),
       relation,
       kind,
       episodeCount: Number(item?.episodes || item?.episodeCount || item?.totalEpisodes || 0) || null,
@@ -1436,9 +1350,11 @@ function buildInstallmentItems(anime: any, discoveredItems: any[] = []): Install
         || '',
       bannerImage: item?.banner_image || item?.bannerImage || item?.trailer?.images?.maximum_image_url || '',
     };
-    const identity = installmentIdentity(nextItem);
-    const existing = deduped.get(identity);
-    deduped.set(identity, existing ? preferInstallmentCandidate(existing, nextItem) : nextItem);
+    const linked = [...deduped.entries()].find(([,existing])=>sameTimelineInstallment(existing,nextItem));
+    const preferred = linked ? preferInstallmentCandidate(linked[1],nextItem) : nextItem;
+    if(linked)deduped.delete(linked[0]);
+    const merged = linked ? {...preferred,anilist_id:preferred.anilist_id||linked[1].anilist_id||nextItem.anilist_id,mal_id:preferred.mal_id||linked[1].mal_id||nextItem.mal_id} : preferred;
+    deduped.set(installmentIdentity(merged),merged);
   };
 
   pushItem({
@@ -1483,13 +1399,14 @@ function installmentsHeading(items: InstallmentItem[]) {
 function installmentHint(items: InstallmentItem[]) {
   if (!items.length) return 'Switch between related entries for this title.';
   if (items.every((item) => item.kind === 'season')) {
-    return 'Switch between aired TV seasons in the same title line.';
+    return 'Provider-linked TV installments. Season numbers appear only when confirmed in title metadata.';
   }
-  return 'Switch between seasons, OVAs, ONAs, and specials in the same title line.';
+  return 'Provider-linked related installments, ordered by release year where known.';
 }
 
 function installmentKindLabel(item: InstallmentItem) {
   if (item.kind === 'season') return 'TV';
+  if(item.kind==='other')return 'Anime';
   return item.kind.toUpperCase();
 }
 
@@ -1508,12 +1425,12 @@ function installmentSequenceBadge(item: InstallmentItem) {
 }
 
 function installmentRelationLabel(item: InstallmentItem) {
-  const relation = String(item.relation || '').toUpperCase();
+  const relation = normalizeTimelineRelation(item.relation || '');
   if (item.current || relation === 'CURRENT') return 'Current';
   if (relation === 'PREQUEL') return 'Prequel';
   if (relation === 'SEQUEL') return 'Sequel';
   if (relation === 'PARENT') return 'Parent';
-  return item.label;
+  return ({SIDE_STORY:'Side story',SPIN_OFF:'Spin-off',ALTERNATIVE:'Alternative',COMPILATION:'Compilation'} as Record<string,string>)[relation]||'Related';
 }
 
 function installmentMetaParts(item: InstallmentItem) {
@@ -1880,12 +1797,13 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
   );
 
   const [expandTimeline, setExpandTimeline] = useState(false);
+  const timelineViewport=useNearViewport<HTMLDivElement>();
   useEffect(() => { setExpandTimeline(false); }, [timelineCacheKey]);
   const installmentGraphQuery = useQuery({
-    queryKey: ['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind],
+    queryKey: ['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind,TIMELINE_GRAPH_VERSION],
     queryFn: async ({ signal }) => loadSeriesTimeline({
       root: anime,
-      previous: queryClient.getQueryData<TimelineResult>(['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind]),
+      previous: queryClient.getQueryData<TimelineResult>(['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind,TIMELINE_GRAPH_VERSION]),
       signal,
       children: relationEntriesForGraph,
       allowed: (entry) => {
@@ -1902,15 +1820,17 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
         }
         return results;
       },
-      onPartial: (result) => queryClient.setQueryData(['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind], result),
+      onPartial: (result) => queryClient.setQueryData(['desktop-watch-installments-graph', timelineCacheKey, currentInstallmentKind,TIMELINE_GRAPH_VERSION], result),
     }),
-    enabled: Boolean(timelineCacheKey) && hasFullMetadata && expandTimeline,
+    enabled: Boolean(timelineCacheKey) && hasFullMetadata && (expandTimeline||timelineViewport.eligible),
     staleTime: 1000 * 60 * 15,
     gcTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
   });
   const installmentGraphData = installmentGraphQuery.data?.items;
   const installmentGraphInitialLoading = Boolean(hasFullMetadata && !metadataFailed && installmentGraphQuery.isLoading);
+  const timelineRetryAt=installmentGraphQuery.data?.retryAt||installmentGraphQuery.dataUpdatedAt+(installmentGraphQuery.data?.retryAfterMs||0);
+  const timelineNow=useVisibleCountdown(timelineRetryAt,Boolean(installmentGraphQuery.data?.retryAt||installmentGraphQuery.data?.retryAfterMs));
 
   const episodeQuery = useQuery({
     queryKey: ['episodes', episodeLookupId, episodePage, 3],
@@ -3135,7 +3055,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
             </div>
           ) : null}
           <section>
-            <div className="sn-watch-timeline sn-glass-panel mb-5 overflow-hidden rounded-xl p-5">
+            <div ref={timelineViewport.ref} className="sn-watch-timeline sn-glass-panel mb-5 overflow-hidden rounded-xl p-5">
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="flex items-center gap-2 text-[11px] font-semibold normal-case tracking-normal text-primary">
@@ -3217,6 +3137,7 @@ queryKey: desktopAnimeQueryKey(id || '', routeAniListId, routeMalId),
                   ))
                 ) : null}
               </div>
+              {(installmentGraphQuery.isError||installmentGraphQuery.data?.complete===false)&&!installmentGraphQuery.isFetching&&<p role="status" className="mt-3 text-xs text-white/60">Related-entry coverage is incomplete. Confirmed entries remain available. <button type="button" className="ml-2 min-h-9 text-primary underline disabled:opacity-50" disabled={timelineRetryAt>timelineNow} onClick={()=>void installmentGraphQuery.refetch()}>{timelineRetryAt>timelineNow?`Retry in ${Math.ceil((timelineRetryAt-timelineNow)/1000)}s`:'Retry related entries'}</button></p>}
             </div>
 
             <DesktopAnimeCast key={id} identity={{ anilistId: resolvedAnime?.anilist_id || routeAniListId, malId: resolvedAnime?.mal_id || routeMalId }} />

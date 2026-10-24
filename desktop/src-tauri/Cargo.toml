@@ -1,6 +1,6 @@
 [package]
 name = "streamnyaa_desktop"
-version = "0.1.14"
+version = "0.1.15"
 description = "StreamNyaa desktop app"
 authors = ["StreamNyaa"]
 edition = "2021"

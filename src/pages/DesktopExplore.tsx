@@ -233,7 +233,8 @@ export default function DesktopExplore() {
   const firstPage = ranking ? (block - 1) * 4 + 1 : 1;
   const timedReleases=mode==='new'&&!query;
   const preferredTrack=useReleaseTrack();
-  const releaseFeed=useRecentReleaseFeed({enabled:timedReleases,adult,track:searchParams.get('track')==='dub'?'dub':preferredTrack,before:Number(searchParams.get('before'))||undefined,genre:genre==='Any'?'':genre,type:format==='Any'?'':format.toUpperCase().replace(/ /g,'_'),status:({Airing:'airing',Completed:'complete',Upcoming:'upcoming'} as Record<string,string>)[status]||'',year:selectedYear});
+  const [releaseCutoff]=useState(recentFeedBound);
+  const releaseFeed=useRecentReleaseFeed({enabled:timedReleases,adult,track:searchParams.get('track')==='dub'?'dub':preferredTrack,before:Number(searchParams.get('before'))||releaseCutoff,genre:genre==='Any'?'':genre,type:format==='Any'?'':format.toUpperCase().replace(/ /g,'_'),status:({Airing:'airing',Completed:'complete',Upcoming:'upcoming'} as Record<string,string>)[status]||'',year:selectedYear});
   const legacyCatalogQuery = useInfiniteQuery({
     enabled:!timedReleases,
     queryKey: ['desktop-explore-v3', catalogCacheKey],
