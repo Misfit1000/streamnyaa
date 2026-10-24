@@ -11,6 +11,8 @@ import { saveRecentAnime } from '../lib/activity';
 import { isDesktopApp } from '../lib/desktop';
 import {episodeNavigation} from '../lib/animeEpisodes';
 import { animeIdentity } from '../lib/animeIdentity';
+import HentaiBadge from '../components/HentaiBadge';
+import {isHentaiTitle,webContentAllowed} from '../lib/webSourceProvider';
 
 function formatStatus(value?: string) {
   return value ? value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unknown';
@@ -55,6 +57,7 @@ export default function AnimeDetails() {
   const navigate = useNavigate();
   const [releaseParams]=useSearchParams();
   const { isInMyList, addToMyList, removeFromMyList, isLiked, toggleLike } = useStore();
+  const nsfwMode=useStore(state=>state.nsfwMode),hideChinese=useStore(state=>state.hideChineseAnime);
   const relationsScrollRef = useRef<HTMLDivElement>(null);
   const recommendationsScrollRef = useRef<HTMLDivElement>(null);
 
@@ -113,6 +116,7 @@ export default function AnimeDetails() {
   }
 
   if (!anime) return <div className="text-center py-20">Anime not found</div>;
+  if(!desktop&&!nsfwMode&&isHentaiTitle(anime))return <div role="status" className="container mx-auto px-4 py-16">Hentai is hidden. Enable NSFW to view this title.</div>;
 
   const animeId = animeIdentity(anime);
   const inList = isInMyList(animeId);
@@ -225,7 +229,8 @@ export default function AnimeDetails() {
       <div className="container mx-auto px-4 relative z-20 -mt-32 md:-mt-48 flex flex-col md:flex-row gap-8">
         {/* Poster */}
         <div className="w-48 md:w-64 shrink-0 mx-auto md:mx-0">
-          <div className="aspect-[3/4] rounded-xl overflow-hidden shadow-2xl border-4 border-background bg-secondary">
+          <div className="relative aspect-[3/4] rounded-xl overflow-hidden shadow-2xl border-4 border-background bg-secondary">
+            {!desktop&&<HentaiBadge anime={anime} className="absolute bottom-3 left-3 z-20"/>}
             <img
               src={animeImage}
               alt={anime.title}
@@ -477,13 +482,14 @@ export default function AnimeDetails() {
                 </button>
                 <div ref={relationsScrollRef} className="flex overflow-x-auto gap-4 pb-4 snap-x pr-4 scroll-smooth hide-scrollbar w-full">
                     {anime.relations.flatMap((r: any) => 
-                      r.entry.map((entry: any) => (
+                      r.entry.filter((entry:any)=>desktop||webContentAllowed(entry,nsfwMode,hideChinese)).map((entry: any) => (
                         <Link 
                           key={`${r.relation}-${entry.mal_id}`} 
                           to={entry.type === 'MANGA' ? mangaPath(entry) : animePath(entry)}
                           className="flex-none w-[140px] sm:w-[160px] md:w-[180px] group snap-start"
                         >
                           <div className="aspect-[2/3] rounded-xl overflow-hidden mb-3 relative bg-secondary border border-[var(--glass-border)]">
+                            {!desktop&&<HentaiBadge anime={entry}/>}
                             <img 
                               src={entry.images?.jpg?.large_image_url || entry.images?.jpg?.image_url} 
                               alt={entry.name}
@@ -519,13 +525,14 @@ export default function AnimeDetails() {
                   <ChevronLeft className="w-5 h-5" />
                 </button>
                 <div ref={recommendationsScrollRef} className="flex overflow-x-auto gap-4 pb-4 snap-x pr-4 scroll-smooth hide-scrollbar w-full">
-                    {anime.recommendations.map((entry: any) => (
+                    {anime.recommendations.filter((entry:any)=>desktop||webContentAllowed(entry,nsfwMode,hideChinese)).map((entry: any) => (
                       <Link 
                         key={`rec-${entry.mal_id}`} 
                         to={entry.type === 'MANGA' ? mangaPath(entry) : animePath(entry)}
                         className="flex-none w-[140px] sm:w-[160px] md:w-[180px] group snap-start"
                       >
                         <div className="aspect-[2/3] rounded-xl overflow-hidden mb-3 relative bg-secondary border border-[var(--glass-border)]">
+                          {!desktop&&<HentaiBadge anime={entry}/>}
                           <img 
                             src={entry.images?.jpg?.large_image_url || entry.images?.jpg?.image_url} 
                             alt={entry.title}

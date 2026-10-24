@@ -18,6 +18,7 @@ import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQuality
 import { isDesktopApp } from '../lib/desktop';
 import {useStore} from '../store/useStore';
 import {isHentaiTitle} from '../lib/webSourceProvider';
+import HentaiBadge from '../components/HentaiBadge';
 
 const DESKTOP_SOURCE_PRESETS = SOURCE_PRESETS.filter((preset) => preset.sourceFilter !== 'batch');
 
@@ -270,13 +271,13 @@ export default function NyaaSearchPage() {
         </div>
         {matchedAnimeFull ? (
           <div className={`mb-4 grid gap-4 rounded-2xl p-4 sm:grid-cols-[82px_1fr] ${desktop ? 'border border-white/8 bg-black/30' : 'border border-border/70 bg-background/45'}`}>
-            <img
+            <div className="relative h-28 w-20"><HentaiBadge anime={matchedAnimeFull} className="absolute bottom-1 left-1 z-20"/><img
               src={matchedAnimeFull.images?.jpg?.image_url || matchedAnimeFull.images?.jpg?.large_image_url}
               alt={matchedAnimeFull.title}
               className="h-28 w-20 rounded-xl object-cover"
               loading="lazy"
               referrerPolicy="no-referrer"
-            />
+            /></div>
             <div className="min-w-0">
               <p className="text-xs font-black uppercase tracking-wider text-primary">{confirmed ? 'Selected anime' : 'Suggested anime — confirm before matching'}</p>
               <button type="button" onClick={() => setConfirmedAnimeId(confirmed ? null : matchedAnimeFull.mal_id)} className="mt-2 rounded-lg border border-primary/30 px-3 py-2 text-sm font-bold text-primary">{confirmed ? 'Return to free-text search' : 'Match this anime'}</button>

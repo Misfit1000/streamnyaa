@@ -16,6 +16,7 @@ export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState(0), [clock, setClock] = useState(Date.now());
   const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden');
   const nsfwMode = useStore(state => state.nsfwMode);
+  const hideChinese = useStore(state => state.hideChineseAnime);
   useEffect(() => {
     const update = () => { setClock(Date.now()); setVisible(document.visibilityState !== 'hidden'); };
     const timer = setInterval(update, 60_000); document.addEventListener('visibilitychange', update);
@@ -42,7 +43,7 @@ export default function Schedule() {
     return () => clearTimeout(timer);
   }, [visible, query.hasNextPage, query.isFetching, query.isError, latest]);
   const rows = useMemo(() => query.data?.pages.reduce((saved, page) => reconcileCalendarRecords(saved, page.data), [] as CalendarRecord[]) || [], [query.data]);
-  const sections = webScheduleSections(rows, { weekStart: days[0].start, weekEnd: days[6].end, dayStart: active.start, dayEnd: active.end, today: selectedDay === 0, dayLabel: active.label, now: clock }, nsfwMode);
+  const sections = webScheduleSections(rows, { weekStart: days[0].start, weekEnd: days[6].end, dayStart: active.start, dayEnd: active.end, today: selectedDay === 0, dayLabel: active.label, now: clock }, nsfwMode,hideChinese);
   const stale = Boolean(latest?.stale || query.isError), pending = calendarIdentityCoverage(rows).pendingCount;
   const retry = () => query.hasNextPage ? void query.fetchNextPage() : void query.refetch();
   return <div className="container mx-auto px-4 py-10 md:px-10">

@@ -19,6 +19,7 @@ import { SOURCE_PRESETS, sourceFreshnessLabel, sourceQualityLabel, sourceQuality
 import { isDesktopApp, openLocalSourceNow } from '../lib/desktop';
 import {useStore} from '../store/useStore';
 import {titleSourceProvider} from '../lib/webSourceProvider';
+import HentaiBadge from '../components/HentaiBadge';
 
 type AudioFilter = 'sub' | 'dub';
 
@@ -267,7 +268,7 @@ export default function AnimeDownloads() {
 
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-5 gap-4 bg-[linear-gradient(135deg,rgba(225,29,72,0.12),rgba(14,165,233,0.06)),var(--glass)] p-6 rounded-2xl border border-border">
         <div className="flex items-center gap-4">
-          <img src={anime.images.jpg.image_url} alt={anime.title} className="w-16 h-24 object-cover rounded shadow-md" />
+          <div className="relative w-20 shrink-0"><img src={anime.images.jpg.image_url} alt={anime.title} className="h-28 w-20 object-cover rounded shadow-md" />{!desktop&&<HentaiBadge anime={anime} className="absolute bottom-1 left-1 z-20"/>}</div>
           <div>
             <h1 className="text-2xl font-black text-foreground mb-1">{anime.title}</h1>
             {provider==='sukebei'&&<p role="status" className="mb-2 text-sm font-bold text-primary">Hentai · 18+ · {adultBlocked?'Enable NSFW in the header to search these sources.':'Sukebei Anime sources'}</p>}

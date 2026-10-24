@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, Download, Info, Star, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { animePath } from '../lib/slug';
+import HentaiBadge from './HentaiBadge';
 
 interface Anime {
   mal_id: number;
@@ -88,6 +89,7 @@ export default function Spotlight({ animeList, loading = false, error = false, r
       <div className="relative z-20 grid min-h-[460px] gap-8 px-5 py-5 sm:px-7 md:min-h-[560px] md:px-10 md:py-8 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-center xl:grid-cols-[minmax(0,1fr)_330px]">
         <div className="flex max-w-3xl flex-col justify-end self-stretch pb-16 pt-44 md:pb-4 md:pt-10 lg:justify-center lg:py-8">
           <div className="mb-3 flex flex-wrap items-center gap-2 md:mb-4">
+            <HentaiBadge anime={currentAnime} className=""/>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/15 px-3 py-1 text-[11px] font-black uppercase tracking-wider text-primary">
               <TrendingUp className="h-3.5 w-3.5" />
               Airing now
@@ -144,7 +146,8 @@ export default function Spotlight({ animeList, loading = false, error = false, r
 
         <aside className="hidden lg:block">
           <div className="overflow-hidden rounded-[26px] border border-white/12 bg-black/38 p-2 shadow-2xl shadow-black/35 backdrop-blur-md">
-            <div className="aspect-[2/3] overflow-hidden rounded-[20px] bg-white/5">
+            <div className="relative aspect-[2/3] overflow-hidden rounded-[20px] bg-white/5">
+              <HentaiBadge anime={currentAnime} className="absolute bottom-3 left-3 z-20"/>
               {posterImage ? <img src={posterImage} alt={`${currentAnime.title} poster`} className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : null}
             </div>
           </div>

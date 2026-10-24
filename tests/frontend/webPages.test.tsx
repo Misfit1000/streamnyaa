@@ -10,13 +10,33 @@ vi.mock('../../src/context/AuthContext',()=>({useAuth:()=>({user:null,isAdmin:fa
 vi.mock('../../src/components/AnimeCard',()=>({default:({anime}:any)=><p>{anime.title}</p>}));
 vi.mock('../../src/components/Seo',()=>({default:()=>null}));vi.mock('../../src/components/Spotlight',()=>({default:()=>null}));vi.mock('../../src/components/AdSenseAd',()=>({default:()=>null}));
 import Home from '../../src/pages/Home';import Search from '../../src/pages/Search';import Compare from '../../src/pages/AnimeCompare';import Navbar from '../../src/components/Navbar';
+import {useStore} from '../../src/store/useStore';
 function Path(){return <p data-testid="path">{useLocation().search}</p>;}
 const mount=(child:React.ReactNode,path='/')=>render(<MemoryRouter initialEntries={[path]}><QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}>{child}</QueryClientProvider></MemoryRouter>);
 beforeEach(()=>{
+ useStore.setState({nsfwMode:false,hideChineseAnime:true});
  localStorage.clear();api.graph.mockReset();api.details.mockReset();api.releases.mockReset();
  api.releases.mockImplementation(async(request:any,param:any={})=>{const id=param.cursor?2:1;return{version:1,before:request.before,track:request.track,page:id,complete:true,stale:false,fetchedAt:Date.now(),nextCursor:id===1?'next':undefined,data:[{canonicalId:`anilist:${id}`,anilist_id:id,mal_id:id+100,title:`Fixture ${id}`,releaseEpisode:id,releaseAt:(request.before-10)*1000,releaseTrack:'sub',timingBasis:'confirmed-sub',releasePolicyVersion:1,airingEpisode:id}]};});
  api.graph.mockImplementation(async(body:any)=>{const page=body.variables.page,id=page,media={id,idMal:id+100,title:{english:`Fixture ${id}`},status:body.variables.status||'RELEASING',genres:[]};return new Response(JSON.stringify({data:{Page:{pageInfo:{currentPage:page,hasNextPage:page===1},media:[media],airingSchedules:[{id,episode:page,airingAt:Math.floor(Date.now()/1000)-60,media}]}}}));});
  api.details.mockImplementation(async(id:string)=>({data:{mal_id:Number(id),title:`Full title ${id}`,metadataProvider:'anilist',popularityKind:'list-count',popularity:5000,score:8.2,episodes:12,status:'FINISHED',genres:[{name:'Adventure'}],images:{jpg:{image_url:'/logo.svg'}}}}));
+});
+it('retains visible recent cards during NSFW refresh and filters Chinese locally without restarting pagination',async()=>{
+ let complete:(value:any)=>void=()=>{};
+ const cutoff=Math.floor(Date.now()/1000),row=(id:number,extra:any={})=>({canonicalId:`anilist:${id}`,anilist_id:id,title:`Content fixture ${id}`,releaseEpisode:1,releaseAt:(cutoff-10)*1000,releaseTrack:'sub',timingBasis:'confirmed-sub',releasePolicyVersion:1,airingEpisode:1,...extra});
+ const page={version:1,before:cutoff,track:'sub',page:1,complete:true,stale:false,fetchedAt:Date.now(),data:[row(1,{genres:['Ecchi'],isAdult:true}),row(2,{countryOfOrigin:'CN'}),row(3,{genres:['Hentai'],isAdult:true})]};
+ api.releases.mockImplementation((request:any)=>request.adult?new Promise(resolve=>{complete=resolve;}):Promise.resolve({...page,before:request.before,data:page.data.slice(0,2)}));
+ mount(<Search/>,`/search?sort=recent&before=${cutoff}`);await screen.findByText('Content fixture 1');expect(screen.queryByText('Content fixture 2')).toBeNull();const count=api.releases.mock.calls.length;
+ act(()=>useStore.getState().toggleChineseAnime());expect(screen.getByText('Content fixture 2')).toBeTruthy();expect(api.releases.mock.calls).toHaveLength(count);
+ act(()=>useStore.getState().toggleNsfwMode());expect(screen.getByText('Content fixture 1')).toBeTruthy();expect(screen.queryByText('Loading anime…')).toBeNull();
+ await act(async()=>complete(page));await screen.findByText('Content fixture 3');act(()=>useStore.getState().toggleNsfwMode());expect(screen.queryByText('Content fixture 3')).toBeNull();expect(screen.getByText('Content fixture 1')).toBeTruthy();
+});
+it('does not advertise provider-building as an unsolicited next-page load',async()=>{
+ const cutoff=Math.floor(Date.now()/1000);let finish:(value:any)=>void=()=>{};
+ const page={version:1,before:cutoff,track:'sub',page:1,complete:false,stale:false,fetchedAt:Date.now(),buildCursor:'2:0',data:[{canonicalId:'anilist:1',title:'Building fixture',releaseEpisode:1}]};
+ api.releases.mockImplementation((_request:any,param:any={})=>param.build?new Promise(resolve=>{finish=resolve;}):Promise.resolve(page));
+ mount(<Search/>,`/search?sort=recent&before=${cutoff}`);await screen.findByText('Building fixture');await vi.waitFor(()=>expect(api.releases).toHaveBeenCalledTimes(2));
+ expect(screen.queryByRole('button',{name:'Loading…'})).toBeNull();expect(screen.getByText('Building fixture')).toBeTruthy();
+ await act(async()=>finish({...page,complete:true,buildCursor:undefined,nextCursor:'actual-next-page'}));expect(await screen.findByRole('button',{name:'Load More'})).toHaveProperty('disabled',false);
 });
 afterEach(()=>{cleanup();vi.useRealTimers();});
 it('View All reuses the Home recent page, then appends genuinely new results',async()=>{

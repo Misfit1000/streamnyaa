@@ -7,6 +7,8 @@ const instances = Array.from({length:8},(_,index)=>[
  ['baseline',firstPort+index*2,path.resolve(process.env.WEB_AUDIT_BASELINE || '.validation/web-audit-baseline/dist')],['candidate',firstPort+1+index*2,path.resolve(process.env.WEB_AUDIT_CANDIDATE || 'dist')]
 ]).flat();
 const now=Date.now(),today=new Date().setHours(0,0,0,0);
+const contentFixture=process.env.WEB_AUDIT_CONTENT_FIXTURE==='1';
+const contentFacts=id=>contentFixture?{countryOfOrigin:id===3?'CN':'JP',genres:id===1?['Hentai']:id===2?['Ecchi']:['Adventure'],isAdult:id<=2}:{};
 // Local-only DOM evidence: CUA's read-only scope intentionally excludes browser
 // performance globals. Never included in the application build or production.
 const instrumentation=`<script>
@@ -32,9 +34,9 @@ for(const [name,port,root] of instances){
    if(url.pathname==='/api/nyaa'&&url.searchParams.get('q')?.includes('fixture-outage')){res.setHeader('Retry-After','90');return send({error:'Controlled source outage'},503);}
    if(url.pathname==='/api/stream-sources'){
     if(url.searchParams.get('provider')==='releases'){
-     const before=Number(url.searchParams.get('before'))||Math.floor(now/1000),page=1,track=url.searchParams.get('track')||'sub';
-     const data=Array.from({length:12},(_,i)=>({canonicalId:`anilist:${i+1}`,anilist_id:i+1,mal_id:i+101,title:`Fixture Anime ${i+1}`,image:origin+'/fixture-poster.svg',images:{jpg:{large_image_url:origin+'/fixture-poster.svg'}},airingEpisode:4,releaseEpisode:4,releaseAt:(before-300-i*60)*1000,airingAt:before-300-i*60,releaseTrack:track,scheduleStatus:'scheduled',scheduleFetchedAt:now,scheduleProvider:'anilist',scheduleId:`anilist:${i+1}:episode-4:${track}`,timingBasis:track==='dub'?'confirmed-dub':'confirmed-sub',releasePolicyVersion:1}));
-     return send({version:1,before,track,page,data,complete:true,stale:false,fetchedAt:now});
+     const before=Number(url.searchParams.get('before'))||Math.floor(now/1000),page=url.searchParams.has('cursor')?2:1,track=url.searchParams.get('track')||'sub';
+     const rows=Array.from({length:contentFixture?36:12},(_,i)=>({canonicalId:`anilist:${i+1}`,anilist_id:i+1,mal_id:i+101,title:`Fixture Anime ${i+1}`,image:origin+'/fixture-poster.svg',images:{jpg:{large_image_url:origin+'/fixture-poster.svg'}},airingEpisode:4,releaseEpisode:4,releaseAt:(before-300-i*60)*1000,airingAt:before-300-i*60,releaseTrack:track,scheduleStatus:'scheduled',scheduleFetchedAt:now,scheduleProvider:'anilist',scheduleId:`anilist:${i+1}:episode-4:${track}`,timingBasis:track==='dub'?'confirmed-dub':'confirmed-sub',releasePolicyVersion:1,...contentFacts(i+1)})).filter(row=>url.searchParams.get('adult')==='1'||!row.genres?.includes('Hentai'));
+     return send({version:1,before,track,page,data:rows.slice((page-1)*24,page*24),complete:true,stale:false,fetchedAt:now,...(rows.length>page*24?{nextCursor:'fixture-next'}:{})});
     }
     if(url.searchParams.get('provider')==='calendar'){
      const data=[];for(let id=1;id<=10;id++)for(const [index,track] of ['original','sub','dub'].entries())data.push({canonicalId:`anilist:${id}`,anilist_id:id,mal_id:id+100,title:`Fixture Anime ${id}`,image:origin+'/fixture-poster.svg',images:{jpg:{large_image_url:origin+'/fixture-poster.svg'}},airingEpisode:track==='dub'?1:4,airingAt:(today+(18*60+id*5+index*15)*60000)/1000,releaseTrack:track,scheduleStatus:'scheduled',scheduleFetchedAt:now,scheduleProvider:'animeschedule',sourceRoute:`fixture-${id}`,scheduleId:`anilist:${id}:episode-${track==='dub'?1:4}:${track}`});

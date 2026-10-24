@@ -50,14 +50,15 @@ export default function Search() {
   
   const [query, setQuery] = useState(searchParams.get('q') || '');
   const nsfwMode = useStore(state => state.nsfwMode);
+  const hideChinese = useStore(state => state.hideChineseAnime);
   const type = searchParams.get('type') || '', status = searchParams.get('status') || '';
   const rating = searchParams.get('rating') || '', genre = searchParams.get('genre') || '';
   const committedQuery = searchParams.get('q') || '';
-  const request = useMemo(() => catalogRequest(searchParams, nsfwMode), [searchParams.toString(), nsfwMode]);
+  const request = useMemo(() => catalogRequest(searchParams, nsfwMode,hideChinese), [searchParams.toString(), nsfwMode,hideChinese]);
   const genresQuery = useQuery({ queryKey: ['genres', nsfwMode], queryFn: fetchGenres });
   const genresData = genresQuery.data;
   const legacyResults = useInfiniteQuery({...catalogOptions(request),enabled:request.feed!=='recent'});
-  const releaseFeed=useRecentReleaseFeed({track:'sub',adult:nsfwMode,before:request.before,type:request.type,status:request.status,genre:request.genre,enabled:request.feed==='recent'});
+  const releaseFeed=useRecentReleaseFeed({track:'sub',adult:nsfwMode,hideChinese,before:request.before,type:request.type,status:request.status,genre:request.genre,enabled:request.feed==='recent'});
   const results=request.feed==='recent'?releaseFeed:legacyResults;
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = results;
   const allAnimes = useMemo(() => request.feed==='recent'?releaseFeed.items:uniqueMedia(data?.pages.flatMap(page => page.data) || []), [data,request.feed,releaseFeed.items]);
@@ -236,7 +237,7 @@ export default function Search() {
           {isLoading ? <div role="status" className="py-20 text-center text-muted-foreground">Loading anime…</div>
             : visibleAnimes.length === 0 ? <div className="py-20 text-center text-muted-foreground">{request.feed==='recent'&&!releaseFeed.complete?'Release coverage is still being checked.':results.isError ? 'Anime results are temporarily unavailable.' : hasNextPage ? 'No matching titles in this page. More results are available below.' : 'No anime found matching your criteria.'}</div>
             : <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-6">{visibleAnimes.map((anime: any) => <AnimeCard key={mediaKey(anime)} anime={anime}/>)}</div>}
-          {hasNextPage && <div className="mt-10 flex justify-center"><button onClick={() => void fetchNextPage()} disabled={isFetchingNextPage} className="rounded-full bg-secondary px-8 py-3 font-medium disabled:opacity-50">{isFetchingNextPage ? 'Loading…' : results.isFetchNextPageError ? 'Retry next page' : 'Load More'}</button></div>}
+          {hasNextPage && (request.feed!=='recent'||Boolean(releaseFeed.latest?.nextCursor)) && <div className="mt-10 flex justify-center"><button onClick={() => void fetchNextPage()} disabled={isFetchingNextPage} className="rounded-full bg-secondary px-8 py-3 font-medium disabled:opacity-50">{isFetchingNextPage ? 'Loading…' : results.isFetchNextPageError ? 'Retry next page' : 'Load More'}</button></div>}
         </div>
       </div>
     </div>

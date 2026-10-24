@@ -13,9 +13,10 @@ import { animePath } from '../lib/slug';
 function TitleSelector({ label, selected, onSelect, onClear }: { label: string; selected: any; onSelect: (anime: any) => void; onClear: () => void }) {
   const id = useId(), [input, setInput] = useState(''), [term, setTerm] = useState(''), [open, setOpen] = useState(false), [active, setActive] = useState(-1);
   const adult = useStore(state => state.nsfwMode), container = useRef<HTMLDivElement>(null), field = useRef<HTMLInputElement>(null);
+  const hideChinese=useStore(state=>state.hideChineseAnime);
   useEffect(() => { const timer = setTimeout(() => { setTerm(input.trim()); setActive(-1); }, 300); return () => clearTimeout(timer); }, [input]);
   useEffect(() => { const outside = (event: PointerEvent) => { if (!container.current?.contains(event.target as Node)) setOpen(false); }; document.addEventListener('pointerdown', outside); return () => document.removeEventListener('pointerdown', outside); }, []);
-  const request = useMemo(() => catalogRequest(new URLSearchParams({ q: term }), adult), [term, adult]);
+  const request = useMemo(() => catalogRequest(new URLSearchParams({ q: term }), adult,hideChinese), [term, adult,hideChinese]);
   const query = useInfiniteQuery({ ...catalogOptions(request), enabled: open && term.length >= 2 });
   const items = query.data?.pages[0]?.data.slice(0, 6) || [];
   const choose = (anime: any) => { onSelect(anime); setOpen(false); setInput(''); setTerm(''); field.current?.focus(); };

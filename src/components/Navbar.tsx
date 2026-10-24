@@ -5,7 +5,7 @@ import { useStore } from '../store/useStore';
 import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
-  const { theme, toggleTheme, nsfwMode, toggleNsfwMode } = useStore();
+  const { theme, toggleTheme, nsfwMode, toggleNsfwMode,hideChineseAnime,toggleChineseAnime } = useStore();
   const { user, isAdmin } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -23,6 +23,7 @@ export default function Navbar() {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const filterButtonRef = useRef<HTMLButtonElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const chineseToggle=<label className="flex min-h-11 cursor-pointer items-center justify-between gap-3 text-sm font-semibold"><span>Show Chinese anime<span className="block text-xs font-normal text-muted-foreground">Hidden by default · browsing only</span></span><input type="checkbox" checked={!hideChineseAnime} onChange={toggleChineseAnime} className="h-5 w-5 accent-primary"/></label>;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -171,6 +172,7 @@ export default function Navbar() {
                 </select>
               </div>
               
+              {chineseToggle}
               <button 
                 onClick={handleSearch}
                 className="w-full bg-primary text-primary-foreground py-2 rounded-lg text-sm font-bold mt-2 hover:bg-primary/90 transition-colors"
@@ -183,6 +185,9 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2 md:gap-4">
           <button 
+            type="button"
+            aria-pressed={nsfwMode}
+            title="Show or hide Hentai only. Ecchi remains Anime."
             onClick={() => {
               toggleNsfwMode();
 
@@ -278,6 +283,7 @@ export default function Navbar() {
             )}
             
             <div className="web-mobile-links flex flex-col gap-2 text-sm font-medium">
+              {chineseToggle}
               <Link to="/" className="hover:text-primary transition-colors py-2 border-b border-border/50">Home</Link>
               <Link to="/search" className="hover:text-primary transition-colors py-2 border-b border-border/50">Browse</Link>
               <Link to="/my-list" className="hover:text-primary transition-colors py-2 border-b border-border/50">My List</Link>

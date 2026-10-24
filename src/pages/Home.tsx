@@ -15,6 +15,7 @@ import { getRecentAnime, type RecentAnime } from '../lib/activity';
 import { animePath } from '../lib/slug';
 import { useStore } from '../store/useStore';
 import { useNearViewport } from '../lib/useNearViewport';
+import {webContentAllowed} from '../lib/webSourceProvider';
 
 function AnimeGridSkeleton({ count = 10 }: { count?: number }) {
   return (
@@ -29,6 +30,7 @@ function AnimeGridSkeleton({ count = 10 }: { count?: number }) {
 export default function Home() {
   const myList = useStore(state => state.myList);
   const nsfwMode = useStore(state => state.nsfwMode);
+  const hideChinese = useStore(state => state.hideChineseAnime);
 
   const [recentlyViewed, setRecentlyViewed] = useState<RecentAnime[]>([]);
   const seasonalSection=useNearViewport();
@@ -40,9 +42,9 @@ export default function Home() {
     setRecentlyViewed(getRecentAnime(6));
   }, []);
 
-  const seasonal = useInfiniteQuery(catalogOptions(catalogRequest(new URLSearchParams('sort=trending'), nsfwMode)));
+  const seasonal = useInfiniteQuery(catalogOptions(catalogRequest(new URLSearchParams('sort=trending'), nsfwMode,hideChinese)));
   const seasonalData = seasonal.data?.pages[0], seasonalLoading = seasonal.isLoading;
-  const score = useInfiniteQuery({ ...catalogOptions(catalogRequest(new URLSearchParams('sort=score&status=airing'), nsfwMode)), enabled: scoreSection.eligible });
+  const score = useInfiniteQuery({ ...catalogOptions(catalogRequest(new URLSearchParams('sort=score&status=airing'), nsfwMode,hideChinese)), enabled: scoreSection.eligible });
   const topSeasonScores = useMemo(() => {
     return [...(score.data?.pages[0]?.data || [])]
       .filter((anime: any) => Number(anime.score) > 0)
@@ -50,12 +52,12 @@ export default function Home() {
       .slice(0, 6);
   }, [score.data]);
 
-  const recent = useRecentReleaseFeed({track:'sub',adult:nsfwMode});
+  const recent = useRecentReleaseFeed({track:'sub',adult:nsfwMode,hideChinese});
   const recentBefore=recent.before;
   const recentData = {data:recent.items}, recentLoading = recent.isLoading;
 
   const upcoming = useInfiniteQuery({
-    ...catalogOptions(catalogRequest(new URLSearchParams('sort=upcoming'), nsfwMode)),
+    ...catalogOptions(catalogRequest(new URLSearchParams('sort=upcoming'), nsfwMode,hideChinese)),
     enabled: upcomingSection.eligible,
   });
   const upcomingData = upcoming.data?.pages[0], upcomingLoading = upcoming.isLoading;
@@ -73,7 +75,7 @@ export default function Home() {
     queryKey: ['todaySchedule', todayStartSeconds, todayEndSeconds, nsfwMode],
     queryFn: ({signal}) => fetchSchedule(1, todayStartSeconds, todayEndSeconds, {signal}),
   });
-  const scheduleData = schedule.data, scheduleLoading = schedule.isLoading;
+  const scheduleData = schedule.data&&{...schedule.data,data:schedule.data.data.filter((anime:any)=>webContentAllowed(anime,nsfwMode,hideChinese))}, scheduleLoading = schedule.isLoading;
 
   const homeJsonLd = {
     '@context': 'https://schema.org',

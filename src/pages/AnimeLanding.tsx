@@ -8,6 +8,7 @@ import DataStatus from '../components/DataStatus';
 import { mediaKey, uniqueMedia } from '../api/webCatalog';
 import { useStore } from '../store/useStore';
 import { animePath } from '../lib/slug';
+import {webContentAllowed} from '../lib/webSourceProvider';
 
 const seasonNames = ['winter', 'spring', 'summer', 'fall'];
 
@@ -25,6 +26,7 @@ function parseSeasonSlug(value = '') {
 export default function AnimeLanding() {
   const location = useLocation();
   const adult = useStore(state => state.nsfwMode);
+  const hideChinese=useStore(state=>state.hideChineseAnime);
   const { genre, seasonSlug } = useParams<{ genre?: string; seasonSlug?: string }>();
   const season = parseSeasonSlug(seasonSlug);
   const isGenrePage = Boolean(genre);
@@ -50,6 +52,8 @@ export default function AnimeLanding() {
       return searchAnime('', pageParam as number, '', '', '', 'popular', '', { signal });
     },
     initialPageParam: 1,
+    placeholderData: previous=>previous,
+    select: data=>({...data,pages:data.pages.map(page=>({...page,data:page.data.filter((anime:any)=>webContentAllowed(anime,adult,hideChinese))}))}),
     getNextPageParam: (lastPage, allPages) => lastPage.pagination?.has_next_page && !allPages.slice(0,-1).some(page => page.data.length && page.data.map(mediaKey).join(',') === lastPage.data.map(mediaKey).join(',')) ? allPages.length + 1 : undefined,
   });
 

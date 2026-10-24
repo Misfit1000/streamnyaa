@@ -14,6 +14,7 @@ import { primeDesktopWatchSnapshot } from '../lib/desktopWatchSnapshot';
 import { desktopAnimeQueryKey } from '../lib/desktopRequests';
 import { createIntentPrefetch } from '../lib/intentPrefetch';
 import ScheduleDelayBadge from './ScheduleDelayBadge';
+import HentaiBadge from './HentaiBadge';
 
 interface AnimeCardProps {
   anime: any;
@@ -114,6 +115,7 @@ export default function AnimeCard({ anime, delayLabel, destination }: AnimeCardP
     >
       <div className="sn-poster-card relative aspect-[2/3]" data-delayed={Boolean(delayLabel)}>
         <ScheduleDelayBadge label={delayLabel}/>
+        {!desktop&&<HentaiBadge anime={anime}/>}
         {anime.releaseEpisode&&<span className="absolute left-2 top-2 z-10 rounded bg-black/80 px-2 py-1 text-xs font-bold text-white">Episode {anime.releaseEpisode}</span>}
         {currentImage && !imageFailed ? (
           <img
@@ -141,7 +143,7 @@ export default function AnimeCard({ anime, delayLabel, destination }: AnimeCardP
           </div>
         )}
 
-        {!desktop && <div className="absolute top-2 left-2 z-30 flex gap-1 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100">
+        {!desktop && <div className="absolute top-11 right-2 z-30 flex gap-1 transition-opacity duration-300 md:opacity-0 md:group-hover:opacity-100">
           <button
             onClick={handleLikeToggle}
             className="sn-icon-action h-8 min-h-0 w-8 min-w-0 rounded-lg p-0 text-white/82"

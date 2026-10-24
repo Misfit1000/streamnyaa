@@ -1,12 +1,13 @@
 import { calendarIdentityCoverage, type CalendarRecord } from './calendarModel';
 import { airingAtMs, scheduleBroadcastState, scheduleInRange, scheduleNextRelease, type ScheduleSectionWindow } from './schedulePresentation';
+import {webContentAllowed} from './webSourceProvider';
 export type ScheduleTitle = { key: string; anime: CalendarRecord; tracks: CalendarRecord[] };
 /** One installment per visible view; every row retains its actual episode/track. */
-export function webScheduleSections(rows: CalendarRecord[], window: ScheduleSectionWindow, adult: boolean) {
+export function webScheduleSections(rows: CalendarRecord[], window: ScheduleSectionWindow, adult: boolean,hideChinese=false) {
   const titles = new Map<string, ScheduleTitle>();
   const {unresolved}=calendarIdentityCoverage(rows);
   for (const row of rows) {
-    if (unresolved.has(row) || !adult && row.isAdult || !scheduleInRange(row, window.weekStart, window.weekEnd)) continue;
+    if (unresolved.has(row) || !webContentAllowed(row,adult,hideChinese) || !scheduleInRange(row, window.weekStart, window.weekEnd)) continue;
     const changed = scheduleBroadcastState(row).prominent;
     if (!(window.today && changed) && !scheduleInRange(row, window.dayStart, window.dayEnd)) continue;
     const key = row.canonicalId;

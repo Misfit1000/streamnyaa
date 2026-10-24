@@ -23,6 +23,8 @@ interface StoreState {
   toggleTheme: () => void;
   nsfwMode: boolean;
   toggleNsfwMode: () => void;
+  hideChineseAnime: boolean;
+  toggleChineseAnime: () => void;
   myList: Anime[];
   addToMyList: (anime: Anime) => void;
   removeFromMyList: (id: number | string) => void;
@@ -46,6 +48,8 @@ export const useStore = create<StoreState>()(
       toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
       nsfwMode: false,
       toggleNsfwMode: () => set((state) => ({ nsfwMode: !state.nsfwMode })),
+      hideChineseAnime: true,
+      toggleChineseAnime: () => set(state => ({hideChineseAnime: !state.hideChineseAnime})),
       myList: [],
       addToMyList: (anime) => set((state) => {
         const nextId = animeStoreId(anime);

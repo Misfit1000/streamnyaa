@@ -8,6 +8,9 @@ import { desktopDataError, DesktopDataError, isDesktopAdmissionWait } from '../l
 import { readEpisodePage, saveEpisodePage } from '../lib/desktopEpisodeCache';
 import type { DesktopRequestOptions } from '../lib/desktopRequests';
 import { sharedPublicResponse } from '../lib/publicBrowserCache';
+import {isHentaiTitle} from '../lib/webSourceProvider';
+
+const contentFilterArg=()=>useStore.getState().nsfwMode?'':isDesktopApp()?', isAdult: false':', genre_not_in: ["Hentai"]';
 
 const ANILIST_URL = 'https://graphql.anilist.co';
 const LOCAL_METADATA_PREFIX = 'streamnyaa.metadataCache.v2.';
@@ -597,6 +600,8 @@ export const mapAnilistToJikan = (m: any) => ({
         status: edge.node.status,
         episodes: edge.node.episodes,
         year: edge.node.seasonYear,
+        countryOfOrigin:edge.node.countryOfOrigin,
+        genres:(edge.node.genres||[]).map((name:string)=>({name})),
         startDate: edge.node.startDate,
         name: edge.node.title?.english || edge.node.title?.romaji || edge.node.title?.native,
         images: {
@@ -616,6 +621,8 @@ export const mapAnilistToJikan = (m: any) => ({
       anilist_id: r.id,
       mal_id: r.idMal || null,
       type: r.type,
+      countryOfOrigin:r.countryOfOrigin,
+      genres:(r.genres||[]).map((name:string)=>({name})),
       title: r.title?.english || r.title?.romaji || r.title?.native,
       title_romaji: r.title?.romaji,
       title_english: r.title?.english,
@@ -685,7 +692,7 @@ const fetchJikanAnimeStats = async (malId: number) => {
 };
 
 export const fetchTopAiring = async (options: DesktopRequestOptions = {}) => {
-  const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
+  const isAdultArg = contentFilterArg();
   const query = `
     query {
       Page(page: 1, perPage: 12) {
@@ -730,7 +737,7 @@ export const fetchRecentEpisodesWithLimit = async (limit = 12, options: DesktopR
   if (data.errors?.length || !Array.isArray(rows)) throw new Error('Incomplete recent episode response.');
   let schedules = validRecentSchedules(rows, Math.floor(Date.now()/1000));
   if (!nsfwMode) {
-    schedules = schedules.filter((s: any) => !s.media.isAdult);
+    schedules = schedules.filter((s: any) => !(isDesktopApp()?s.media.isAdult:isHentaiTitle(s.media)));
   }
   
   const seen = new Set();
@@ -750,7 +757,7 @@ export const fetchRecentEpisodesWithLimit = async (limit = 12, options: DesktopR
 };
 
 export const fetchUpcomingAnime = async (options: DesktopRequestOptions = {}) => {
-  const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
+  const isAdultArg = contentFilterArg();
   const query = `
     query {
       Page(page: 1, perPage: 18) {
@@ -785,7 +792,7 @@ export const fetchUpcomingAnime = async (options: DesktopRequestOptions = {}) =>
 };
 
 export const fetchPopularAnime = async (options: DesktopRequestOptions = {}) => {
-  const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
+  const isAdultArg = contentFilterArg();
   const query = `
     query {
       Page(page: 1, perPage: 18) {
@@ -819,7 +826,7 @@ export const fetchPopularAnime = async (options: DesktopRequestOptions = {}) => 
 };
 
 export const fetchSeasonalAnime = async () => {
-  const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
+  const isAdultArg = contentFilterArg();
   const query = `
     query {
       Page(page: 1, perPage: 18) {
@@ -861,6 +868,7 @@ type AnimeDetailsLookupOptions = DesktopRequestOptions & {
 const ANIME_DETAIL_SELECTION = `
   id
   idMal
+  countryOfOrigin
   title { romaji english native }
   synonyms
   description
@@ -887,6 +895,8 @@ const ANIME_DETAIL_SELECTION = `
       node {
         id
         idMal
+        countryOfOrigin
+        genres
         type
         format
         status
@@ -904,6 +914,8 @@ const ANIME_DETAIL_SELECTION = `
       mediaRecommendation {
         id
         idMal
+        countryOfOrigin
+        genres
         type
         title { romaji english native }
         coverImage { extraLarge large color }
@@ -1042,7 +1054,7 @@ const jikanRes = await fetchJikanPath(detailPath, 21600, options);
           const jikanJson = await jikanRes.json();
           if (jikanJson?.data && Number(jikanJson.data.mal_id) === fallbackMalId) {
             const mapped = mapJikanDetailToAnime(jikanJson.data);
-            if (!useStore.getState().nsfwMode && mapped.isAdult) {
+            if (!useStore.getState().nsfwMode && (isDesktopApp()?mapped.isAdult:isHentaiTitle(mapped))) {
               throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
             }
             return { data: mapped, streamnyaa: metadataState(jikanRes) };
@@ -1059,7 +1071,7 @@ const jikanRes = await fetchJikanPath(detailPath, 21600, options);
   }
 
   const nsfwMode = useStore.getState().nsfwMode;
-  if (!nsfwMode && media.isAdult) {
+  if (!nsfwMode && (isDesktopApp()?media.isAdult:isHentaiTitle(media))) {
     throw new Error('NSFW content is disabled. Toggle SFW to view this content.');
   }
 
@@ -1169,7 +1181,7 @@ export const fetchMangaDetails = async (id: string) => {
   if (!res.ok || data.errors || !data?.data?.Media) throw new Error('Failed to fetch manga details');
   
   const nsfwMode = useStore.getState().nsfwMode;
-  if (!nsfwMode && data.data.Media.isAdult) {
+  if (!nsfwMode && (isDesktopApp()?data.data.Media.isAdult:isHentaiTitle(data.data.Media))) {
     throw new Error('NSFW content is disabled.');
   }
 
@@ -1317,17 +1329,18 @@ export const fetchJikanExploreCatalog = async (options: {
 };
 
 export const searchAnime = async (query: string, page = 1, type = '', rating = '', genres = '', sort = '', statusState = '', options: DesktopRequestOptions = {}) => {
+  if(!isDesktopApp()&&!useStore.getState().nsfwMode&&(rating==='rx'||genres==='Hentai'))return {data:[],pagination:{has_next_page:false,last_visible_page:page}};
   let typeArg = type ? `, format: ${type.toUpperCase()}` : '';
   let genreArg = genres ? `, genre: "${genres}"` : '';
   let isAdultArg = '';
   
-  // Custom logic: if nsfwMode is off, always force isAdult: false
-  // if nsfwMode is on, allow what the rating param asks.
+  // Web Hentai gating uses the explicit genre; mature/Ecchi flags are broader.
   const nsfwMode = useStore.getState().nsfwMode;
   if (!nsfwMode) {
-    isAdultArg = ', isAdult: false';
+    isAdultArg = contentFilterArg();
   } else {
-    isAdultArg = rating === 'rx' ? ', isAdult: true' : (rating ? ', isAdult: false' : '');
+    isAdultArg = isDesktopApp()?(rating === 'rx' ? ', isAdult: true' : (rating ? ', isAdult: false' : '')):(rating==='rx'?', genre: "Hentai"':'');
+    if(!isDesktopApp()&&rating==='rx')genreArg='';
   }
 
   let sortArg = 'TRENDING_DESC';
@@ -1432,7 +1445,7 @@ export const searchAnime = async (query: string, page = 1, type = '', rating = '
 };
 
 export const fetchTopAnimeByYear = async (year: number, maxPages = 1, options: DesktopRequestOptions = {}) => {
-  const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
+  const isAdultArg = contentFilterArg();
   const gqlQuery = `
     query($page: Int, $seasonYear: Int) {
       Page(page: $page, perPage: 24) {
@@ -1443,6 +1456,7 @@ export const fetchTopAnimeByYear = async (year: number, maxPages = 1, options: D
         media(type: ANIME, seasonYear: $seasonYear, sort: SCORE_DESC${isAdultArg}) {
           id
           idMal
+          countryOfOrigin
           title { romaji english native }
           synonyms
           description
@@ -1483,7 +1497,7 @@ export const fetchTopAnimeByYear = async (year: number, maxPages = 1, options: D
 
 export const fetchAnimeSeason = async (season: string, year: number, page = 1, options: DesktopRequestOptions = {}) => {
   const validSeason = season.toUpperCase();
-  const isAdultArg = useStore.getState().nsfwMode ? '' : ', isAdult: false';
+  const isAdultArg = contentFilterArg();
   const gqlQuery = `
     query($page: Int, $seasonYear: Int, $season: MediaSeason) {
       Page(page: $page, perPage: 24) {
@@ -1494,6 +1508,7 @@ export const fetchAnimeSeason = async (season: string, year: number, page = 1, o
         media(type: ANIME, seasonYear: $seasonYear, season: $season, sort: POPULARITY_DESC${isAdultArg}) {
           id
           idMal
+          countryOfOrigin
           title { romaji english native }
           synonyms
           description
@@ -1571,6 +1586,7 @@ export const fetchSchedule = async (page = 1, startDate: number, endDate: number
             episodes
             status
             format
+            countryOfOrigin
             coverImage { extraLarge large color } bannerImage
             genres
             averageScore
@@ -1588,7 +1604,7 @@ const res = await fetchAniList({ query, variables: { page, start: startDate, end
   
   let schedules = data.data.Page.airingSchedules;
   if (!nsfwMode) {
-    schedules = schedules.filter((s: any) => !s.media.isAdult);
+    schedules = schedules.filter((s: any) => !(isDesktopApp()?s.media.isAdult:isHentaiTitle(s.media)));
   }
   
   const seen = new Set();
