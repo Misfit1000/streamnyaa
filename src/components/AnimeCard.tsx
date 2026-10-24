@@ -114,7 +114,7 @@ export default function AnimeCard({ anime, delayLabel, destination }: AnimeCardP
     >
       <div className="sn-poster-card relative aspect-[2/3]" data-delayed={Boolean(delayLabel)}>
         <ScheduleDelayBadge label={delayLabel}/>
-        {anime.releaseEpisode&&<span className="absolute left-2 top-2 z-10 rounded bg-black/80 px-2 py-1 text-xs font-bold">Episode {anime.releaseEpisode}</span>}
+        {anime.releaseEpisode&&<span className="absolute left-2 top-2 z-10 rounded bg-black/80 px-2 py-1 text-xs font-bold text-white">Episode {anime.releaseEpisode}</span>}
         {currentImage && !imageFailed ? (
           <img
             key={currentImage}
