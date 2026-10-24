@@ -32,6 +32,14 @@ export async function publicCalendar(req: any, usage: RequestUsage): Promise<Pub
   if(prior)prior.value=Array.isArray(prior.value)?prior.value.filter(isCalendarRecord):[];
   if(progressive&&!req.query.cursor&&prior?.value?.length){
     const data=reconcileCalendarRecords([],prior.value), states:PublicCalendar['providers']={};
+    // Older normalized rows omitted the timetable's explicit origin flag.
+    // Hydrate it from saved week responses by provider route, with no upstream call.
+    if(data.some(row=>row.sourceRoute&&!row.countryOfOrigin&&!row.donghua)){
+      const weeks=[isoWeek(start*1000),isoWeek((end-1)*1000)];
+      const snapshots=await readPublicSnapshots<any[]>(weeks.map(week=>`animeschedule:timetables:${week.year}:${week.week}`));
+      const chinese=new Set([...snapshots.values()].flatMap(snapshot=>Array.isArray(snapshot.value)?snapshot.value.filter(row=>row.donghua===true).map(row=>row.route):[]));
+      for(const row of data)if(row.sourceRoute&&chinese.has(row.sourceRoute)){row.donghua=true;row.countryOfOrigin='CN';}
+    }
     for(const row of data){const fetchedAt=Math.min(states[row.scheduleProvider]?.fetchedAt||Infinity,row.scheduleFetchedAt);
       states[row.scheduleProvider]={fetchedAt,stale:fetchedAt+(row.scheduleProvider==='anilist'?180_000:900_000)<Date.now()};}
     return {version:1,data,providers:states,fetchedAt:Math.min(...Object.values(states).map(state=>state.fetchedAt)),stale:Object.values(states).some(state=>state.stale),complete:false,cursor:'1:0',initialSnapshot:true,

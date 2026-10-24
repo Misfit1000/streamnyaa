@@ -1,9 +1,15 @@
 import { expect,it } from 'vitest';
-import { reconcileCalendarRecords,type CalendarRecord } from '../../src/lib/calendarModel';
+import { normalizeScheduleTrack,reconcileCalendarRecords,type CalendarRecord } from '../../src/lib/calendarModel';
+import {isChineseTitle} from '../../src/lib/webSourceProvider';
 import { webScheduleSections } from '../../src/lib/webSchedulePresentation';
 import { comparisonFacts,comparableFacts,parseCompareIdentity } from '../../src/lib/comparisonFacts';
 const now=Date.now(),start=new Date().setHours(0,0,0,0),end=start+86400_000;
 const row=(extra:Partial<CalendarRecord>={}):CalendarRecord=>({canonicalId:'anilist:12',anilist_id:12,mal_id:13,title:'Fixture',airingEpisode:4,airingAt:(start+50000)/1000,releaseTrack:'original',scheduleStatus:'scheduled',scheduleFetchedAt:now,scheduleProvider:'anilist',scheduleId:'anilist:12:episode-4:original',...extra});
+it('retains explicit timetable origin and genre evidence without guessing from titles',()=>{
+ const raw={route:'fixture',episodeNumber:1,airType:'sub',airingStatus:'unaired',episodeDate:new Date().toISOString(),donghua:true};
+ const normalized=normalizeScheduleTrack(raw,{websites:{anilist:'https://anilist.co/anime/12'},genres:[{name:'Ecchi'}]},now)!;
+ expect(isChineseTitle(normalized)).toBe(true);expect(normalized.genres).toEqual(['Ecchi']);expect(isChineseTitle({title:'Chinese title',type:'ONA'})).toBe(false);
+});
 it('canonicalizes all aliases before deduplication in every hydration order',()=>{
  const original=row(),pending=row({canonicalId:'animeschedule:fixture',anilist_id:undefined,mal_id:undefined,sourceRoute:'fixture',scheduleProvider:'animeschedule',scheduleId:'animeschedule:fixture:episode-4:original'}),linked={...pending,canonicalId:'anilist:12',anilist_id:12,mal_id:13,scheduleId:original.scheduleId};
  for(const values of [[original,pending,linked],[linked,pending,original],[pending,original,linked]])expect(reconcileCalendarRecords([],values)).toHaveLength(1);

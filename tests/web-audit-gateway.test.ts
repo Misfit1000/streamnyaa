@@ -38,7 +38,7 @@ test('progressive Calendar paints saved rows before providers and reuses more th
  process.env.SUPABASE_URL='https://progressive-fixture.supabase.co';process.env.SUPABASE_SECRET_KEY='fixture';process.env.ANIMESCHEDULE_TOKEN='fixture';
  const start=Math.floor(Date.now()/86400_000)*86400,end=start+7*86400,from=Math.floor(start/86400)*86400,until=Math.ceil(end/86400)*86400,store=new Map<string,any>(),calls:string[]=[];let active=0,maxActive=0;
  const rows=Array.from({length:230},(_,i)=>({route:`audit-${i}`,episodeNumber:4,airType:'sub',airingStatus:'unaired',episodeDate:new Date((start+3600)*1000).toISOString()}));
- store.set(`calendar-records:${from}:${until}`,{payload:[{canonicalId:'anilist:8000',anilist_id:8000,scheduleId:'anilist:8000:episode-4:original',airingEpisode:4,releaseTrack:'original',airingAt:start+3600,title:'Saved',previousAiringAt:(start+3600)*1000,scheduleStatus:'rescheduled',scheduleProvider:'anilist',scheduleFetchedAt:Date.now()}],fetched_at:new Date().toISOString()});
+ store.set(`calendar-records:${from}:${until}`,{payload:[{canonicalId:'anilist:8000',anilist_id:8000,sourceRoute:'audit-0',scheduleId:'anilist:8000:episode-4:original',airingEpisode:4,releaseTrack:'original',airingAt:start+3600,title:'Saved',previousAiringAt:(start+3600)*1000,scheduleStatus:'rescheduled',scheduleProvider:'anilist',scheduleFetchedAt:Date.now()}],fetched_at:new Date().toISOString()});
  for(let i=0;i<230;i++)store.set(`animeschedule:anime:audit-${i}`,{payload:{route:`audit-${i}`,websites:{anilist:`https://anilist.co/anime/${8000+i}`}},fetched_at:'2025-01-01T00:00:00Z'});
  globalThis.fetch=(async(input:any,init:any={})=>{
   const url=new URL(String(input)),body=init.body?JSON.parse(init.body):{},reply=(value:any)=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
@@ -48,6 +48,7 @@ test('progressive Calendar paints saved rows before providers and reuses more th
    if(url.pathname.endsWith('/merge_calendar_snapshot'))return reply(body.p_rows);
    if(init.method==='DELETE')return reply(null);
    const key=url.searchParams.get('key')||'';
+   if(key.startsWith('in.(animeschedule:timetables:'))return reply([{key:key.slice(4,-1).split(',')[0],payload:[{route:'audit-0',donghua:true}],fetched_at:new Date().toISOString()}]);
    if(key.startsWith('in.(')){active++;maxActive=Math.max(active,maxActive);await new Promise(resolve=>setTimeout(resolve,1));active--;return reply(key.slice(4,-1).split(',').flatMap(key=>store.has(key)?[{key,...store.get(key)}]:[]));}
    const item=store.get(key.replace(/^eq\./,''));return reply(item?[item]:[]);
   }
@@ -59,6 +60,7 @@ test('progressive Calendar paints saved rows before providers and reuses more th
  try{
   const request={query:{start,end,progressive:'1'}},initial=await publicCalendar(request,new RequestUsage(request,'calendar'));
   assert.equal(initial.initialSnapshot,true);assert.equal(calls.length,0);assert.equal(initial.data[0].title,'Saved');assert.equal(initial.data[0].scheduleStatus,'scheduled');assert.equal(initial.data[0].previousAiringAt,undefined);
+  assert.equal(initial.data[0].countryOfOrigin,'CN','older saved rows receive explicit cached origin before first paint');
   const next={query:{...request.query,cursor:initial.cursor}},result=await publicCalendar(next,new RequestUsage(next,'calendar'));
   assert.equal(result.pendingIdentities,0);assert.equal(result.continuation?.identitiesComplete,true);assert.equal(result.cursor,undefined);assert.equal(result.complete,true);assert.equal(result.data.length,231);
   assert.ok(!calls.some(path=>path.includes('/anime/')));assert.ok(maxActive<=3);

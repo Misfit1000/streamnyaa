@@ -78,6 +78,8 @@ export function normalizeScheduleTrack(row: any, detail: any, fetchedAt: number)
   const imageRoute = String(row.imageVersionRoute || '');
   const image = /^anime\/[a-z0-9/_.-]{1,490}$/i.test(imageRoute) && !imageRoute.includes('..') ? `https://img.animeschedule.net/production/assets/public/img/${imageRoute}` : undefined;
   return { ...ids, canonicalId, title: String(row.english || row.romaji || row.title || 'Anime'), image,
+    ...(row.donghua===true||detail?.donghua===true?{donghua:true,countryOfOrigin:'CN'}:{}),
+    ...(Array.isArray(detail?.genres)&&detail.genres.length?{genres:detail.genres.map((genre:any)=>typeof genre==='string'?genre:genre?.name).filter((name:any)=>typeof name==='string'&&name.length<=100)}:{}),
     airingEpisode: episode, airingAt: revised / 1000, previousAiringAt: previous, releaseTrack: track,
     scheduleStatus: status || 'scheduled', scheduleReason: String(row.delayedText || ''), scheduleFetchedAt: fetchedAt,
     scheduleProvider:'animeschedule', scheduleId:`${canonicalId}:episode-${episode}:${track}`, sourceRoute: route };

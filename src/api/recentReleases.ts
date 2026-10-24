@@ -5,7 +5,7 @@ export type RecentReleaseRequest={before:number;track:ReleaseTrack;adult:boolean
 export type ReleasePageParam={cursor?:string;build?:string};
 export async function fetchRecentReleases(request:RecentReleaseRequest,page:ReleasePageParam={},signal?:AbortSignal):Promise<RecentReleasePage>{
  const params=new URLSearchParams({before:String(request.before),track:request.track,adult:request.adult?'1':'0'});
- if(!isDesktopApp())params.set('contentPolicy','2');
+ if(!isDesktopApp())params.set('contentPolicy','3');
  for(const [key,value] of Object.entries({...request,...page}))if(!['before','track','adult'].includes(key)&&value)params.set(key,String(value));
  let data:unknown;
  if(isDesktopApp()){

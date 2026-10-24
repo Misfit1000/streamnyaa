@@ -19,13 +19,13 @@ export function useRecentReleaseFeed(input:Omit<RecentReleaseRequest,'before'>&{
  const request=useMemo<RecentReleaseRequest>(()=>({before:input.before||anchor,track:input.track,adult:input.adult,type:input.type||'',genre:input.genre||'',status:input.status||'',year:input.year}),[input.before,anchor,input.track,input.adult,input.type,input.genre,input.status,input.year]);
  const client=useQueryClient();
  const recovery=useRef<()=>void>(()=>{});
- const query=useInfiniteQuery({queryKey:['recent-releases',2,request],initialPageParam:{} as ReleasePageParam,
+ const query=useInfiniteQuery({queryKey:['recent-releases',3,request],initialPageParam:{} as ReleasePageParam,
   queryFn:({pageParam,signal})=>fetchRecentReleases(request,pageParam,signal),
   getNextPageParam:(last,pages)=>last.nextCursor?{cursor:last.nextCursor}:last.buildCursor&&!pages.slice(0,-1).some(page=>page.buildCursor===last.buildCursor)?{build:last.buildCursor}:undefined,
   meta:{publicProvider:'releases',recover:()=>recovery.current()},enabled,retry:false,staleTime:60000,refetchOnWindowFocus:false,refetchOnReconnect:true});
  recovery.current=()=>{void (query.data?.pages.at(-1)?.buildCursor&&query.hasNextPage?query.fetchNextPage({cancelRefetch:false}):query.refetch({cancelRefetch:false}));};
  const scope=JSON.stringify({...request,before:0,adult:false});
- const restored=useMemo(()=>client.getQueryCache().findAll({queryKey:['recent-releases',2]}).filter(value=>JSON.stringify({...value.queryKey[2] as object,before:0,adult:false})===scope&&value.state.data).sort((a,b)=>b.state.dataUpdatedAt-a.state.dataUpdatedAt)[0]?.state.data as typeof query.data,[client,scope]);
+ const restored=useMemo(()=>client.getQueryCache().findAll({queryKey:['recent-releases',3]}).filter(value=>JSON.stringify({...value.queryKey[2] as object,before:0,adult:false})===scope&&value.state.data).sort((a,b)=>b.state.dataUpdatedAt-a.state.dataUpdatedAt)[0]?.state.data as typeof query.data,[client,scope]);
  const saved=useRef<{scope:string;data:NonNullable<typeof query.data>}|null>(restored?{scope,data:restored}:null);
  if(query.data)saved.current={scope,data:query.data};
  const working=query.data||(saved.current?.scope===scope?saved.current.data:undefined);

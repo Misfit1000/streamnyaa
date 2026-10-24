@@ -13,11 +13,11 @@ export async function recentReleases(req:any,usage:RequestUsage):Promise<RecentR
  if(!Number.isSafeInteger(before)||before<=0||before>Date.now()/1000+60||before<Date.now()/1000-8*86400||!['sub','dub'].includes(track))throw Object.assign(Error('Invalid release window or track.'),{status:400});
  const adult=req.query.adult==='1',type=String(req.query.type||''),genre=String(req.query.genre||''),status=String(req.query.status||''),year=Number(req.query.year)||0;
  if([type,genre,status].some(value=>value.length>100)||year&&(year<1900||year>2200))throw Object.assign(Error('Invalid release filters.'),{status:400});
- const webPolicy=req.query.contentPolicy==='2';
- const filterKey=createHash('sha256').update(JSON.stringify({before,track,adult,type,genre,status,year,...(webPolicy?{contentPolicy:2}:{})})).digest('hex').slice(0,16);
+ const webPolicy=['2','3'].includes(req.query.contentPolicy);
+ const filterKey=createHash('sha256').update(JSON.stringify({before,track,adult,type,genre,status,year,...(webPolicy?{contentPolicy:Number(req.query.contentPolicy)}:{})})).digest('hex').slice(0,16);
  const rawCursor=String(req.query.cursor||''),match=/^([a-f0-9]{32})\.([a-f0-9]{16})\.(\d{1,5})$/.exec(rawCursor);
  if(rawCursor&&(!match||match[2]!==filterKey))throw Object.assign(Error('Invalid release cursor.'),{status:400});
- const base=`recent-releases:v1:${before}:${track}`;
+ const base=`recent-releases:${req.query.contentPolicy==='3'?'v2':'v1'}:${before}:${track}`;
  const id=match?.[1],saved=await readPublicSnapshot<Frozen>(id?`${base}:${id}`:`${base}:latest`);
  let snapshot=saved?.value;
  if(snapshot?.version!==1||snapshot.before!==before||snapshot.track!==track||!Array.isArray(snapshot.rows)||snapshot.rows.length>1500||!snapshot.rows.every(row=>isCalendarRecord(row)&&row.releasePolicyVersion===1&&Number.isSafeInteger(row.releaseEpisode)&&Number(row.releaseEpisode)>0&&Number.isFinite(row.releaseAt)&&Number(row.releaseAt)<=before*1000))snapshot=undefined;
